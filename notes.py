@@ -28,8 +28,6 @@ P = pd.read_csv("test.vcf", sep = "\t", comment = "#", names = ["chr", "pos", "x
 P = P.loc[:, ~P.columns.str.match('^.$')]
 
 P = txt.parsein(P, 'hap', r'(.)\|(.)', ["allele_A", "allele_B"]).astype({"allele_A" : int, "allele_B" : int })
-aidx = P["allele_A"] > 0
-bidx = P["allele_B"] > 0
 
 # pull in altcounts
 C = pd.read_csv("3328.tumor.tsv", sep = "\t")
@@ -39,9 +37,20 @@ P = P.merge(C, how = "inner", left_on = ["chr", "pos"], right_on = ["CONTIG", "P
 # alt/refcounts computed. perhaps we should use these as coverage probes?
 
 #
+# alt/ref -> major/minor
+aidx = P["allele_A"] > 0
+bidx = P["allele_B"] > 0
+
+P["MAJ_COUNT"] = pd.concat([P.loc[aidx, "ALT_COUNT"], P.loc[bidx, "REF_COUNT"]])
+P["MIN_COUNT"] = pd.concat([P.loc[aidx, "REF_COUNT"], P.loc[bidx, "ALT_COUNT"]])
+
+#
 # compute beta CI's
 CI = s.beta.ppf([0.05, 0.5, 0.95], P["ALT_COUNT"][:, None] + 1, P["REF_COUNT"][:, None] + 1)
 P[["CI_lo", "median", "CI_hi"]] = CI
+
+CI = s.beta.ppf([0.05, 0.5, 0.95], P["MAJ_COUNT"][:, None] + 1, P["MIN_COUNT"][:, None] + 1)
+P[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
 
 #
 # compute beta distribution overlaps
