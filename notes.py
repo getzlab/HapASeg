@@ -53,7 +53,29 @@ CI = s.beta.ppf([0.05, 0.5, 0.95], P["MAJ_COUNT"][:, None] + 1, P["MIN_COUNT"][:
 P[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
 
 #
-# compute beta distribution overlaps
+# visualize
+
+# major/minor
+
+plt.figure(4); plt.clf()
+Ph = P.iloc[:2000]
+plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["CI_hi_hap"] - Ph["median_hap"], Ph["median_hap"] - Ph["CI_lo_hap"]].T, fmt = 'none', alpha = 0.75)
+plt.xlim([0, 5e6])
+plt.xticks(np.linspace(*plt.xlim(), 20), P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
+plt.xlabel("SNP index")
+
+# alt/ref
+
+PA = Ph.loc[aidx]
+PB = Ph.loc[bidx]
+plt.figure(2); plt.clf()
+plt.errorbar(PA["pos"], y = PA["median"], yerr = np.c_[PA["CI_hi"] - PA["median"], PA["median"] - PA["CI_lo"]].T, fmt = 'none', alpha = 0.75)
+plt.errorbar(PB["pos"], y = PB["median"], yerr = np.c_[PB["CI_hi"] - PB["median"], PB["median"] - PB["CI_lo"]].T, fmt = 'none', alpha = 0.75)
+plt.xticks(np.linspace(*plt.xlim(), 20), P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
+plt.xlabel("SNP index (A)")
+
+#
+# compute beta distribution overlaps {{{
 
 # easiest to do diff of two betas, even though this maxes out at ~50%
 # TODO: better overlap test
@@ -104,6 +126,86 @@ for idx in [aidx, bidx]:
               FA[i, j - 1] + Pa.iat[j, pc_idx]
             )
 
+# }}}
+
+#
+# beta-binomial likelihood of segment extension {{{
+
+# sum matrices
+
+# MAJOR
+#M = np.zeros((100, 100))
+mcidx = P.columns.get_loc("MAJ_COUNT")
+ncidx = P.columns.get_loc("MIN_COUNT")
+
+M = np.diag(P["MAJ_COUNT"].iloc[:1000])
+
+for i in range(0, 1000):
+    for j in range(i + 1, 1000):
+        M[i, j] = M[i, j - 1] + P.iat[j, mcidx]
+
+plt.figure(1); plt.clf()
+plt.imshow(M)
+
+# MINOR
+N = np.diag(P["MIN_COUNT"].iloc[:1000])
+
+for i in range(0, 1000):
+    for j in range(i + 1, 1000):
+        N[i, j] = N[i, j - 1] + P.iat[j, ncidx]
+
+# beta binomial probabilities
+BB = np.zeros((1000, 1000))
+for i in range(1, 300):
+    for j in range(i + 1, 300):
+        BB[i, j] = s.betabinom.pmf(
+          k = P.iat[j, ncidx],
+          n = P.iloc[j, [ncidx, mcidx]].sum(),
+          a = N[i, j - 1] + 30,
+          b = M[i, j - 1] + 30,
+        )
+
+# plot BB matrix
+
+plt.figure(10); plt.clf()
+plt.imshow(BB[0:300, 0:300])#, origin = "lower")
+plt.ylabel("Segment start position")
+plt.xlabel("Segment end position")
+bdys = np.c_[midx[:-1], midx[1:]]
+
+# plot backward BB probs for segment ending at 300
+plt.figure(12); plt.clf()
+plt.step(np.r_[0:300], BB[:300, 299])
+
+# traceback
+midx_b = [299]
+while True:
+    next_max = BB[:300, midx_b[-1]].argmax()
+    midx_b.append(next_max)
+    if next_max == 0:
+        break
+
+# traceforward
+midx_f = [0]
+while True:
+    next_max = BB[:300, midx_f[-1]].argmax()
+    midx_f.append(next_max)
+    if next_max == :
+        break
+
+# joint?
+
+# plot changepoints overlayed on SNPs
+plt.figure(11); plt.clf()
+plt.errorbar(Ph.index, y = Ph["median_hap"], yerr = np.c_[Ph["CI_hi_hap"] - Ph["median_hap"], Ph["median_hap"] - Ph["CI_lo_hap"]].T, fmt = 'none', alpha = 0.75)
+
+for i in midx_b:
+    plt.axvline(i, color = 'k', linestyle = ':')
+
+plt.xlim([0, 300])
+
+# }}}
+
 plt.figure(1); plt.clf()
 plt.imshow(FA[0:300, 0:300])
 
@@ -114,9 +216,3 @@ plt.step(np.r_[1:299], PA["lP_prev"].iloc[1:299])
 
 x, y = np.unravel_index(FA[0:200,0:200].argmax(), FA[0:200,0:200].shape)
 FA[x, y]
-
-plt.figure(2); plt.clf()
-plt.errorbar(PA["pos"], y = PA["median"], yerr = np.c_[PA["CI_hi"] - PA["median"], PA["median"] - PA["CI_lo"]].T, fmt = 'none', alpha = 0.75)
-plt.errorbar(PB["pos"], y = PB["median"], yerr = np.c_[PB["CI_hi"] - PB["median"], PB["median"] - PB["CI_lo"]].T, fmt = 'none', alpha = 0.75)
-plt.xticks(np.linspace(0, plt.xlim()[1], 20), P["pos"].searchsorted(np.linspace(5e5, 5e6, 20)))
-plt.xlabel("SNP index")
