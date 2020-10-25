@@ -155,52 +155,88 @@ for i in range(0, 1000):
         N[i, j] = N[i, j - 1] + P.iat[j, ncidx]
 
 # beta binomial probabilities
-BB = np.zeros((1000, 1000))
+
+# backward
+BB_b = np.zeros((1000, 1000))
 for i in range(1, 300):
     for j in range(i + 1, 300):
-        BB[i, j] = s.betabinom.pmf(
+        BB_b[i, j] = s.betabinom.pmf(
           k = P.iat[j, ncidx],
           n = P.iloc[j, [ncidx, mcidx]].sum(),
           a = N[i, j - 1] + 30,
           b = M[i, j - 1] + 30,
         )
 
-# plot BB matrix
+# forward
+BB_f = np.zeros((1000, 1000))
+for i in range(1, 300):
+    for j in range(i + 1, 300):
+        BB_f[i, j] = s.betabinom.pmf(
+          k = P.iat[i, ncidx],
+          n = P.iloc[i, [ncidx, mcidx]].sum(),
+          a = N[i + 1, j] + 30,
+          b = M[i + 1, j] + 30,
+        )
 
+# plot BB matrices
+
+# backwards
 plt.figure(10); plt.clf()
-plt.imshow(BB[0:300, 0:300])#, origin = "lower")
+plt.imshow(BB_b[0:300, 0:300])#, origin = "lower")
 plt.ylabel("Segment start position")
 plt.xlabel("Segment end position")
-bdys = np.c_[midx[:-1], midx[1:]]
+
+# forwards
+plt.figure(105); plt.clf()
+plt.imshow(BB_f[0:300, 0:300])#, origin = "lower")
+plt.ylabel("Segment start position")
+plt.xlabel("Segment end position")
+
+# joint
+plt.figure(106); plt.clf()
+plt.imshow(np.log(BB_f[0:300, 0:300]) + np.log(BB_b[0:300, 0:300]))#, origin = "lower")
+plt.ylabel("Segment start position")
+plt.xlabel("Segment end position")
 
 # plot backward BB probs for segment ending at 300
 plt.figure(12); plt.clf()
-plt.step(np.r_[0:300], BB[:300, 299])
+plt.step(np.r_[0:300], BB_b[:300, 299])
+plt.step(np.r_[0:300], BB_f[:300, 299])
 
 # traceback
 midx_b = [299]
 while True:
-    next_max = BB[:300, midx_b[-1]].argmax()
+    next_max = BB_b[:300, midx_b[-1]].argmax()
     midx_b.append(next_max)
     if next_max == 0:
         break
 
-# traceforward
-midx_f = [0]
-while True:
-    next_max = BB[:300, midx_f[-1]].argmax()
-    midx_f.append(next_max)
-    if next_max == :
-        break
+# # traceforward
+# midx_f = [1]
+# while True:
+#     next_max = BB_f[midx_f[-1], :300].argmax()
+#     midx_f.append(next_max)
+#     if next_max == 299:
+#         break
 
-# joint?
+# this isn't what you think it is
+
+# joint
+midx_bj = [299]
+while True:
+    next_max = np.log(BB_b[:300, midx_bj[-1]] + BB_f[:300, midx_bj[-1]]).argmax()
+    midx_bj.append(next_max)
+    if next_max == 0:
+        break
 
 # plot changepoints overlayed on SNPs
 plt.figure(11); plt.clf()
 plt.errorbar(Ph.index, y = Ph["median_hap"], yerr = np.c_[Ph["CI_hi_hap"] - Ph["median_hap"], Ph["median_hap"] - Ph["CI_lo_hap"]].T, fmt = 'none', alpha = 0.75)
 
-for i in midx_b:
+for i in midx_bj:
     plt.axvline(i, color = 'k', linestyle = ':')
+for i in midx_b:
+    plt.axvline(i, color = 'b', linestyle = '--')
 
 plt.xlim([0, 300])
 
