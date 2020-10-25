@@ -82,49 +82,47 @@ plt.xlabel("SNP index (A)")
 
 B = s.beta.rvs(P["ALT_COUNT"][:, None] + 1, P["REF_COUNT"][:, None] + 1, size=(len(P), 1000))
 
-for idx in [aidx, bidx]: 
-    Ba = B[idx, :]
+p_gt = (B[:-1] - B[1:] > 0).mean(1)
 
-    P_next = np.maximum(np.minimum(1 - (Ba[:-1] - Ba[1:] > 0).mean(1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)
+P_next = np.maximum(np.minimum(1 - (B[:-1] - B[1:] > 0).mean(1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)
+#P_next = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)
 
-    Pa = P.loc[idx]
+P["lP_next"] = np.nan
+P["lP_next_s"] = np.nan
+P["lP_prev"] = np.nan
+P["lP_prev_s"] = np.nan
 
-    Pa["lP_next"] = np.nan
-    Pa["lP_next_s"] = np.nan
-    Pa["lP_prev"] = np.nan
-    Pa["lP_prev_s"] = np.nan
+pc_idx = P.columns.get_loc("lP_prev")
+pcs_idx = P.columns.get_loc("lP_prev_s")
+nc_idx = P.columns.get_loc("lP_next")
+ncs_idx = P.columns.get_loc("lP_next_s")
 
-    pc_idx = Pa.columns.get_loc("lP_prev")
-    pcs_idx = Pa.columns.get_loc("lP_prev_s")
-    nc_idx = Pa.columns.get_loc("lP_next")
-    ncs_idx = Pa.columns.get_loc("lP_next_s")
+P.iloc[:-1, nc_idx] = np.nan
+P.iloc[:-1, nc_idx] = np.log(P_next)
+P.iloc[:-1, ncs_idx] = np.log(1 - P_next)
+P.iloc[1:, pc_idx] = np.log(1 - P_next)
+P.iloc[1:, pcs_idx] = np.log(P_next)
 
-    Pa.iloc[:-1, nc_idx] = np.nan
-    Pa.iloc[:-1, nc_idx] = np.log(P_next)
-    Pa.iloc[:-1, ncs_idx] = np.log(1 - P_next)
-    Pa.iloc[1:, pc_idx] = np.log(1 - P_next)
-    Pa.iloc[1:, pcs_idx] = np.log(P_next)
+#
+# compute fill matrix
 
-    #
-    # compute fill matrix
+# XXX: to be fast, could do with integers bindigo style
 
-    # XXX: to be fast, could do with integers bindigo style
+#FA = -np.inf*np.ones((1000, 1000))
+FA = np.zeros((1000, 1000))
 
-    #FA = -np.inf*np.ones((1000, 1000))
-    FA = np.zeros((1000, 1000))
+#FA[0, 1] = PA.iat[1, pc_idx]
+#FA[1, 0] = 1 - PA.iat[1, pc_idx]
 
-    #FA[0, 1] = PA.iat[1, pc_idx]
-    #FA[1, 0] = 1 - PA.iat[1, pc_idx]
+#FA[0, 0:1000] = PA.iloc[0:1000, pc_idx]
+#FA[0:1000, 0] = PA.iloc[0:1000, pcs_idx]
 
-    #FA[0, 0:1000] = PA.iloc[0:1000, pc_idx]
-    #FA[0:1000, 0] = PA.iloc[0:1000, pcs_idx]
-
-    for i in range(1, 300):
-        for j in range(i, 300):
-            FA[i, j] = np.maximum(
-              FA[i - 1, j - 1] + Pa.iat[j, pcs_idx],
-              FA[i, j - 1] + Pa.iat[j, pc_idx]
-            )
+for i in range(1, 300):
+    for j in range(i, 300):
+        FA[i, j] = np.maximum(
+          FA[i - 1, j - 1] + P.iat[j, pcs_idx],
+          FA[i, j - 1] + P.iat[j, pc_idx]
+        )
 
 # }}}
 
