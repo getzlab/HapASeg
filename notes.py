@@ -80,12 +80,10 @@ plt.xlabel("SNP index (A)")
 # easiest to do diff of two betas, even though this maxes out at ~50%
 # TODO: better overlap test
 
-B = s.beta.rvs(P["ALT_COUNT"][:, None] + 1, P["REF_COUNT"][:, None] + 1, size=(len(P), 1000))
+B = s.beta.rvs(P["MIN_COUNT"][:, None] + 1, P["MAJ_COUNT"][:, None] + 1, size=(len(P), 1000))
 
 p_gt = (B[:-1] - B[1:] > 0).mean(1)
-
-P_next = np.maximum(np.minimum(1 - (B[:-1] - B[1:] > 0).mean(1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)
-#P_next = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)
+P_next = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)
 
 P["lP_next"] = np.nan
 P["lP_next_s"] = np.nan
@@ -104,25 +102,62 @@ P.iloc[1:, pc_idx] = np.log(1 - P_next)
 P.iloc[1:, pcs_idx] = np.log(P_next)
 
 #
+# visualize switch prob
+
+plt.figure(5); plt.clf()
+plt.errorbar(P.index, y = P["median_hap"], yerr = np.c_[P["CI_hi_hap"] - P["median_hap"], P["median_hap"] - P["CI_lo_hap"]].T, fmt = 'none', alpha = 0.75)
+plt.scatter(P.index[:-1], 0.1*P.iloc[:-1, nc_idx])
+plt.xlim([0, 300])
+plt.ylim([-1, 1])
+#plt.xticks(np.linspace(*plt.xlim(), 20), P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
+plt.xlabel("SNP index")
+
+#
 # compute fill matrix
 
 # XXX: to be fast, could do with integers bindigo style
 
-#FA = -np.inf*np.ones((1000, 1000))
-FA = np.zeros((1000, 1000))
+FA = -np.inf*np.ones((1000, 1000))
+#FA = np.zeros((1000, 1000))
 
 #FA[0, 1] = PA.iat[1, pc_idx]
 #FA[1, 0] = 1 - PA.iat[1, pc_idx]
 
-#FA[0, 0:1000] = PA.iloc[0:1000, pc_idx]
+FA[0, 1:1000] = np.cumsum(P.iloc[0:999, nc_idx])
+#FA[1, 1] = P.iat[0, ncs_idx]
 #FA[0:1000, 0] = PA.iloc[0:1000, pcs_idx]
 
 for i in range(1, 300):
     for j in range(i, 300):
         FA[i, j] = np.maximum(
-          FA[i - 1, j - 1] + P.iat[j, pcs_idx],
-          FA[i, j - 1] + P.iat[j, pc_idx]
+          FA[i - 1, j - 1] + P.iat[j - 1, ncs_idx],
+          FA[i, j - 1] + P.iat[j - 1, nc_idx]
         )
+
+plt.figure(1); plt.clf()
+plt.imshow(FA[:300, :300])
+
+plt.figure(2); plt.clf()
+plt.step(np.r_[0:299], FA[:299, 299])
+
+# traceback
+
+i_t = FA[:299, 299].argmax()
+j_t = 299
+
+stay = np.zeros(299)
+for i in range(0, 299):
+    f = np.argmax(np.r_[FA[i_t - 1, j_t - 1], FA[i_t, j_t - 1]])
+    stay[298 - i] = f
+
+    j_t -= 1
+    if f == 1:
+        i_t -= 1
+
+FA[:299, m]
+
+bdy = [299]
+while True:
 
 # }}}
 
@@ -200,6 +235,7 @@ plt.xlabel("Segment end position")
 plt.figure(12); plt.clf()
 plt.step(np.r_[0:300], BB_b[:300, 299])
 plt.step(np.r_[0:300], BB_f[:300, 299])
+plt.step(np.r_[0:300], BB_f[1, 0:300])
 
 # traceback
 midx_b = [299]
@@ -209,32 +245,24 @@ while True:
     if next_max == 0:
         break
 
-# # traceforward
-# midx_f = [1]
-# while True:
-#     next_max = BB_f[midx_f[-1], :300].argmax()
-#     midx_f.append(next_max)
-#     if next_max == 299:
-#         break
-
-# this isn't what you think it is
-
-# joint
-midx_bj = [299]
+# traceforward
+midx_f = [1]
 while True:
-    next_max = np.log(BB_b[:300, midx_bj[-1]] + BB_f[:300, midx_bj[-1]]).argmax()
-    midx_bj.append(next_max)
-    if next_max == 0:
+    next_max = BB_f[midx_f[-1], :300].argmax()
+    midx_f.append(next_max)
+    if next_max == 299:
         break
+
+# alternate joint
 
 # plot changepoints overlayed on SNPs
 plt.figure(11); plt.clf()
 plt.errorbar(Ph.index, y = Ph["median_hap"], yerr = np.c_[Ph["CI_hi_hap"] - Ph["median_hap"], Ph["median_hap"] - Ph["CI_lo_hap"]].T, fmt = 'none', alpha = 0.75)
 
 for i in midx_bj:
-    plt.axvline(i, color = 'k', linestyle = ':')
+    plt.axvline(i, color = 'r', linestyle = (0, [1, 1]))
 for i in midx_b:
-    plt.axvline(i, color = 'b', linestyle = '--')
+    plt.axvline(i, color = 'b', linestyle = (1, [1, 1]))
 
 plt.xlim([0, 300])
 
