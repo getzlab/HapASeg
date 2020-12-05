@@ -33,6 +33,10 @@ P = txt.parsein(P, 'hap', r'(.)\|(.)', ["allele_A", "allele_B"]).astype({"allele
 C = pd.read_csv("3328.tumor.tsv", sep = "\t")
 P = P.merge(C, how = "inner", left_on = ["chr", "pos"], right_on = ["CONTIG", "POSITION"]).drop(columns = ["CONTIG", "POSITION"])
 
+# also get normal altcounts
+C = pd.read_csv("3328.normal.tsv", sep = "\t")
+P = P.merge(C, how = "inner", left_on = ["chr", "pos"], right_on = ["CONTIG", "POSITION"], suffixes = (None, "_N")).drop(columns = ["CONTIG", "POSITION"])
+
 # note that implicitly drops homozygous sites, since they were never had their
 # alt/refcounts computed. perhaps we should use these as coverage probes?
 
@@ -52,6 +56,10 @@ P[["CI_lo", "median", "CI_hi"]] = CI
 CI = s.beta.ppf([0.05, 0.5, 0.95], P["MAJ_COUNT"][:, None] + 1, P["MIN_COUNT"][:, None] + 1)
 P[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
 
+# don't bother phasing for normal
+CI = s.beta.ppf([0.05, 0.5, 0.95], P["ALT_COUNT_N"][:, None] + 1, P["REF_COUNT_N"][:, None] + 1)
+P[["CI_lo_N", "median_N", "CI_hi_N"]] = CI
+
 #
 # visualize
 
@@ -60,9 +68,18 @@ P[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
 plt.figure(4); plt.clf()
 Ph = P.iloc[:2000]
 plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75)
+plt.errorbar(Ph["pos"], y = Ph["median_N"], yerr = np.c_[Ph["median_N"] - Ph["CI_lo_N"], Ph["CI_hi_N"] - Ph["median_N"]].T, fmt = 'none', alpha = 0.25, color = "g")
 plt.xlim([0, 5e6])
 plt.xticks(np.linspace(*plt.xlim(), 20), P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
 plt.xlabel("SNP index")
+
+plt.figure(5); plt.clf()
+plt.scatter(Ph["pos"], Ph["REF_COUNT"] + Ph["ALT_COUNT"], alpha = 0.5)
+#plt.scatter(Ph["pos"], Ph["REF_COUNT_N"] + Ph["ALT_COUNT_N"], alpha = 0.5)
+
+plt.figure(6); plt.clf()
+cov = Ph["REF_COUNT"] + Ph["ALT_COUNT"]
+plt.errorbar(Ph["pos"], y = cov*Ph["median_hap"], yerr = cov[None, :]*np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75, color = cmap[aidx.astype(np.int)])
 
 # alt/ref
 
