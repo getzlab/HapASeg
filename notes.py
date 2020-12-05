@@ -59,7 +59,7 @@ P[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
 
 plt.figure(4); plt.clf()
 Ph = P.iloc[:2000]
-plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["CI_hi_hap"] - Ph["median_hap"], Ph["median_hap"] - Ph["CI_lo_hap"]].T, fmt = 'none', alpha = 0.75)
+plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75)
 plt.xlim([0, 5e6])
 plt.xticks(np.linspace(*plt.xlim(), 20), P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
 plt.xlabel("SNP index")
@@ -69,8 +69,8 @@ plt.xlabel("SNP index")
 PA = Ph.loc[aidx]
 PB = Ph.loc[bidx]
 plt.figure(2); plt.clf()
-plt.errorbar(PA["pos"], y = PA["median"], yerr = np.c_[PA["CI_hi"] - PA["median"], PA["median"] - PA["CI_lo"]].T, fmt = 'none', alpha = 0.75)
-plt.errorbar(PB["pos"], y = PB["median"], yerr = np.c_[PB["CI_hi"] - PB["median"], PB["median"] - PB["CI_lo"]].T, fmt = 'none', alpha = 0.75)
+plt.errorbar(PA["pos"], y = PA["median"], yerr = np.c_[PA["median"] - PA["CI_lo"], PA["CI_hi"] - PA["median"]].T, fmt = 'none', alpha = 0.75)
+plt.errorbar(PB["pos"], y = PB["median"], yerr = np.c_[PB["median"] - PB["CI_lo"], PB["CI_hi"] - PB["median"]].T, fmt = 'none', alpha = 0.75)
 plt.xticks(np.linspace(*plt.xlim(), 20), P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
 plt.xlabel("SNP index (A)")
 
@@ -105,7 +105,7 @@ P.iloc[1:, pcs_idx] = np.log(P_next)
 # visualize switch prob
 
 plt.figure(5); plt.clf()
-plt.errorbar(P.index, y = P["median_hap"], yerr = np.c_[P["CI_hi_hap"] - P["median_hap"], P["median_hap"] - P["CI_lo_hap"]].T, fmt = 'none', alpha = 0.75)
+plt.errorbar(P.index, y = P["median_hap"], yerr = np.c_[P["median_hap"] - P["CI_lo_hap"], P["CI_hi_hap"] - P["median_hap"]].T, fmt = 'none', alpha = 0.75)
 plt.scatter(P.index[:-1], 0.1*P.iloc[:-1, nc_idx])
 plt.xlim([0, 300])
 plt.ylim([-1, 1])
