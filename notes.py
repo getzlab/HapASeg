@@ -65,11 +65,14 @@ P[["CI_lo_N", "median_N", "CI_hi_N"]] = CI
 
 # major/minor
 
+cmap = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]]
+
 plt.figure(4); plt.clf()
-Ph = P.iloc[:2000]
-plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75)
+Ph = P.iloc[:40000]
+#plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75)
+plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75, color = cmap[aidx.astype(np.int)])
 plt.errorbar(Ph["pos"], y = Ph["median_N"], yerr = np.c_[Ph["median_N"] - Ph["CI_lo_N"], Ph["CI_hi_N"] - Ph["median_N"]].T, fmt = 'none', alpha = 0.25, color = "g")
-plt.xlim([0, 5e6])
+#plt.xlim([0, 36e6])
 plt.xticks(np.linspace(*plt.xlim(), 20), P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
 plt.xlabel("SNP index")
 
