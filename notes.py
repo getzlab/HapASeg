@@ -94,9 +94,6 @@ plt.xlabel("SNP index (A)")
 #
 # compute beta distribution overlaps {{{
 
-# easiest to do diff of two betas, even though this maxes out at ~50%
-# TODO: better overlap test
-
 B = s.beta.rvs(P["MIN_COUNT"][:, None] + 1, P["MAJ_COUNT"][:, None] + 1, size=(len(P), 1000))
 
 p_gt = (B[:-1] - B[1:] > 0).mean(1)
@@ -140,22 +137,35 @@ FA = -np.inf*np.ones((1000, 1000))
 #FA[0, 1] = PA.iat[1, pc_idx]
 #FA[1, 0] = 1 - PA.iat[1, pc_idx]
 
+FA[0, 0] = 0
 FA[0, 1:1000] = np.cumsum(P.iloc[0:999, nc_idx])
 #FA[1, 1] = P.iat[0, ncs_idx]
 #FA[0:1000, 0] = PA.iloc[0:1000, pcs_idx]
 
+O = -np.inf*np.ones((1000, 1000))
+O[0, :] = 0
+
 for i in range(1, 300):
+    n_last = 0
     for j in range(i, 300):
-        FA[i, j] = np.maximum(
-          FA[i - 1, j - 1] + P.iat[j - 1, ncs_idx],
-          FA[i, j - 1] + P.iat[j - 1, nc_idx]
-        )
+        p_sw = FA[i - 1, j - 1] + P.iat[j - 1, ncs_idx]
+        p_st = FA[i, j - 1] + P.iat[j - 1, nc_idx]
+
+        FA[i, j] = np.maximum(p_sw, p_st)
+        if p_sw > p_st:
+            n_last = 0
+        else:
+            n_last += 1
+
+        O[i, j] = n_last
 
 plt.figure(1); plt.clf()
 plt.imshow(FA[:300, :300])
+plt.figure(11); plt.clf()
+plt.imshow(O[:300, :300], cmap = "binary")
 
 plt.figure(2); plt.clf()
-plt.step(np.r_[0:299], FA[:299, 299])
+plt.step(np.r_[0:299], np.exp(FA[:299, 299]))
 
 # traceback
 
@@ -168,13 +178,17 @@ for i in range(0, 299):
     stay[298 - i] = f
 
     j_t -= 1
-    if f == 1:
+    if f == 0:
         i_t -= 1
 
-FA[:299, m]
+plt.figure(5); plt.clf()
+Ps = P.iloc[0:300]
+plt.errorbar(Ps.index, y = Ps["median_hap"], yerr = np.c_[Ps["CI_hi_hap"] - Ps["median_hap"], Ps["median_hap"] - Ps["CI_lo_hap"]].T, fmt = 'none', alpha = 0.75)
+plt.scatter(Ps.index, Ps["median_hap"], c = np.r_[0, Ps["lP_next"].iloc[:-1]] > np.log(0.5), s = 100)
+plt.scatter(Ps.index, Ps["median_hap"], c = np.r_[1, stay], s = 32)
 
-bdy = [299]
-while True:
+
+plt.hlines(y = stay, xmin = np.flatnonzero(stay)
 
 # }}}
 
