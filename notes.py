@@ -95,6 +95,52 @@ plt.xticks(np.linspace(*plt.xlim(), 20), P["pos"].searchsorted(np.linspace(*plt.
 plt.xlabel("SNP index (A)")
 
 #
+#
+
+min_idx = P.columns.get_loc("MIN_COUNT")
+maj_idx = P.columns.get_loc("MAJ_COUNT")
+
+MAX_SNP_IDX = 1001
+bdy = np.c_[np.r_[0:(MAX_SNP_IDX - 1)], np.r_[1:MAX_SNP_IDX]]
+
+for i in range(0, 100):
+    seg_A = P.iloc[bdy[0, 0]:bdy[0, 1], min_idx].sum()
+    seg_B = P.iloc[bdy[0, 0]:bdy[0, 1], maj_idx].sum()
+
+    breakpoints = []
+
+    for b in bdy[1:]:
+        Brv = s.beta.rvs(seg_A + 1, seg_B + 1, size = 1000)
+
+        A = P.iloc[b[0]:b[1], min_idx].sum()
+        B = P.iloc[b[0]:b[1], maj_idx].sum()
+
+        Brv_cur = s.beta.rvs(A + 1, B + 1, size = 1000)
+        p_gt = (Brv_cur > Brv).mean()
+        prob_same = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)[0]
+
+        if np.random.rand() < prob_same:
+            seg_A += A
+            seg_B += B
+        else:
+            seg_A = A
+            seg_B = B
+            breakpoints.append(b[0])
+
+    bdy = np.r_[np.c_[0, breakpoints[0]], np.c_[np.r_[breakpoints[:-1]], np.r_[breakpoints[1:]]], np.c_[breakpoints[-1], MAX_SNP_IDX]]
+
+plt.figure(4); plt.clf()
+Ph = P.iloc[:MAX_SNP_IDX]
+
+for i in breakpoints:
+    plt.axvline(Ph.iloc[i, P.columns.get_loc("pos")], color = 'k', alpha = 0.2)
+
+plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75, color = cmap[aidx.astype(np.int)])
+#plt.xlim([0, 36e6])
+plt.xticks(np.linspace(*plt.xlim(), 20), P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
+plt.xlabel("SNP index")
+
+#
 # compute beta distribution overlaps {{{
 
 B = s.beta.rvs(P["MIN_COUNT"][:, None] + 1, P["MAJ_COUNT"][:, None] + 1, size=(len(P), 1000))
