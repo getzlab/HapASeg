@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import scipy.stats as s
+import scipy.special as ss
 
 from capy import txt
 
@@ -128,6 +129,15 @@ for i in range(0, 100):
             breakpoints.append(b[0])
 
     bdy = np.r_[np.c_[0, breakpoints[0]], np.c_[np.r_[breakpoints[:-1]], np.r_[breakpoints[1:]]], np.c_[breakpoints[-1], MAX_SNP_IDX]]
+
+    # compute overall marginal likelihood
+    marglik = 0
+    for b in bdy:
+        A = P.iloc[b[0]:b[1], min_idx].sum()
+        B = P.iloc[b[0]:b[1], maj_idx].sum()
+
+        marglik += ss.betaln(A + 1, B + 1)
+    print(marglik)
 
 plt.figure(4); plt.clf()
 Ph = P.iloc[:MAX_SNP_IDX]
