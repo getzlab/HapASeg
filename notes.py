@@ -130,14 +130,17 @@ for i in range(0, 100):
 
     bdy = np.r_[np.c_[0, breakpoints[0]], np.c_[np.r_[breakpoints[:-1]], np.r_[breakpoints[1:]]], np.c_[breakpoints[-1], MAX_SNP_IDX]]
 
-    # compute overall marginal likelihood
+    # compute marginal likelihood/posterior numerator
+    post_num = 0
     marglik = 0
     for b in bdy:
-        A = P.iloc[b[0]:b[1], min_idx].sum()
-        B = P.iloc[b[0]:b[1], maj_idx].sum()
+        A = P.iloc[b[0]:b[1], min_idx].sum() + 1
+        B = P.iloc[b[0]:b[1], maj_idx].sum() + 1
 
-        marglik += ss.betaln(A + 1, B + 1)
-    print(marglik)
+        f_hat = A/(A + B)
+        post_num += (A - 1)*np.log(f_hat) + (B - 1)*np.log(1 - f_hat)
+        marglik += ss.betaln(A, B)
+    #print(marglik, post_num - marglik, post_num)
 
 plt.figure(4); plt.clf()
 Ph = P.iloc[:MAX_SNP_IDX]
