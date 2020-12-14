@@ -138,11 +138,11 @@ def adj(bdy1, bdy2, A1 = None, B1 = None, A2 = None, B2 = None):
     y2_A = P.loc[(P.index >= bdy2[0]) & (P.index < bdy2[1]) & ~P["aidx"], "ALT_COUNT"].sum() + 1 
     y2_B = P.loc[(P.index >= bdy2[0]) & (P.index < bdy2[1]) & ~P["aidx"], "REF_COUNT"].sum() + 1 
 
-    lik_mis =   ss.betaln(x1_A + y1_B + y2_A + x2_B, y1_A + x1_B + x2_A + y2_B)
+    lik_mis   = ss.betaln(x1_A + y1_B + y2_A + x2_B, y1_A + x1_B + x2_A + y2_B)
     lik_nomis = ss.betaln(x1_A + y1_B + x2_A + y2_B, y1_A + x1_B + y2_A + x2_B)
 
     # TODO: this could be a function of the actual SNP phasing 
-    p_mis = 0.05
+    p_mis = 0.001
 
     # logsumexp
     m = np.maximum(lik_mis, lik_nomis)
