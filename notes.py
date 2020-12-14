@@ -45,6 +45,7 @@ P = P.merge(C, how = "inner", left_on = ["chr", "pos"], right_on = ["CONTIG", "P
 # alt/ref -> major/minor
 aidx = P["allele_A"] > 0
 bidx = P["allele_B"] > 0
+P["aidx"] = P["allele_A"] > 0
 
 P["MAJ_COUNT"] = pd.concat([P.loc[aidx, "ALT_COUNT"], P.loc[bidx, "REF_COUNT"]])
 P["MIN_COUNT"] = pd.concat([P.loc[aidx, "REF_COUNT"], P.loc[bidx, "ALT_COUNT"]])
@@ -124,18 +125,18 @@ def adj(bdy1, bdy2, A1 = None, B1 = None, A2 = None, B2 = None):
     # haps = x/y, segs = 1/2, beta params. = A/B
 
     # seg 1
-    x1_A = P.iloc[bdy1[0]:bdy1[1], alt_idx].loc[aidx[bdy1[0]:bdy1[1]]].sum() + 1
-    x1_B = P.iloc[bdy1[0]:bdy1[1], ref_idx].loc[aidx[bdy1[0]:bdy1[1]]].sum() + 1
+    x1_A = P.loc[(P.index >= bdy1[0]) & (P.index < bdy1[1]) & P["aidx"], "ALT_COUNT"].sum() + 1
+    x1_B = P.loc[(P.index >= bdy1[0]) & (P.index < bdy1[1]) & P["aidx"], "REF_COUNT"].sum() + 1 
 
-    y1_A = P.iloc[bdy1[0]:bdy1[1], alt_idx].loc[bidx[bdy1[0]:bdy1[1]]].sum() + 1
-    y1_B = P.iloc[bdy1[0]:bdy1[1], ref_idx].loc[bidx[bdy1[0]:bdy1[1]]].sum() + 1
+    y1_A = P.loc[(P.index >= bdy1[0]) & (P.index < bdy1[1]) & ~P["aidx"], "ALT_COUNT"].sum() + 1 
+    y1_B = P.loc[(P.index >= bdy1[0]) & (P.index < bdy1[1]) & ~P["aidx"], "REF_COUNT"].sum() + 1 
 
     # seg 2
-    x2_A = P.iloc[bdy2[0]:bdy2[1], alt_idx].loc[aidx[bdy2[0]:bdy2[1]]].sum() + 1
-    x2_B = P.iloc[bdy2[0]:bdy2[1], ref_idx].loc[aidx[bdy2[0]:bdy2[1]]].sum() + 1
+    x2_A = P.loc[(P.index >= bdy2[0]) & (P.index < bdy2[1]) & P["aidx"], "ALT_COUNT"].sum() + 1 
+    x2_B = P.loc[(P.index >= bdy2[0]) & (P.index < bdy2[1]) & P["aidx"], "REF_COUNT"].sum() + 1 
 
-    y2_A = P.iloc[bdy2[0]:bdy2[1], alt_idx].loc[bidx[bdy2[0]:bdy2[1]]].sum() + 1
-    y2_B = P.iloc[bdy2[0]:bdy2[1], ref_idx].loc[bidx[bdy2[0]:bdy2[1]]].sum() + 1
+    y2_A = P.loc[(P.index >= bdy2[0]) & (P.index < bdy2[1]) & ~P["aidx"], "ALT_COUNT"].sum() + 1 
+    y2_B = P.loc[(P.index >= bdy2[0]) & (P.index < bdy2[1]) & ~P["aidx"], "REF_COUNT"].sum() + 1 
 
     lik_mis =   ss.betaln(x1_A + y1_B + y2_A + x2_B, y1_A + x1_B + x2_A + y2_B)
     lik_nomis = ss.betaln(x1_A + y1_B + x2_A + y2_B, y1_A + x1_B + y2_A + x2_B)
