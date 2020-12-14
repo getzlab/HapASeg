@@ -100,6 +100,56 @@ plt.xlabel("SNP index (A)")
 
 min_idx = P.columns.get_loc("MIN_COUNT")
 maj_idx = P.columns.get_loc("MAJ_COUNT")
+alt_idx = P.columns.get_loc("ALT_COUNT")
+ref_idx = P.columns.get_loc("REF_COUNT")
+
+def adj(bdy1, bdy2, A1 = None, B1 = None, A2 = None, B2 = None):
+    A1 = P.iloc[bdy1[0]:bdy1[1], min_idx].sum() if A1 is None else A1
+    B1 = P.iloc[bdy1[0]:bdy1[1], maj_idx].sum() if B1 is None else B1
+    brv1 = s.beta.rvs(A1 + 1, B1 + 1, size = 1000)
+
+    A2 = P.iloc[bdy2[0]:bdy2[1], min_idx].sum() if A2 is None else A2
+    B2 = P.iloc[bdy2[0]:bdy2[1], maj_idx].sum() if B2 is None else B2
+    brv2 = s.beta.rvs(A2 + 1, B2 + 1, size = 1000)
+
+    #
+    # probability of segment similarity
+
+    p_gt = (brv1 > brv2).mean()
+    prob_same = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)[0]
+
+    #
+    # probability of phase switch
+
+    # haps = x/y, segs = 1/2, beta params. = A/B
+
+    # seg 1
+    x1_A = P.iloc[bdy1[0]:bdy1[1], alt_idx].loc[aidx[bdy1[0]:bdy1[1]]].sum() + 1
+    x1_B = P.iloc[bdy1[0]:bdy1[1], ref_idx].loc[aidx[bdy1[0]:bdy1[1]]].sum() + 1
+
+    y1_A = P.iloc[bdy1[0]:bdy1[1], alt_idx].loc[bidx[bdy1[0]:bdy1[1]]].sum() + 1
+    y1_B = P.iloc[bdy1[0]:bdy1[1], ref_idx].loc[bidx[bdy1[0]:bdy1[1]]].sum() + 1
+
+    # seg 2
+    x2_A = P.iloc[bdy2[0]:bdy2[1], alt_idx].loc[aidx[bdy2[0]:bdy2[1]]].sum() + 1
+    x2_B = P.iloc[bdy2[0]:bdy2[1], ref_idx].loc[aidx[bdy2[0]:bdy2[1]]].sum() + 1
+
+    y2_A = P.iloc[bdy2[0]:bdy2[1], alt_idx].loc[bidx[bdy2[0]:bdy2[1]]].sum() + 1
+    y2_B = P.iloc[bdy2[0]:bdy2[1], ref_idx].loc[bidx[bdy2[0]:bdy2[1]]].sum() + 1
+
+    lik_mis =   ss.betaln(x1_A + y1_B + y2_A + x2_B, y1_A + x1_B + x2_A + y2_B)
+    lik_nomis = ss.betaln(x1_A + y1_B + x2_A + y2_B, y1_A + x1_B + y2_A + x2_B)
+
+    # TODO: this could be a function of the actual SNP phasing 
+    p_mis = 0.05
+
+    # logsumexp
+    m = np.maximum(lik_mis, lik_nomis)
+    denom = m + np.log(np.exp(lik_mis - m)*p_mis + np.exp(lik_nomis - m)*(1 - p_mis))
+
+    prob_misphase = np.exp(lik_mis + np.log(p_mis) - denom)
+
+    return prob_same, prob_misphase
 
 MAX_SNP_IDX = 1001
 bdy = np.c_[np.r_[0:(MAX_SNP_IDX - 1)], np.r_[1:MAX_SNP_IDX]]
