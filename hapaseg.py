@@ -65,8 +65,8 @@ class Hapaseg:
         st = self.breakpoints[self.breakpoints.bisect_left(st)]
         br = self.breakpoints.bisect_right(st)
 
-        # we're trying to combine the last segment 
-        if br + 1 == len(self.breakpoints):
+        # we're trying to combine past the last segment 
+        if br + 1 >= len(self.breakpoints):
             return -1
 
         mid = self.breakpoints[br]
