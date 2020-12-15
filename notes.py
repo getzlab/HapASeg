@@ -200,10 +200,10 @@ while st < MAX_SNP_IDX - 10:
     # flip phase
     if trans == 1 or trans == 3:
         x = P_x.loc[en + 1, "MAJ_COUNT"]
-        P_x.at[en + 1, "MAJ_COUNT"] = P_x.at[en + 1, "MIN_COUNT"]
-        P_x.at[en + 1, "MIN_COUNT"] = x
-        P_x.at[en + 1, "aidx"] = ~P_x.at[en + 1, "aidx"]
-        P_x.at[en + 1, "flip"] += 1
+        P_x.at[en, "MAJ_COUNT"] = P_x.at[en, "MIN_COUNT"]
+        P_x.at[en, "MIN_COUNT"] = x
+        P_x.at[en, "aidx"] = ~P_x.at[en, "aidx"]
+        P_x.at[en, "flip"] += 1
 
     # extend segment
     if trans <= 1:
