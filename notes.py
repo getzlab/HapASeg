@@ -178,43 +178,53 @@ P_x["flip"] = 0
 
 # initial version will lack any memoization and be slow. we can add this later.
 
+def combine(st, breakpoint_set):
+    """
+    See if segment starting at `st` can be combined with the subsequent segment
+    Returns `st` if segments are combined, breakpoint if segments aren't combined,
+    and -1 if `st` is invalid (past the end)
+    """
+    st = breakpoint_set[breakpoint_set.bisect_left(st)]
+    br = breakpoint_set.bisect_right(st)
+
+    # we're trying to combine the last segment 
+    if br + 1 == len(breakpoint_set):
+        return -1
+
+    mid = breakpoint_set[br]
+    en = breakpoint_set[br + 1]
+
+    prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, mid], np.r_[mid, en], P_x)
+
+    trans = np.random.choice(np.r_[0:4],
+      p = np.r_[
+        prob_same*(1 - prob_misphase),         # 0: extend seg, phase is correct
+        prob_same_mis*prob_misphase,           # 1: extend seg, phase is wrong
+        (1 - prob_same)*(1 - prob_misphase),   # 2: new segment, phase is correct
+        (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
+      ]
+    )
+
+    # flip phase
+    if trans == 1 or trans == 3:
+        # en - 1 because loc is not half-open indexing, unlike iloc
+        x = P_x.loc[mid:(en - 1), "MAJ_COUNT"].copy()
+        P_x.loc[mid:(en - 1), "MAJ_COUNT"] = P_x.loc[mid:(en - 1), "MIN_COUNT"]
+        P_x.loc[mid:(en - 1), "MIN_COUNT"] = x
+        P_x.loc[mid:(en - 1), "aidx"] = ~P_x.loc[mid:(en - 1), "aidx"]
+        P_x.loc[mid:(en - 1), "flip"] += 1
+
+    # extend segment
+    if trans <= 1:
+        breakpoint_set.remove(mid)
+        return st
+    else:
+        return mid
+
 for i in range(0, N_INITIAL_PASSES):
     st = 0
-    while True:
-        st = breakpoints[breakpoints.bisect_left(st)]
-        br = breakpoints.bisect_right(st)
-
-        if br + 1 == len(breakpoints):
-            break
-
-        mid = breakpoints[br]
-        en = breakpoints[br + 1]
-
-        prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, mid], np.r_[mid, en], P_x)
-
-        trans = np.random.choice(np.r_[0:4],
-          p = np.r_[
-            prob_same*(1 - prob_misphase),         # 0: extend seg, phase is correct
-            prob_same_mis*prob_misphase,           # 1: extend seg, phase is wrong
-            (1 - prob_same)*(1 - prob_misphase),   # 2: new segment, phase is correct
-            (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
-          ]
-        )
-
-        # flip phase
-        if trans == 1 or trans == 3:
-            # en - 1 because loc is not half-open indexing, unlike iloc
-            x = P_x.loc[mid:(en - 1), "MAJ_COUNT"].copy()
-            P_x.loc[mid:(en - 1), "MAJ_COUNT"] = P_x.loc[mid:(en - 1), "MIN_COUNT"]
-            P_x.loc[mid:(en - 1), "MIN_COUNT"] = x
-            P_x.loc[mid:(en - 1), "aidx"] = ~P_x.loc[mid:(en - 1), "aidx"]
-            P_x.loc[mid:(en - 1), "flip"] += 1
-
-        # extend segment
-        if trans <= 1:
-            breakpoints.remove(mid)
-        else:
-            st = mid
+    while st != -1:
+        st = combine(st, breakpoints)
 
 # visualize
 
