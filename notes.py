@@ -162,13 +162,12 @@ def adj(bdy1, bdy2, P, A1 = None, B1 = None, A2 = None, B2 = None):
     return prob_same, prob_same_mis, prob_misphase
 
 MAX_SNP_IDX = 1001
-bdy = np.c_[np.r_[0:(MAX_SNP_IDX - 1)], np.r_[1:MAX_SNP_IDX]]
 
 # breakpoints of last iteration
-breakpoints = sc.SortedSet()
+breakpoints = sc.SortedSet(range(0, MAX_SNP_IDX))
 
 # count of all breakpoints ever created
-breakpoint_counter = sc.SortedDict()
+breakpoint_counter = sc.SortedDict(itertools.zip_longest(range(0, MAX_SNP_IDX), [0], fillvalue = 0))
 
 # we will alter P to correct misphasing
 P_x = P.copy()
@@ -178,10 +177,16 @@ P_x["flip"] = 0
 
 # initial version will lack any memoization and be slow. we can add this later.
 
-st = 0; en = 0
+st = 0
+while st < MAX_SNP_IDX - 10:
+    st = breakpoints[breakpoints.bisect_left(st)]
+    en = breakpoints[breakpoints.bisect_right(st)]
 
-for i in range(0, MAX_SNP_IDX):
-    prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, en + 1], np.r_[en + 1, en + 2], P_x)
+    # TODO: currently, this can merge a left segment of arbitrary length with the 
+    # single probe immediately to the left. to generalize to merging two adjacent
+    # segments of arbitrary length need three points: start, mid, end
+
+    prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, en], np.r_[en, en + 1], P_x)
 
     trans = np.random.choice(np.r_[0:4],
       p = np.r_[
@@ -202,10 +207,9 @@ for i in range(0, MAX_SNP_IDX):
 
     # extend segment
     if trans <= 1:
-        en += 1
+        breakpoints.remove(en)
     else:
-        st = en + 1; en = st
-        breakpoints.add(en + 1)
+        st = en
 
 for i in range(0, 100):
     seg_A = P.iloc[bdy[0, 0]:bdy[0, 1], min_idx].sum()
