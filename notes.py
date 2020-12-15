@@ -129,13 +129,14 @@ CI = s.beta.ppf([0.05, 0.5, 0.95], H.P["MAJ_COUNT"][:, None] + 1, H.P["MIN_COUNT
 H.P[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
 
 plt.figure(40); plt.clf()
+ax = plt.gca()
 Ph = H.P.iloc[0:H.MAX_SNP_IDX]
 #plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75)
 plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75, color = cmap[aidx.astype(np.int)])
 
 # phase switches
 o = 0
-for i in H.P["flip"].unique():
+for i in Ph["flip"].unique():
     if i == 0:
         continue
     plt.scatter(Ph.loc[Ph["flip"] == i, "pos"], o + np.zeros((Ph["flip"] == i).sum()))
@@ -143,10 +144,16 @@ for i in H.P["flip"].unique():
 
 # breakpoints
 for i in H.breakpoints:
-    plt.axvline(Ph.iloc[i, H.P.columns.get_loc("pos")], color = 'k', alpha = 0.2)
+    plt.axvline(Ph.iloc[i, Ph.columns.get_loc("pos")], color = 'k', alpha = 0.2)
+ax2 = ax.twiny()
+ax2.set_xticks(Ph.iloc[H.breakpoints, Ph.columns.get_loc("pos")]);
+ax2.set_xticklabels(range(0, len(H.breakpoints)));
+ax2.set_xlim(ax.get_xlim());
+ax2.set_xlabel("Breakpoint number")
 
-plt.xticks(np.linspace(*plt.xlim(), 20), H.P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
-plt.xlabel("SNP index")
+ax.set_xticks(np.linspace(*plt.xlim(), 20));
+ax.set_xticklabels(Ph["pos"].searchsorted(np.linspace(*plt.xlim(), 20)));
+ax.set_xlabel("SNP index")
 
 for i in range(0, 100):
     seg_A = P.iloc[bdy[0, 0]:bdy[0, 1], min_idx].sum()
