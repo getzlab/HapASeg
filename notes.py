@@ -161,7 +161,7 @@ def adj(bdy1, bdy2, P, A1 = None, B1 = None, A2 = None, B2 = None):
 
     return prob_same, prob_same_mis, prob_misphase
 
-MAX_SNP_IDX = 1001
+MAX_SNP_IDX = 2001
 
 # breakpoints of last iteration
 breakpoints = sc.SortedSet(range(0, MAX_SNP_IDX))
@@ -178,10 +178,15 @@ P_x["flip"] = 0
 # initial version will lack any memoization and be slow. we can add this later.
 
 st = 0
-while st < MAX_SNP_IDX - 10:
+while True:
     st = breakpoints[breakpoints.bisect_left(st)]
-    mid = breakpoints[breakpoints.bisect_right(st)]
-    en = breakpoints[breakpoints.bisect_right(st) + 1]
+    br = breakpoints.bisect_right(st)
+
+    if br == len(breakpoints):
+        break
+
+    mid = breakpoints[br]
+    en = breakpoints[br + 1] if br + 1 < len(breakpoints) else mid
 
     # TODO: currently, this can merge a left segment of arbitrary length with the 
     # single probe immediately to the left. to generalize to merging two adjacent
