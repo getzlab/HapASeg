@@ -187,7 +187,7 @@ while st < MAX_SNP_IDX - 10:
     # single probe immediately to the left. to generalize to merging two adjacent
     # segments of arbitrary length need three points: start, mid, end
 
-    prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, mid], np.r_[mid, mid + 1], P_x)
+    prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, mid], np.r_[mid, en], P_x)
 
     trans = np.random.choice(np.r_[0:4],
       p = np.r_[
