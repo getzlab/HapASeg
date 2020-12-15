@@ -42,11 +42,15 @@ class Hapaseg:
         # total log marginal likelihood of all segments
         self.marg_lik = np.array(self.seg_marg_liks.values()).sum()
 
-    def combine(self, st):
+    def combine(self, st, force = True):
         """
         Probabilistically combine segment starting at `st` with the subsequent segment.
         Returns `st` if segments are combined, breakpoint if segments aren't combined,
-        and -1 if `st` is invalid (past the end)
+        and -1 if `st` is invalid (past the end).
+
+        If force is True, then we will unconditionally accept the transition.
+        If force is False, we will probabilistically accept based on the marginal
+        likelihood ratio (Metropolis-like sampling)
         """
 
         st = self.breakpoints[self.breakpoints.bisect_left(st)]
@@ -71,18 +75,14 @@ class Hapaseg:
         )
 
         # flip phase
+        flipped = False
         if trans == 1 or trans == 3:
-            # en - 1 because loc is not half-open indexing, unlike iloc
-            x = self.P.loc[mid:(en - 1), "MAJ_COUNT"].copy()
-            self.P.loc[mid:(en - 1), "MAJ_COUNT"] = self.P.loc[mid:(en - 1), "MIN_COUNT"]
-            self.P.loc[mid:(en - 1), "MIN_COUNT"] = x
-            self.P.loc[mid:(en - 1), "aidx"] = ~self.P.loc[mid:(en - 1), "aidx"]
-            self.P.loc[mid:(en - 1), "flip"] += 1
+            self.flip_hap(mid, en)
+            flipped = True
 
         # extend segment
         if trans <= 1:
-            self.breakpoints.remove(mid)
-
+            prev_marg_lik = self.marg_lik
             self.marg_lik -= self.seg_marg_liks[st]
             self.marg_lik -= self.seg_marg_liks[mid]
             seg_lik = ss.betaln(
@@ -90,13 +90,40 @@ class Hapaseg:
               self.P.loc[st:(en - 1), "MAJ_COUNT"].sum() + 1
             )
             self.marg_lik += seg_lik
-            self.seg_marg_liks.__delitem__(mid)
-            self.seg_marg_liks[st] = seg_lik
 
-            return st
+            # accept transition
+            if force or np.log(np.random.rand()) < np.minimum(0, self.marg_lik - prev_marg_lik):
+                self.breakpoints.remove(mid)
+                self.seg_marg_liks.__delitem__(mid)
+                self.seg_marg_liks[st] = seg_lik
+
+                return st
+
+            # don't accept transition; undo
+            else:
+                if flipped:
+                    self.flip_hap(mid, en)
+                self.marg_lik = prev_marg_lik
+
+                return mid
+
+        # don't extend segment. marginal likelihood won't change, since phasing
+        # doesn't affect segment likelihoods
+        # TODO: should it?
         else:
             return mid
     
+    def flip_hap(self, st, en):
+        """
+        flips the haplotype of sites from st to en - 1 (Pythonic half indexing)
+        """
+        # note that loc indexing is closed, so we explicitly have to give it en - 1
+        x = self.P.loc[st:(en - 1), "MAJ_COUNT"].copy()
+        self.P.loc[st:(en - 1), "MAJ_COUNT"] = self.P.loc[st:(en - 1), "MIN_COUNT"]
+        self.P.loc[st:(en - 1), "MIN_COUNT"] = x
+        self.P.loc[st:(en - 1), "aidx"] = ~self.P.loc[st:(en - 1), "aidx"]
+        self.P.loc[st:(en - 1), "flip"] += 1
+
     def t_probs(self, bdy1, bdy2, A1 = None, B1 = None, A2 = None, B2 = None):
         """
         Compute transition probabilities for segments bounded by bdy1 and bdy2
