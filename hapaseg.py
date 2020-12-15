@@ -20,15 +20,24 @@ class Hapaseg:
         # number of times we've correct the phasing of a segment
         self.P["flip"] = 0
 
+        #
+        # config stuff
+
         # highest SNP to analyze
-        self.MAX_SNP_IDX = 2001
+        self.MAX_SNP_IDX = 5001
         self.N_INITIAL_PASSES = 10
+
+        #
+        # breakpoint storage
 
         # breakpoints of last iteration
         self.breakpoints = sc.SortedSet(range(0, self.MAX_SNP_IDX))
 
         # count of all breakpoints ever created
         self.breakpoint_counter = sc.SortedDict(itertools.zip_longest(range(0, self.MAX_SNP_IDX), [0], fillvalue = 0))
+
+        #
+        # marginal likelihoods
 
         # log marginal likelihoods for each segment
         self.seg_marg_liks = sc.SortedDict(zip(
