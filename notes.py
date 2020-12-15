@@ -200,7 +200,7 @@ while st < MAX_SNP_IDX - 10:
 
     # flip phase
     if trans == 1 or trans == 3:
-        x = P_x.loc[en + 1, "MAJ_COUNT"]
+        x = P_x.loc[mid, "MAJ_COUNT"]
         P_x.at[mid, "MAJ_COUNT"] = P_x.at[mid, "MIN_COUNT"]
         P_x.at[mid, "MIN_COUNT"] = x
         P_x.at[mid, "aidx"] = ~P_x.at[mid, "aidx"]
