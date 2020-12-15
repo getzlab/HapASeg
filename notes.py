@@ -200,11 +200,12 @@ while st < MAX_SNP_IDX - 10:
 
     # flip phase
     if trans == 1 or trans == 3:
-        x = P_x.loc[mid, "MAJ_COUNT"]
-        P_x.at[mid, "MAJ_COUNT"] = P_x.at[mid, "MIN_COUNT"]
-        P_x.at[mid, "MIN_COUNT"] = x
-        P_x.at[mid, "aidx"] = ~P_x.at[mid, "aidx"]
-        P_x.at[mid, "flip"] += 1
+        # en - 1 because loc is not half-open indexing, unlike iloc
+        x = P_x.loc[mid:(en - 1), "MAJ_COUNT"].copy()
+        P_x.loc[mid:(en - 1), "MAJ_COUNT"] = P_x.loc[mid:(en - 1), "MIN_COUNT"]
+        P_x.loc[mid:(en - 1), "MIN_COUNT"] = x
+        P_x.loc[mid:(en - 1), "aidx"] = ~P_x.loc[mid:(en - 1), "aidx"]
+        P_x.loc[mid:(en - 1), "flip"] += 1
 
     # extend segment
     if trans <= 1:
