@@ -82,15 +82,17 @@ class Hapaseg:
         # extend segment
         if trans <= 1:
             self.breakpoints.remove(mid)
-#            self.marg_lik -= self.seg_marg_liks[st]
-#            seg_lik = ss.betaln(
-#              self.P.loc[st:(en - 1), "MIN_COUNT"] + 1,
-#              self.P.loc[st:(en - 1), "MAJ_COUNT"] + 1
-#            )
-#            self.marg_lik += seg_lik
-#            print(self.marg_lik)
-#            self.seg_marg_liks.__delitem__(mid)
-#            self.seg_marg_liks[st] = seg_lik
+
+            self.marg_lik -= self.seg_marg_liks[st]
+            self.marg_lik -= self.seg_marg_liks[mid]
+            seg_lik = ss.betaln(
+              self.P.loc[st:(en - 1), "MIN_COUNT"].sum() + 1,
+              self.P.loc[st:(en - 1), "MAJ_COUNT"].sum() + 1
+            )
+            self.marg_lik += seg_lik
+            self.seg_marg_liks.__delitem__(mid)
+            self.seg_marg_liks[st] = seg_lik
+
             return st
         else:
             return mid
