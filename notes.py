@@ -180,13 +180,14 @@ P_x["flip"] = 0
 st = 0
 while st < MAX_SNP_IDX - 10:
     st = breakpoints[breakpoints.bisect_left(st)]
-    en = breakpoints[breakpoints.bisect_right(st)]
+    mid = breakpoints[breakpoints.bisect_right(st)]
+    en = breakpoints[breakpoints.bisect_right(st) + 1]
 
     # TODO: currently, this can merge a left segment of arbitrary length with the 
     # single probe immediately to the left. to generalize to merging two adjacent
     # segments of arbitrary length need three points: start, mid, end
 
-    prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, en], np.r_[en, en + 1], P_x)
+    prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, mid], np.r_[mid, mid + 1], P_x)
 
     trans = np.random.choice(np.r_[0:4],
       p = np.r_[
@@ -200,16 +201,16 @@ while st < MAX_SNP_IDX - 10:
     # flip phase
     if trans == 1 or trans == 3:
         x = P_x.loc[en + 1, "MAJ_COUNT"]
-        P_x.at[en, "MAJ_COUNT"] = P_x.at[en, "MIN_COUNT"]
-        P_x.at[en, "MIN_COUNT"] = x
-        P_x.at[en, "aidx"] = ~P_x.at[en, "aidx"]
-        P_x.at[en, "flip"] += 1
+        P_x.at[mid, "MAJ_COUNT"] = P_x.at[mid, "MIN_COUNT"]
+        P_x.at[mid, "MIN_COUNT"] = x
+        P_x.at[mid, "aidx"] = ~P_x.at[mid, "aidx"]
+        P_x.at[mid, "flip"] += 1
 
     # extend segment
     if trans <= 1:
-        breakpoints.remove(en)
+        breakpoints.remove(mid)
     else:
-        st = en
+        st = mid
 
 for i in range(0, 100):
     seg_A = P.iloc[bdy[0, 0]:bdy[0, 1], min_idx].sum()
