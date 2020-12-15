@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import scipy.stats as s
 import scipy.special as ss
+import sortedcontainers as sc
 
 from capy import txt
 
@@ -104,7 +105,7 @@ maj_idx = P.columns.get_loc("MAJ_COUNT")
 alt_idx = P.columns.get_loc("ALT_COUNT")
 ref_idx = P.columns.get_loc("REF_COUNT")
 
-def adj(bdy1, bdy2, A1 = None, B1 = None, A2 = None, B2 = None):
+def adj(bdy1, bdy2, P, A1 = None, B1 = None, A2 = None, B2 = None):
     A1 = P.iloc[bdy1[0]:bdy1[1], min_idx].sum() if A1 is None else A1
     B1 = P.iloc[bdy1[0]:bdy1[1], maj_idx].sum() if B1 is None else B1
     brv1 = s.beta.rvs(A1 + 1, B1 + 1, size = 1000)
@@ -113,11 +114,19 @@ def adj(bdy1, bdy2, A1 = None, B1 = None, A2 = None, B2 = None):
     B2 = P.iloc[bdy2[0]:bdy2[1], maj_idx].sum() if B2 is None else B2
     brv2 = s.beta.rvs(A2 + 1, B2 + 1, size = 1000)
 
+    # if second segment was misphased
+    brv3 = s.beta.rvs(B2 + 1, A2 + 1, size = 1000)
+
     #
     # probability of segment similarity
 
+    # correct phasing
     p_gt = (brv1 > brv2).mean()
     prob_same = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)[0]
+
+    # misphasing
+    p_gt = (brv1 > brv3).mean()
+    prob_same_mis = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)[0]
 
     #
     # probability of phase switch
@@ -150,10 +159,53 @@ def adj(bdy1, bdy2, A1 = None, B1 = None, A2 = None, B2 = None):
 
     prob_misphase = np.exp(lik_mis + np.log(p_mis) - denom)
 
-    return prob_same, prob_misphase
+    return prob_same, prob_same_mis, prob_misphase
 
 MAX_SNP_IDX = 1001
 bdy = np.c_[np.r_[0:(MAX_SNP_IDX - 1)], np.r_[1:MAX_SNP_IDX]]
+
+# breakpoints of last iteration
+breakpoints = sc.SortedSet()
+
+# count of all breakpoints ever created
+breakpoint_counter = sc.SortedDict()
+
+# we will alter P to correct misphasing
+P_x = P.copy()
+P_x["flip"] = 0
+
+# first pass: merge sequentially from the left
+
+# initial version will lack any memoization and be slow. we can add this later.
+
+st = 0; en = 0
+
+for i in range(0, MAX_SNP_IDX):
+    prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, en + 1], np.r_[en + 1, en + 2], P_x)
+
+    trans = np.random.choice(np.r_[0:4],
+      p = np.r_[
+        prob_same*(1 - prob_misphase),         # 0: extend seg, phase is correct
+        prob_same_mis*prob_misphase,           # 1: extend seg, phase is wrong
+        (1 - prob_same)*(1 - prob_misphase),   # 2: new segment, phase is correct
+        (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
+      ]
+    )
+
+    # flip phase
+    if trans == 1 or trans == 3:
+        x = P_x.loc[en + 1, "MAJ_COUNT"]
+        P_x.at[en + 1, "MAJ_COUNT"] = P_x.at[en + 1, "MIN_COUNT"]
+        P_x.at[en + 1, "MIN_COUNT"] = x
+        P_x.at[en + 1, "aidx"] = ~P_x.at[en + 1, "aidx"]
+        P_x.at[en + 1, "flip"] += 1
+
+    # extend segment
+    if trans <= 1:
+        en += 1
+    else:
+        st = en + 1; en = st
+        breakpoints.add(en + 1)
 
 for i in range(0, 100):
     seg_A = P.iloc[bdy[0, 0]:bdy[0, 1], min_idx].sum()
