@@ -1,0 +1,155 @@
+import itertools
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import scipy.stats as s
+import scipy.special as ss
+import sortedcontainers as sc
+
+class Hapaseg:
+    def __init__(self, P):
+        #
+        # dataframe stuff
+        self.P = P.copy() 
+
+        self.min_idx = P.columns.get_loc("MIN_COUNT")
+        self.maj_idx = P.columns.get_loc("MAJ_COUNT")
+        self.alt_idx = P.columns.get_loc("ALT_COUNT")
+        self.ref_idx = P.columns.get_loc("REF_COUNT")
+
+        # number of times we've correct the phasing of a segment
+        self.P["flip"] = 0
+
+        # highest SNP to analyze
+        self.MAX_SNP_IDX = 2001
+        self.N_INITIAL_PASSES = 10
+
+        # breakpoints of last iteration
+        self.breakpoints = sc.SortedSet(range(0, self.MAX_SNP_IDX))
+
+        # count of all breakpoints ever created
+        self.breakpoint_counter = sc.SortedDict(itertools.zip_longest(range(0, self.MAX_SNP_IDX), [0], fillvalue = 0))
+
+        # log marginal likelihoods for each segment
+        self.seg_marg_liks = sc.SortedDict(zip(
+          range(0, self.MAX_SNP_IDX),
+          ss.betaln(
+            P.iloc[0:self.MAX_SNP_IDX, self.min_idx] + 1,
+            P.iloc[0:self.MAX_SNP_IDX, self.maj_idx] + 1
+          )
+        ))
+
+        # total log marginal likelihood of all segments
+        self.marg_lik = np.array(self.seg_marg_liks.values()).sum()
+
+    def combine(self, st):
+        """
+        Probabilistically combine segment starting at `st` with the subsequent segment.
+        Returns `st` if segments are combined, breakpoint if segments aren't combined,
+        and -1 if `st` is invalid (past the end)
+        """
+
+        st = self.breakpoints[self.breakpoints.bisect_left(st)]
+        br = self.breakpoints.bisect_right(st)
+
+        # we're trying to combine the last segment 
+        if br + 1 == len(self.breakpoints):
+            return -1
+
+        mid = self.breakpoints[br]
+        en = self.breakpoints[br + 1]
+
+        prob_same, prob_same_mis, prob_misphase = self.t_probs(np.r_[st, mid], np.r_[mid, en])
+
+        trans = np.random.choice(np.r_[0:4],
+          p = np.r_[
+            prob_same*(1 - prob_misphase),         # 0: extend seg, phase is correct
+            prob_same_mis*prob_misphase,           # 1: extend seg, phase is wrong
+            (1 - prob_same)*(1 - prob_misphase),   # 2: new segment, phase is correct
+            (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
+          ]
+        )
+
+        # flip phase
+        if trans == 1 or trans == 3:
+            # en - 1 because loc is not half-open indexing, unlike iloc
+            x = self.P.loc[mid:(en - 1), "MAJ_COUNT"].copy()
+            self.P.loc[mid:(en - 1), "MAJ_COUNT"] = self.P.loc[mid:(en - 1), "MIN_COUNT"]
+            self.P.loc[mid:(en - 1), "MIN_COUNT"] = x
+            self.P.loc[mid:(en - 1), "aidx"] = ~self.P.loc[mid:(en - 1), "aidx"]
+            self.P.loc[mid:(en - 1), "flip"] += 1
+
+        # extend segment
+        if trans <= 1:
+            self.breakpoints.remove(mid)
+#            self.marg_lik -= self.seg_marg_liks[st]
+#            seg_lik = ss.betaln(
+#              self.P.loc[st:(en - 1), "MIN_COUNT"] + 1,
+#              self.P.loc[st:(en - 1), "MAJ_COUNT"] + 1
+#            )
+#            self.marg_lik += seg_lik
+#            print(self.marg_lik)
+#            self.seg_marg_liks.__delitem__(mid)
+#            self.seg_marg_liks[st] = seg_lik
+            return st
+        else:
+            return mid
+    
+    def t_probs(self, bdy1, bdy2, A1 = None, B1 = None, A2 = None, B2 = None):
+        """
+        Compute transition probabilities for segments bounded by bdy1 and bdy2
+        """
+        A1 = self.P.iloc[bdy1[0]:bdy1[1], self.min_idx].sum() if A1 is None else A1
+        B1 = self.P.iloc[bdy1[0]:bdy1[1], self.maj_idx].sum() if B1 is None else B1
+        brv1 = s.beta.rvs(A1 + 1, B1 + 1, size = 1000)
+
+        A2 = self.P.iloc[bdy2[0]:bdy2[1], self.min_idx].sum() if A2 is None else A2
+        B2 = self.P.iloc[bdy2[0]:bdy2[1], self.maj_idx].sum() if B2 is None else B2
+        brv2 = s.beta.rvs(A2 + 1, B2 + 1, size = 1000)
+ 
+        # if second segment was misphased
+        brv3 = s.beta.rvs(B2 + 1, A2 + 1, size = 1000)
+
+        #
+        # probability of segment similarity
+
+        # correct phasing
+        p_gt = (brv1 > brv2).mean()
+        prob_same = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)[0]
+
+        # misphasing
+        p_gt = (brv1 > brv3).mean()
+        prob_same_mis = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)[0]
+
+        #
+        # probability of phase switch
+
+        # haps = x/y, segs = 1/2, beta params. = A/B
+
+        # seg 1
+        x1_A = self.P.loc[(self.P.index >= bdy1[0]) & (self.P.index < bdy1[1]) & self.P["aidx"], "ALT_COUNT"].sum() + 1
+        x1_B = self.P.loc[(self.P.index >= bdy1[0]) & (self.P.index < bdy1[1]) & self.P["aidx"], "REF_COUNT"].sum() + 1 
+
+        y1_A = self.P.loc[(self.P.index >= bdy1[0]) & (self.P.index < bdy1[1]) & ~self.P["aidx"], "ALT_COUNT"].sum() + 1 
+        y1_B = self.P.loc[(self.P.index >= bdy1[0]) & (self.P.index < bdy1[1]) & ~self.P["aidx"], "REF_COUNT"].sum() + 1 
+
+        # seg 2
+        x2_A = self.P.loc[(self.P.index >= bdy2[0]) & (self.P.index < bdy2[1]) & self.P["aidx"], "ALT_COUNT"].sum() + 1 
+        x2_B = self.P.loc[(self.P.index >= bdy2[0]) & (self.P.index < bdy2[1]) & self.P["aidx"], "REF_COUNT"].sum() + 1 
+
+        y2_A = self.P.loc[(self.P.index >= bdy2[0]) & (self.P.index < bdy2[1]) & ~self.P["aidx"], "ALT_COUNT"].sum() + 1 
+        y2_B = self.P.loc[(self.P.index >= bdy2[0]) & (self.P.index < bdy2[1]) & ~self.P["aidx"], "REF_COUNT"].sum() + 1 
+
+        lik_mis   = ss.betaln(x1_A + y1_B + y2_A + x2_B, y1_A + x1_B + x2_A + y2_B)
+        lik_nomis = ss.betaln(x1_A + y1_B + x2_A + y2_B, y1_A + x1_B + y2_A + x2_B)
+
+        # TODO: this could be a function of the actual SNP phasing 
+        p_mis = 0.001
+
+        # logsumexp
+        m = np.maximum(lik_mis, lik_nomis)
+        denom = m + np.log(np.exp(lik_mis - m)*p_mis + np.exp(lik_nomis - m)*(1 - p_mis))
+
+        prob_misphase = np.exp(lik_mis + np.log(p_mis) - denom)
+
+        return prob_same, prob_same_mis, prob_misphase

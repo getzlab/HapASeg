@@ -4,6 +4,7 @@ import pandas as pd
 import scipy.stats as s
 import scipy.special as ss
 import sortedcontainers as sc
+import sys
 
 from capy import txt
 
@@ -105,150 +106,46 @@ maj_idx = P.columns.get_loc("MAJ_COUNT")
 alt_idx = P.columns.get_loc("ALT_COUNT")
 ref_idx = P.columns.get_loc("REF_COUNT")
 
-def adj(bdy1, bdy2, P, A1 = None, B1 = None, A2 = None, B2 = None):
-    A1 = P.iloc[bdy1[0]:bdy1[1], min_idx].sum() if A1 is None else A1
-    B1 = P.iloc[bdy1[0]:bdy1[1], maj_idx].sum() if B1 is None else B1
-    brv1 = s.beta.rvs(A1 + 1, B1 + 1, size = 1000)
+#
+# load functions from Hapaseg
 
-    A2 = P.iloc[bdy2[0]:bdy2[1], min_idx].sum() if A2 is None else A2
-    B2 = P.iloc[bdy2[0]:bdy2[1], maj_idx].sum() if B2 is None else B2
-    brv2 = s.beta.rvs(A2 + 1, B2 + 1, size = 1000)
+sys.path.append(".")
+import hapaseg
 
-    # if second segment was misphased
-    brv3 = s.beta.rvs(B2 + 1, A2 + 1, size = 1000)
-
-    #
-    # probability of segment similarity
-
-    # correct phasing
-    p_gt = (brv1 > brv2).mean()
-    prob_same = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)[0]
-
-    # misphasing
-    p_gt = (brv1 > brv3).mean()
-    prob_same_mis = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)[0]
-
-    #
-    # probability of phase switch
-
-    # haps = x/y, segs = 1/2, beta params. = A/B
-
-    # seg 1
-    x1_A = P.loc[(P.index >= bdy1[0]) & (P.index < bdy1[1]) & P["aidx"], "ALT_COUNT"].sum() + 1
-    x1_B = P.loc[(P.index >= bdy1[0]) & (P.index < bdy1[1]) & P["aidx"], "REF_COUNT"].sum() + 1 
-
-    y1_A = P.loc[(P.index >= bdy1[0]) & (P.index < bdy1[1]) & ~P["aidx"], "ALT_COUNT"].sum() + 1 
-    y1_B = P.loc[(P.index >= bdy1[0]) & (P.index < bdy1[1]) & ~P["aidx"], "REF_COUNT"].sum() + 1 
-
-    # seg 2
-    x2_A = P.loc[(P.index >= bdy2[0]) & (P.index < bdy2[1]) & P["aidx"], "ALT_COUNT"].sum() + 1 
-    x2_B = P.loc[(P.index >= bdy2[0]) & (P.index < bdy2[1]) & P["aidx"], "REF_COUNT"].sum() + 1 
-
-    y2_A = P.loc[(P.index >= bdy2[0]) & (P.index < bdy2[1]) & ~P["aidx"], "ALT_COUNT"].sum() + 1 
-    y2_B = P.loc[(P.index >= bdy2[0]) & (P.index < bdy2[1]) & ~P["aidx"], "REF_COUNT"].sum() + 1 
-
-    lik_mis   = ss.betaln(x1_A + y1_B + y2_A + x2_B, y1_A + x1_B + x2_A + y2_B)
-    lik_nomis = ss.betaln(x1_A + y1_B + x2_A + y2_B, y1_A + x1_B + y2_A + x2_B)
-
-    # TODO: this could be a function of the actual SNP phasing 
-    p_mis = 0.001
-
-    # logsumexp
-    m = np.maximum(lik_mis, lik_nomis)
-    denom = m + np.log(np.exp(lik_mis - m)*p_mis + np.exp(lik_nomis - m)*(1 - p_mis))
-
-    prob_misphase = np.exp(lik_mis + np.log(p_mis) - denom)
-
-    return prob_same, prob_same_mis, prob_misphase
-
-MAX_SNP_IDX = 2001
-N_INITIAL_PASSES = 10
-
-# breakpoints of last iteration
-breakpoints = sc.SortedSet(range(0, MAX_SNP_IDX))
-
-# count of all breakpoints ever created
-breakpoint_counter = sc.SortedDict(itertools.zip_longest(range(0, MAX_SNP_IDX), [0], fillvalue = 0))
-
-# we will alter P to correct misphasing
-P_x = P.copy()
-P_x["flip"] = 0
+H = hapaseg.Hapaseg(P)
 
 # first pass: merge sequentially from the left, up to N_INITIAL_PASSES times
-
 # initial version will lack any memoization and be slow. we can add this later.
 
-def combine(st, breakpoint_set):
-    """
-    See if segment starting at `st` can be combined with the subsequent segment
-    Returns `st` if segments are combined, breakpoint if segments aren't combined,
-    and -1 if `st` is invalid (past the end)
-    """
-    st = breakpoint_set[breakpoint_set.bisect_left(st)]
-    br = breakpoint_set.bisect_right(st)
-
-    # we're trying to combine the last segment 
-    if br + 1 == len(breakpoint_set):
-        return -1
-
-    mid = breakpoint_set[br]
-    en = breakpoint_set[br + 1]
-
-    prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, mid], np.r_[mid, en], P_x)
-
-    trans = np.random.choice(np.r_[0:4],
-      p = np.r_[
-        prob_same*(1 - prob_misphase),         # 0: extend seg, phase is correct
-        prob_same_mis*prob_misphase,           # 1: extend seg, phase is wrong
-        (1 - prob_same)*(1 - prob_misphase),   # 2: new segment, phase is correct
-        (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
-      ]
-    )
-
-    # flip phase
-    if trans == 1 or trans == 3:
-        # en - 1 because loc is not half-open indexing, unlike iloc
-        x = P_x.loc[mid:(en - 1), "MAJ_COUNT"].copy()
-        P_x.loc[mid:(en - 1), "MAJ_COUNT"] = P_x.loc[mid:(en - 1), "MIN_COUNT"]
-        P_x.loc[mid:(en - 1), "MIN_COUNT"] = x
-        P_x.loc[mid:(en - 1), "aidx"] = ~P_x.loc[mid:(en - 1), "aidx"]
-        P_x.loc[mid:(en - 1), "flip"] += 1
-
-    # extend segment
-    if trans <= 1:
-        breakpoint_set.remove(mid)
-        return st
-    else:
-        return mid
-
-for i in range(0, N_INITIAL_PASSES):
+for i in range(0, 2):
     st = 0
     while st != -1:
-        st = combine(st, breakpoints)
+        st = H.combine(st)
 
+#
 # visualize
 
-CI = s.beta.ppf([0.05, 0.5, 0.95], P_x["MAJ_COUNT"][:, None] + 1, P_x["MIN_COUNT"][:, None] + 1)
-P_x[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
+CI = s.beta.ppf([0.05, 0.5, 0.95], H.P["MAJ_COUNT"][:, None] + 1, H.P["MIN_COUNT"][:, None] + 1)
+H.P[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
 
 plt.figure(40); plt.clf()
-Ph = P_x.iloc[0:MAX_SNP_IDX]
+Ph = H.P.iloc[0:H.MAX_SNP_IDX]
 #plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75)
 plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75, color = cmap[aidx.astype(np.int)])
 
 # phase switches
 o = 0
-for i in P_x["flip"].unique():
+for i in H.P["flip"].unique():
     if i == 0:
         continue
     plt.scatter(Ph.loc[Ph["flip"] == i, "pos"], o + np.zeros((Ph["flip"] == i).sum()))
     o -= 0.01
 
 # breakpoints
-for i in breakpoints:
-    plt.axvline(Ph.iloc[i, P.columns.get_loc("pos")], color = 'k', alpha = 0.2)
+for i in H.breakpoints:
+    plt.axvline(Ph.iloc[i, H.P.columns.get_loc("pos")], color = 'k', alpha = 0.2)
 
-plt.xticks(np.linspace(*plt.xlim(), 20), P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
+plt.xticks(np.linspace(*plt.xlim(), 20), H.P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
 plt.xlabel("SNP index")
 
 for i in range(0, 100):
