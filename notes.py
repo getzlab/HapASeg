@@ -218,6 +218,31 @@ while True:
     else:
         st = mid
 
+# visualize
+
+CI = s.beta.ppf([0.05, 0.5, 0.95], P_x["MAJ_COUNT"][:, None] + 1, P_x["MIN_COUNT"][:, None] + 1)
+P_x[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
+
+plt.figure(40); plt.clf()
+Ph = P_x.iloc[0:MAX_SNP_IDX]
+#plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75)
+plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75, color = cmap[aidx.astype(np.int)])
+
+# phase switches
+o = 0
+for i in P_x["flip"].unique():
+    if i == 0:
+        continue
+    plt.scatter(Ph.loc[Ph["flip"] == i, "pos"], o + np.zeros((Ph["flip"] == i).sum()))
+    o -= 0.01
+
+# breakpoints
+for i in breakpoints:
+    plt.axvline(Ph.iloc[i, P.columns.get_loc("pos")], color = 'k', alpha = 0.2)
+
+plt.xticks(np.linspace(*plt.xlim(), 20), P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)))
+plt.xlabel("SNP index")
+
 for i in range(0, 100):
     seg_A = P.iloc[bdy[0, 0]:bdy[0, 1], min_idx].sum()
     seg_B = P.iloc[bdy[0, 0]:bdy[0, 1], maj_idx].sum()
