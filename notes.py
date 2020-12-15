@@ -184,11 +184,11 @@ for i in range(0, N_INITIAL_PASSES):
         st = breakpoints[breakpoints.bisect_left(st)]
         br = breakpoints.bisect_right(st)
 
-        if br == len(breakpoints):
+        if br + 1 == len(breakpoints):
             break
 
         mid = breakpoints[br]
-        en = breakpoints[br + 1] if br + 1 < len(breakpoints) else mid
+        en = breakpoints[br + 1]
 
         prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, mid], np.r_[mid, en], P_x)
 
