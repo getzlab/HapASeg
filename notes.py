@@ -162,6 +162,7 @@ def adj(bdy1, bdy2, P, A1 = None, B1 = None, A2 = None, B2 = None):
     return prob_same, prob_same_mis, prob_misphase
 
 MAX_SNP_IDX = 2001
+N_INITIAL_PASSES = 10
 
 # breakpoints of last iteration
 breakpoints = sc.SortedSet(range(0, MAX_SNP_IDX))
@@ -173,50 +174,47 @@ breakpoint_counter = sc.SortedDict(itertools.zip_longest(range(0, MAX_SNP_IDX), 
 P_x = P.copy()
 P_x["flip"] = 0
 
-# first pass: merge sequentially from the left
+# first pass: merge sequentially from the left, up to N_INITIAL_PASSES times
 
 # initial version will lack any memoization and be slow. we can add this later.
 
-st = 0
-while True:
-    st = breakpoints[breakpoints.bisect_left(st)]
-    br = breakpoints.bisect_right(st)
+for i in range(0, N_INITIAL_PASSES):
+    st = 0
+    while True:
+        st = breakpoints[breakpoints.bisect_left(st)]
+        br = breakpoints.bisect_right(st)
 
-    if br == len(breakpoints):
-        break
+        if br == len(breakpoints):
+            break
 
-    mid = breakpoints[br]
-    en = breakpoints[br + 1] if br + 1 < len(breakpoints) else mid
+        mid = breakpoints[br]
+        en = breakpoints[br + 1] if br + 1 < len(breakpoints) else mid
 
-    # TODO: currently, this can merge a left segment of arbitrary length with the 
-    # single probe immediately to the left. to generalize to merging two adjacent
-    # segments of arbitrary length need three points: start, mid, end
+        prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, mid], np.r_[mid, en], P_x)
 
-    prob_same, prob_same_mis, prob_misphase = adj(np.r_[st, mid], np.r_[mid, en], P_x)
+        trans = np.random.choice(np.r_[0:4],
+          p = np.r_[
+            prob_same*(1 - prob_misphase),         # 0: extend seg, phase is correct
+            prob_same_mis*prob_misphase,           # 1: extend seg, phase is wrong
+            (1 - prob_same)*(1 - prob_misphase),   # 2: new segment, phase is correct
+            (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
+          ]
+        )
 
-    trans = np.random.choice(np.r_[0:4],
-      p = np.r_[
-        prob_same*(1 - prob_misphase),         # 0: extend seg, phase is correct
-        prob_same_mis*prob_misphase,           # 1: extend seg, phase is wrong
-        (1 - prob_same)*(1 - prob_misphase),   # 2: new segment, phase is correct
-        (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
-      ]
-    )
+        # flip phase
+        if trans == 1 or trans == 3:
+            # en - 1 because loc is not half-open indexing, unlike iloc
+            x = P_x.loc[mid:(en - 1), "MAJ_COUNT"].copy()
+            P_x.loc[mid:(en - 1), "MAJ_COUNT"] = P_x.loc[mid:(en - 1), "MIN_COUNT"]
+            P_x.loc[mid:(en - 1), "MIN_COUNT"] = x
+            P_x.loc[mid:(en - 1), "aidx"] = ~P_x.loc[mid:(en - 1), "aidx"]
+            P_x.loc[mid:(en - 1), "flip"] += 1
 
-    # flip phase
-    if trans == 1 or trans == 3:
-        # en - 1 because loc is not half-open indexing, unlike iloc
-        x = P_x.loc[mid:(en - 1), "MAJ_COUNT"].copy()
-        P_x.loc[mid:(en - 1), "MAJ_COUNT"] = P_x.loc[mid:(en - 1), "MIN_COUNT"]
-        P_x.loc[mid:(en - 1), "MIN_COUNT"] = x
-        P_x.loc[mid:(en - 1), "aidx"] = ~P_x.loc[mid:(en - 1), "aidx"]
-        P_x.loc[mid:(en - 1), "flip"] += 1
-
-    # extend segment
-    if trans <= 1:
-        breakpoints.remove(mid)
-    else:
-        st = mid
+        # extend segment
+        if trans <= 1:
+            breakpoints.remove(mid)
+        else:
+            st = mid
 
 # visualize
 
