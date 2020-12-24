@@ -62,7 +62,7 @@ class Hapaseg:
         # total log marginal likelihood of all segments
         self.marg_lik = np.array(self.seg_marg_liks.values()).sum()
 
-    def combine(self, st, force = True):
+    def combine(self, st = None, b_idx = None, force = True):
         """
         Probabilistically combine segment starting at `st` with the subsequent segment.
         Returns `st` if segments are combined, breakpoint if segments aren't combined,
@@ -73,7 +73,12 @@ class Hapaseg:
         likelihood ratio (Metropolis-like sampling)
         """
 
-        st = self.breakpoints[self.breakpoints.bisect_left(st)]
+        if st is not None:
+            st = self.breakpoints[self.breakpoints.bisect_left(st)]
+        elif b_idx is not None:
+            st = self.breakpoints[b_idx]
+        else:
+            raise ValueError("You must either specify nearest start coordinate or breakpoint index!")
         br = self.breakpoints.bisect_right(st)
 
         # we're trying to combine past the last segment 
