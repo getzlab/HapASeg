@@ -204,24 +204,28 @@ class Hapaseg:
 
         return prob_same, prob_same_mis, prob_misphase
 
-    def compute_cumsums(self):
+    def compute_all_cumsums(self):
         bpl = np.array(self.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
-        for st, en in bpl[0:10]:
-            # major
-            self.cs_MAJ[st] = np.zeros(en - st, dtype = np.int)
-            self.cs_MAJ[st][0] = self.P.iat[st, maj_idx]
-            for i in range(st + 1, en):
-                self.cs_MAJ[st][i - st] = self.cs_MAJ[st][i - st - 1] + self.P.iat[i, maj_idx]
-            # minor
-            self.cs_MIN[st] = np.zeros(en - st, dtype = np.int)
-            self.cs_MIN[st][0] = self.P.iat[st, min_idx]
-            for i in range(st + 1, en):
-                self.cs_MIN[st][i - st] = self.cs_MIN[st][i - st - 1] + self.P.iat[i, min_idx]
+        for st, en in bpl:
+            self.cs_MAJ[st], self.cs_MIN[st], self.split_prob[st] = self.compute_cumsum(st, en)
 
-            # marginal likelihoods
-            ml = ss.betaln(self.cs_MAJ[st] + 1, self.cs_MIN[st] + 1) + \
-            ss.betaln(self.cs_MAJ[st][-1] - self.cs_MAJ[st] + 1, self.cs_MIN[st][-1] - self.cs_MIN[st] + 1)
+    def compute_cumsum(self, st, en):
+        # major
+        cs_MAJ = np.zeros(en - st, dtype = np.int)
+        cs_MAJ[0] = self.P.iat[st, self.maj_idx]
+        for i in range(st + 1, en):
+            cs_MAJ[i - st] = cs_MAJ[i - st - 1] + self.P.iat[i, self.maj_idx]
+        # minor
+        cs_MIN = np.zeros(en - st, dtype = np.int)
+        cs_MIN[0] = self.P.iat[st, self.min_idx]
+        for i in range(st + 1, en):
+            cs_MIN[i - st] = cs_MIN[i - st - 1] + self.P.iat[i, self.min_idx]
 
-            # logsumexp to get probabilities
-            m = np.max(ml)
-            self.split_prob[st] = np.exp(ml - (m + np.log(np.exp(ml - m).sum())))
+        # marginal likelihoods
+        ml = ss.betaln(cs_MAJ + 1, cs_MIN + 1) + ss.betaln(cs_MAJ[-1] - cs_MAJ + 1, cs_MIN[-1] - cs_MIN + 1)
+
+        # logsumexp to get probabilities
+        m = np.max(ml)
+        split_prob = np.exp(ml - (m + np.log(np.exp(ml - m).sum())))
+
+        return cs_MAJ, cs_MIN, split_prob
