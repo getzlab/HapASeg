@@ -37,6 +37,17 @@ class Hapaseg:
         self.breakpoint_counter = sc.SortedDict(itertools.zip_longest(range(0, self.MAX_SNP_IDX), [0], fillvalue = 0))
 
         #
+        # cumsum arrays for each segment
+
+        # will be populated by compute_cumsums()
+
+        self.cs_MAJ = sc.SortedDict()
+        self.cs_MIN = sc.SortedDict()
+
+        # probability of picking a breakpoint
+        self.split_prob = sc.SortedDict()
+
+        #
         # marginal likelihoods
 
         # log marginal likelihoods for each segment
@@ -182,6 +193,7 @@ class Hapaseg:
         lik_nomis = ss.betaln(x1_A + y1_B + x2_A + y2_B, y1_A + x1_B + y2_A + x2_B)
 
         # TODO: this could be a function of the actual SNP phasing 
+        # overall misphase prob. may also be returned from EAGLE
         p_mis = 0.001
 
         # logsumexp
@@ -191,3 +203,25 @@ class Hapaseg:
         prob_misphase = np.exp(lik_mis + np.log(p_mis) - denom)
 
         return prob_same, prob_same_mis, prob_misphase
+
+    def compute_cumsums(self):
+        bpl = np.array(self.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
+        for st, en in bpl[0:10]:
+            # major
+            self.cs_MAJ[st] = np.zeros(en - st, dtype = np.int)
+            self.cs_MAJ[st][0] = self.P.iat[st, maj_idx]
+            for i in range(st + 1, en):
+                self.cs_MAJ[st][i - st] = self.cs_MAJ[st][i - st - 1] + self.P.iat[i, maj_idx]
+            # minor
+            self.cs_MIN[st] = np.zeros(en - st, dtype = np.int)
+            self.cs_MIN[st][0] = self.P.iat[st, min_idx]
+            for i in range(st + 1, en):
+                self.cs_MIN[st][i - st] = self.cs_MIN[st][i - st - 1] + self.P.iat[i, min_idx]
+
+            # marginal likelihoods
+            ml = ss.betaln(self.cs_MAJ[st] + 1, self.cs_MIN[st] + 1) + \
+            ss.betaln(self.cs_MAJ[st][-1] - self.cs_MAJ[st] + 1, self.cs_MIN[st][-1] - self.cs_MIN[st] + 1)
+
+            # logsumexp to get probabilities
+            m = np.max(ml)
+            self.split_prob[st] = np.exp(ml - (m + np.log(np.exp(ml - m).sum())))
