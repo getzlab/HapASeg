@@ -242,3 +242,80 @@ class Hapaseg:
         split_prob = np.exp(ml - (m + np.log(np.exp(ml - m).sum())))
 
         return cs_MAJ, cs_MIN, split_prob
+
+    def split(self, st = None, b_idx = None):
+        if st is not None:
+            st = self.breakpoints[self.breakpoints.bisect_left(st)]
+        elif b_idx is not None:
+            st = self.breakpoints[b_idx]
+        else:
+            raise ValueError("You must either specify nearest start coordinate or breakpoint index!")
+        br = self.breakpoints.bisect_right(st)
+
+        # we're trying to split something past the last segment
+        if br + 1 >= len(self.breakpoints):
+            return -1
+
+        en = self.breakpoints[br]
+
+        # compute split probabilities for this segment
+        # TODO: memoize; use global self.cs_MAJ/cs_MIN/split_probs
+        _, _, split_probs = self.compute_cumsum(st, en)
+
+        b = np.random.choice(np.r_[0:len(split_probs)], p = split_probs)
+        mid = b + st + 1
+
+        # we're not splitting this segment
+        if b == len(split_probs) - 1:
+            return
+
+        # otherwise, compute transition probabilities for split
+        # we use same transition probabilities as segment combining, but we'll
+        # switch them later
+        prob_same, prob_same_mis, prob_misphase = self.t_probs(np.r_[st, mid], np.r_[mid, en])
+
+        # PMF of proposal distribution q(s1+2|s1,s2)
+        trans_probs = np.r_[
+          prob_same*(1 - prob_misphase),         # 0: extend seg, phase is correct
+          prob_same_mis*prob_misphase,           # 1: extend seg, phase is wrong
+          (1 - prob_same)*(1 - prob_misphase),   # 2: new segment, phase is correct
+          (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
+        ]
+
+        #breakpoint()
+
+        trans = np.random.choice(np.r_[0:4], p = trans_probs)
+
+        # flip phase
+        flipped = False
+        if trans == 1 or trans == 3:
+            self.flip_hap(mid, en)
+            flipped = True
+
+        # split segment
+        if trans > 1:
+            prev_marg_lik = self.marg_lik
+            self.marg_lik -= self.seg_marg_liks[st]
+            seg_lik_1 = ss.betaln(
+              self.P.loc[st:(mid - 1), "MIN_COUNT"].sum() + 1,
+              self.P.loc[st:(mid - 1), "MAJ_COUNT"].sum() + 1
+            )
+            seg_lik_2 = ss.betaln(
+              self.P.loc[mid:(en - 1), "MIN_COUNT"].sum() + 1,
+              self.P.loc[mid:(en - 1), "MAJ_COUNT"].sum() + 1
+            )
+            self.marg_lik += seg_lik_1 + seg_lik_2
+
+            log_q_rat = np.log(trans_probs[trans & 1]) - (np.log(split_probs[b]) + np.log(trans_probs[trans]))
+
+            # accept transition
+            if np.log(np.random.rand()) < np.minimum(0, self.marg_lik - prev_marg_lik + log_q_rat):
+                self.breakpoints.add(mid)
+                self.seg_marg_liks[st] = seg_lik_1
+                self.seg_marg_liks[mid] = seg_lik_2
+
+            # don't accept; revert
+            else:
+                if flipped:
+                    self.flip_hap(mid, en)
+                self.marg_lik = prev_marg_lik
