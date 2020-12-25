@@ -113,7 +113,27 @@ ref_idx = P.columns.get_loc("REF_COUNT")
 sys.path.append(".")
 import hapaseg
 
+#
+# save
+# PP = H.P
+# BP = H.breakpoints
+# CSMA = H.cs_MAJ
+# CSMI = H.cs_MIN
+# SPLP = H.split_prob
+# SML = H.seg_marg_liks
+# ML = H.marg_lik
+
 H = hapaseg.Hapaseg(P)
+
+#
+# load
+# H.P = PP
+# H.breakpoints = BP
+# H.cs_MAJ = CSMA
+# H.cs_MIN = CSMI
+# H.split_prob = SPLP
+# H.seg_marg_liks = SML
+# H.marg_lik = ML
 
 # first pass: merge sequentially from the left, up to N_INITIAL_PASSES times
 # initial version will lack any memoization and be slow. we can add this later.
