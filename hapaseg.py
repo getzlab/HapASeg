@@ -90,14 +90,16 @@ class Hapaseg:
 
         prob_same, prob_same_mis, prob_misphase = self.t_probs(np.r_[st, mid], np.r_[mid, en])
 
-        trans = np.random.choice(np.r_[0:4],
-          p = np.r_[
-            prob_same*(1 - prob_misphase),         # 0: extend seg, phase is correct
-            prob_same_mis*prob_misphase,           # 1: extend seg, phase is wrong
-            (1 - prob_same)*(1 - prob_misphase),   # 2: new segment, phase is correct
-            (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
-          ]
-        )
+        # PMF of proposal distribution q(s1+2|s1,s2)
+        trans_probs = np.r_[
+          prob_same*(1 - prob_misphase),         # 0: extend seg, phase is correct
+          prob_same_mis*prob_misphase,           # 1: extend seg, phase is wrong
+          (1 - prob_same)*(1 - prob_misphase),   # 2: new segment, phase is correct
+          (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
+        ]
+
+        # draw from proposal distribution q(s1+2|s1,s2)
+        trans = np.random.choice(np.r_[0:4], p = trans_probs)
 
         # flip phase
         flipped = False
@@ -116,8 +118,14 @@ class Hapaseg:
             )
             self.marg_lik += seg_lik
 
+            # factor for proposal distribution q(s1,s2|s1+2) [breakpoint probability]
+            log_q_rat = 0
+            if not force:
+                _, _, split_probs = self.compute_cumsum(st, en)
+                log_q_rat = np.log(split_probs[mid - st]) + np.log(trans_probs[trans | 2]) - np.log(trans_probs[trans])
+
             # accept transition
-            if force or np.log(np.random.rand()) < np.minimum(0, self.marg_lik - prev_marg_lik):
+            if force or np.log(np.random.rand()) < np.minimum(0, self.marg_lik - prev_marg_lik + log_q_rat):
                 self.breakpoints.remove(mid)
                 self.seg_marg_liks.__delitem__(mid)
                 self.seg_marg_liks[st] = seg_lik
