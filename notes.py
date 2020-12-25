@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import scipy.stats as s
@@ -132,7 +133,7 @@ plt.figure(40); plt.clf()
 ax = plt.gca()
 Ph = H.P.iloc[0:H.MAX_SNP_IDX]
 #plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75)
-plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75, color = cmap[aidx.astype(np.int)])
+plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.5, color = cmap[aidx.astype(np.int)])
 
 # phase switches
 o = 0
@@ -150,6 +151,12 @@ ax2.set_xticks(Ph.iloc[H.breakpoints, Ph.columns.get_loc("pos")]);
 ax2.set_xticklabels(range(0, len(H.breakpoints)));
 ax2.set_xlim(ax.get_xlim());
 ax2.set_xlabel("Breakpoint number")
+
+# beta CI's
+bpl = np.array(H.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
+for st, en in bpl:
+    ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, maj_idx].sum() + 1, Ph.iloc[st:en, min_idx].sum() + 1)
+    ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, 1], ci_lo), Ph.iloc[en, 1] - Ph.iloc[st, 1], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 0.5))
 
 ax.set_xticks(np.linspace(*plt.xlim(), 20));
 ax.set_xticklabels(Ph["pos"].searchsorted(np.linspace(*plt.xlim(), 20)));
