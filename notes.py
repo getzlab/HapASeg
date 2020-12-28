@@ -138,10 +138,19 @@ H = hapaseg.Hapaseg(P)
 # first pass: merge sequentially from the left, up to N_INITIAL_PASSES times
 # initial version will lack any memoization and be slow. we can add this later.
 
-for i in range(0, 2):
+for i in range(0, 30):
     st = 0
     while st != -1:
         st = H.combine(st)
+
+
+while True:
+    last_len = len(H.breakpoints)
+    #H.combine(np.random.choice(H.breakpoints[:-1]), force = False)
+    H.combine(b_idx = np.random.choice(len(H.breakpoints)), force = False)
+    H.split(b_idx = np.random.choice(len(H.breakpoints)))
+    if len(H.breakpoints) < last_len:
+        print(len(H.breakpoints))
 
 #
 # visualize

@@ -122,7 +122,10 @@ class Hapaseg:
             log_q_rat = 0
             if not force:
                 _, _, split_probs = self.compute_cumsum(st, en)
-                log_q_rat = np.log(split_probs[mid - st]) + np.log(trans_probs[trans | 2]) - np.log(trans_probs[trans])
+                # q(split)/q(join) = p(picking mid as breakpoint)*p(breaking)/
+                #                    p(picking first segment)*p(joining with subsequent)
+                log_q_rat = np.log(split_probs[mid - st]) + np.log(trans_probs[trans | 2]) - \
+                  (-np.log(len(self.breakpoints)) + np.log(trans_probs[trans]))
 
             # accept transition
             if force or np.log(np.random.rand()) < np.minimum(0, self.marg_lik - prev_marg_lik + log_q_rat):
@@ -237,6 +240,12 @@ class Hapaseg:
         # marginal likelihoods
         ml = ss.betaln(cs_MAJ + 1, cs_MIN + 1) + ss.betaln(cs_MAJ[-1] - cs_MAJ + 1, cs_MIN[-1] - cs_MIN + 1)
 
+        # prior
+        # TODO: allow user to specify
+#        if len(ml) > 1:
+#            ml[-1] += np.log(0.9)
+#            ml[:-1] += np.log(0.1) - np.log(len(ml) - 1)
+
         # logsumexp to get probabilities
         m = np.max(ml)
         split_prob = np.exp(ml - (m + np.log(np.exp(ml - m).sum())))
@@ -306,7 +315,10 @@ class Hapaseg:
             )
             self.marg_lik += seg_lik_1 + seg_lik_2
 
-            log_q_rat = np.log(trans_probs[trans & 1]) - (np.log(split_probs[b]) + np.log(trans_probs[trans]))
+            # q(join)/q(split) = p(picking first segment)*p(joining with subsequent)/
+            #                    p(picking breakpoint)*p(breaking/
+            log_q_rat = -np.log(len(self.breakpoints) + 1) + np.log(trans_probs[trans & 1]) - \
+              (np.log(split_probs[b]) + np.log(trans_probs[trans]))
 
             # accept transition
             if np.log(np.random.rand()) < np.minimum(0, self.marg_lik - prev_marg_lik + log_q_rat):
