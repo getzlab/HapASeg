@@ -34,7 +34,8 @@ class Hapaseg:
         self.breakpoints = sc.SortedSet(range(0, self.MAX_SNP_IDX))
 
         # count of all breakpoints ever created
-        self.breakpoint_counter = sc.SortedDict(itertools.zip_longest(range(0, self.MAX_SNP_IDX), [0], fillvalue = 0))
+        # breakpoint -> (number of times confirmed, number of times sampled)
+        self.breakpoint_counter = np.zeros((self.MAX_SNP_IDX, 2), dtype = np.int)
 
         #
         # cumsum arrays for each segment
@@ -130,6 +131,7 @@ class Hapaseg:
             # accept transition
             if force or np.log(np.random.rand()) < np.minimum(0, self.marg_lik - prev_marg_lik + log_q_rat):
                 self.breakpoints.remove(mid)
+                self.breakpoint_counter[mid] += np.r_[0, 1]
                 self.seg_marg_liks.__delitem__(mid)
                 self.seg_marg_liks[st] = seg_lik
 
@@ -140,6 +142,7 @@ class Hapaseg:
                 if flipped:
                     self.flip_hap(mid, en)
                 self.marg_lik = prev_marg_lik
+                self.breakpoint_counter[mid] += np.r_[1, 1]
 
                 return mid
 
@@ -147,6 +150,7 @@ class Hapaseg:
         # doesn't affect segment likelihoods
         # TODO: should it?
         else:
+            self.breakpoint_counter[mid] += np.r_[1, 1]
             return mid
     
     def flip_hap(self, st, en):
@@ -323,6 +327,7 @@ class Hapaseg:
             # accept transition
             if np.log(np.random.rand()) < np.minimum(0, self.marg_lik - prev_marg_lik + log_q_rat):
                 self.breakpoints.add(mid)
+                self.breakpoint_counter[mid] += np.r_[1, 1]
                 self.seg_marg_liks[st] = seg_lik_1
                 self.seg_marg_liks[mid] = seg_lik_2
 
@@ -331,3 +336,8 @@ class Hapaseg:
                 if flipped:
                     self.flip_hap(mid, en)
                 self.marg_lik = prev_marg_lik
+                self.breakpoint_counter[mid] += np.r_[0, 1]
+
+        # don't split segment
+        else:
+            self.breakpoint_counter[mid] += np.r_[0, 1]
