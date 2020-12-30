@@ -143,13 +143,12 @@ for i in range(0, 30):
     while st != -1:
         st = H.combine(st)
 
-
 while True:
     last_len = len(H.breakpoints)
     #H.combine(np.random.choice(H.breakpoints[:-1]), force = False)
     H.combine(b_idx = np.random.choice(len(H.breakpoints)), force = False)
     H.split(b_idx = np.random.choice(len(H.breakpoints)))
-    if len(H.breakpoints) < last_len:
+    if len(H.breakpoints) != last_len:
         print(len(H.breakpoints))
 
 #
