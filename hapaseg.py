@@ -24,14 +24,15 @@ class Hapaseg:
         # config stuff
 
         # highest SNP to analyze
-        self.MAX_SNP_IDX = 5001
+        self.MAX_SNP_IDX = 10001
         self.N_INITIAL_PASSES = 10
 
         #
         # breakpoint storage
 
         # breakpoints of last iteration
-        self.breakpoints = sc.SortedSet(range(0, self.MAX_SNP_IDX))
+        #self.breakpoints = sc.SortedSet(range(0, self.MAX_SNP_IDX))
+        self.breakpoints = sc.SortedSet({0, self.MAX_SNP_IDX - 1})
 
         # count of all breakpoints ever created
         # breakpoint -> (number of times confirmed, number of times sampled)
@@ -52,12 +53,19 @@ class Hapaseg:
         # marginal likelihoods
 
         # log marginal likelihoods for each segment
+#        self.seg_marg_liks = sc.SortedDict(zip(
+#          range(0, self.MAX_SNP_IDX),
+#          ss.betaln(
+#            P.iloc[0:self.MAX_SNP_IDX, self.min_idx] + 1,
+#            P.iloc[0:self.MAX_SNP_IDX, self.maj_idx] + 1
+#          )
+#        ))
         self.seg_marg_liks = sc.SortedDict(zip(
-          range(0, self.MAX_SNP_IDX),
-          ss.betaln(
-            P.iloc[0:self.MAX_SNP_IDX, self.min_idx] + 1,
-            P.iloc[0:self.MAX_SNP_IDX, self.maj_idx] + 1
-          )
+          [0, self.MAX_SNP_IDX - 1],
+          [ss.betaln(
+            P.iloc[0:self.MAX_SNP_IDX, self.min_idx].sum() + 1,
+            P.iloc[0:self.MAX_SNP_IDX, self.maj_idx].sum() + 1
+          ), 0]
         ))
 
         # total log marginal likelihood of all segments
@@ -266,7 +274,7 @@ class Hapaseg:
         br = self.breakpoints.bisect_right(st)
 
         # we're trying to split something past the last segment
-        if br + 1 >= len(self.breakpoints):
+        if br >= len(self.breakpoints):
             return -1
 
         en = self.breakpoints[br]
@@ -295,8 +303,6 @@ class Hapaseg:
           (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
         ]
 
-        #breakpoint()
-
         trans = np.random.choice(np.r_[0:4], p = trans_probs)
 
         # flip phase
@@ -320,7 +326,7 @@ class Hapaseg:
             self.marg_lik += seg_lik_1 + seg_lik_2
 
             # q(join)/q(split) = p(picking first segment)*p(joining with subsequent)/
-            #                    p(picking breakpoint)*p(breaking/
+            #                    p(picking first + second segment)*p(picking breakpoint)*p(breaking)
             log_q_rat = -np.log(len(self.breakpoints) + 1) + np.log(trans_probs[trans & 1]) - \
               (np.log(split_probs[b]) + np.log(trans_probs[trans]))
 
