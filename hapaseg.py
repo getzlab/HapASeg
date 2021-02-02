@@ -27,6 +27,8 @@ class Hapaseg:
         self.MAX_SNP_IDX = 10001
         self.N_INITIAL_PASSES = 10
 
+        self.n_samp = 100000
+
         #
         # breakpoint storage
 
@@ -172,20 +174,23 @@ class Hapaseg:
         self.P.loc[st:(en - 1), "aidx"] = ~self.P.loc[st:(en - 1), "aidx"]
         self.P.loc[st:(en - 1), "flip"] += 1
 
-    def t_probs(self, bdy1, bdy2, A1_ = None, B1_ = None, A2_ = None, B2_ = None):
+    def t_probs(self, bdy1, bdy2, A1_ = None, B1_ = None, A2_ = None, B2_ = None, n_samp = None):
         """
         Compute transition probabilities for segments bounded by bdy1 and bdy2
         """
+
+        n_samp = self.n_samp if n_samp is None else n_samp
+
         A1 = self.P.iloc[bdy1[0]:bdy1[1], self.min_idx].sum() if A1_ is None else A1_
         B1 = self.P.iloc[bdy1[0]:bdy1[1], self.maj_idx].sum() if B1_ is None else B1_
-        brv1 = s.beta.rvs(A1 + 1, B1 + 1, size = 1000)
+        brv1 = s.beta.rvs(A1 + 1, B1 + 1, size = n_samp)
 
         A2 = self.P.iloc[bdy2[0]:bdy2[1], self.min_idx].sum() if A2_ is None else A2_
         B2 = self.P.iloc[bdy2[0]:bdy2[1], self.maj_idx].sum() if B2_ is None else B2_
-        brv2 = s.beta.rvs(A2 + 1, B2 + 1, size = 1000)
+        brv2 = s.beta.rvs(A2 + 1, B2 + 1, size = n_samp)
  
         # if second segment was misphased
-        brv3 = s.beta.rvs(B2 + 1, A2 + 1, size = 1000)
+        brv3 = s.beta.rvs(B2 + 1, A2 + 1, size = n_samp)
 
         #
         # probability of segment similarity
