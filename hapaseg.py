@@ -195,13 +195,37 @@ class Hapaseg:
         #
         # probability of segment similarity
 
-        # correct phasing
+        # if phasing is correct
         p_gt = (brv1 > brv2).mean()
-        prob_same = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)[0]
 
-        # misphasing
+        # use Gaussian approximation of beta distribution if overlap is too small
+        if p_gt < 5/n_samp or p_gt > (n_samp - 5)/n_samp: # TODO: is this a good criterion?
+            m1 = A1/(A1 + B1); m2 = A2/(A2 + B2)
+            s1 = A1*B1/(A1 + B1)**3; s2 = A2*B2/(A2 + B2)**3
+
+            log_prob_same = np.min(np.log(2) + np.c_[
+              s.norm.logcdf(0, m1 - m2, np.sqrt(s1 + s2)),
+              s.norm.logcdf(0, m2 - m1, np.sqrt(s1 + s2))
+            ])
+        # otherwise, use MC
+        else:
+            log_prob_same = np.min(np.log(2*np.c_[p_gt, 1 - p_gt]))
+
+        # if phasing is incorrect
         p_gt = (brv1 > brv3).mean()
-        prob_same_mis = np.maximum(np.minimum(np.min(2*np.c_[p_gt, 1 - p_gt], 1), 1.0 - np.finfo(float).eps), np.finfo(float).eps)[0]
+
+        # Gaussian approx.
+        if p_gt < 5/n_samp or p_gt > (n_samp - 5)/n_samp: # TODO: is this a good criterion?
+            m1 = A1/(A1 + B1); m2 = B2/(A2 + B2)
+            s1 = A1*B1/(A1 + B1)**3; s2 = A2*B2/(A2 + B2)**3
+
+            log_prob_same_mis = np.min(np.log(2) + np.c_[
+              s.norm.logcdf(0, m1 - m2, np.sqrt(s1 + s2)),
+              s.norm.logcdf(0, m2 - m1, np.sqrt(s1 + s2))
+            ])
+        # MC
+        else:
+            log_prob_same_mis = np.min(np.log(2*np.c_[p_gt, 1 - p_gt]))
 
         #
         # probability of phase switch
@@ -235,7 +259,7 @@ class Hapaseg:
 
         prob_misphase = np.exp(lik_mis + np.log(p_mis) - denom)
 
-        return prob_same, prob_same_mis, prob_misphase
+        return log_prob_same, log_prob_same_mis, prob_misphase
 
     def compute_all_cumsums(self):
         bpl = np.array(self.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
@@ -298,17 +322,19 @@ class Hapaseg:
         # otherwise, compute transition probabilities for split
         # we use same transition probabilities as segment combining, but we'll
         # switch them later
-        prob_same, prob_same_mis, prob_misphase = self.t_probs(np.r_[st, mid], np.r_[mid, en])
+        log_prob_same, log_prob_same_mis, prob_misphase = self.t_probs(np.r_[st, mid], np.r_[mid, en])
 
-        # PMF of proposal distribution q(s1+2|s1,s2)
-        trans_probs = np.r_[
-          prob_same*(1 - prob_misphase),         # 0: extend seg, phase is correct
-          prob_same_mis*prob_misphase,           # 1: extend seg, phase is wrong
-          (1 - prob_same)*(1 - prob_misphase),   # 2: new segment, phase is correct
-          (1 - prob_same_mis)*prob_misphase,     # 3: new segment, phase is wrong
-        ]
+        # log PMF of proposal distribution q(s1+2|s1,s2)
+        with np.errstate(divide = "ignore"):
+            log_trans_probs = np.r_[
+              log_prob_same + np.log(1 - prob_misphase),                     # 0: extend seg, phase is correct
+              log_prob_same_mis + np.log(prob_misphase),                     # 1: extend seg, phase is wrong
+              np.log(-np.expm1(log_prob_same)) + np.log(1 - prob_misphase),  # 2: new segment, phase is correct
+              np.log(-np.expm1(log_prob_same_mis)) + np.log(prob_misphase),  # 3: new segment, phase is wrong
+            ]
+        log_trans_probs = np.maximum(log_trans_probs, np.finfo(float).min)
 
-        trans = np.random.choice(np.r_[0:4], p = trans_probs)
+        trans = np.random.choice(np.r_[0:4], p = np.exp(log_trans_probs))
 
         # flip phase
         flipped = False
@@ -332,8 +358,8 @@ class Hapaseg:
 
             # q(join)/q(split) = p(picking first segment)*p(joining with subsequent)/
             #                    p(picking first + second segment)*p(picking breakpoint)*p(breaking)
-            log_q_rat = -np.log(len(self.breakpoints) + 1) + np.log(trans_probs[trans & 1]) - \
-              (np.log(split_probs[b]) + np.log(trans_probs[trans]))
+            log_q_rat = -np.log(len(self.breakpoints)) + log_trans_probs[trans & 1] - \
+              (-np.log(len(self.breakpoints) - 1) + np.log(split_probs[b]) + log_trans_probs[trans])
 
             # accept transition
             if np.log(np.random.rand()) < np.minimum(0, self.marg_lik - prev_marg_lik + log_q_rat):
