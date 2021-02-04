@@ -143,6 +143,7 @@ for i in range(0, 30):
     while st != -1:
         st = H.combine(st)
 
+bps = []
 while True:
     last_len = len(H.breakpoints)
     H.combine(np.random.choice(H.breakpoints[:-1]), force = False)
@@ -150,6 +151,8 @@ while True:
     #H.combine(b_idx = np.random.choice(len(H.breakpoints)), force = False)
     if len(H.breakpoints) != last_len:
         print(len(H.breakpoints))
+    if H.burned_in and not H.iter % 100:
+        bps.append(H.breakpoints.copy())
 
 #
 # visualize
@@ -176,19 +179,21 @@ for i in Ph["flip"].unique():
 bp_prob = H.breakpoint_counter[:, 0]/H.breakpoint_counter[:, 1]
 bp_idx = np.flatnonzero(bp_prob > 0)
 for i in bp_idx:
-    plt.axvline(Ph.iloc[i, Ph.columns.get_loc("pos")], color = 'k', alpha = bp_prob[i])
+    col = 'k' if bp_prob[i] < 0.8 else 'm'
+    alph = bp_prob[i]/2 if bp_prob[i] < 0.8 else bp_prob[i]
+    plt.axvline(Ph.iloc[i, Ph.columns.get_loc("pos")], color = col, alpha = alph)
 ax2 = ax.twiny()
 ax2.set_xticks(Ph.iloc[H.breakpoints, Ph.columns.get_loc("pos")]);
 ax2.set_xticklabels(bp_idx);
 ax2.set_xlim(ax.get_xlim());
 ax2.set_xlabel("Breakpoint number in current MCMC iteration")
 
-# beta CI's
-bp_idx_hi = np.flatnonzero(bp_prob > 0.8)
-bpl = np.array(bp_idx_hi); bpl = np.c_[bpl[0:-1], bpl[1:]]
-for st, en in bpl:
-    ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, maj_idx].sum() + 1, Ph.iloc[st:en, min_idx].sum() + 1)
-    ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, 1], ci_lo), Ph.iloc[en, 1] - Ph.iloc[st, 1], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 0.5))
+# beta CI's weighted by breakpoints
+for bp_samp in bps:
+    bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
+    for st, en in bpl:
+        ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, maj_idx].sum() + 1, Ph.iloc[st:en, min_idx].sum() + 1)
+        ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, 1], ci_lo), Ph.iloc[en, 1] - Ph.iloc[st, 1], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 0.01, zorder = 1000))
 
 ax.set_xticks(np.linspace(*plt.xlim(), 20));
 ax.set_xticklabels(Ph["pos"].searchsorted(np.linspace(*plt.xlim(), 20)));
