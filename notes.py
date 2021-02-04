@@ -172,16 +172,20 @@ for i in Ph["flip"].unique():
     o -= 0.01
 
 # breakpoints
-for i in H.breakpoints:
-    plt.axvline(Ph.iloc[i, Ph.columns.get_loc("pos")], color = 'k', alpha = 0.2)
+
+bp_prob = H.breakpoint_counter[:, 0]/H.breakpoint_counter[:, 1]
+bp_idx = np.flatnonzero(bp_prob > 0)
+for i in bp_idx:
+    plt.axvline(Ph.iloc[i, Ph.columns.get_loc("pos")], color = 'k', alpha = bp_prob[i])
 ax2 = ax.twiny()
 ax2.set_xticks(Ph.iloc[H.breakpoints, Ph.columns.get_loc("pos")]);
-ax2.set_xticklabels(range(0, len(H.breakpoints)));
+ax2.set_xticklabels(bp_idx);
 ax2.set_xlim(ax.get_xlim());
-ax2.set_xlabel("Breakpoint number")
+ax2.set_xlabel("Breakpoint number in current MCMC iteration")
 
 # beta CI's
-bpl = np.array(H.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
+bp_idx_hi = np.flatnonzero(bp_prob > 0.8)
+bpl = np.array(bp_idx_hi); bpl = np.c_[bpl[0:-1], bpl[1:]]
 for st, en in bpl:
     ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, maj_idx].sum() + 1, Ph.iloc[st:en, min_idx].sum() + 1)
     ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, 1], ci_lo), Ph.iloc[en, 1] - Ph.iloc[st, 1], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 0.5))

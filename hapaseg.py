@@ -155,7 +155,7 @@ class Hapaseg:
             self.incr()
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] - ML_split + ML_join
             if self.burned_in:
-                self.breakpoint_counter[mid] += np.r_[0, 1]
+                self.incr_bp_counter(st = st, en = en)
 
             return st
 
@@ -164,7 +164,7 @@ class Hapaseg:
             if flipped:
                 self.flip_hap(mid, en)
             if self.burned_in:
-                self.breakpoint_counter[mid] += np.r_[1, 1]
+                self.incr_bp_counter(st = st, mid = mid, en = en)
 
             return mid
 
@@ -401,6 +401,8 @@ class Hapaseg:
 
         # chosen split point is the segment end, so we're not splitting this segment
         if b == len(split_probs) - 1:
+            if self.burned_in:
+                self.incr_bp_counter(st = st, en = en)
             return
 
 #        # otherwise, compute transition probabilities for split
@@ -455,14 +457,14 @@ class Hapaseg:
             self.incr()
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] + ML_split - ML_join
             if self.burned_in:
-                self.breakpoint_counter[mid] += np.r_[1, 1]
+                self.incr_bp_counter(st = st, mid = mid, en = en)
 
         # don't accept
         else:
             if flipped:
                 self.flip_hap(mid, en)
             if self.burned_in:
-                self.breakpoint_counter[mid] += np.r_[0, 1]
+                self.incr_bp_counter(st = st, en = en)
 
 #        # split segment
 #        if trans > 1:
@@ -519,3 +521,13 @@ class Hapaseg:
 #        # don't split segment
 #        else:
 #            self.breakpoint_counter[mid] += np.r_[0, 1]
+
+    def incr_bp_counter(self, st, en, mid = None):
+        if mid is None:
+            self.breakpoint_counter[st] += np.r_[1, 1]
+            self.breakpoint_counter[(st + 1):en] += np.r_[0, 1]
+        else:
+            self.breakpoint_counter[st] += np.r_[1, 1]
+            self.breakpoint_counter[(st + 1):mid] += np.r_[0, 1]
+            self.breakpoint_counter[mid] += np.r_[1, 1]
+            self.breakpoint_counter[(mid + 1):en] += np.r_[0, 1]
