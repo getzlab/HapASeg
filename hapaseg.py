@@ -27,7 +27,11 @@ class Hapaseg:
         self.MAX_SNP_IDX = 10001
         self.N_INITIAL_PASSES = 10
 
-        self.n_samp = 100000
+        #
+        # chain stuff
+        self.n_iter = 10000
+        self.iter = 0
+        self.burned_in = False
 
         #
         # breakpoint storage
@@ -71,7 +75,15 @@ class Hapaseg:
 #        ))
 
         # total log marginal likelihood of all segments
-        self.marg_lik = np.array(self.seg_marg_liks.values()).sum()
+        self.marg_lik = np.full(self.n_iter, np.nan)
+        self.marg_lik[0] = np.array(self.seg_marg_liks.values()).sum()
+
+    def incr(self):
+        self.iter += 1
+        # TODO: use a faster method of computing rolling average
+        if self.iter > 500:
+            if np.diff(self.marg_lik[(self.iter - 500):self.iter]).mean() < 0:
+                self.burned_in = True
 
     def combine(self, st = None, b_idx = None, force = True):
         """
@@ -137,12 +149,13 @@ class Hapaseg:
         # accept transition
         if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + log_q_rat):
             self.breakpoints.remove(mid)
-            self.breakpoint_counter[mid] += np.r_[0, 1]
             self.seg_marg_liks.__delitem__(mid)
             self.seg_marg_liks[st] = ML_join
 
-            # TODO: track marginal likelihood over iterations
-            self.marg_lik = self.marg_lik - ML_split + ML_join
+            self.incr()
+            self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] - ML_split + ML_join
+            if self.burned_in:
+                self.breakpoint_counter[mid] += np.r_[0, 1]
 
             return st
 
@@ -150,7 +163,8 @@ class Hapaseg:
         else:
             if flipped:
                 self.flip_hap(mid, en)
-            self.breakpoint_counter[mid] += np.r_[1, 1]
+            if self.burned_in:
+                self.breakpoint_counter[mid] += np.r_[1, 1]
 
             return mid
 
@@ -435,18 +449,20 @@ class Hapaseg:
         # accept transition
         if np.log(np.random.rand()) < np.minimum(0, ML_split - ML_join + log_q_rat):
             self.breakpoints.add(mid)
-            self.breakpoint_counter[mid] += np.r_[1, 1]
             self.seg_marg_liks[st] = seg_lik_1
             self.seg_marg_liks[mid] = seg_lik_2
 
-            # TODO: track marginal likelihood over iterations
-            self.marg_lik = self.marg_lik + ML_split - ML_join
+            self.incr()
+            self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] + ML_split - ML_join
+            if self.burned_in:
+                self.breakpoint_counter[mid] += np.r_[1, 1]
 
         # don't accept
         else:
             if flipped:
                 self.flip_hap(mid, en)
-            self.breakpoint_counter[mid] += np.r_[0, 1]
+            if self.burned_in:
+                self.breakpoint_counter[mid] += np.r_[0, 1]
 
 #        # split segment
 #        if trans > 1:
