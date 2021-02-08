@@ -11,7 +11,8 @@ class Hapaseg:
     def __init__(self, P, quit_after_burnin = False):
         #
         # dataframe stuff
-        self.P = P.copy() 
+        self.P = P.copy().reset_index(drop = True)
+        self.P["aidx_orig"] = self.P["aidx"]
 
         self.min_idx = P.columns.get_loc("MIN_COUNT")
         self.maj_idx = P.columns.get_loc("MAJ_COUNT")
@@ -565,3 +566,46 @@ class Hapaseg:
             self.breakpoint_counter[(st + 1):mid] += np.r_[0, 1]
             self.breakpoint_counter[mid] += np.r_[1, 1]
             self.breakpoint_counter[(mid + 1):en] += np.r_[0, 1]
+
+    def visualize(self):
+        Ph = self.P.copy()
+        CI = s.beta.ppf([0.05, 0.5, 0.95], Ph["MAJ_COUNT"][:, None] + 1, Ph["MIN_COUNT"][:, None] + 1)
+        Ph[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
+
+        plt.figure(); plt.clf()
+        ax = plt.gca()
+
+        # SNPs
+        plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.5, color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx_orig"].astype(np.int)])
+
+#        # phase switches
+#        o = 0
+#        for i in Ph["flip"].unique():
+#            if i == 0:
+#                continue
+#            plt.scatter(Ph.loc[Ph["flip"] == i, "pos"], o + np.zeros((Ph["flip"] == i).sum()))
+#            o -= 0.01
+
+        # breakpoints 
+        bp_prob = self.breakpoint_counter[:, 0]/self.breakpoint_counter[:, 1]
+        bp_idx = np.flatnonzero(bp_prob > 0)
+        for i in bp_idx:
+            col = 'k' if bp_prob[i] < 0.8 else 'm'
+            alph = bp_prob[i]/2 if bp_prob[i] < 0.8 else bp_prob[i]
+            plt.axvline(Ph.iloc[i, Ph.columns.get_loc("pos")], color = col, alpha = alph)
+        ax2 = ax.twiny()
+        ax2.set_xticks(Ph.iloc[self.breakpoints, Ph.columns.get_loc("pos")]);
+        ax2.set_xticklabels(bp_idx);
+        ax2.set_xlim(ax.get_xlim());
+        ax2.set_xlabel("Breakpoint number in current MCMC iteration")
+
+        # beta CI's weighted by breakpoints
+        for bp_samp in self.breakpoint_list:
+            bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
+            for st, en in bpl:
+                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, self.maj_idx].sum() + 1, Ph.iloc[st:en, self.min_idx].sum() + 1)
+                ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, 1], ci_lo), Ph.iloc[en, 1] - Ph.iloc[st, 1], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 0.01, zorder = 1000))
+
+        ax.set_xticks(np.linspace(*plt.xlim(), 20));
+        ax.set_xticklabels(Ph["pos"].searchsorted(np.linspace(*plt.xlim(), 20)));
+        ax.set_xlabel("SNP index")
