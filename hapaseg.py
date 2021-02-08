@@ -188,6 +188,7 @@ class Hapaseg:
                 self.incr_bp_counter(st = st, mid = mid, en = en)
 
             self.incr()
+            self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
 
             return mid
 
@@ -490,6 +491,7 @@ class Hapaseg:
                 self.incr_bp_counter(st = st, en = en)
 
             self.incr()
+            self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
 
 #        # split segment
 #        if trans > 1:
