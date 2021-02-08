@@ -23,9 +23,6 @@ class Hapaseg:
         #
         # config stuff
 
-        # highest SNP to analyze
-        self.MAX_SNP_IDX = 10001
-        self.N_INITIAL_PASSES = 10
 
         #
         # chain stuff
@@ -37,12 +34,15 @@ class Hapaseg:
         # breakpoint storage
 
         # breakpoints of last iteration
-        self.breakpoints = sc.SortedSet(range(0, self.MAX_SNP_IDX))
+        self.breakpoints = sc.SortedSet(range(0, len(self.P)))
         #self.breakpoints = sc.SortedSet({0, self.MAX_SNP_IDX - 1})
 
         # count of all breakpoints ever created
         # breakpoint -> (number of times confirmed, number of times sampled)
-        self.breakpoint_counter = np.zeros((self.MAX_SNP_IDX, 2), dtype = np.int)
+        self.breakpoint_counter = np.zeros((len(self.P), 2), dtype = np.int)
+
+        # list of all breakpoints at nth iteration
+        self.breakpoint_list = []
 
         #
         # cumsum arrays for each segment
@@ -60,10 +60,10 @@ class Hapaseg:
 
         # log marginal likelihoods for each segment
         self.seg_marg_liks = sc.SortedDict(zip(
-          range(0, self.MAX_SNP_IDX),
+          range(0, len(self.P)),
           ss.betaln(
-            P.iloc[0:self.MAX_SNP_IDX, self.min_idx] + 1,
-            P.iloc[0:self.MAX_SNP_IDX, self.maj_idx] + 1
+            P.iloc[0:len(self.P), self.min_idx] + 1,
+            P.iloc[0:len(self.P), self.maj_idx] + 1
           )
         ))
 #        self.seg_marg_liks = sc.SortedDict(zip(
