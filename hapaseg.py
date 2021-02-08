@@ -8,7 +8,7 @@ import scipy.special as ss
 import sortedcontainers as sc
 
 class Hapaseg:
-    def __init__(self, P):
+    def __init__(self, P, quit_after_burnin = False):
         #
         # dataframe stuff
         self.P = P.copy() 
@@ -24,10 +24,13 @@ class Hapaseg:
         #
         # config stuff
 
+        # number of MCMC iterations
+        self.n_iter = 100000
+
+        self.quit_after_burnin = quit_after_burnin
 
         #
-        # chain stuff
-        self.n_iter = 10000
+        # chain state
         self.iter = 0
         self.burned_in = False
 
@@ -84,6 +87,10 @@ class Hapaseg:
             # perform a split and combine operation
             self.combine(np.random.choice(self.breakpoints[:-1]), force = False)
             self.split(b_idx = np.random.choice(len(self.breakpoints)))
+
+            # if we're only running up to burnin, bail
+            if self.quit_after_burnin and self.burned_in:
+                break
 
             # save set of breakpoints if burned in 
             if self.burned_in and not self.iter % 100:
