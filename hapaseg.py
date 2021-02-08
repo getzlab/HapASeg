@@ -1,3 +1,4 @@
+import colorama
 import itertools
 import matplotlib.pyplot as plt
 import numpy as np
@@ -77,6 +78,26 @@ class Hapaseg:
         # total log marginal likelihood of all segments
         self.marg_lik = np.full(self.n_iter, np.nan)
         self.marg_lik[0] = np.array(self.seg_marg_liks.values()).sum()
+
+    def run(self):
+        for _ in range(0, self.n_iter):
+            # perform a split and combine operation
+            self.combine(np.random.choice(self.breakpoints[:-1]), force = False)
+            self.split(b_idx = np.random.choice(len(self.breakpoints)))
+
+            # save set of breakpoints if burned in 
+            if self.burned_in and not self.iter % 100:
+                self.breakpoint_list.append(self.breakpoints.copy())
+
+            # print status
+            if not self.iter % 100:
+                print("{color}{n}/{tot}\tn_bp = {n_bp}\tlik = {lik}".format(
+                  n = self.iter,
+                  tot = self.n_iter,
+                  n_bp = len(self.breakpoints),
+                  lik = self.marg_lik[self.iter],
+                  color = colorama.Fore.YELLOW if not self.burned_in else colorama.Fore.RESET
+                ))
 
     def incr(self):
         self.iter += 1
