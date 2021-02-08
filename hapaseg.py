@@ -166,6 +166,8 @@ class Hapaseg:
             if self.burned_in:
                 self.incr_bp_counter(st = st, mid = mid, en = en)
 
+            self.incr()
+
             return mid
 
 #        # extend segment
@@ -465,6 +467,8 @@ class Hapaseg:
                 self.flip_hap(mid, en)
             if self.burned_in:
                 self.incr_bp_counter(st = st, en = en)
+
+            self.incr()
 
 #        # split segment
 #        if trans > 1:
