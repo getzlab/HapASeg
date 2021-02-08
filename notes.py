@@ -135,24 +135,24 @@ H = hapaseg.Hapaseg(P)
 # H.seg_marg_liks = SML
 # H.marg_lik = ML
 
-# first pass: merge sequentially from the left, up to N_INITIAL_PASSES times
-# initial version will lack any memoization and be slow. we can add this later.
-
-for i in range(0, 30):
-    st = 0
-    while st != -1:
-        st = H.combine(st)
-
-bps = []
-while True:
-    last_len = len(H.breakpoints)
-    H.combine(np.random.choice(H.breakpoints[:-1]), force = False)
-    H.split(b_idx = np.random.choice(len(H.breakpoints)))
-    #H.combine(b_idx = np.random.choice(len(H.breakpoints)), force = False)
-    if len(H.breakpoints) != last_len:
-        print(len(H.breakpoints))
-    if H.burned_in and not H.iter % 100:
-        bps.append(H.breakpoints.copy())
+## first pass: merge sequentially from the left, up to N_INITIAL_PASSES times
+## initial version will lack any memoization and be slow. we can add this later.
+#
+#for i in range(0, 30):
+#    st = 0
+#    while st != -1:
+#        st = H.combine(st)
+#
+#bps = []
+#while True:
+#    last_len = len(H.breakpoints)
+#    H.combine(np.random.choice(H.breakpoints[:-1]), force = False)
+#    H.split(b_idx = np.random.choice(len(H.breakpoints)))
+#    #H.combine(b_idx = np.random.choice(len(H.breakpoints)), force = False)
+#    if len(H.breakpoints) != last_len:
+#        print(len(H.breakpoints))
+#    if H.burned_in and not H.iter % 100:
+#        bps.append(H.breakpoints.copy())
 
 #
 # visualize
@@ -162,7 +162,7 @@ H.P[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
 
 plt.figure(40); plt.clf()
 ax = plt.gca()
-Ph = H.P.iloc[0:H.MAX_SNP_IDX]
+Ph = H.P
 #plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.75)
 plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.5, color = cmap[aidx.astype(np.int)])
 
@@ -189,7 +189,7 @@ ax2.set_xlim(ax.get_xlim());
 ax2.set_xlabel("Breakpoint number in current MCMC iteration")
 
 # beta CI's weighted by breakpoints
-for bp_samp in bps:
+for bp_samp in H.breakpoint_list:
     bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
     for st, en in bpl:
         ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, maj_idx].sum() + 1, Ph.iloc[st:en, min_idx].sum() + 1)
