@@ -7,7 +7,7 @@ import scipy.stats as s
 import scipy.special as ss
 import sortedcontainers as sc
 
-class Hapaseg:
+class A_MCMC:
     def __init__(self, P, quit_after_burnin = False):
         #
         # dataframe stuff
