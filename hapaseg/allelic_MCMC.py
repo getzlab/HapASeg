@@ -15,13 +15,11 @@ class A_MCMC:
         self.P = P.copy().reset_index()
         self.P["aidx_orig"] = self.P["aidx"]
 
-        self.min_idx = P.columns.get_loc("MIN_COUNT")
-        self.maj_idx = P.columns.get_loc("MAJ_COUNT")
-        self.alt_idx = P.columns.get_loc("ALT_COUNT")
-        self.ref_idx = P.columns.get_loc("REF_COUNT")
-
-        # number of times we've correct the phasing of a segment
+        # number of times we've corrected the phasing of a segment
         self.P["flip"] = 0
+
+        self.min_idx = self.P.columns.get_loc("MIN_COUNT")
+        self.maj_idx = self.P.columns.get_loc("MAJ_COUNT")
 
         #
         # config stuff
@@ -68,8 +66,8 @@ class A_MCMC:
         self.seg_marg_liks = sc.SortedDict(zip(
           range(0, len(self.P)),
           ss.betaln(
-            P.iloc[0:len(self.P), self.min_idx] + 1,
-            P.iloc[0:len(self.P), self.maj_idx] + 1
+            self.P.iloc[0:len(self.P), self.min_idx] + 1,
+            self.P.iloc[0:len(self.P), self.maj_idx] + 1
           )
         ))
 #        self.seg_marg_liks = sc.SortedDict(zip(
@@ -590,7 +588,7 @@ class A_MCMC:
         ax = plt.gca()
 
         # SNPs
-        plt.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.5, color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx_orig"].astype(np.int)])
+        ax.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.5, color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx_orig"].astype(np.int)])
 
 #        # phase switches
 #        o = 0
@@ -606,7 +604,7 @@ class A_MCMC:
         for i in bp_idx:
             col = 'k' if bp_prob[i] < 0.8 else 'm'
             alph = bp_prob[i]/2 if bp_prob[i] < 0.8 else bp_prob[i]
-            plt.axvline(Ph.iloc[i, Ph.columns.get_loc("pos")], color = col, alpha = alph)
+            ax.axvline(Ph.iloc[i, Ph.columns.get_loc("pos")], color = col, alpha = alph)
 #        ax2 = ax.twiny()
 #        ax2.set_xticks(Ph.iloc[self.breakpoints, Ph.columns.get_loc("pos")]);
 #        ax2.set_xticklabels(bp_idx);
@@ -614,11 +612,12 @@ class A_MCMC:
 #        ax2.set_xlabel("Breakpoint number in current MCMC iteration")
 
         # beta CI's weighted by breakpoints
+        pos_col = Ph.columns.get_loc("pos")
         for bp_samp in self.breakpoint_list:
             bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
             for st, en in bpl:
                 ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, self.maj_idx].sum() + 1, Ph.iloc[st:en, self.min_idx].sum() + 1)
-                ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, 1], ci_lo), Ph.iloc[en, 1] - Ph.iloc[st, 1], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 0.01, zorder = 1000))
+                ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, pos_col], ci_lo), Ph.iloc[en, pos_col] - Ph.iloc[st, pos_col], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 0.01, zorder = 1000))
 
         ax.set_xticks(np.linspace(*plt.xlim(), 20));
         ax.set_xticklabels(Ph["pos"].searchsorted(np.linspace(*plt.xlim(), 20)));
