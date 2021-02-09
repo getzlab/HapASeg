@@ -44,7 +44,7 @@ class AllelicMCMCRunner:
         H = [None]*len(self.chunks["arm"].unique())
         for i, (arm, A) in enumerate(self.chunks.groupby("arm")):
             # concatenate allele count dataframes
-            H[i] = A_MCMC(pd.concat([x.P for x in A["results"]], ignore_index = True))
+            H[i] = A_MCMC(pd.concat([x.P for x in A["results"]], ignore_index = True), n_iter = 20000)
 
             # replicate constructor steps to define initial breakpoint set and
             # marginal likelihood dict
@@ -64,5 +64,8 @@ class AllelicMCMCRunner:
 
         #
         # run full MCMC on each arm
-        self.client.map(lambda x : x.run(), Hs)
-        breakpoint()
+        arm_futures = self.client.map(lambda x : x.run(), Hs)
+        self.groups["results"] = self.client.gather(arm_futures)
+        self.groups = self.groups.join(self.chr_int, how = "right")
+
+        return self.groups
