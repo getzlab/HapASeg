@@ -187,7 +187,10 @@ c = dd.Client()
 
 refs = hapaseg.load.HapasegReference()
 
+hapaseg.A_MCMC(refs.allele_counts.iloc[0:500])
+
 runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(refs.allele_counts, refs.chromosome_intervals, c)
+allelic_segs = runner.run_all()
 
 #
 # load
