@@ -8,7 +8,7 @@ import scipy.special as ss
 import sortedcontainers as sc
 
 class A_MCMC:
-    def __init__(self, P, quit_after_burnin = False):
+    def __init__(self, P, quit_after_burnin = False, n_iter = 100000):
         #
         # dataframe stuff
         self.P = P.copy().reset_index()
@@ -26,7 +26,7 @@ class A_MCMC:
         # config stuff
 
         # number of MCMC iterations
-        self.n_iter = 100000
+        self.n_iter = n_iter
 
         self.quit_after_burnin = quit_after_burnin
 
