@@ -32,7 +32,7 @@ class A_MCMC:
 
         #
         # chain state
-        self.iter = 0
+        self.iter = 1
         self.burned_in = False
 
         #
@@ -84,10 +84,14 @@ class A_MCMC:
         self.marg_lik[0] = np.array(self.seg_marg_liks.values()).sum()
 
     def run(self):
-        for _ in range(0, self.n_iter):
-            # perform a split and combine operation
-            self.combine(np.random.choice(self.breakpoints[:-1]), force = False)
-            self.split(b_idx = np.random.choice(len(self.breakpoints)))
+        while self.iter < self.n_iter:
+            # perform a split or combine operation
+            if np.random.rand() < 0.5:
+                if self.combine(np.random.choice(self.breakpoints[:-1]), force = False) == -1:
+                    continue
+            else:
+                if self.split(b_idx = np.random.choice(len(self.breakpoints))) == -1:
+                    continue
 
             # if we're only running up to burnin, bail
             if self.quit_after_burnin and self.burned_in:
@@ -116,14 +120,15 @@ class A_MCMC:
                   color = colorama.Fore.YELLOW if not self.burned_in else colorama.Fore.RESET
                 ))
 
-        return self
+            # check if we've burned in
+            # TODO: use a faster method of computing rolling average
+            if self.iter > 500:
+                if np.diff(self.marg_lik[(self.iter - 500):self.iter]).mean() < 0:
+                    self.burned_in = True
 
-    def incr(self):
-        self.iter += 1
-        # TODO: use a faster method of computing rolling average
-        if self.iter > 500:
-            if np.diff(self.marg_lik[(self.iter - 500):self.iter]).mean() < 0:
-                self.burned_in = True
+            self.iter += 1 
+
+        return self
 
     def combine(self, st = None, b_idx = None, force = True):
         """
@@ -192,7 +197,6 @@ class A_MCMC:
             self.seg_marg_liks.__delitem__(mid)
             self.seg_marg_liks[st] = ML_join
 
-            self.incr()
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] - ML_split + ML_join
             if self.burned_in:
                 self.incr_bp_counter(st = st, en = en)
@@ -206,7 +210,6 @@ class A_MCMC:
             if self.burned_in:
                 self.incr_bp_counter(st = st, mid = mid, en = en)
 
-            self.incr()
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
 
             return mid
@@ -446,6 +449,7 @@ class A_MCMC:
         if b == len(split_probs) - 1:
             if self.burned_in:
                 self.incr_bp_counter(st = st, en = en)
+            self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
             return
 
 #        # otherwise, compute transition probabilities for split
@@ -497,7 +501,6 @@ class A_MCMC:
             self.seg_marg_liks[st] = seg_lik_1
             self.seg_marg_liks[mid] = seg_lik_2
 
-            self.incr()
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] + ML_split - ML_join
             if self.burned_in:
                 self.incr_bp_counter(st = st, mid = mid, en = en)
@@ -509,7 +512,6 @@ class A_MCMC:
             if self.burned_in:
                 self.incr_bp_counter(st = st, en = en)
 
-            self.incr()
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
 
 #        # split segment
