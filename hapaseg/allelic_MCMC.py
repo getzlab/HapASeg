@@ -98,7 +98,7 @@ class A_MCMC:
                   n_bp = len(self.breakpoints),
                   lik = self.marg_lik[self.iter]
                 ) + colorama.Fore.RESET)
-                break
+                return self
 
             # save set of breakpoints if burned in 
             if self.burned_in and not self.iter % 100:
@@ -115,6 +115,8 @@ class A_MCMC:
                   lik = self.marg_lik[self.iter],
                   color = colorama.Fore.YELLOW if not self.burned_in else colorama.Fore.RESET
                 ))
+
+        return self
 
     def incr(self):
         self.iter += 1

@@ -29,8 +29,7 @@ class AllelicMCMCRunner:
     @staticmethod
     def _run_on_chunks(rng, P):
         H = A_MCMC(P.iloc[rng], quit_after_burnin = True)
-        H.run()
-        return H
+        return H.run()
 
     def run_all(self, chunks = None):
         #
