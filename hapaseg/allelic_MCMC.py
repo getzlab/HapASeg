@@ -1,6 +1,7 @@
 import colorama
 import itertools
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import scipy.stats as s
@@ -606,11 +607,11 @@ class A_MCMC:
             col = 'k' if bp_prob[i] < 0.8 else 'm'
             alph = bp_prob[i]/2 if bp_prob[i] < 0.8 else bp_prob[i]
             plt.axvline(Ph.iloc[i, Ph.columns.get_loc("pos")], color = col, alpha = alph)
-        ax2 = ax.twiny()
-        ax2.set_xticks(Ph.iloc[self.breakpoints, Ph.columns.get_loc("pos")]);
-        ax2.set_xticklabels(bp_idx);
-        ax2.set_xlim(ax.get_xlim());
-        ax2.set_xlabel("Breakpoint number in current MCMC iteration")
+#        ax2 = ax.twiny()
+#        ax2.set_xticks(Ph.iloc[self.breakpoints, Ph.columns.get_loc("pos")]);
+#        ax2.set_xticklabels(bp_idx);
+#        ax2.set_xlim(ax.get_xlim());
+#        ax2.set_xlabel("Breakpoint number in current MCMC iteration")
 
         # beta CI's weighted by breakpoints
         for bp_samp in self.breakpoint_list:
