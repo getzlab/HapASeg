@@ -1,10 +1,22 @@
+import numpy as np
+from itertools import chain
+
 from . import A_MCMC
 
+from capy import mut
+
 class AllelicMCMCRunner:
-    def __init__(self, P, c):
+    def __init__(self, allele_counts, chromosome_intervals, c):
         self.client = c
-        self.P = P
-        self.P_shared = c.scatter(P)
+        self.P = allele_counts
+        self.P_shared = c.scatter(allele_counts)
+        self.chr_int = chromosome_intervals
+
+        # make ranges
+        t = mut.map_mutations_to_targets(allele_counts, chromosome_intervals, inplace = False)
+        self.groups = t.groupby(t).apply(lambda x : [x.index.min(), x.index.max()]).to_frame(name = "bdy")
+        self.groups["ranges"] = self.groups["bdy"].apply(lambda x : np.r_[x[0]:x[1]:5000, x[1]])
+        self.chunks = list(chain(*[[slice(*x) for x in np.c_[y[0:-1], y[1:]]] for y in self.groups["ranges"]]))
 
     @staticmethod
     def run(rng, P):
@@ -12,14 +24,16 @@ class AllelicMCMCRunner:
         H.run()
         return H
 
-    def run_all(self, ranges):
+    def run_all(self, chunks = None):
         #
-        # scatter across ranges. for each range, run until burnin
-        futures = self.client.map(self.run, ranges, P = self.P_shared)
+        # scatter across chunks. for each range, run until burnin
+        chunks = self.chunks if chunks is None else chunks
+
+        futures = self.client.map(self.run, chunks, P = self.P_shared)
         results = self.client.gather(futures)
 
         #
-        # concatenate burned in ranges; run again for full number of iterations
+        # concatenate burned in chunks; run again for full number of iterations
 
         # TODO: run in parallel for each arm
 
