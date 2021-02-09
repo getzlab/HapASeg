@@ -84,7 +84,10 @@ class A_MCMC:
         self.marg_lik[0] = np.array(self.seg_marg_liks.values()).sum()
 
     def run(self):
-        for _ in range(0, self.n_iter):
+        while True:
+            if self.iter - 2 >= self.n_iter:
+                return self
+
             # perform a split and combine operation
             self.combine(np.random.choice(self.breakpoints[:-1]), force = False)
             self.split(b_idx = np.random.choice(len(self.breakpoints)))
