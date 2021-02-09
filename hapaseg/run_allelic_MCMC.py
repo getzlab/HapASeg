@@ -1,4 +1,6 @@
 import numpy as np
+import pandas as pd
+import sortedcontainers as sc
 from itertools import chain
 
 from . import A_MCMC
@@ -13,13 +15,19 @@ class AllelicMCMCRunner:
         self.chr_int = chromosome_intervals
 
         # make ranges
-        t = mut.map_mutations_to_targets(allele_counts, chromosome_intervals, inplace = False)
+        t = mut.map_mutations_to_targets(self.P, self.chr_int, inplace = False)
         self.groups = t.groupby(t).apply(lambda x : [x.index.min(), x.index.max()]).to_frame(name = "bdy")
         self.groups["ranges"] = self.groups["bdy"].apply(lambda x : np.r_[x[0]:x[1]:5000, x[1]])
-        self.chunks = list(chain(*[[slice(*x) for x in np.c_[y[0:-1], y[1:]]] for y in self.groups["ranges"]]))
+        self.chunks = pd.DataFrame(
+          np.vstack([
+            np.hstack(np.broadcast_arrays(k, np.c_[y[0:-1], y[1:]]))
+            for k, y in self.groups["ranges"].iteritems()
+          ])[:, 1:],
+          columns = ["arm", "start", "end"]
+        )
 
     @staticmethod
-    def run(rng, P):
+    def run_on_chunks(rng, P):
         H = A_MCMC(P.iloc[rng], quit_after_burnin = True)
         H.run()
         return H
@@ -27,33 +35,35 @@ class AllelicMCMCRunner:
     def run_all(self, chunks = None):
         #
         # scatter across chunks. for each range, run until burnin
-        chunks = self.chunks if chunks is None else chunks
+        chunks = [slice(*x) for x in self.chunks[["start", "end"]].values] if chunks is None else chunks
 
-        futures = self.client.map(self.run, chunks, P = self.P_shared)
-        results = self.client.gather(futures)
+        futures = self.client.map(self.run_on_chunks, chunks, P = self.P_shared)
+        self.chunks["results"] = self.client.gather(futures)
 
         #
-        # concatenate burned in chunks; run again for full number of iterations
+        # concatenate burned in chunks for each arm
+        H = [None]*len(self.chunks["arm"].unique())
+        for i, (arm, A) in enumerate(self.chunks.groupby("arm")):
+            # concatenate allele count dataframes
+            H[i] = A_MCMC(pd.concat([x.P for x in A["results"]], ignore_index = True))
 
-        # TODO: run in parallel for each arm
+            # replicate constructor steps to define initial breakpoint set and
+            # marginal likelihood dict
+            breakpoints = [None]*len(A)
+            H[i].seg_marg_liks = sc.SortedDict()
+            for j, (_, _, start, _, r) in enumerate(A.itertuples()):
+                start -= A["start"].iloc[0]
+                breakpoints[j] = np.array(r.breakpoints) + start
+                for k, v in r.seg_marg_liks.items():
+                    H[i].seg_marg_liks[k + start] = v
+            H[i].breakpoints = sc.SortedSet(np.hstack(breakpoints))
 
-        # concat P dataframes
-        H = A_MCMC(self.P)
-        H.P = pd.concat([x.P for x in results], ignore_index = True)
+            H[i].marg_lik = np.full(H[i].n_iter, np.nan)
+            H[i].marg_lik[0] = np.array(H[i].seg_marg_liks.values()).sum()
 
-        # replicate constructor steps
-        H.P["index"] = range(0, len(H.P))
+        Hs = self.client.scatter(H)
 
-        # concat breakpoint lists
-        breakpoints = [None]*len(chunk_bdy)
-        H.seg_marg_liks = sc.SortedDict()
-        for i, (r, b) in enumerate(zip(results_g, chunk_bdy[:, 0])):
-            breakpoints[i] = np.array(r.breakpoints) + b
-            for k, v in r.seg_marg_liks.items():
-                H.seg_marg_liks[k + b] = v
-        H.breakpoints = sc.SortedSet(np.hstack(breakpoints))
-
-        H.marg_lik = np.full(H.n_iter, np.nan)
-        H.marg_lik[0] = np.array(H.seg_marg_liks.values()).sum()
-
-        H.run()
+        #
+        # run full MCMC on each arm
+        self.client.map(lambda x : x.run(), Hs)
+        breakpoint()
