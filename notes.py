@@ -123,7 +123,58 @@ import hapaseg
 # SML = H.seg_marg_liks
 # ML = H.marg_lik
 
+H = hapaseg.Hapaseg(P.iloc[0:10000], quit_after_burnin = True)
+
+#
+# scatter over tiles up to burnin, then run on concatenation
+
+chunks = np.r_[0:len(P):5000, len(P)]
+chunk_bdy = np.c_[chunks[0:-1], chunks[1:]]
+
+import dask.distributed as dd
+
+c = dd.Client()
+
+class Poo:
+    def __init__(self, P, c):
+        self.client = c
+        self.P = c.scatter(P)
+
+    @staticmethod
+    def run(rng, P):
+        H = hapaseg.Hapaseg(P.iloc[rng], quit_after_burnin = True)
+        H.run()
+        return H
+
+    def run_all(self, ranges):
+        return self.client.map(self.run, ranges, P = self.P)
+
+p = Poo(P, c)
+
+# run scatter
+results = p.run_all([slice(*x) for x in chunk_bdy])
+
+# gather
+results_g = c.gather(results)
+
+# concat P dataframes
 H = hapaseg.Hapaseg(P)
+H.P = pd.concat([x.P for x in results_g], ignore_index = True)
+H.P["index"] = range(0, len(H.P))
+
+# concat breakpoint lists
+breakpoints = [None]*len(chunk_bdy)
+H.seg_marg_liks = sc.SortedDict()
+for i, (r, b) in enumerate(zip(results_g, chunk_bdy[:, 0])):
+    breakpoints[i] = np.array(r.breakpoints) + b
+    for k, v in r.seg_marg_liks.items():
+        H.seg_marg_liks[k + b] = v
+H.breakpoints = sc.SortedSet(np.hstack(breakpoints))
+
+H.marg_lik = np.full(H.n_iter, np.nan)
+H.marg_lik[0] = np.array(H.seg_marg_liks.values()).sum()
+
+H.run()
 
 #
 # load
