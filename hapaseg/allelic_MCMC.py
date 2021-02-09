@@ -356,7 +356,7 @@ class A_MCMC:
             self.breakpoint_counter[mid] += np.r_[1, 1]
             self.breakpoint_counter[(mid + 1):en] += np.r_[0, 1]
 
-    def visualize(self):
+    def visualize(self, show_CIs = False):
         Ph = self.P.copy()
         CI = s.beta.ppf([0.05, 0.5, 0.95], Ph["MAJ_COUNT"][:, None] + 1, Ph["MIN_COUNT"][:, None] + 1)
         Ph[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
@@ -365,7 +365,9 @@ class A_MCMC:
         ax = plt.gca()
 
         # SNPs
-        ax.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.5, color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx_orig"].astype(np.int)])
+        ax.scatter(Ph["pos"], Ph["median_hap"], color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx_orig"].astype(np.int)], alpha = 0.5, s = 4)
+        if show_CIs:
+            ax.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.5, color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx_orig"].astype(np.int)])
 
 #        # phase switches
 #        o = 0
