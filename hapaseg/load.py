@@ -59,15 +59,19 @@ class HapasegReference:
         ints = dict(zip(chrs, [{0} for _ in range(0, len(chrs))]))
         last_end = None
         last_stain = None
+        last_chrom = None
         for _, chrom, start, end, _, stain in cband.itertuples():
             if start == 0:
                 if last_end is not None:
-                    ints[chrom - 1].add(last_end)
-            if stain == "acen" and last_stain is not None:
+                    ints[last_chrom].add(last_end)
+            if stain == "acen" and last_stain != "acen":
+                ints[chrom].add(start)
+            if stain != "acen" and last_stain == "acen":
                 ints[chrom].add(start)
             
             last_end = end
             last_stain = stain
+            last_chrom = chrom
         ints[chrom].add(end)
 
         CI = np.full([len(ints), 4], 0)
