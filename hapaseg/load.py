@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import scipy.stats as s
 
 from capy import txt
 from itertools import zip_longest
@@ -22,7 +23,7 @@ class HapasegReference:
 
     @staticmethod
     def load_VCF(VCF, allele_counts):
-        P = pd.read_csv(phased_VCF, sep = "\t", comment = "#", names = ["chr", "pos", "x", "ref", "alt", "y", "z", "a", "b", "hap"], header = None)
+        P = pd.read_csv(VCF, sep = "\t", comment = "#", names = ["chr", "pos", "x", "ref", "alt", "y", "z", "a", "b", "hap"], header = None)
         P = P.loc[:, ~P.columns.str.match('^.$')]
 
         P = txt.parsein(P, 'hap', r'(.)\|(.)', ["allele_A", "allele_B"]).astype({"allele_A" : int, "allele_B" : int })
@@ -51,7 +52,7 @@ class HapasegReference:
 
     @staticmethod
     def parse_cytoband(cytoband):
-        cband = pd.read_csv(cytoband_file, sep = "\t", names = ["chr", "start", "end", "band", "stain"])
+        cband = pd.read_csv(cytoband, sep = "\t", names = ["chr", "start", "end", "band", "stain"])
         cband["chr"] = cband["chr"].apply(lambda x : _chrmap[x])
 
         chrs = cband["chr"].unique()
