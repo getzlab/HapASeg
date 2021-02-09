@@ -11,11 +11,15 @@ class HapasegReference:
     def __init__(self,
       phased_VCF = "test.vcf",
       allele_counts = "3328.tumor.tsv",
+      coverage = None,
       cytoband_file = "cytoBand.txt"
     ):
         #
         # load in VCF
         self.allele_counts = self.load_VCF(phased_VCF, allele_counts)
+
+        #
+        # load in coverage; merge with allele counts
 
         #
         # parse cytoband file for chromosome arm boundaries
