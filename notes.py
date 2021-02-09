@@ -123,7 +123,7 @@ import hapaseg
 # SML = H.seg_marg_liks
 # ML = H.marg_lik
 
-H = hapaseg.Hapaseg(P.iloc[0:10000], quit_after_burnin = True)
+H = hapaseg.A_MCMC(P.iloc[0:10000], quit_after_burnin = True)
 
 #
 # scatter over tiles up to burnin, then run on concatenation
@@ -142,7 +142,7 @@ class Poo:
 
     @staticmethod
     def run(rng, P):
-        H = hapaseg.Hapaseg(P.iloc[rng], quit_after_burnin = True)
+        H = hapaseg.A_MCMC(P.iloc[rng], quit_after_burnin = True)
         H.run()
         return H
 
@@ -158,7 +158,7 @@ results = p.run_all([slice(*x) for x in chunk_bdy])
 results_g = c.gather(results)
 
 # concat P dataframes
-H = hapaseg.Hapaseg(P)
+H = hapaseg.A_MCMC(P)
 H.P = pd.concat([x.P for x in results_g], ignore_index = True)
 H.P["index"] = range(0, len(H.P))
 
@@ -175,6 +175,19 @@ H.marg_lik = np.full(H.n_iter, np.nan)
 H.marg_lik[0] = np.array(H.seg_marg_liks.values()).sum()
 
 H.run()
+
+#
+# test new framework
+sys.path.append(".")
+import hapaseg
+
+import dask.distributed as dd
+
+c = dd.Client()
+
+refs = hapaseg.load.HapasegReference()
+
+runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(refs.allele_counts, refs.chromosome_intervals, c)
 
 #
 # load
