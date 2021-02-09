@@ -11,7 +11,7 @@ class Hapaseg:
     def __init__(self, P, quit_after_burnin = False):
         #
         # dataframe stuff
-        self.P = P.copy().reset_index(drop = True)
+        self.P = P.copy().reset_index()
         self.P["aidx_orig"] = self.P["aidx"]
 
         self.min_idx = P.columns.get_loc("MIN_COUNT")
@@ -91,6 +91,13 @@ class Hapaseg:
 
             # if we're only running up to burnin, bail
             if self.quit_after_burnin and self.burned_in:
+                print(colorama.Fore.GREEN + "Burned in [{st},{en}] in {n} iterations. n_bp = {n_bp}, lik = {lik}".format(
+                  st = self.P["index"].iloc[0],
+                  en = self.P["index"].iloc[-1],
+                  n = self.iter,
+                  n_bp = len(self.breakpoints),
+                  lik = self.marg_lik[self.iter]
+                ) + colorama.Fore.RESET)
                 break
 
             # save set of breakpoints if burned in 
@@ -99,7 +106,9 @@ class Hapaseg:
 
             # print status
             if not self.iter % 100:
-                print("{color}{n}/{tot}\tn_bp = {n_bp}\tlik = {lik}".format(
+                print("{color}[{st},{en}]\t{n}/{tot}\tn_bp = {n_bp}\tlik = {lik}".format(
+                  st = self.P["index"].iloc[0],
+                  en = self.P["index"].iloc[-1],
                   n = self.iter,
                   tot = self.n_iter,
                   n_bp = len(self.breakpoints),
