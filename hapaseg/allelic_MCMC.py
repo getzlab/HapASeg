@@ -599,12 +599,12 @@ class A_MCMC:
 #            o -= 0.01
 
         # breakpoints 
-        bp_prob = self.breakpoint_counter[:, 0]/self.breakpoint_counter[:, 1]
-        bp_idx = np.flatnonzero(bp_prob > 0)
-        for i in bp_idx:
-            col = 'k' if bp_prob[i] < 0.8 else 'm'
-            alph = bp_prob[i]/2 if bp_prob[i] < 0.8 else bp_prob[i]
-            ax.axvline(Ph.iloc[i, Ph.columns.get_loc("pos")], color = col, alpha = alph)
+#        bp_prob = self.breakpoint_counter[:, 0]/self.breakpoint_counter[:, 1]
+#        bp_idx = np.flatnonzero(bp_prob > 0)
+#        for i in bp_idx:
+#            col = 'k' if bp_prob[i] < 0.8 else 'm'
+#            alph = bp_prob[i]/2 if bp_prob[i] < 0.8 else bp_prob[i]
+#            ax.axvline(Ph.iloc[i, Ph.columns.get_loc("pos")], color = col, alpha = alph)
 #        ax2 = ax.twiny()
 #        ax2.set_xticks(Ph.iloc[self.breakpoints, Ph.columns.get_loc("pos")]);
 #        ax2.set_xticklabels(bp_idx);
