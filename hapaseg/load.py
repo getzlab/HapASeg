@@ -30,11 +30,16 @@ class HapasegReference:
         P = pd.read_csv(VCF, sep = "\t", comment = "#", names = ["chr", "pos", "x", "ref", "alt", "y", "z", "a", "b", "hap"], header = None)
         P = P.loc[:, ~P.columns.str.match('^.$')]
 
-        P = txt.parsein(P, 'hap', r'(.)\|(.)', ["allele_A", "allele_B"]).astype({"allele_A" : int, "allele_B" : int })
+        P = txt.parsein(P, 'hap', r'(.)[/|](.)', ["allele_A", "allele_B"]).astype({"allele_A" : int, "allele_B" : int })
+        P["phased"] = P["hap"].str[1] == "|"
 
         # pull in altcounts
         C = pd.read_csv(allele_counts, sep = "\t")
         P = P.merge(C, how = "inner", left_on = ["chr", "pos"], right_on = ["CONTIG", "POSITION"]).drop(columns = ["CONTIG", "POSITION"])
+
+        # for now we discard all unphased sites. later we might want to use them
+        # if they provide addition power
+        P = P.loc[P["phased"]]
 
         # alt/ref -> major/minor
         aidx = P["allele_A"] > 0
