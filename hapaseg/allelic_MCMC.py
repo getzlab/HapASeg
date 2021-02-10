@@ -403,3 +403,4 @@ class A_MCMC:
         ax.set_xticks(np.linspace(*plt.xlim(), 20));
         ax.set_xticklabels(Ph["pos"].searchsorted(np.linspace(*plt.xlim(), 20)));
         ax.set_xlabel("SNP index")
+        ax.set_ylim([0, 1])
