@@ -216,18 +216,36 @@ class A_MCMC:
         # haps = x/y, segs = 1/2, beta params. = A/B
 
         # seg 1
-        x1_A = self.P.loc[(self.P.index >= bdy1[0]) & (self.P.index < bdy1[1]) & self.P["aidx"], "ALT_COUNT"].sum() + 1
-        x1_B = self.P.loc[(self.P.index >= bdy1[0]) & (self.P.index < bdy1[1]) & self.P["aidx"], "REF_COUNT"].sum() + 1 
+        rng_idx = (self.P.index >= bdy1[0]) & (self.P.index < bdy1[1])
 
-        y1_A = self.P.loc[(self.P.index >= bdy1[0]) & (self.P.index < bdy1[1]) & ~self.P["aidx"], "ALT_COUNT"].sum() + 1 
-        y1_B = self.P.loc[(self.P.index >= bdy1[0]) & (self.P.index < bdy1[1]) & ~self.P["aidx"], "REF_COUNT"].sum() + 1 
+        idx = rng_idx & self.P["aidx"]
+        # if we don't have any SNPs assigned to a given haplotype/segment
+        # pair, we are not powered to calculate misphasing.
+        if ~idx.any():
+            return 0
+        x1_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
+        x1_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
+
+        idx = rng_idx & ~self.P["aidx"]
+        if ~idx.any():
+            return 0
+        y1_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
+        y1_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
         # seg 2
-        x2_A = self.P.loc[(self.P.index >= bdy2[0]) & (self.P.index < bdy2[1]) & self.P["aidx"], "ALT_COUNT"].sum() + 1 
-        x2_B = self.P.loc[(self.P.index >= bdy2[0]) & (self.P.index < bdy2[1]) & self.P["aidx"], "REF_COUNT"].sum() + 1 
+        rng_idx = (self.P.index >= bdy2[0]) & (self.P.index < bdy2[1])
 
-        y2_A = self.P.loc[(self.P.index >= bdy2[0]) & (self.P.index < bdy2[1]) & ~self.P["aidx"], "ALT_COUNT"].sum() + 1 
-        y2_B = self.P.loc[(self.P.index >= bdy2[0]) & (self.P.index < bdy2[1]) & ~self.P["aidx"], "REF_COUNT"].sum() + 1 
+        idx = rng_idx & self.P["aidx"]
+        if ~idx.any():
+            return 0
+        x2_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
+        x2_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
+
+        idx = rng_idx & ~self.P["aidx"]
+        if ~idx.any():
+            return 0
+        y2_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
+        y2_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
         lik_mis   = ss.betaln(x1_A + y1_B + y2_A + x2_B, y1_A + x1_B + x2_A + y2_B)
         lik_nomis = ss.betaln(x1_A + y1_B + x2_A + y2_B, y1_A + x1_B + y2_A + x2_B)
