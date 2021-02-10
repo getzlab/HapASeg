@@ -8,11 +8,13 @@ from . import A_MCMC
 from capy import mut
 
 class AllelicMCMCRunner:
-    def __init__(self, allele_counts, chromosome_intervals, c):
+    def __init__(self, allele_counts, chromosome_intervals, c, misphase_prior = 0.001):
         self.client = c
         self.P = allele_counts
         self.P_shared = c.scatter(allele_counts)
         self.chr_int = chromosome_intervals
+
+        self.misphase_prior = misphase_prior
 
         # make ranges
         t = mut.map_mutations_to_targets(self.P, self.chr_int, inplace = False)
@@ -27,8 +29,8 @@ class AllelicMCMCRunner:
         )
 
     @staticmethod
-    def _run_on_chunks(rng, P):
-        H = A_MCMC(P.iloc[rng], quit_after_burnin = True)
+    def _run_on_chunks(rng, P, misphase_prior):
+        H = A_MCMC(P.iloc[rng], quit_after_burnin = True, misphase_prior = misphase_prior)
         return H.run()
 
     def run_all(self, chunks = None):
@@ -36,7 +38,7 @@ class AllelicMCMCRunner:
         # scatter across chunks. for each range, run until burnin
         chunks = [slice(*x) for x in self.chunks[["start", "end"]].values] if chunks is None else chunks
 
-        futures = self.client.map(self._run_on_chunks, chunks, P = self.P_shared)
+        futures = self.client.map(self._run_on_chunks, chunks, P = self.P_shared, misphase_prior = self.misphase_prior)
         self.chunks["results"] = self.client.gather(futures)
 
         #

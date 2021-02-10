@@ -9,7 +9,7 @@ import scipy.special as ss
 import sortedcontainers as sc
 
 class A_MCMC:
-    def __init__(self, P, quit_after_burnin = False, n_iter = 100000):
+    def __init__(self, P, quit_after_burnin = False, n_iter = 100000, misphase_prior = 0.001):
         #
         # dataframe stuff
         self.P = P.copy().reset_index()
@@ -29,6 +29,8 @@ class A_MCMC:
         self.n_iter = n_iter
 
         self.quit_after_burnin = quit_after_burnin
+
+        self.misphase_prior = misphase_prior
 
         #
         # chain state
@@ -232,7 +234,7 @@ class A_MCMC:
 
         # TODO: this could be a function of the actual SNP phasing 
         # overall misphase prob. may also be returned from EAGLE
-        p_mis = 0.001
+        p_mis = self.misphase_prior
 
         # logsumexp
         m = np.maximum(lik_mis, lik_nomis)
