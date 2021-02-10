@@ -418,6 +418,9 @@ class A_MCMC:
                 ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, self.maj_idx].sum() + 1, Ph.iloc[st:en, self.min_idx].sum() + 1)
                 ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, pos_col], ci_lo), Ph.iloc[en, pos_col] - Ph.iloc[st, pos_col], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 0.01, zorder = 1000))
 
+        # 50:50 line
+        ax.axhline(0.5, color = 'k', linestyle = ":")
+
         ax.set_xticks(np.linspace(*plt.xlim(), 20));
         ax.set_xticklabels(Ph["pos"].searchsorted(np.linspace(*plt.xlim(), 20)));
         ax.set_xlabel("SNP index")
