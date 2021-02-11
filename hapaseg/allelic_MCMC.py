@@ -378,7 +378,7 @@ class A_MCMC:
 
     def visualize(self, show_CIs = False):
         Ph = self.P.copy()
-        CI = s.beta.ppf([0.05, 0.5, 0.95], Ph["MAJ_COUNT"][:, None] + 1, Ph["MIN_COUNT"][:, None] + 1)
+        CI = s.beta.ppf([0.05, 0.5, 0.95], Ph["MIN_COUNT"][:, None] + 1, Ph["MAJ_COUNT"][:, None] + 1)
         Ph[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
 
         plt.figure(); plt.clf()
@@ -415,7 +415,7 @@ class A_MCMC:
         for bp_samp in self.breakpoint_list:
             bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
             for st, en in bpl:
-                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, self.maj_idx].sum() + 1, Ph.iloc[st:en, self.min_idx].sum() + 1)
+                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, self.min_idx].sum() + 1, Ph.iloc[st:en, self.maj_idx].sum() + 1)
                 ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, pos_col], ci_lo), Ph.iloc[en, pos_col] - Ph.iloc[st, pos_col], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 0.01, zorder = 1000))
 
         # 50:50 line
