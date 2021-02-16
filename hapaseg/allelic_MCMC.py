@@ -158,14 +158,6 @@ class A_MCMC:
         mid = self.breakpoints[br]
         en = self.breakpoints[br + 1]
 
-        prob_misphase = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
-
-        # flip phase
-        flipped = False
-        if np.random.rand() < prob_misphase:
-            self.flip_hap(mid, en)
-            flipped = True
-
         # M-H acceptance
         ML_split = self.seg_marg_liks[st] + self.seg_marg_liks[mid]
 
@@ -179,6 +171,31 @@ class A_MCMC:
         # q(split)/q(join) = p(picking mid as breakpoint)/
         #                    p(picking first segment)
         log_q_rat = np.log(split_probs[mid - st]) - -np.log(len(self.breakpoints))
+
+        # flip phase
+        prob_misphase = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
+
+        flipped = False
+        if np.random.rand() < prob_misphase:
+            print(f"Attempting flipping {st} {mid} {en} ... ", end = "", flush = True)
+            self.flip_hap(mid, en)
+            flipped = True
+
+            # joined likelihood will be different if phase is flipped, but
+            # phase flip does not affect split likelihood since beta func. is symmetric
+            ML_join = ss.betaln(
+              self.P.loc[st:(en - 1), "MIN_COUNT"].sum() + 1,
+              self.P.loc[st:(en - 1), "MAJ_COUNT"].sum() + 1
+            )
+
+            # proposal dist. ratio is different if phase is flipped
+            _, _, split_probs_flip = self.compute_cumsum(st, en)
+            prob_misphase_flip = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
+            # q(x*->x)/q(x->x*)
+            # q(join->split|flip)/q(split->join) = p(picking mid as breakpoint|flip_back)*p(flip_back)/
+            #                                      p(picking first segment)*p(flip)
+            log_q_rat = np.log(split_probs_flip[mid - st]) + np.log(prob_misphase_flip) - \
+               (-np.log(len(self.breakpoints)) + np.log(prob_misphase))
 
         # accept transition
         if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + log_q_rat):
@@ -330,13 +347,14 @@ class A_MCMC:
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
             return
 
-        prob_misphase = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
-
-        # flip phase
-        flipped = False
-        if np.random.rand() < prob_misphase:
-            self.flip_hap(mid, en)
-            flipped = True
+#        prob_misphase = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
+#
+#        # flip phase
+#        flipped = False
+#        if np.random.rand() < prob_misphase:
+#            print(f"Flipping {st} {mid} {en}")
+#            self.flip_hap(mid, en)
+#            flipped = True
 
         # M-H acceptance
         seg_lik_1 = ss.betaln(
@@ -368,8 +386,8 @@ class A_MCMC:
 
         # don't accept
         else:
-            if flipped:
-                self.flip_hap(mid, en)
+#            if flipped:
+#                self.flip_hap(mid, en)
             if self.burned_in:
                 self.incr_bp_counter(st = st, en = en)
 
