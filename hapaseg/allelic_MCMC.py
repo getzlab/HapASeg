@@ -9,7 +9,12 @@ import scipy.special as ss
 import sortedcontainers as sc
 
 class A_MCMC:
-    def __init__(self, P, quit_after_burnin = False, n_iter = 100000, misphase_prior = 0.001):
+    def __init__(self, P,
+      quit_after_burnin = False,
+      n_iter = 100000,
+      misphase_prior = 0.001,
+      no_phase_correct = False
+    ):
         #
         # dataframe stuff
         self.P = P.copy().reset_index()
@@ -31,6 +36,7 @@ class A_MCMC:
         self.quit_after_burnin = quit_after_burnin
 
         self.misphase_prior = misphase_prior
+        self.no_phase_correct = no_phase_correct
 
         #
         # chain state
@@ -212,6 +218,9 @@ class A_MCMC:
         """
         Compute probability of misphase
         """
+
+        if self.no_phase_correct:
+            return 0
 
         # haps = x/y, segs = 1/2, beta params. = A/B
 
