@@ -20,8 +20,13 @@ class A_MCMC:
         self.P = P.copy().reset_index()
         self.P["aidx_orig"] = self.P["aidx"]
 
-        # number of times we've corrected the phasing of a segment
         self.P["flip"] = 0
+
+        # probability that a SNP is incorrectly phased
+        self.P["misphase_prob"] = 0
+
+        # whether we've flipped this SNP relative to its original orientation
+        self.P["flipped"] = False
 
         # column indices for iloc
         self.min_idx = self.P.columns.get_loc("MIN_COUNT")
@@ -37,6 +42,9 @@ class A_MCMC:
 
         self.misphase_prior = misphase_prior
         self.no_phase_correct = no_phase_correct
+
+        # number of bins to use for discrete probability a given SNP is misphased
+        self.phase_prob_res = 20
 
         #
         # chain state
@@ -158,6 +166,9 @@ class A_MCMC:
         mid = self.breakpoints[br]
         en = self.breakpoints[br + 1]
 
+        # flip phase
+        self.flip_hap(st, en)
+
         # M-H acceptance
         ML_split = self.seg_marg_liks[st] + self.seg_marg_liks[mid]
 
@@ -172,41 +183,41 @@ class A_MCMC:
         #                    p(picking first segment)
         log_q_rat = np.log(split_probs[mid - st]) - -np.log(len(self.breakpoints))
 
-        # flip phase
-        prob_misphase, lik_mis, lik_nomis = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
-
-        flipped = False
-        if np.log(np.random.rand()) < prob_misphase:
-            print(f"Attempting flipping {st} {mid} {en} ... ", end = "", flush = True)
-            if (self.P.iloc[st:mid, self.min_idx].sum() + 1) < (self.P.iloc[st:mid, self.maj_idx].sum() + 1):
-                self.flip_hap(mid, en)
-            else:
-                self.flip_hap(st, mid)
-            flipped = True
-
-            # joined likelihood will be different if phase is flipped, but
-            # phase flip does not affect split likelihood since beta func. is symmetric
-            ML_join = ss.betaln(
-              self.P.loc[st:(en - 1), "MIN_COUNT"].sum() + 1,
-              self.P.loc[st:(en - 1), "MAJ_COUNT"].sum() + 1
-            ) + lik_mis
-
-            ML_split += lik_nomis
-
-            # proposal dist. ratio is different if phase is flipped
-            _, _, split_probs_flip = self.compute_cumsum(st, en)
-            prob_misphase_flip, _, _ = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
-            # q(x*->x)/q(x->x*)
-            # q(join->split|flip)/q(split->join) = p(picking mid as breakpoint|flip_back)*p(flip_back)/
-            #                                      p(picking first segment)*p(flip)
-            print(f"sp: {split_probs_flip[mid - st]} pmf: {prob_misphase_flip} pm: {prob_misphase} MLj: {ML_join} MLs: {ML_split}")
-            log_q_rat = np.log(split_probs_flip[mid - st]) + prob_misphase_flip - \
-               (-np.log(len(self.breakpoints)) + prob_misphase)
+#        # flip phase
+#        prob_misphase, lik_mis, lik_nomis = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
+#
+#        flipped = False
+#        if np.log(np.random.rand()) < prob_misphase:
+#            print(f"Attempting flipping {st} {mid} {en} ... ", end = "", flush = True)
+#            if (self.P.iloc[st:mid, self.min_idx].sum() + 1) < (self.P.iloc[st:mid, self.maj_idx].sum() + 1):
+#                self.flip_hap(mid, en)
+#            else:
+#                self.flip_hap(st, mid)
+#            flipped = True
+#
+#            # joined likelihood will be different if phase is flipped, but
+#            # phase flip does not affect split likelihood since beta func. is symmetric
+#            ML_join = ss.betaln(
+#              self.P.loc[st:(en - 1), "MIN_COUNT"].sum() + 1,
+#              self.P.loc[st:(en - 1), "MAJ_COUNT"].sum() + 1
+#            ) + lik_mis
+#
+#            ML_split += lik_nomis
+#
+#            # proposal dist. ratio is different if phase is flipped
+#            _, _, split_probs_flip = self.compute_cumsum(st, en)
+#            prob_misphase_flip, _, _ = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
+#            # q(x*->x)/q(x->x*)
+#            # q(join->split|flip)/q(split->join) = p(picking mid as breakpoint|flip_back)*p(flip_back)/
+#            #                                      p(picking first segment)*p(flip)
+#            print(f"sp: {split_probs_flip[mid - st]} pmf: {prob_misphase_flip} pm: {prob_misphase} MLj: {ML_join} MLs: {ML_split}")
+#            log_q_rat = np.log(split_probs_flip[mid - st]) + prob_misphase_flip - \
+#               (-np.log(len(self.breakpoints)) + prob_misphase)
 
         # accept transition
         if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + log_q_rat):
-            if flipped:
-                print(colorama.Fore.BLUE + "accepted" + colorama.Fore.RESET)
+#            if flipped:
+#                print(colorama.Fore.BLUE + "accepted" + colorama.Fore.RESET)
             self.breakpoints.remove(mid)
             self.seg_marg_liks.__delitem__(mid)
             self.seg_marg_liks[st] = ML_join
@@ -219,9 +230,9 @@ class A_MCMC:
 
         # don't accept transition; undo
         else:
-            if flipped:
-                print(colorama.Fore.RED + "reverted" + colorama.Fore.RESET)
-                self.flip_hap(mid, en)
+#            if flipped:
+#                print(colorama.Fore.RED + "reverted" + colorama.Fore.RESET)
+#                self.flip_hap(mid, en)
             if self.burned_in:
                 self.incr_bp_counter(st = st, mid = mid, en = en)
 
@@ -231,14 +242,29 @@ class A_MCMC:
 
     def flip_hap(self, st, en):
         """
-        flips the haplotype of sites from st to en - 1 (Pythonic half indexing)
+        Probabilistically flips the SNPs from st to en - 1 according to the HMM samples
+        Flip prob. is probability that SNP is assigned to haplotype with HF < 0.5, in which
+        case it should be reversed.
         """
-        # note that loc indexing is closed, so we explicitly have to give it en - 1
-        x = self.P.loc[st:(en - 1), "MAJ_COUNT"].copy()
-        self.P.loc[st:(en - 1), "MAJ_COUNT"] = self.P.loc[st:(en - 1), "MIN_COUNT"]
-        self.P.loc[st:(en - 1), "MIN_COUNT"] = x
-        self.P.loc[st:(en - 1), "aidx"] = ~self.P.loc[st:(en - 1), "aidx"]
-        self.P.loc[st:(en - 1), "flip"] += 1
+        mp = self.P.iloc[st:en, self.P.columns.get_loc("misphase_prob")]
+        if mp.any():
+            flipped = self.P.iloc[st:en, self.P.columns.get_loc("flipped")]
+            rnd = np.random.choice(self.phase_prob_res, mp.shape)
+            idx = mp[((rnd < mp) & ~flipped) | ((rnd >= mp) & flipped)].index
+
+            x = self.P.iloc[idx, self.maj_idx].copy()
+            self.P.iloc[idx, self.maj_idx] = self.P.iloc[idx, self.min_idx]
+            self.P.iloc[idx, self.min_idx] = x
+            self.P.iloc[idx, self.P.columns.get_loc("flipped")] = ~self.P.iloc[idx, self.P.columns.get_loc("flipped")]
+#        """
+#        flips the haplotype of sites from st to en - 1 (Pythonic half indexing)
+#        """
+#        # note that loc indexing is closed, so we explicitly have to give it en - 1
+#        x = self.P.loc[st:(en - 1), "MAJ_COUNT"].copy()
+#        self.P.loc[st:(en - 1), "MAJ_COUNT"] = self.P.loc[st:(en - 1), "MIN_COUNT"]
+#        self.P.loc[st:(en - 1), "MIN_COUNT"] = x
+#        self.P.loc[st:(en - 1), "aidx"] = ~self.P.loc[st:(en - 1), "aidx"]
+#        self.P.loc[st:(en - 1), "flip"] += 1
 
     def prob_misphase(self, bdy1, bdy2):
         """
@@ -300,55 +326,57 @@ class A_MCMC:
         if not self.burned_in or len(self.breakpoint_list) == 0:
             raise RuntimeError("Breakpoint sample list must be populated (chain must be burned in)")
 
-        # TODO: sample breakpoints
-        bpl = np.array(self.breakpoint_list[0]); bpl = np.c_[bpl[:-1], bpl[1:]]
+        for bp_idx in np.random.choice(len(self.breakpoint_list), 20, replace = False):
+            bpl = np.array(self.breakpoint_list[bp_idx]); bpl = np.c_[bpl[:-1], bpl[1:]]
 
-        p_mis = np.full(len(bpl) - 1, np.nan)
-        p_A = np.full(len(bpl) - 1, np.nan)
-        p_B = np.full(len(bpl) - 1, np.nan)
+            p_mis = np.full(len(bpl) - 1, np.nan)
+            p_A = np.full(len(bpl) - 1, np.nan)
+            p_B = np.full(len(bpl) - 1, np.nan)
 
-        V = np.full([len(bpl) - 1, 2], np.nan)
-        B = np.zeros([len(bpl) - 1, 2], dtype = np.uint8)
+            V = np.full([len(bpl) - 1, 2], np.nan)
+            B = np.zeros([len(bpl) - 1, 2], dtype = np.uint8)
 
-        for i, (st, mid, _, en) in enumerate(np.c_[bpl[:-1], bpl[1:]]):
-            p_mis, p_nomis = self.prob_misphase([st, mid], [mid, en])
+            for i, (st, mid, _, en) in enumerate(np.c_[bpl[:-1], bpl[1:]]):
+                p_mis, p_nomis = self.prob_misphase([st, mid], [mid, en])
 
-            # prob. that left segment is on hap. A
-            p_A1 = s.beta.logsf(0.5, self.P.iloc[st:mid, self.min_idx].sum() + 1, self.P.iloc[st:mid, self.maj_idx].sum() + 1)
-            # prob. that right segment is on hap. A
-            p_A2 = s.beta.logsf(0.5, self.P.iloc[mid:en, self.min_idx].sum() + 1, self.P.iloc[mid:en, self.maj_idx].sum() + 1)
+                # TODO: memoize partial sums
 
-            # prob. that left segment is on hap. B
-            p_B1 = s.beta.logcdf(0.5, self.P.iloc[st:mid, self.min_idx].sum() + 1, self.P.iloc[st:mid, self.maj_idx].sum() + 1)
-            # prob. that right segment is on hap. B
-            p_B2 = s.beta.logcdf(0.5, self.P.iloc[mid:en, self.min_idx].sum() + 1, self.P.iloc[mid:en, self.maj_idx].sum() + 1)
+                # prob. that left segment is on hap. A
+                p_A1 = s.beta.logsf(0.5, self.P.iloc[st:mid, self.min_idx].sum() + 1, self.P.iloc[st:mid, self.maj_idx].sum() + 1)
+                # prob. that right segment is on hap. A
+                p_A2 = s.beta.logsf(0.5, self.P.iloc[mid:en, self.min_idx].sum() + 1, self.P.iloc[mid:en, self.maj_idx].sum() + 1)
 
-            if i == 0:
-                V[i, :] = [p_A1, p_B1]
-                continue
+                # prob. that left segment is on hap. B
+                p_B1 = s.beta.logcdf(0.5, self.P.iloc[st:mid, self.min_idx].sum() + 1, self.P.iloc[st:mid, self.maj_idx].sum() + 1)
+                # prob. that right segment is on hap. B
+                p_B2 = s.beta.logcdf(0.5, self.P.iloc[mid:en, self.min_idx].sum() + 1, self.P.iloc[mid:en, self.maj_idx].sum() + 1)
 
-            p_AB = p_mis + p_A1 + p_B2
-            p_BA = p_mis + p_B1 + p_A2
-            p_AA = p_nomis + p_A1 + p_A2
-            p_BB = p_nomis + p_B1 + p_B2
+                if i == 0:
+                    V[i, :] = [p_A1, p_B1]
+                    continue
 
-            V[i, 0] = np.max(np.r_[p_AA + V[i - 1, 0], p_BA + V[i - 1, 1]])
-            V[i, 1] = np.max(np.r_[p_AB + V[i - 1, 0], p_BB + V[i - 1, 1]])
+                p_AB = p_mis + p_A1 + p_B2
+                p_BA = p_mis + p_B1 + p_A2
+                p_AA = p_nomis + p_A1 + p_A2
+                p_BB = p_nomis + p_B1 + p_B2
 
-            B[i, 0] = np.argmax(np.r_[p_AA + V[i - 1, 0], p_BA + V[i - 1, 1]])
-            B[i, 1] = np.argmax(np.r_[p_AB + V[i - 1, 0], p_BB + V[i - 1, 1]])
+                V[i, 0] = np.max(np.r_[p_AA + V[i - 1, 0], p_BA + V[i - 1, 1]])
+                V[i, 1] = np.max(np.r_[p_AB + V[i - 1, 0], p_BB + V[i - 1, 1]])
 
-        # backtrace
-        BT = np.full(len(B), -1, dtype = np.uint8)
-        ix = np.argmax(V[-1])
-        BT[-1] = ix
-        for i, b in reversed(list(enumerate(B[:-1]))):
-            ix = b[ix]
-            BT[i] = ix
+                B[i, 0] = np.argmax(np.r_[p_AA + V[i - 1, 0], p_BA + V[i - 1, 1]])
+                B[i, 1] = np.argmax(np.r_[p_AB + V[i - 1, 0], p_BB + V[i - 1, 1]])
 
-        # flip phases
-        for x in np.flatnonzero(BT):
-            self.flip_hap(*bpl[x])
+            # backtrace
+            BT = np.full(len(B), -1, dtype = np.uint8)
+            ix = np.argmax(V[-1])
+            BT[-1] = ix
+            for i, b in reversed(list(enumerate(B[:-1]))):
+                ix = b[ix]
+                BT[i] = ix
+
+            # record
+            for x in np.flatnonzero(BT):
+                self.P.iloc[slice(*bpl[x]), self.P.columns.get_loc("misphase_prob")] += 1
 
     def compute_all_cumsums(self):
         bpl = np.array(self.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
