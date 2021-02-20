@@ -173,12 +173,15 @@ class A_MCMC:
         log_q_rat = np.log(split_probs[mid - st]) - -np.log(len(self.breakpoints))
 
         # flip phase
-        prob_misphase = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
+        prob_misphase, lik_mis, lik_nomis = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
 
         flipped = False
-        if np.random.rand() < prob_misphase:
+        if np.log(np.random.rand()) < prob_misphase:
             print(f"Attempting flipping {st} {mid} {en} ... ", end = "", flush = True)
-            self.flip_hap(mid, en)
+            if (self.P.iloc[st:mid, self.min_idx].sum() + 1) < (self.P.iloc[st:mid, self.maj_idx].sum() + 1):
+                self.flip_hap(mid, en)
+            else:
+                self.flip_hap(st, mid)
             flipped = True
 
             # joined likelihood will be different if phase is flipped, but
@@ -186,19 +189,24 @@ class A_MCMC:
             ML_join = ss.betaln(
               self.P.loc[st:(en - 1), "MIN_COUNT"].sum() + 1,
               self.P.loc[st:(en - 1), "MAJ_COUNT"].sum() + 1
-            )
+            ) + lik_mis
+
+            ML_split += lik_nomis
 
             # proposal dist. ratio is different if phase is flipped
             _, _, split_probs_flip = self.compute_cumsum(st, en)
-            prob_misphase_flip = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
+            prob_misphase_flip, _, _ = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
             # q(x*->x)/q(x->x*)
             # q(join->split|flip)/q(split->join) = p(picking mid as breakpoint|flip_back)*p(flip_back)/
             #                                      p(picking first segment)*p(flip)
-            log_q_rat = np.log(split_probs_flip[mid - st]) + np.log(prob_misphase_flip) - \
-               (-np.log(len(self.breakpoints)) + np.log(prob_misphase))
+            print(f"sp: {split_probs_flip[mid - st]} pmf: {prob_misphase_flip} pm: {prob_misphase} MLj: {ML_join} MLs: {ML_split}")
+            log_q_rat = np.log(split_probs_flip[mid - st]) + prob_misphase_flip - \
+               (-np.log(len(self.breakpoints)) + prob_misphase)
 
         # accept transition
         if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + log_q_rat):
+            if flipped:
+                print(colorama.Fore.BLUE + "accepted" + colorama.Fore.RESET)
             self.breakpoints.remove(mid)
             self.seg_marg_liks.__delitem__(mid)
             self.seg_marg_liks[st] = ML_join
@@ -212,6 +220,7 @@ class A_MCMC:
         # don't accept transition; undo
         else:
             if flipped:
+                print(colorama.Fore.RED + "reverted" + colorama.Fore.RESET)
                 self.flip_hap(mid, en)
             if self.burned_in:
                 self.incr_bp_counter(st = st, mid = mid, en = en)
@@ -237,7 +246,7 @@ class A_MCMC:
         """
 
         if self.no_phase_correct:
-            return 0
+            return -np.inf, 0, 0
 
         # haps = x/y, segs = 1/2, beta params. = A/B
 
