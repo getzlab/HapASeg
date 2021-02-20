@@ -293,7 +293,62 @@ class A_MCMC:
         m = np.maximum(lik_mis, lik_nomis)
         denom = m + np.log(np.exp(lik_mis - m)*p_mis + np.exp(lik_nomis - m)*(1 - p_mis))
 
-        return np.exp(lik_mis + np.log(p_mis) - denom)
+        #return lik_mis + np.log(p_mis) - denom, lik_mis, lik_nomis
+        return lik_mis + np.log(p_mis) - denom, lik_nomis + np.log(1 - p_mis) - denom
+
+    def correct_phases(self):
+        if not self.burned_in or len(self.breakpoint_list) == 0:
+            raise RuntimeError("Breakpoint sample list must be populated (chain must be burned in)")
+
+        # TODO: sample breakpoints
+        bpl = np.array(self.breakpoint_list[0]); bpl = np.c_[bpl[:-1], bpl[1:]]
+
+        p_mis = np.full(len(bpl) - 1, np.nan)
+        p_A = np.full(len(bpl) - 1, np.nan)
+        p_B = np.full(len(bpl) - 1, np.nan)
+
+        V = np.full([len(bpl) - 1, 2], np.nan)
+        B = np.zeros([len(bpl) - 1, 2], dtype = np.uint8)
+
+        for i, (st, mid, _, en) in enumerate(np.c_[bpl[:-1], bpl[1:]]):
+            p_mis, p_nomis = self.prob_misphase([st, mid], [mid, en])
+
+            # prob. that left segment is on hap. A
+            p_A1 = s.beta.logsf(0.5, self.P.iloc[st:mid, self.min_idx].sum() + 1, self.P.iloc[st:mid, self.maj_idx].sum() + 1)
+            # prob. that right segment is on hap. A
+            p_A2 = s.beta.logsf(0.5, self.P.iloc[mid:en, self.min_idx].sum() + 1, self.P.iloc[mid:en, self.maj_idx].sum() + 1)
+
+            # prob. that left segment is on hap. B
+            p_B1 = s.beta.logcdf(0.5, self.P.iloc[st:mid, self.min_idx].sum() + 1, self.P.iloc[st:mid, self.maj_idx].sum() + 1)
+            # prob. that right segment is on hap. B
+            p_B2 = s.beta.logcdf(0.5, self.P.iloc[mid:en, self.min_idx].sum() + 1, self.P.iloc[mid:en, self.maj_idx].sum() + 1)
+
+            if i == 0:
+                V[i, :] = [p_A1, p_B1]
+                continue
+
+            p_AB = p_mis + p_A1 + p_B2
+            p_BA = p_mis + p_B1 + p_A2
+            p_AA = p_nomis + p_A1 + p_A2
+            p_BB = p_nomis + p_B1 + p_B2
+
+            V[i, 0] = np.max(np.r_[p_AA + V[i - 1, 0], p_BA + V[i - 1, 1]])
+            V[i, 1] = np.max(np.r_[p_AB + V[i - 1, 0], p_BB + V[i - 1, 1]])
+
+            B[i, 0] = np.argmax(np.r_[p_AA + V[i - 1, 0], p_BA + V[i - 1, 1]])
+            B[i, 1] = np.argmax(np.r_[p_AB + V[i - 1, 0], p_BB + V[i - 1, 1]])
+
+        # backtrace
+        BT = np.full(len(B), -1, dtype = np.uint8)
+        ix = np.argmax(V[-1])
+        BT[-1] = ix
+        for i, b in reversed(list(enumerate(B[:-1]))):
+            ix = b[ix]
+            BT[i] = ix
+
+        # flip phases
+        for x in np.flatnonzero(BT):
+            self.flip_hap(*bpl[x])
 
     def compute_all_cumsums(self):
         bpl = np.array(self.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]

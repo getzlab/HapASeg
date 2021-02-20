@@ -187,10 +187,96 @@ c = dd.Client()
 
 refs = hapaseg.load.HapasegReference()
 
-hapaseg.A_MCMC(refs.allele_counts.iloc[0:500])
-
 runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(refs.allele_counts, refs.chromosome_intervals, c)
 allelic_segs = runner.run_all()
+
+#allelic_segs.to_pickle("allelic_segs.pickle")
+
+allelic_segs = pd.read_pickle("allelic_segs.pickle")
+
+H = allelic_segs["results"].iloc[0]
+H.P = H.P.drop(columns = ["level_0", "index"])
+H2 = hapaseg.allelic_MCMC.A_MCMC(H.P)
+H2.breakpoint_counter = H.breakpoint_counter
+H2.breakpoint_list = H.breakpoint_list
+H2.breakpoints = H.breakpoints
+
+H = allelic_segs["results"].iloc[1]
+H.P = H.P.drop(columns = ["level_0", "index"])
+H2 = hapaseg.allelic_MCMC.A_MCMC(H.P)
+H2.breakpoint_counter = H.breakpoint_counter
+H2.breakpoint_list = H.breakpoint_list
+H2.breakpoints = H.breakpoints
+
+
+# to run on an individual chunk
+H = hapaseg.allelic_MCMC.A_MCMC(refs.allele_counts.iloc[0:500])
+
+#
+# phase correction HMM
+
+# compute misphase probs for each segment
+
+allelic_segs = pd.read_pickle("allelic_segs.pickle")
+H = allelic_segs["results"].iloc[0]
+H.no_phase_correct = False
+
+bpl = np.array(H.breakpoint_list[0]); bpl = np.c_[bpl[:-1], bpl[1:]]
+
+p_mis = np.full(len(bpl) - 1, np.nan)
+p_A = np.full(len(bpl) - 1, np.nan)
+p_B = np.full(len(bpl) - 1, np.nan)
+
+V = np.full([len(bpl) - 1, 2], np.nan)
+B = np.zeros([len(bpl) - 1, 2], dtype = np.uint8)
+
+for i, (st, mid, _, en) in enumerate(np.c_[bpl[:-1], bpl[1:]]):
+    p_mis, p_nomis = H.prob_misphase([st, mid], [mid, en])
+
+    # prob. that left segment is on hap. A
+    p_A1 = s.beta.logsf(0.5, H.P.iloc[st:mid, H.min_idx].sum() + 1, H.P.iloc[st:mid, H.maj_idx].sum() + 1)
+    # prob. that right segment is on hap. A
+    p_A2 = s.beta.logsf(0.5, H.P.iloc[mid:en, H.min_idx].sum() + 1, H.P.iloc[mid:en, H.maj_idx].sum() + 1)
+
+    # prob. that left segment is on hap. B
+    p_B1 = s.beta.logcdf(0.5, H.P.iloc[st:mid, H.min_idx].sum() + 1, H.P.iloc[st:mid, H.maj_idx].sum() + 1)
+    # prob. that right segment is on hap. B
+    p_B2 = s.beta.logcdf(0.5, H.P.iloc[mid:en, H.min_idx].sum() + 1, H.P.iloc[mid:en, H.maj_idx].sum() + 1)
+
+    if i == 0:
+        V[i, :] = [p_A1, p_B1]
+        continue
+
+    p_AB = p_mis + p_A1 + p_B2
+    p_BA = p_mis + p_B1 + p_A2
+    p_AA = p_nomis + p_A1 + p_A2
+    p_BB = p_nomis + p_B1 + p_B2
+
+    V[i, 0] = np.max(np.r_[p_AA + V[i - 1, 0], p_BA + V[i - 1, 1]])
+    V[i, 1] = np.max(np.r_[p_AB + V[i - 1, 0], p_BB + V[i - 1, 1]])
+
+    B[i, 0] = np.argmax(np.r_[p_AA + V[i - 1, 0], p_BA + V[i - 1, 1]])
+    B[i, 1] = np.argmax(np.r_[p_AB + V[i - 1, 0], p_BB + V[i - 1, 1]])
+
+# backtrace
+BT = np.full(len(B), -1, dtype = np.uint8)
+ix = np.argmax(V[-1])
+BT[-1] = ix
+for i, b in reversed(list(enumerate(B[:-1]))):
+    ix = b[ix]
+    BT[i] = ix
+
+plt.figure(100); plt.clf()
+for i, (st, en) in enumerate(bpl):
+    a = H.P.iloc[st:en, H.min_idx]
+    b = H.P.iloc[st:en, H.maj_idx]
+    p = H.P.iloc[st:en, H.P.columns.get_loc("pos")]
+
+    #plt.scatter(p, a/(a + b), color = np.r_[np.c_[0, 1, 1], np.c_[1, 1, 0]][BT[i]])
+    if BT[i] == 0:
+        plt.scatter(p, a/(a + b), color = 'k', s = 5, alpha = 0.2)
+    else:
+        plt.scatter(p, b/(a + b), color = 'k', s = 5, alpha = 0.2)
 
 #
 # load
