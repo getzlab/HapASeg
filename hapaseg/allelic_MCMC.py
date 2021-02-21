@@ -272,12 +272,14 @@ class A_MCMC:
         """
         Compute probability of misphase
         """
+        # TODO: change invocation to st, mid, en -- we don't need to correct
+        #       phasing of noncontiguous segments
 
         if self.no_phase_correct:
             return -np.inf, 0, 0
 
         # prior on misphasing probability
-        p_mis = self.misphase_prior if np.isnan(self.P.loc[bdy2[0], "misphase_prob"]) else self.P.loc[bdy2[0], "misphase_prob"]
+        p_mis = self.misphase_prior if np.isnan(self.P.loc[bdy1[1] - 1, "misphase_prob"]) else self.P.loc[bdy1[1] - 1, "misphase_prob"]
         if p_mis == 0:
             return -np.inf, 0
 

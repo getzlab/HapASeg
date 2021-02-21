@@ -104,7 +104,8 @@ class HapasegReference:
             else:
                 P_RBP.loc[rng, ["allele_A_IMP", "allele_B_IMP"]] = RBP_f
 
-            P_RBP.loc[rng, "misphase_prob"] = 0
+            # this SNP is correctly phased relative to the downstream SNP
+            P_RBP.loc[rng[:-1], "misphase_prob"] = 0
 
         P_RBP = P_RBP.rename(columns = { "allele_A_IMP" : "allele_A", "allele_B_IMP" : "allele_B" })
 
