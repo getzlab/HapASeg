@@ -22,8 +22,10 @@ class A_MCMC:
 
         self.P["flip"] = 0
 
-        # probability that a SNP is incorrectly phased
-        self.P["misphase_prob"] = 0
+        # probability that a SNP is incorrectly phased, as inferred by the HMM.
+        # this is distinct from misphase_prob, which is the a priori probability
+        # that a SNP is misphased.
+        self.P["HMM_misphase_prob"] = 0
 
         # whether we've flipped this SNP relative to its original orientation
         self.P["flipped"] = False
@@ -246,7 +248,7 @@ class A_MCMC:
         Flip prob. is probability that SNP is assigned to haplotype with HF < 0.5, in which
         case it should be reversed.
         """
-        mp = self.P.iloc[st:en, self.P.columns.get_loc("misphase_prob")]
+        mp = self.P.iloc[st:en, self.P.columns.get_loc("HMM_misphase_prob")]
         if mp.any():
             flipped = self.P.iloc[st:en, self.P.columns.get_loc("flipped")]
             rnd = np.random.choice(self.phase_prob_res, mp.shape)
@@ -273,6 +275,11 @@ class A_MCMC:
 
         if self.no_phase_correct:
             return -np.inf, 0, 0
+
+        # prior on misphasing probability
+        p_mis = self.misphase_prior if np.isnan(self.P.loc[bdy2[0], "misphase_prob"]) else self.P.loc[bdy2[0], "misphase_prob"]
+        if p_mis == 0:
+            return -np.inf, 0
 
         # haps = x/y, segs = 1/2, beta params. = A/B
 
@@ -310,10 +317,6 @@ class A_MCMC:
 
         lik_mis   = ss.betaln(x1_A + y1_B + y2_A + x2_B, y1_A + x1_B + x2_A + y2_B)
         lik_nomis = ss.betaln(x1_A + y1_B + x2_A + y2_B, y1_A + x1_B + y2_A + x2_B)
-
-        # TODO: this could be a function of the actual SNP phasing 
-        # overall misphase prob. may also be returned from EAGLE
-        p_mis = self.misphase_prior
 
         # logsumexp
         m = np.maximum(lik_mis, lik_nomis)
