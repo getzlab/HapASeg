@@ -5,6 +5,7 @@ import matplotlib as mpl
 import numpy as np
 import pandas as pd
 import scipy.stats as s
+import scipy.sparse as sp
 import scipy.special as ss
 import sortedcontainers as sc
 
@@ -244,20 +245,12 @@ class A_MCMC:
 
     def flip_hap(self, st, en):
         """
-        Probabilistically flips the SNPs from st to en - 1 according to the HMM samples
-        Flip prob. is probability that SNP is assigned to haplotype with HF < 0.5, in which
-        case it should be reversed.
+        Flips the SNPs from st to en
         """
-        mp = self.P.iloc[st:en, self.P.columns.get_loc("HMM_misphase_prob")]
-        if mp.any():
-            flipped = self.P.iloc[st:en, self.P.columns.get_loc("flipped")]
-            rnd = np.random.choice(self.phase_prob_res, mp.shape)
-            idx = mp[((rnd < mp) & ~flipped) | ((rnd >= mp) & flipped)].index
 
-            x = self.P.iloc[idx, self.maj_idx].copy()
-            self.P.iloc[idx, self.maj_idx] = self.P.iloc[idx, self.min_idx]
-            self.P.iloc[idx, self.min_idx] = x
-            self.P.iloc[idx, self.P.columns.get_loc("flipped")] = ~self.P.iloc[idx, self.P.columns.get_loc("flipped")]
+        x = self.P.iloc[st:en, self.maj_idx].copy()
+        self.P.iloc[st:en, self.maj_idx] = self.P.iloc[st:en, self.min_idx]
+        self.P.iloc[st:en, self.min_idx] = x
 #        """
 #        flips the haplotype of sites from st to en - 1 (Pythonic half indexing)
 #        """
@@ -275,8 +268,8 @@ class A_MCMC:
         # TODO: change invocation to st, mid, en -- we don't need to correct
         #       phasing of noncontiguous segments
 
-        if self.no_phase_correct:
-            return -np.inf, 0, 0
+#        if self.no_phase_correct:
+#            return -np.inf, 0
 
         # prior on misphasing probability
         p_mis = self.misphase_prior if np.isnan(self.P.loc[bdy1[1] - 1, "misphase_prob"]) else self.P.loc[bdy1[1] - 1, "misphase_prob"]
@@ -291,14 +284,14 @@ class A_MCMC:
         idx = rng_idx & self.P["aidx"]
         # if we don't have any SNPs assigned to a given haplotype/segment
         # pair, we are not powered to calculate misphasing.
-        if ~idx.any():
-            return 0
+#        if ~idx.any():
+#            return 0
         x1_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         x1_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
         idx = rng_idx & ~self.P["aidx"]
-        if ~idx.any():
-            return 0
+#        if ~idx.any():
+#            return 0
         y1_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         y1_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
@@ -306,14 +299,14 @@ class A_MCMC:
         rng_idx = (self.P.index >= bdy2[0]) & (self.P.index < bdy2[1])
 
         idx = rng_idx & self.P["aidx"]
-        if ~idx.any():
-            return 0
+#        if ~idx.any():
+#            return 0
         x2_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         x2_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
         idx = rng_idx & ~self.P["aidx"]
-        if ~idx.any():
-            return 0
+#        if ~idx.any():
+#            return 0
         y2_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         y2_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
@@ -331,7 +324,10 @@ class A_MCMC:
         if not self.burned_in or len(self.breakpoint_list) == 0:
             raise RuntimeError("Breakpoint sample list must be populated (chain must be burned in)")
 
-        for bp_idx in np.random.choice(len(self.breakpoint_list), 20, replace = False):
+        A_ct = sp.dok_matrix((len(self.P), len(self.P)), dtype = np.int)
+        B_ct = sp.dok_matrix((len(self.P), len(self.P)), dtype = np.int)
+
+        for bp_idx in np.random.choice(len(self.breakpoint_list), 40, replace = False):
             bpl = np.array(self.breakpoint_list[bp_idx]); bpl = np.c_[bpl[:-1], bpl[1:]]
 
             p_mis = np.full(len(bpl) - 1, np.nan)
@@ -379,9 +375,23 @@ class A_MCMC:
                 ix = b[ix]
                 BT[i] = ix
 
+            # join contiguous segments assigned to hap. B
+            d = np.diff(BT, append = 0, prepend = 0)
+            ctg_idx = np.c_[np.flatnonzero(d == 1), np.flatnonzero(d == -1) - 1]
+            b_segs_j = np.c_[bpl[ctg_idx[:, 0], 0], bpl[ctg_idx[:, 1], 1]]
+
+            # join contiguous segments assigned to hap. A
+            d = np.diff(1 - BT, append = 0, prepend = 0)
+            ctg_idx = np.c_[np.flatnonzero(d == 1), np.flatnonzero(d == -1) - 1]
+            a_segs_j = np.c_[bpl[ctg_idx[:, 0], 0], bpl[ctg_idx[:, 1], 1]]
+
             # record
-            for x in np.flatnonzero(BT):
-                self.P.iloc[slice(*bpl[x]), self.P.columns.get_loc("misphase_prob")] += 1
+            for x in b_segs_j:
+                #self.P.iloc[slice(*bpl[x]), self.P.columns.get_loc("HMM_misphase_prob")] += 1
+                B_ct[x[0], x[1]] += 1
+            for x in a_segs_j:
+                A_ct[x[0], x[1]] += 1
+
 
     def compute_all_cumsums(self):
         bpl = np.array(self.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
