@@ -8,13 +8,22 @@ from . import A_MCMC
 from capy import mut
 
 class AllelicMCMCRunner:
-    def __init__(self, allele_counts, chromosome_intervals, c, misphase_prior = 0.001):
+    def __init__(self,
+      allele_counts,
+      chromosome_intervals,
+      c,
+      n_iter = 20000,
+      misphase_prior = 0.001,
+      _ref_bias = 1.0 # temporary parameter; will ultimately be inferred immediately post-burnin
+    ):
         self.client = c
         self.P = allele_counts
         self.P_shared = c.scatter(allele_counts)
         self.chr_int = chromosome_intervals
 
+        self.n_iter = n_iter
         self.misphase_prior = misphase_prior
+        self._ref_bias = _ref_bias
 
         # make ranges
         t = mut.map_mutations_to_targets(self.P, self.chr_int, inplace = False)
@@ -46,7 +55,12 @@ class AllelicMCMCRunner:
         H = [None]*len(self.chunks["arm"].unique())
         for i, (arm, A) in enumerate(self.chunks.groupby("arm")):
             # concatenate allele count dataframes
-            H[i] = A_MCMC(pd.concat([x.P for x in A["results"]], ignore_index = True), n_iter = 20000, misphase_prior = self.misphase_prior)
+            H[i] = A_MCMC(
+              pd.concat([x.P for x in A["results"]], ignore_index = True),
+              n_iter = self.n_iter,
+              misphase_prior = self.misphase_prior,
+              ref_bias = self._ref_bias # TODO: infer dynamically from burnin chunks
+            )
 
             # replicate constructor steps to define initial breakpoint set and
             # marginal likelihood dict

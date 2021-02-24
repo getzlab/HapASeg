@@ -13,6 +13,7 @@ class A_MCMC:
     def __init__(self, P,
       quit_after_burnin = False,
       n_iter = 100000,
+      ref_bias = 1.0,
       misphase_prior = 0.001,
       phase_correct = False
     ):
@@ -23,6 +24,14 @@ class A_MCMC:
         # column indices for iloc
         self.min_idx = self.P.columns.get_loc("MIN_COUNT")
         self.maj_idx = self.P.columns.get_loc("MAJ_COUNT")
+
+        # factor by which to downscale all reference alleles, in order to
+        # correct for bias against the alternate allele due to capture or alignment
+        self.P["REF_COUNT"] *= ref_bias
+        self.P["MAJ_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "ALT_COUNT"], self.P.loc[~self.P["aidx"], "REF_COUNT"]])
+        self.P["MIN_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "REF_COUNT"], self.P.loc[~self.P["aidx"], "ALT_COUNT"]])
+
+        # TODO: recompute CI's too? these are not actually used anywhere
 
         #
         # config stuff

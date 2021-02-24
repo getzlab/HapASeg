@@ -37,12 +37,15 @@ import dask.distributed as dd
 
 c = dd.Client()
 
-refs = hapaseg.load.HapasegReference(phased_VCF = "exome/phased.vcf", allele_counts = "exome/6_C1D1_CFDNA.tumor.tsv", ref_bias = 0.938)
-
-# with whatshap correction and all chromosomes
 refs = hapaseg.load.HapasegReference(phased_VCF = "exome/eagle.vcf", readbacked_phased_VCF = "exome/whatshap.vcf", allele_counts = "exome/6_C1D1_CFDNA.tumor.tsv")
 
-runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(refs.allele_counts, refs.chromosome_intervals, c, misphase_prior = 3e-3)
+runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
+  refs.allele_counts,
+  refs.chromosome_intervals,
+  c,
+  misphase_prior = 3e-3,
+  _ref_bias = 0.936 # tmp: will be automatically inferred later
+)
 allelic_segs = runner.run_all()
 
 #allelic_segs.to_pickle("exome/allelic_segs.pickle")
