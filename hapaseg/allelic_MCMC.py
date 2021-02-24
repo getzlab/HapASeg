@@ -449,7 +449,7 @@ class A_MCMC:
 
         # get initial marginal likelihood of this configuration
         ML_orig = 0
-        for b in breakpoints0:
+        for b in breakpoints0[:-1]:
             ML_orig += self.seg_marg_liks[b]
 
         # flip each nonflipped region
@@ -497,8 +497,8 @@ class A_MCMC:
         ML = 0
         for st_bp, en_bp in np.c_[bps[:-1], bps[1:]]:
             ML += ss.betaln(
-              self.P.iloc[st_bp:en_bp, self.min_idx].sum(),
-              self.P.iloc[st_bp:en_bp, self.maj_idx].sum()
+              self.P.iloc[st_bp:en_bp, self.min_idx].sum() + 1,
+              self.P.iloc[st_bp:en_bp, self.maj_idx].sum() + 1
             )
 
         # probabilistically accept new configuration
