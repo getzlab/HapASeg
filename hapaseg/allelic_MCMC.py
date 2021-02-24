@@ -19,17 +19,6 @@ class A_MCMC:
         #
         # dataframe stuff
         self.P = P.copy().reset_index()
-        self.P["aidx_orig"] = self.P["aidx"]
-
-        self.P["flip"] = 0
-
-        # probability that a SNP is incorrectly phased, as inferred by the HMM.
-        # this is distinct from misphase_prob, which is the a priori probability
-        # that a SNP is misphased.
-        self.P["HMM_misphase_prob"] = 0
-
-        # whether we've flipped this SNP relative to its original orientation
-        self.P["flipped"] = False
 
         # column indices for iloc
         self.min_idx = self.P.columns.get_loc("MIN_COUNT")
@@ -48,8 +37,8 @@ class A_MCMC:
         # whether to perform phasing correction iterations
         self.phase_correct = phase_correct
 
-        # number of bins to use for discrete probability a given SNP is misphased
-        self.phase_prob_res = 20
+        # how many post-burnin samples to use to infer phase switches
+        self.n_phase_correct_sample = 40
 
         #
         # chain state
@@ -204,41 +193,8 @@ class A_MCMC:
         #                    p(picking first segment)
         log_q_rat = np.log(split_probs[mid - st]) - -np.log(len(self.breakpoints))
 
-#        # flip phase
-#        prob_misphase, lik_mis, lik_nomis = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
-#
-#        flipped = False
-#        if np.log(np.random.rand()) < prob_misphase:
-#            print(f"Attempting flipping {st} {mid} {en} ... ", end = "", flush = True)
-#            if (self.P.iloc[st:mid, self.min_idx].sum() + 1) < (self.P.iloc[st:mid, self.maj_idx].sum() + 1):
-#                self.flip_hap(mid, en)
-#            else:
-#                self.flip_hap(st, mid)
-#            flipped = True
-#
-#            # joined likelihood will be different if phase is flipped, but
-#            # phase flip does not affect split likelihood since beta func. is symmetric
-#            ML_join = ss.betaln(
-#              self.P.loc[st:(en - 1), "MIN_COUNT"].sum() + 1,
-#              self.P.loc[st:(en - 1), "MAJ_COUNT"].sum() + 1
-#            ) + lik_mis
-#
-#            ML_split += lik_nomis
-#
-#            # proposal dist. ratio is different if phase is flipped
-#            _, _, split_probs_flip = self.compute_cumsum(st, en)
-#            prob_misphase_flip, _, _ = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
-#            # q(x*->x)/q(x->x*)
-#            # q(join->split|flip)/q(split->join) = p(picking mid as breakpoint|flip_back)*p(flip_back)/
-#            #                                      p(picking first segment)*p(flip)
-#            print(f"sp: {split_probs_flip[mid - st]} pmf: {prob_misphase_flip} pm: {prob_misphase} MLj: {ML_join} MLs: {ML_split}")
-#            log_q_rat = np.log(split_probs_flip[mid - st]) + prob_misphase_flip - \
-#               (-np.log(len(self.breakpoints)) + prob_misphase)
-
         # accept transition
         if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + log_q_rat):
-#            if flipped:
-#                print(colorama.Fore.BLUE + "accepted" + colorama.Fore.RESET)
             self.breakpoints.remove(mid)
             self.seg_marg_liks.__delitem__(mid)
             self.seg_marg_liks[st] = ML_join
@@ -251,9 +207,6 @@ class A_MCMC:
 
         # don't accept transition; undo
         else:
-#            if flipped:
-#                print(colorama.Fore.RED + "reverted" + colorama.Fore.RESET)
-#                self.flip_hap(mid, en)
             if self.burned_in:
                 self.incr_bp_counter(st = st, mid = mid, en = en)
 
@@ -269,15 +222,6 @@ class A_MCMC:
         x = self.P.iloc[st:en, self.maj_idx].copy()
         self.P.iloc[st:en, self.maj_idx] = self.P.iloc[st:en, self.min_idx]
         self.P.iloc[st:en, self.min_idx] = x
-#        """
-#        flips the haplotype of sites from st to en - 1 (Pythonic half indexing)
-#        """
-#        # note that loc indexing is closed, so we explicitly have to give it en - 1
-#        x = self.P.loc[st:(en - 1), "MAJ_COUNT"].copy()
-#        self.P.loc[st:(en - 1), "MAJ_COUNT"] = self.P.loc[st:(en - 1), "MIN_COUNT"]
-#        self.P.loc[st:(en - 1), "MIN_COUNT"] = x
-#        self.P.loc[st:(en - 1), "aidx"] = ~self.P.loc[st:(en - 1), "aidx"]
-#        self.P.loc[st:(en - 1), "flip"] += 1
 
     def prob_misphase(self, bdy1, bdy2):
         """
@@ -285,9 +229,6 @@ class A_MCMC:
         """
         # TODO: change invocation to st, mid, en -- we don't need to correct
         #       phasing of noncontiguous segments
-
-#        if self.no_phase_correct:
-#            return -np.inf, 0
 
         # prior on misphasing probability
         p_mis = self.misphase_prior if np.isnan(self.P.loc[bdy1[1] - 1, "misphase_prob"]) else self.P.loc[bdy1[1] - 1, "misphase_prob"]
@@ -300,16 +241,10 @@ class A_MCMC:
         rng_idx = (self.P.index >= bdy1[0]) & (self.P.index < bdy1[1])
 
         idx = rng_idx & self.P["aidx"]
-        # if we don't have any SNPs assigned to a given haplotype/segment
-        # pair, we are not powered to calculate misphasing.
-#        if ~idx.any():
-#            return 0
         x1_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         x1_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
         idx = rng_idx & ~self.P["aidx"]
-#        if ~idx.any():
-#            return 0
         y1_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         y1_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
@@ -317,14 +252,10 @@ class A_MCMC:
         rng_idx = (self.P.index >= bdy2[0]) & (self.P.index < bdy2[1])
 
         idx = rng_idx & self.P["aidx"]
-#        if ~idx.any():
-#            return 0
         x2_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         x2_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
         idx = rng_idx & ~self.P["aidx"]
-#        if ~idx.any():
-#            return 0
         y2_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         y2_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
@@ -335,7 +266,6 @@ class A_MCMC:
         m = np.maximum(lik_mis, lik_nomis)
         denom = m + np.log(np.exp(lik_mis - m)*p_mis + np.exp(lik_nomis - m)*(1 - p_mis))
 
-        #return lik_mis + np.log(p_mis) - denom, lik_mis, lik_nomis
         return lik_mis + np.log(p_mis) - denom, lik_nomis + np.log(1 - p_mis) - denom
 
     def correct_phases(self):
@@ -348,7 +278,7 @@ class A_MCMC:
         #A_ct = sp.dok_matrix((len(self.P), len(self.P)), dtype = np.int)
         #B_ct = sp.dok_matrix((len(self.P), len(self.P)), dtype = np.int)
 
-        for bp_idx in np.random.choice(len(self.breakpoint_list), 40, replace = False):
+        for bp_idx in np.random.choice(len(self.breakpoint_list), self.n_phase_correct_samples, replace = False):
             bpl = np.array(self.breakpoint_list[bp_idx]); bpl = np.c_[bpl[:-1], bpl[1:]]
 
             p_mis = np.full(len(bpl) - 1, np.nan)
@@ -600,15 +530,6 @@ class A_MCMC:
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
             return
 
-#        prob_misphase = self.prob_misphase(np.r_[st, mid], np.r_[mid, en])
-#
-#        # flip phase
-#        flipped = False
-#        if np.random.rand() < prob_misphase:
-#            print(f"Flipping {st} {mid} {en}")
-#            self.flip_hap(mid, en)
-#            flipped = True
-
         # M-H acceptance
         seg_lik_1 = ss.betaln(
           self.P.loc[st:(mid - 1), "MIN_COUNT"].sum() + 1,
@@ -639,8 +560,6 @@ class A_MCMC:
 
         # don't accept
         else:
-#            if flipped:
-#                self.flip_hap(mid, en)
             if self.burned_in:
                 self.incr_bp_counter(st = st, en = en)
 
@@ -665,9 +584,9 @@ class A_MCMC:
         ax = plt.gca()
 
         # SNPs
-        ax.scatter(Ph["pos"], Ph["median_hap"], color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx_orig"].astype(np.int)], alpha = 0.5, s = 4)
+        ax.scatter(Ph["pos"], Ph["median_hap"], color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx"].astype(np.int)], alpha = 0.5, s = 4)
         if show_CIs:
-            ax.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.5, color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx_orig"].astype(np.int)])
+            ax.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.5, color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx"].astype(np.int)])
 
 #        # phase switches
 #        o = 0
