@@ -45,6 +45,9 @@ refs = hapaseg.load.HapasegReference(phased_VCF = "exome/phased.vcf", readbacked
 runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(refs.allele_counts, refs.chromosome_intervals, c, misphase_prior = 3e-3)
 allelic_segs = runner.run_all()
 
+#allelic_segs.to_pickle("exome/allelic_segs.pickle")
+allelic_segs = pd.read_pickle("exome/allelic_segs.pickle")
+
 allelic_segs["results"].iloc[0].visualize()
 allelic_segs["results"].iloc[1].visualize()
 
