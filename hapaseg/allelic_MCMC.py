@@ -32,6 +32,7 @@ class A_MCMC:
         self.P["MIN_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "REF_COUNT"], self.P.loc[~self.P["aidx"], "ALT_COUNT"]])
 
         # TODO: recompute CI's too? these are not actually used anywhere
+        # TODO: we might want to have site-specific reference bias (inferred from post-burnin segs)
 
         #
         # config stuff
@@ -53,6 +54,9 @@ class A_MCMC:
         # chain state
         self.iter = 1
         self.burned_in = False
+
+        # whether phase correction has been performed
+        self.phase_correction_ready = False
 
         #
         # breakpoint storage
@@ -119,7 +123,7 @@ class A_MCMC:
                 if self.split(b_idx = np.random.choice(len(self.breakpoints))) == -1:
                     continue
             elif op == 2:
-                if self.phase_correct:
+                if self.phase_correct and self.phase_correction_ready:
                     self.rephase()
                 else:
                     continue
@@ -135,13 +139,27 @@ class A_MCMC:
                 ) + colorama.Fore.RESET)
                 return self
 
+            # correct phases after some post-burnin iterations
+            if not self.phase_correction_ready and self.phase_correct and \
+              self.burned_in and len(self.breakpoint_list) >= 2*self.n_phase_correct_samples:
+                self.correct_phases()
+                self.phase_correction_ready = True
+
+                # breakpoint list is liable to change after phase correction, so clear it
+                self.breakpoint_list = []
+
             # save set of breakpoints and phase intervals if burned in 
             if self.burned_in and not self.iter % 100:
                 self.breakpoint_list.append(self.breakpoints.copy())
-                self.phase_interval_list.append(self.F.copy())
+                if self.phase_correction_ready:
+                    self.phase_interval_list.append(self.F.copy())
 
             # print status
             if not self.iter % 100:
+                if self.burned_in:
+                    color = colorama.Fore.MAGENTA if not self.phase_correction_ready else colorama.Fore.RESET
+                else:
+                    color = colorama.Fore.YELLOW
                 print("{color}[{st},{en}]\t{n}/{tot}\tn_bp = {n_bp}\tlik = {lik}".format(
                   st = self.P["index"].iloc[0],
                   en = self.P["index"].iloc[-1],
@@ -149,7 +167,7 @@ class A_MCMC:
                   tot = self.n_iter,
                   n_bp = len(self.breakpoints),
                   lik = self.marg_lik[self.iter],
-                  color = colorama.Fore.YELLOW if not self.burned_in else colorama.Fore.RESET
+                  color = color
                 ))
 
             # check if we've burned in
@@ -470,6 +488,8 @@ class A_MCMC:
                   self.P.iloc[st_bp:en_bp, self.maj_idx].sum() + 1
                 )
 
+            self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] - ML_orig + ML
+
         # revert
         else:
             # flip each region back
@@ -477,6 +497,8 @@ class A_MCMC:
                 if len(self.F[:en_seg, (st_seg + 1):]) != 0:
                     continue
                 self.flip_hap(st_seg, en_seg)
+
+            self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
 
     def compute_all_cumsums(self):
         bpl = np.array(self.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]

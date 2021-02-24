@@ -38,8 +38,8 @@ class AllelicMCMCRunner:
         )
 
     @staticmethod
-    def _run_on_chunks(rng, P, misphase_prior):
-        H = A_MCMC(P.iloc[rng], quit_after_burnin = True, misphase_prior = misphase_prior)
+    def _run_on_chunks(rng, P):
+        H = A_MCMC(P.iloc[rng], quit_after_burnin = True)
         return H.run()
 
     def run_all(self, chunks = None):
@@ -47,7 +47,7 @@ class AllelicMCMCRunner:
         # scatter across chunks. for each range, run until burnin
         chunks = [slice(*x) for x in self.chunks[["start", "end"]].values] if chunks is None else chunks
 
-        futures = self.client.map(self._run_on_chunks, chunks, P = self.P_shared, misphase_prior = self.misphase_prior)
+        futures = self.client.map(self._run_on_chunks, chunks, P = self.P_shared)
         self.chunks["results"] = self.client.gather(futures)
 
         #
@@ -58,6 +58,7 @@ class AllelicMCMCRunner:
             H[i] = A_MCMC(
               pd.concat([x.P for x in A["results"]], ignore_index = True),
               n_iter = self.n_iter,
+              phase_correct = True,
               misphase_prior = self.misphase_prior,
               ref_bias = self._ref_bias # TODO: infer dynamically from burnin chunks
             )
