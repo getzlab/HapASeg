@@ -96,11 +96,9 @@ for _ in range(0, len(S)):
         clusts[old_idx][2] -= maj_c
         if clusts[old_idx][0] == 0:
             clusts.__delitem__(old_idx)
-            clust_keys.remove(old_idx)
 
         clusts[max_clust_idx] = [1, min_c, maj_c]
         S.iat[i, clust_col] = max_clust_idx
-        clust_keys.add(max_clust_idx)
         max_clust_idx += 1
 
     # try to join an existing cluster
@@ -163,4 +161,3 @@ for _ in range(0, len(S)):
             clusts[old_idx][2] -= maj_c
             if old_count == 0:
                 clusts.__delitem__(old_idx)
-                clust_keys.remove(old_idx)
