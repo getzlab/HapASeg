@@ -47,7 +47,7 @@ class A_MCMC:
         self.phase_correct = phase_correct
 
         # how many post-burnin samples to use to infer phase switches
-        self.n_phase_correct_sample = 40
+        self.n_phase_correct_samples = 40
 
         #
         # chain state
