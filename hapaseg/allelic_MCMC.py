@@ -511,13 +511,25 @@ class A_MCMC:
                 # XXX: make sure this works
                 self.F[st_seg, en_seg] = 1 if len(self.F[:(en_seg - 1), (st_seg + 1):]) else 0
 
-            # update breakpoint list
-            for x in list(self.breakpoints.islice(
+            # update breakpoint list and seg. marg. liks
+            bps_to_del = list(self.breakpoints.islice(
               self.breakpoints.bisect_left(breakpoints0[0]),
               self.breakpoints.bisect_right(breakpoints0[-1])
-            )):
+            ))
+            for x in bps_to_del:
                 self.breakpoints.remove(x)
             self.breakpoints.update(breakpoints0)
+
+            # update seg. marg. liks
+            # TODO: recomputing each sum (even if in the future we use memoization)
+            #       is wasteful. intelligently pick which seg_marg_liks keys to update.
+            for x in bps_to_del[:-1]:
+                self.seg_marg_liks.__delitem__(x)
+            for st_bp, en_bp in np.c_[bps[:-1], bps[1:]]:
+                self.seg_marg_liks[st_bp] = ss.betaln(
+                  self.P.iloc[st_bp:en_bp, self.min_idx].sum() + 1,
+                  self.P.iloc[st_bp:en_bp, self.maj_idx].sum() + 1
+                )
 
         # revert
         else:
