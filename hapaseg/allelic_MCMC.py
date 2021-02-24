@@ -434,7 +434,7 @@ class A_MCMC:
         # any previously flipped regions contained within will be left alone
 
         # find nonflipped regions within st:en
-        overlaps = np.array(list(self.F[:(en - 1), (st + 1):].keys()))
+        overlaps = np.array(list(self.F[:en, (st + 1):].keys()))
         if len(overlaps) > 0:
             overlaps += np.r_[0, st + 1]
         o_S = sc.SortedSet({st, en})
@@ -459,7 +459,7 @@ class A_MCMC:
         A_flag = True
         for st_seg, en_seg in np.c_[flips[:-1], flips[1:]]:
             # this region is already flipped B->A, so leave it alone
-            if len(self.F[:(en_seg - 1), (st_seg + 1):]) != 0:
+            if len(self.F[:en_seg, (st_seg + 1):]) != 0:
                 continue
 
             A_flag = False
@@ -509,7 +509,7 @@ class A_MCMC:
         #            continue
 
                 # XXX: make sure this works
-                self.F[st_seg, en_seg] = 1 if len(self.F[:(en_seg - 1), (st_seg + 1):]) else 0
+                self.F[st_seg, en_seg] = 1 if len(self.F[:en_seg, (st_seg + 1):]) == 0 else 0
 
             # update breakpoint list and seg. marg. liks
             bps_to_del = list(self.breakpoints.islice(
@@ -535,7 +535,7 @@ class A_MCMC:
         else:
             # flip each region back
             for st_seg, en_seg in np.c_[flips[:-1], flips[1:]]:
-                if len(self.F[:(en_seg - 1), (st_seg + 1):]) != 0:
+                if len(self.F[:en_seg, (st_seg + 1):]) != 0:
                     continue
                 self.flip_hap(st_seg, en_seg)
 
