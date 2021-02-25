@@ -64,7 +64,10 @@ N = len(S)
 alpha = 1
 max_clust_idx = len(clusts)
 
-for _ in range(0, len(S)):
+for n_it in range(0, len(S)):
+    if not n_it % 1000:
+        print(S["clust"].value_counts().value_counts().sort_index())
+
     i = np.random.choice(len(S)) # pick a segment at random
 
     min_c = S.loc[i, "min"]
@@ -74,15 +77,26 @@ for _ in range(0, len(S)):
 
     q = np.random.rand() < alpha/(N - 1 + alpha)
 
-    # make a new cluster
+    # make a new cluster {{{
     if q == 1:
         # update counts
+
+        # 1. decrement old_count; increment old_count - 1
         old_count = clusts[old_idx][0]
         clust_counts[old_count] -= 1
         clust_counts_map[old_count].remove(old_idx)
         if clust_counts[old_count] == 0:
-            clust_counts.__delitem__(old_count)
-            clust_counts_map.__delitem__(old_count)
+            del clust_counts[old_count]
+            del clust_counts_map[old_count]
+
+        if old_count - 1 > 0:
+            if old_count - 1 not in clust_counts:
+                clust_counts[old_count - 1] = 0 
+                clust_counts_map[old_count - 1] = sc.SortedSet()
+            clust_counts[old_count - 1] += 1
+            clust_counts_map[old_count - 1].add(old_idx)
+
+        # 2. increment new count
         new_count = 1
         if new_count not in clust_counts:
             clust_counts[new_count] = 0
@@ -95,11 +109,12 @@ for _ in range(0, len(S)):
         clusts[old_idx][1] -= min_c
         clusts[old_idx][2] -= maj_c
         if clusts[old_idx][0] == 0:
-            clusts.__delitem__(old_idx)
+            del clusts[old_idx]
 
         clusts[max_clust_idx] = [1, min_c, maj_c]
         S.iat[i, clust_col] = max_clust_idx
         max_clust_idx += 1
+    # }}}
 
     # try to join an existing cluster
     else:
@@ -115,7 +130,6 @@ for _ in range(0, len(S)):
 
         # we are trying to join this segment with its currently assigned cluster
         if j == old_idx:
-            print("self-join")
             continue
 
         c = clusts[j]
@@ -126,7 +140,7 @@ for _ in range(0, len(S)):
         AB = ss.betaln(clusts[old_idx][1] + 1, clusts[old_idx][2] + 1)
         # C is likelihood of target cluster pre-join
         C = ss.betaln(c[1] + 1, c[2] + 1)
-        # A is likelihood cluster B is part of minus B
+        # A is likelihood cluster B is part of, minus B
         A = ss.betaln(clusts[old_idx][1] - min_c + 1, clusts[old_idx][2] - maj_c + 1)
         # B+C is likelihood of target cluster post-join
         BC = ss.betaln(c[1] + min_c + 1, c[2] + maj_c + 1)
@@ -135,6 +149,7 @@ for _ in range(0, len(S)):
         ML_split = AB + C
 
         if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split):
+            # add to new cluster
             clusts[j][0] += 1
             clusts[j][1] += min_c
             clusts[j][2] += maj_c
@@ -142,12 +157,23 @@ for _ in range(0, len(S)):
             S.iat[i, clust_col] = j
 
             # update counts
+
+            # 1. decrement old_count; increment old_count - 1
             old_count = clusts[old_idx][0]
             clust_counts[old_count] -= 1
             clust_counts_map[old_count].remove(old_idx)
             if clust_counts[old_count] == 0:
-                clust_counts.__delitem__(old_count)
-                clust_counts_map.__delitem__(old_count)
+                del clust_counts[old_count]
+                del clust_counts_map[old_count]
+
+            if old_count - 1 > 0:
+                if old_count - 1 not in clust_counts:
+                    clust_counts[old_count - 1] = 0 
+                    clust_counts_map[old_count - 1] = sc.SortedSet()
+                clust_counts[old_count - 1] += 1
+                clust_counts_map[old_count - 1].add(old_idx)
+
+            # 2. increment new count; decrement new_count - 1
             new_count = clusts[j][0]
             if new_count not in clust_counts:
                 clust_counts[new_count] = 0
@@ -155,9 +181,16 @@ for _ in range(0, len(S)):
             clust_counts[new_count] += 1
             clust_counts_map[new_count].add(j)
 
+            if new_count - 1 > 0:
+                clust_counts[new_count - 1] -= 1
+                clust_counts_map[new_count - 1].remove(j)
+                if clust_counts[new_count - 1] == 0:
+                    del clust_counts[new_count - 1]
+                    del clust_counts_map[new_count - 1]
+
             # remove from old cluster
             clusts[old_idx][0] -= 1
             clusts[old_idx][1] -= min_c
             clusts[old_idx][2] -= maj_c
-            if old_count == 0:
-                clusts.__delitem__(old_idx)
+            if clusts[old_idx][0] == 0:
+                del clusts[old_idx]
