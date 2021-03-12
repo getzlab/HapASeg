@@ -56,4 +56,33 @@ allelic_segs2 = pd.read_pickle("exome/allelic_segs.pickle")
 allelic_segs["results"].iloc[0].visualize()
 allelic_segs["results"].iloc[1].visualize()
 
-allelic_segs["results"].iloc[1].correct_phases()
+#
+# another Corc exome
+
+# get callstats file
+subprocess.check_call("gsutil cp " + P.loc["18144_6_C1D1_TISSUE_DNA_META", 'MUTECT1_CS_SNV'] + " exome", shell = True)
+
+# get BAM/BAI
+subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_TISSUE_DNA_META", "case_sample"], "cram_or_bam_path"] + " exome", shell = True)
+subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_TISSUE_DNA_META", "case_sample"], "crai_or_bai_path"] + " exome", shell = True)
+
+import hapaseg
+
+import dask.distributed as dd
+
+c = dd.Client(n_workers = 36)
+
+refs = hapaseg.load.HapasegReference(phased_VCF = "exome/6_C1D1_META.eagle.vcf", allele_counts = "exome/6_C1D1_META.tumor.tsv")
+
+runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
+  refs.allele_counts,
+  refs.chromosome_intervals,
+  c,
+  #phase_correct = False,
+  misphase_prior = 3e-3,
+  #_ref_bias = 0.936 # tmp: will be automatically inferred later
+)
+allelic_segs = runner.run_all()
+
+#allelic_segs.to_pickle("exome/6_C1D1_META.allelic_segs.pickle")
+allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.pickle")
