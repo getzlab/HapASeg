@@ -13,6 +13,7 @@ class AllelicMCMCRunner:
       chromosome_intervals,
       c,
       n_iter = 20000,
+      phase_correct = True,
       misphase_prior = 0.001,
       _ref_bias = 1.0 # temporary parameter; will ultimately be inferred immediately post-burnin
     ):
@@ -22,6 +23,7 @@ class AllelicMCMCRunner:
         self.chr_int = chromosome_intervals
 
         self.n_iter = n_iter
+        self.phase_correct = phase_correct
         self.misphase_prior = misphase_prior
         self._ref_bias = _ref_bias
 
@@ -58,7 +60,7 @@ class AllelicMCMCRunner:
             H[i] = A_MCMC(
               pd.concat([x.P for x in A["results"]], ignore_index = True),
               n_iter = self.n_iter,
-              phase_correct = True,
+              phase_correct = self.phase_correct,
               misphase_prior = self.misphase_prior,
               ref_bias = self._ref_bias # TODO: infer dynamically from burnin chunks
             )
