@@ -399,6 +399,17 @@ class A_MCMC:
             o_S.add(o[0])
             o_S.add(o[1])
 
+        flip_candidates = np.r_[o_S] # all possible regions to flip
+        flip_idx = np.zeros(len(flip_candidates) - 1, dtype = np.bool) # index of regions that haven't been flipped yet
+        A_flag = True # whether st:en consists entirely of regions that were flipped to A
+        for i, (st_seg, en_seg) in enumerate(np.c_[flip_candidates[:-1], flip_candidates[1:]]):
+            # this region was not already flipped B->A
+            if len(self.F[:en_seg, (st_seg + 1):]) == 0:
+                flip_idx[i] = True
+                A_flag = False
+
+        flips = np.c_[flip_candidates[:-1], flip_candidates[1:]][flip_idx, :]
+
         # get full range of CNV breakpoints this region spans
         st_reg = self.breakpoints.bisect_left(o_S[0])
         en_reg = self.breakpoints.bisect_right(o_S[-1])
@@ -409,17 +420,10 @@ class A_MCMC:
         for b in breakpoints0[:-1]:
             ML_orig += self.seg_marg_liks[b]
 
-        # flip each nonflipped region
-        flips = np.r_[o_S]
-
-        # whether st:en consists entirely of regions that were flipped to A
-        A_flag = True
-        for st_seg, en_seg in np.c_[flips[:-1], flips[1:]]:
-            # this region is already flipped B->A, so leave it alone
-            if len(self.F[:en_seg, (st_seg + 1):]) != 0:
-                continue
-
-            A_flag = False
+        for st_seg, en_seg in flips:
+#            # this region is already flipped B->A, so leave it alone
+#            if len(self.F[:en_seg, (st_seg + 1):]) != 0:
+#                continue
 
             # if flip boundary corresponds to an extant breakpoint, remove it
             # (we will propose joining these segments after flip)
@@ -438,16 +442,16 @@ class A_MCMC:
 
         # if st:en is entirely assigned to A, try to flip it back to B (i.e. it was a false flip)
         if A_flag:
-            if flips[0] in breakpoints0:
-                breakpoints0 -= {flips[0]}
+            if flip_candidates[0] in breakpoints0:
+                breakpoints0 -= {flip_candidates[0]}
             else:
-                breakpoints0.add(flips[0])
+                breakpoints0.add(flip_candidates[0])
             if en_reg in breakpoints0:
-                breakpoints0 -= {flips[-1]}
+                breakpoints0 -= {flip_candidates[-1]}
             else:
-                breakpoints0.add(flips[-1])
+                breakpoints0.add(flip_candidates[-1])
 
-            self.flip_hap(flips[0], flips[-1])
+            self.flip_hap(flip_candidates[0], flip_candidates[-1])
 
         # get marginal likelihood post-flip and breakpoint adjustment
         bps = np.r_[breakpoints0]
