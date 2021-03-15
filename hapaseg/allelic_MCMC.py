@@ -9,6 +9,13 @@ import scipy.sparse as sp
 import scipy.special as ss
 import sortedcontainers as sc
 
+class MySortedList(sc.SortedList):
+    # since the sorted list represents intervals, for debugging purposes it's
+    # a lot easier to output them in columnar format:
+    def __repr__(self):
+        assert not len(self) % 2
+        return str(np.array(self).reshape(-1, 2))
+
 class A_MCMC:
     def __init__(self, P,
       quit_after_burnin = False,
@@ -79,7 +86,7 @@ class A_MCMC:
         self.B_ct = sp.dok_matrix((len(self.P), len(self.P)), dtype = np.int)
 
         # current state of interval assignments (relative to B_ct)
-        self.F = sp.dok_matrix((len(self.P), len(self.P)), dtype = np.int)
+        self.F = MySortedList()
 
         # state of interval assignments at nth iteration
         self.phase_interval_list = []
@@ -380,20 +387,24 @@ class A_MCMC:
 
     # MCMC iteration that corrects a phase
     def rephase(self): # TODO: add parameters to force an interval?
-        # TODO: prerequisite checks
+        # TODO: prerequisite checks; has correct_phases() been run?
         choice = list(self.B_ct.keys())
         probs = np.r_[list(self.B_ct.values())]
 
-        # flip a B->A
+        # propose an interval to flip from B->A
         st, en = choice[np.random.choice(np.r_[0:len(choice)], p = probs/probs.sum())]
 
         # check if this overlaps any other segments that were already flipped B->A.
         # any previously flipped regions contained within will be left alone
 
-        # find nonflipped regions within st:en
-        overlaps = np.array(list(self.F[:en, (st + 1):].keys()))
-        if len(overlaps) > 0:
-            overlaps += np.r_[0, st + 1]
+        # return range of flipped region array that [st, en) overlaps
+        # TODO: rename this; f_o is a terrible name
+        def f_o(st = st, en = en):
+            st_idx = self.F.bisect_left(st + 1); st_idx -= st_idx % 2
+            en_idx = self.F.bisect_right(en - 1); en_idx += en_idx % 2
+            return slice(st_idx, en_idx)
+
+        overlaps = np.array(self.F[f_o()]).reshape(-1, 2)
         o_S = sc.SortedSet({st, en})
         for o in overlaps:
             o_S.add(o[0])
@@ -404,7 +415,7 @@ class A_MCMC:
         A_flag = True # whether st:en consists entirely of regions that were flipped to A
         for i, (st_seg, en_seg) in enumerate(np.c_[flip_candidates[:-1], flip_candidates[1:]]):
             # this region was not already flipped B->A
-            if len(self.F[:en_seg, (st_seg + 1):]) == 0:
+            if not self.F[f_o(st_seg, en_seg)]:
                 flip_idx[i] = True
                 A_flag = False
 
@@ -464,13 +475,20 @@ class A_MCMC:
 
         # probabilistically accept new configuration
         if np.log(np.random.rand()) < np.minimum(0, ML - ML_orig):
-            # update F matrix
-            for st_seg, en_seg in np.c_[flips[:-1], flips[1:]]:
-        #        if len(self.F[:(en_seg - 1), (st_seg + 1):]) != 0:
-        #            continue
+            # update F array
 
-                # XXX: make sure this works
-                self.F[st_seg, en_seg] = 1 if len(self.F[:en_seg, (st_seg + 1):]) == 0 else 0
+            # we could have either flipped a region from B->A ...
+            if not A_flag:
+                for st_seg, en_seg in flips:
+                    self.F.update([st_seg, en_seg])
+
+            # ... or reverted a flip
+            else:
+                for p in self.F[f_o(flip_candidates[0], flip_candidates[-1])]:
+                    self.F.remove(p)
+
+            # combine contiguous intervals in F array
+            # TODO
 
             # update breakpoint list and seg. marg. liks
             bps_to_del = list(self.breakpoints.islice(
@@ -501,6 +519,8 @@ class A_MCMC:
                 if len(self.F[:en_seg, (st_seg + 1):]) != 0:
                     continue
                 self.flip_hap(st_seg, en_seg)
+            if A_flag:
+                self.flip_hap(flip_candidates[0], flip_candidates[-1])
 
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
 
