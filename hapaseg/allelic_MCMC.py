@@ -394,10 +394,13 @@ class A_MCMC:
         choice = list(self.B_ct.keys())
         probs = np.r_[list(self.B_ct.values())]
 
+        #
         # propose an interval to flip from B->A
         st, en = choice[np.random.choice(np.r_[0:len(choice)], p = probs/probs.sum())]
 
-        # check if this overlaps any other segments that were already flipped B->A.
+        #
+        # check if this overlaps any other regions that were already flipped B->A.
+
         # any previously flipped regions contained within will be left alone
 
         # return range of flipped region array that [st, en) overlaps
@@ -413,6 +416,9 @@ class A_MCMC:
             o_S.add(o[0])
             o_S.add(o[1])
 
+        # somewhere we ought to assert that the length of self.F is even
+
+        # get list of regions to flip
         flip_candidates = np.r_[o_S] # all possible regions to flip
         flip_idx = np.zeros(len(flip_candidates) - 1, dtype = np.bool) # index of regions that haven't been flipped yet
         A_flag = True # whether st:en consists entirely of regions that were flipped to A
@@ -424,21 +430,21 @@ class A_MCMC:
 
         flips = np.c_[flip_candidates[:-1], flip_candidates[1:]][flip_idx, :]
 
+        #
         # get full range of CNV breakpoints this region spans
         st_reg = self.breakpoints.bisect_left(o_S[0])
         en_reg = self.breakpoints.bisect_right(o_S[-1])
         breakpoints0 = sc.SortedSet(self.breakpoints[(st_reg - 1):(en_reg + 1)])
 
+        #
         # get initial marginal likelihood of this configuration
         ML_orig = 0
         for b in breakpoints0[:-1]:
             ML_orig += self.seg_marg_liks[b]
 
+        #
+        # perform flips; update breakpoint list accordingly
         for st_seg, en_seg in flips:
-#            # this region is already flipped B->A, so leave it alone
-#            if len(self.F[:en_seg, (st_seg + 1):]) != 0:
-#                continue
-
             # if flip boundary corresponds to an extant breakpoint, remove it
             # (we will propose joining these segments after flip)
             if st_seg in breakpoints0:
@@ -454,6 +460,7 @@ class A_MCMC:
 
             self.flip_hap(st_seg, en_seg)
 
+        #
         # if st:en is entirely assigned to A, try to flip it back to B (i.e. it was a false flip)
         if A_flag:
             if flip_candidates[0] in breakpoints0:
@@ -467,6 +474,7 @@ class A_MCMC:
 
             self.flip_hap(flip_candidates[0], flip_candidates[-1])
 
+        #
         # get marginal likelihood post-flip and breakpoint adjustment
         bps = np.r_[breakpoints0]
         ML = 0
@@ -476,8 +484,10 @@ class A_MCMC:
               self.P.iloc[st_bp:en_bp, self.maj_idx].sum() + 1
             )
 
+        #
         # probabilistically accept new configuration
         if np.log(np.random.rand()) < np.minimum(0, ML - ML_orig):
+            #
             # update F array
 
             # we could have either flipped a region from B->A ...
@@ -490,9 +500,11 @@ class A_MCMC:
                 for p in self.F[f_o(flip_candidates[0], flip_candidates[-1])]:
                     self.F.remove(p)
 
+            #
             # combine contiguous intervals in F array
             # TODO
 
+            #
             # update breakpoint list and seg. marg. liks
             bps_to_del = list(self.breakpoints.islice(
               self.breakpoints.bisect_left(breakpoints0[0]),
@@ -502,6 +514,7 @@ class A_MCMC:
                 self.breakpoints.remove(x)
             self.breakpoints.update(breakpoints0)
 
+            #
             # update seg. marg. liks
             # TODO: recomputing each sum (even if in the future we use memoization)
             #       is wasteful. intelligently pick which seg_marg_liks keys to update.
@@ -515,12 +528,11 @@ class A_MCMC:
 
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] - ML_orig + ML
 
+        #
         # revert
         else:
             # flip each region back
-            for st_seg, en_seg in np.c_[flips[:-1], flips[1:]]:
-                if len(self.F[:en_seg, (st_seg + 1):]) != 0:
-                    continue
+            for st_seg, en_seg in flips:
                 self.flip_hap(st_seg, en_seg)
             if A_flag:
                 self.flip_hap(flip_candidates[0], flip_candidates[-1])
