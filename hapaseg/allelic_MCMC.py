@@ -16,6 +16,9 @@ class MySortedList(sc.SortedList):
         assert not len(self) % 2
         return str(np.array(self).reshape(-1, 2))
 
+    def intervals(self):
+        return np.array(self).reshape(-1, 2)
+
 class A_MCMC:
     def __init__(self, P,
       quit_after_burnin = False,
@@ -665,12 +668,34 @@ class A_MCMC:
 #        ax2.set_xlabel("Breakpoint number in current MCMC iteration")
 
         # beta CI's weighted by breakpoints
+        # flip current rephases back to baseline
+        for st, en in self.F.intervals():
+            # code excised from flip_hap
+            x = Ph.iloc[st:en, self.maj_idx].copy()
+            Ph.iloc[st:en, self.maj_idx] = Ph.iloc[st:en, self.min_idx]
+            Ph.iloc[st:en, self.min_idx] = x
+
         pos_col = Ph.columns.get_loc("pos")
-        for bp_samp in self.breakpoint_list:
+        for bp_samp, pi_samp in zip(self.breakpoint_list, self.phase_interval_list):
+            # flip everything according to sample
+            for st, en in pi_samp.intervals():
+                x = Ph.iloc[st:en, self.maj_idx].copy()
+                Ph.iloc[st:en, self.maj_idx] = Ph.iloc[st:en, self.min_idx]
+                Ph.iloc[st:en, self.min_idx] = x
+
+            # SNPs TODO: plot only those that flipped, in a diff. color?
+            #ax.scatter(Ph["pos"], Ph["median_hap"], color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx"].astype(np.int)], alpha = 0.5, s = 4)
+
             bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
             for st, en in bpl:
                 ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, self.min_idx].sum() + 1, Ph.iloc[st:en, self.maj_idx].sum() + 1)
-                ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, pos_col], ci_lo), Ph.iloc[en, pos_col] - Ph.iloc[st, pos_col], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 0.01, zorder = 1000))
+                ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, pos_col], ci_lo), Ph.iloc[en, pos_col] - Ph.iloc[st, pos_col], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 1/len(self.breakpoint_list), zorder = 1000))
+
+            # flip everything back
+            for st, en in pi_samp.intervals():
+                x = Ph.iloc[st:en, self.maj_idx].copy()
+                Ph.iloc[st:en, self.maj_idx] = Ph.iloc[st:en, self.min_idx]
+                Ph.iloc[st:en, self.min_idx] = x
 
         # 50:50 line
         ax.axhline(0.5, color = 'k', linestyle = ":")
