@@ -27,6 +27,7 @@ class A_MCMC:
         #
         # dataframe stuff
         self.P = P.copy().reset_index()
+        self.P_orig = self.P.copy()
 
         # column indices for iloc
         self.min_idx = self.P.columns.get_loc("MIN_COUNT")
@@ -156,10 +157,13 @@ class A_MCMC:
                 self.breakpoint_list = []
 
             # save set of breakpoints and phase intervals if burned in 
-            if self.burned_in and not self.iter % 100:
-                self.breakpoint_list.append(self.breakpoints.copy())
+            if self.burned_in: #and not self.iter % 100:
                 if self.phase_correction_ready:
+                    self.breakpoint_list.append(self.breakpoints.copy())
                     self.phase_interval_list.append(self.F.copy())
+                else:
+                    if not self.iter % 100:
+                        self.breakpoint_list.append(self.breakpoints.copy())
 
             # print status
             if not self.iter % 100:
@@ -523,6 +527,18 @@ class A_MCMC:
                 self.flip_hap(flip_candidates[0], flip_candidates[-1])
 
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
+
+        # TEST: breakpoint if reverting all phases in F does not bring us back to the original state
+        Ph = self.P.copy()
+        for st, en in np.array(self.F).reshape(-1, 2):
+            # code excised from flip_hap
+            x = Ph.iloc[st:en, self.maj_idx].copy()
+            Ph.iloc[st:en, self.maj_idx] = Ph.iloc[st:en, self.min_idx]
+            Ph.iloc[st:en, self.min_idx] = x
+
+        if (Ph["MAJ_COUNT"] != self.P_orig["MAJ_COUNT"]).any() or \
+           (Ph["MIN_COUNT"] != self.P_orig["MIN_COUNT"]).any():
+            breakpoint()
 
     def compute_all_cumsums(self):
         bpl = np.array(self.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
