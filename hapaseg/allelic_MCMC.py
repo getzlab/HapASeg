@@ -691,6 +691,7 @@ class A_MCMC:
         for bp_samp, pi_samp in zip(self.breakpoint_list, self.phase_interval_list):
             # flip everything according to sample
             for st, en in pi_samp.intervals():
+                # TODO: can replace with flip_hap()?
                 x = Ph.iloc[st:en, self.maj_idx].copy()
                 Ph.iloc[st:en, self.maj_idx] = Ph.iloc[st:en, self.min_idx]
                 Ph.iloc[st:en, self.min_idx] = x
@@ -705,6 +706,7 @@ class A_MCMC:
 
             # flip everything back
             for st, en in pi_samp.intervals():
+                # TODO: can replace with flip_hap()?
                 x = Ph.iloc[st:en, self.maj_idx].copy()
                 Ph.iloc[st:en, self.maj_idx] = Ph.iloc[st:en, self.min_idx]
                 Ph.iloc[st:en, self.min_idx] = x
