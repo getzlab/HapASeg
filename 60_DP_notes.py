@@ -48,7 +48,7 @@ clust_col = S.columns.get_loc("clust")
 
 clusts = { k : v for k, v in zip(range(0, len(S)),
   np.hstack([
-    np.ones([len(S), 1]),
+    np.ones([len(S), 1], dtype = np.int),
     S.loc[:, ["min", "maj"]].values,
     #ss.betaln(S.loc[:, ["min"]] + 1, S.loc[:, ["maj"]] + 1)
   ])
@@ -64,7 +64,7 @@ N = len(S)
 alpha = 1
 max_clust_idx = len(clusts)
 
-for n_it in range(0, len(S)):
+for n_it in range(0, 5*len(S)):
     if not n_it % 1000:
         print(S["clust"].value_counts().value_counts().sort_index())
 
