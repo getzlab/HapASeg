@@ -61,11 +61,11 @@ allelic_segs["results"].iloc[1].visualize()
 # another Corc exome
 
 # get callstats file
-subprocess.check_call("gsutil cp " + P.loc["18144_6_C1D1_TISSUE_DNA_META", 'MUTECT1_CS_SNV'] + " exome", shell = True)
+subprocess.check_call("gsutil cp " + P.loc["18144_6_C1D1_tissue_DNA", 'MUTECT1_CS_SNV'] + " exome", shell = True)
 
 # get BAM/BAI
-subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_TISSUE_DNA_META", "case_sample"], "cram_or_bam_path"] + " exome", shell = True)
-subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_TISSUE_DNA_META", "case_sample"], "crai_or_bai_path"] + " exome", shell = True)
+subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_tissue_DNA", "case_sample"], "cram_or_bam_path"] + " exome", shell = True)
+subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_tissue_DNA", "case_sample"], "crai_or_bai_path"] + " exome", shell = True)
 
 import hapaseg
 
