@@ -9,37 +9,48 @@ import scipy.sparse as sp
 import scipy.special as ss
 import sortedcontainers as sc
 
-allelic_segs = pd.read_pickle("exome/allelic_segs.pickle")
+allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.pickle")
 
 all_segs = []
+
+maj_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MAJ_COUNT")
+min_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
 
 for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
     r = H["results"]
     
     # set phasing orientation back to original
-    r.P["MAJ_COUNT"] = pd.concat([r.P.loc[r.P["aidx"], "ALT_COUNT"], r.P.loc[~r.P["aidx"], "REF_COUNT"]])
-    r.P["MIN_COUNT"] = pd.concat([r.P.loc[r.P["aidx"], "REF_COUNT"], r.P.loc[~r.P["aidx"], "ALT_COUNT"]])
+    for st, en in r.F.intervals():
+        # code excised from flip_hap
+        x = r.P.iloc[st:en, maj_idx].copy()
+        r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
+        r.P.iloc[st:en, min_idx] = x
 
-    for bpl, pil in zip(r.breakpoint_list, r.phase_interval_list):
-        bps = np.r_[bpl]; bps = np.c_[bps[:-1], bps[1:]]
-        pss = np.array(list(pil.keys()))
+    #for bpl, pil in zip(r.breakpoint_list, r.phase_interval_list):
+    for bp_samp, pi_samp in zip(r.breakpoint_list, r.phase_interval_list):
+        # flip everything according to sample
+        for st, en in pi_samp.intervals():
+            x = r.P.iloc[st:en, maj_idx].copy()
+            r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
+            r.P.iloc[st:en, min_idx] = x
 
-        # set phasing for this iteration
-        for st, en in pss:
-            r.flip_hap(st, en)
+        bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
 
         # get major/minor sums for each segment
-        for st, en in bps:
+        for st, en in bpl:
             all_segs.append([
               st, en,
               r.P.loc[st, "chr"], r.P.loc[st, "pos"], r.P.loc[en, "pos"],
-              r.P.iloc[st:en, r.min_idx].sum(),
-              r.P.iloc[st:en, r.maj_idx].sum()
+              r.P.iloc[st:en, min_idx].sum(),
+              r.P.iloc[st:en, maj_idx].sum()
             ])
 
-        # reset phasing
-        for st, en in pss:
-            r.flip_hap(st, en)
+        # flip everything back
+        for st, en in pi_samp.intervals():
+            # TODO: can replace with flip_hap()?
+            x = r.P.iloc[st:en, maj_idx].copy()
+            r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
+            r.P.iloc[st:en, min_idx] = x
 
 S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj"])
 S["clust"] = np.r_[0:len(S)]
