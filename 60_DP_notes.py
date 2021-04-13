@@ -128,19 +128,23 @@ for n_it in range(0, 10*len(S)):
             clust_sums[choice] += np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
             S.iat[i, clust_col] = choice
 
-            n_assigned += 1
-
-        # otherwise, add to a new cluster
+        # otherwise, keep where it is
         else:
-            new_clust_idx = len(clust_counts)
-            while new_clust_idx in clust_counts:
-                new_clust_idx += 1
-            clust_counts[new_clust_idx] = 1
-            S.iat[i, clust_col] = new_clust_idx
+            # if it was previously assigned to a cluster, keep it there
+            if cur_clust != -1 and cur_clust in clust_counts:
+                clust_counts[cur_clust] += 1
+                clust_sums[cur_clust] += np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
+                S.iat[i, clust_col] = cur_clust
 
-            clust_sums[new_clust_idx] = np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
+            # otherwise, assign it to a new cluster
+            else: 
+                new_clust_idx = len(clust_counts)
+                while new_clust_idx in clust_counts:
+                    new_clust_idx += 1
+                clust_counts[new_clust_idx] = 1
+                S.iat[i, clust_col] = new_clust_idx
 
-            n_assigned += 1
+                clust_sums[new_clust_idx] = np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
 
     # add to a new cluster
     else:
@@ -153,7 +157,7 @@ for n_it in range(0, 10*len(S)):
 
         clust_sums[new_clust_idx] = np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
 
-        n_assigned += 1
+    n_assigned += 1
 
 
 
