@@ -53,8 +53,114 @@ for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
             r.P.iloc[st:en, min_idx] = x
 
 S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj"])
-S["clust"] = np.r_[0:len(S)]
+S = S.drop_duplicates()
+S["clust"] = -1 # initially, all segments are unassigned
+clust_col = S.columns.get_loc("clust")
+min_col = S.columns.get_loc("min")
+maj_col = S.columns.get_loc("maj")
+S.iloc[0, clust_col] = 0 # first segment is assigned to cluster 0
 S["lik"] = ss.betaln(S.loc[:, "min"] + 1, S.loc[:, "maj"] + 1)
+
+n_assigned = 1
+
+clust_counts = sc.SortedDict({ 0 : 1 })
+clust_sums = sc.SortedDict({ -1 : np.r_[0, 0], 0 : np.r_[S.loc[0, "min"], S.loc[0, "maj"]]})
+
+for n_it in range(0, 10*len(S)):
+    if not n_it % 1000:
+        print(S["clust"].value_counts().value_counts().sort_index())
+
+    i = np.random.choice(len(S)) # pick a segment at random
+
+    # if segment was already assigned to a cluster, unassign it
+    cur_clust = S.iat[i, clust_col]
+    if cur_clust != -1:
+        clust_counts[cur_clust] -= 1
+        if clust_counts[cur_clust] == 0:
+            del clust_counts[cur_clust]
+        S.iat[i, clust_col] = -1
+
+        clust_sums[cur_clust] -= np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
+        
+        n_assigned -= 1
+
+    # choose to join a cluster or make a new one
+#    p_0 = np.zeros(len(clust_counts), dtype = np.int) # this could be slow to allocate each time
+#    idx = np.array(clust_counts.keys())
+#    p_0[idx] = np.array(clust_counts.values())
+    choice_idx = np.random.choice(
+      np.r_[0:(len(clust_counts) + 1)],
+      p = np.r_[np.r_[clust_counts.values()]/(n_assigned + alpha), alpha/(n_assigned + alpha)]
+    )
+    choice = np.r_[clust_counts.keys(), -1][choice_idx]
+
+    # propose to join a cluster
+    if choice != -1:
+        # accept proposal via Metropolis
+        # A+B,C -> A,B+C
+        # A+B is likelihood of current cluster B is part of
+        AB = ss.betaln(
+          clust_sums[cur_clust][0] + S.iat[i, min_col] + 1,
+          clust_sums[cur_clust][1] + S.iat[i, maj_col] + 1
+        )
+        # C is likelihood of target cluster pre-join
+        C = ss.betaln(
+          clust_sums[choice][0] + 1,
+          clust_sums[choice][1] + 1 
+        ) 
+        # A is likelihood cluster B is part of, minus B
+        A = ss.betaln(
+          clust_sums[cur_clust][0] + 1,
+          clust_sums[cur_clust][1] + 1
+        )
+        # B+C is likelihood of target cluster post-join
+        BC = ss.betaln(
+          clust_sums[choice][0] + S.iat[i, min_col] + 1,
+          clust_sums[choice][1] + S.iat[i, maj_col] + 1
+        )
+
+        ML_join = A + BC
+        ML_split = AB + C
+
+        # accept proposal to join
+        if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split):
+            clust_counts[choice] += 1
+            clust_sums[choice] += np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
+            S.iat[i, clust_col] = choice
+
+            n_assigned += 1
+
+        # otherwise, add to a new cluster
+        else:
+            new_clust_idx = len(clust_counts)
+            while new_clust_idx in clust_counts:
+                new_clust_idx += 1
+            clust_counts[new_clust_idx] = 1
+            S.iat[i, clust_col] = new_clust_idx
+
+            clust_sums[new_clust_idx] = np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
+
+            n_assigned += 1
+
+    # add to a new cluster
+    else:
+        print("new!")
+        new_clust_idx = len(clust_counts)
+        while new_clust_idx in clust_counts:
+            new_clust_idx += 1
+        clust_counts[new_clust_idx] = 1
+        S.iat[i, clust_col] = new_clust_idx
+
+        clust_sums[new_clust_idx] = np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
+
+        n_assigned += 1
+
+
+
+
+    q = np.random.rand() < alpha/(n_assigned - 1 + alpha)
+
+
 clust_col = S.columns.get_loc("clust")
 
 clusts = { k : v for k, v in zip(range(0, len(S)),
