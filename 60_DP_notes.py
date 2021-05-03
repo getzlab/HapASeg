@@ -131,7 +131,7 @@ for n_it in range(0, 10*len(S)):
         # otherwise, keep where it is
         else:
             # if it was previously assigned to a cluster, keep it there
-            if cur_clust != -1 and cur_clust in clust_counts:
+            if cur_clust != -1 and cur_clust in clust_counts.keys():
                 clust_counts[cur_clust] += 1
                 clust_sums[cur_clust] += np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
                 S.iat[i, clust_col] = cur_clust
