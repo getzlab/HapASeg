@@ -100,8 +100,8 @@ for n_it in range(0, 10*len(S)):
         # A+B,C -> A,B+C
         # A+B is likelihood of current cluster B is part of
         AB = ss.betaln(
-          clust_sums[cur_clust][0] + S.iat[i, min_col] + 1,
-          clust_sums[cur_clust][1] + S.iat[i, maj_col] + 1
+          clust_sums[cur_clust][0] + S.iat[seg_idx, min_col] + 1,
+          clust_sums[cur_clust][1] + S.iat[seg_idx, maj_col] + 1
         )
         # C is likelihood of target cluster pre-join
         C = ss.betaln(
@@ -115,8 +115,8 @@ for n_it in range(0, 10*len(S)):
         )
         # B+C is likelihood of target cluster post-join
         BC = ss.betaln(
-          clust_sums[choice][0] + S.iat[i, min_col] + 1,
-          clust_sums[choice][1] + S.iat[i, maj_col] + 1
+          clust_sums[choice][0] + S.iat[seg_idx, min_col] + 1,
+          clust_sums[choice][1] + S.iat[seg_idx, maj_col] + 1
         )
 
         ML_join = A + BC
@@ -125,16 +125,16 @@ for n_it in range(0, 10*len(S)):
         # accept proposal to join
         if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split):
             clust_counts[choice] += 1
-            clust_sums[choice] += np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
-            S.iat[i, clust_col] = choice
+            clust_sums[choice] += np.r_[S.iat[seg_idx, min_col], S.iat[seg_idx, maj_col]]
+            S.iat[seg_idx, clust_col] = choice
 
         # otherwise, keep where it is
         else:
             # if it was previously assigned to a cluster, keep it there
             if cur_clust != -1 and cur_clust in clust_counts.keys():
                 clust_counts[cur_clust] += 1
-                clust_sums[cur_clust] += np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
-                S.iat[i, clust_col] = cur_clust
+                clust_sums[cur_clust] += np.r_[S.iat[seg_idx, min_col], S.iat[seg_idx, maj_col]]
+                S.iat[seg_idx, clust_col] = cur_clust
 
             # otherwise, assign it to a new cluster
             else: 
@@ -142,9 +142,9 @@ for n_it in range(0, 10*len(S)):
                 while new_clust_idx in clust_counts:
                     new_clust_idx += 1
                 clust_counts[new_clust_idx] = 1
-                S.iat[i, clust_col] = new_clust_idx
+                S.iat[seg_idx, clust_col] = new_clust_idx
 
-                clust_sums[new_clust_idx] = np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
+                clust_sums[new_clust_idx] = np.r_[S.iat[seg_idx, min_col], S.iat[seg_idx, maj_col]]
 
     # add to a new cluster
     else:
@@ -153,9 +153,9 @@ for n_it in range(0, 10*len(S)):
         while new_clust_idx in clust_counts:
             new_clust_idx += 1
         clust_counts[new_clust_idx] = 1
-        S.iat[i, clust_col] = new_clust_idx
+        S.iat[seg_idx, clust_col] = new_clust_idx
 
-        clust_sums[new_clust_idx] = np.r_[S.iat[i, min_col], S.iat[i, maj_col]]
+        clust_sums[new_clust_idx] = np.r_[S.iat[seg_idx, min_col], S.iat[seg_idx, maj_col]]
 
     n_assigned += 1
 
