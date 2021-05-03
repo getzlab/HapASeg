@@ -159,10 +159,38 @@ for n_it in range(0, 10*len(S)):
 
     n_assigned += 1
 
+# plot
+
+from glasbey import glasbey
+from capy import seq
+
+S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"])
+S["end_gp"] = seq.chrpos2gpos(S["chr"], S["end"])
+
+colors = mpl.cm.get_cmap("tab10").colors
+
+f1 = plt.figure(2); plt.clf()
+ax = plt.gca()
+ax.set_xlim([0, S["end_gp"].max()])
+ax.set_ylim([0, 1])
+
+plt.figure(1); plt.clf()
+f, axs = plt.subplots(20, 1, num = 1);
+for a in axs:
+    a.set_xlim([0, S["end_gp"].max()])
+    a.set_ylim([0, 1])
+    a.set_xticks([])
+    a.set_yticks([])
+
+for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
+    for _, r in S.loc[S["clust"] == clust_idx].iterrows():
+        ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], r["min"] + 1, r["maj"] + 1)
+        axs[i].add_patch(mpl.patches.Rectangle((r["start_gp"], ci_lo), r["end_gp"] - r["start_gp"], ci_hi - ci_lo, facecolor = colors[i % len(colors)], fill = True, alpha = 0.9, zorder = 1000))
+        ax.add_patch(mpl.patches.Rectangle((r["start_gp"], ci_lo), r["end_gp"] - r["start_gp"], ci_hi - ci_lo, facecolor = colors[i % len(colors)], fill = True, alpha = 0.1, zorder = 1000))
 
 
 
-    q = np.random.rand() < alpha/(n_assigned - 1 + alpha)
+
 
 
 clust_col = S.columns.get_loc("clust")
