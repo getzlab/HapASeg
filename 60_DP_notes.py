@@ -119,30 +119,25 @@ for n_it in range(0, 10*len(S)):
     )
     choice = np.r_[clust_counts.keys(), -1][choice_idx]
 
+    A_a = clust_sums[cur_clust][0]
+    A_b = clust_sums[cur_clust][1]
+    B_a = S.iloc[seg_idx, min_col].sum()
+    B_b = S.iloc[seg_idx, maj_col].sum()
+    C_a = clust_sums[choice][0]
+    C_b = clust_sums[choice][1]
+
     # propose to join a cluster
     if choice != -1:
         # accept proposal via Metropolis
         # A+B,C -> A,B+C
         # A+B is likelihood of current cluster B is part of
-        AB = ss.betaln(
-          clust_sums[cur_clust][0] + S.iloc[seg_idx, min_col].sum() + 1,
-          clust_sums[cur_clust][1] + S.iloc[seg_idx, maj_col].sum() + 1
-        )
+        AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
         # C is likelihood of target cluster pre-join
-        C = ss.betaln(
-          clust_sums[choice][0] + 1,
-          clust_sums[choice][1] + 1 
-        ) 
+        C = ss.betaln(C_a + 1, C_b + 1) 
         # A is likelihood cluster B is part of, minus B
-        A = ss.betaln(
-          clust_sums[cur_clust][0] + 1,
-          clust_sums[cur_clust][1] + 1
-        )
+        A = ss.betaln(A_a + 1, A_b + 1)
         # B+C is likelihood of target cluster post-join
-        BC = ss.betaln(
-          clust_sums[choice][0] + S.iloc[seg_idx, min_col].sum() + 1,
-          clust_sums[choice][1] + S.iloc[seg_idx, maj_col].sum() + 1
-        )
+        BC = ss.betaln(C_a + B_a + 1, C_b + B_b + 1)
 
         ML_join = A + BC
         ML_split = AB + C
@@ -150,7 +145,7 @@ for n_it in range(0, 10*len(S)):
         # accept proposal to join
         if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split):
             clust_counts[choice] += n_move 
-            clust_sums[choice] += np.r_[S.iloc[seg_idx, min_col].sum(), S.iloc[seg_idx, maj_col].sum()]
+            clust_sums[choice] += np.r_[B_a, B_b]
             S.iloc[seg_idx, clust_col] = choice
 
             clust_members[choice].update(set(seg_idx))
@@ -160,7 +155,7 @@ for n_it in range(0, 10*len(S)):
             # if it was previously assigned to a cluster, keep it there (only applicable to single segments?)
             if cur_clust != -1 and cur_clust in clust_counts.keys():
                 clust_counts[cur_clust] += n_move
-                clust_sums[cur_clust] += np.r_[S.iloc[seg_idx, min_col].sum(), S.iloc[seg_idx, maj_col].sum()]
+                clust_sums[cur_clust] += np.r_[B_a, B_b]
                 S.iloc[seg_idx, clust_col] = cur_clust
 
                 clust_members[cur_clust].update(set(seg_idx))
@@ -173,7 +168,7 @@ for n_it in range(0, 10*len(S)):
                 clust_counts[new_clust_idx] = n_move
                 S.iloc[seg_idx, clust_col] = new_clust_idx
 
-                clust_sums[new_clust_idx] = np.r_[S.iloc[seg_idx, min_col].sum(), S.iloc[seg_idx, maj_col].sum()]
+                clust_sums[new_clust_idx] = np.r_[B_a, B_b]
                 clust_members[new_clust_idx] = set(seg_idx)
 
     # add to a new cluster
