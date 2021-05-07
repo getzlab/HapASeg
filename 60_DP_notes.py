@@ -86,6 +86,7 @@ for n_it in range(0, 10*len(S)):
             clust_counts[cur_clust] -= 1
             if clust_counts[cur_clust] == 0:
                 del clust_counts[cur_clust]
+                del clust_sums[cur_clust]
             S.iloc[seg_idx, clust_col] = -1
 
             clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col], S.iloc[seg_idx, maj_col]]
@@ -105,42 +106,65 @@ for n_it in range(0, 10*len(S)):
         # unassign all segments within this cluster
         # (it will either be joined with a new cluster, or remade again into its own cluster)
         del clust_counts[cl_idx]
+        del clust_sums[cl_idx]
         S.iloc[seg_idx, clust_col] = -1
 
-        clust_sums[cl_idx] -= np.r_[0, 0]
+        #clust_sums[cl_idx] -= np.r_[0, 0]
         clust_members[cur_clust] = set()
         
         n_assigned -= n_move 
 
     # choose to join a cluster or make a new one
-    choice_idx = np.random.choice(
-      np.r_[0:(len(clust_counts) + 1)],
-      p = np.r_[np.r_[clust_counts.values()]/(n_assigned + alpha), alpha/(n_assigned + alpha)]
-    )
-    choice = np.r_[clust_counts.keys(), -1][choice_idx]
+    # probabilities determined by similarity of segment/cluster to existing ones
 
+    # B is segment/cluster to move
+    # A is cluster B is currently part of
+    # C is all possible clusters to move to
     A_a = clust_sums[cur_clust][0]
     A_b = clust_sums[cur_clust][1]
     B_a = S.iloc[seg_idx, min_col].sum()
     B_b = S.iloc[seg_idx, maj_col].sum()
-    C_a = clust_sums[choice][0]
-    C_b = clust_sums[choice][1]
+    C_ab = np.r_[clust_sums.values()] # first term (-1) = make new cluster
+
+    # A+B,C -> A,B+C
+
+    # A+B is likelihood of current cluster B is part of
+    AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
+    # C is likelihood of target cluster pre-join
+    C = ss.betaln(C_ab[:, 0] + 1, C_ab[:, 1] + 1)
+    # A is likelihood cluster B is part of, minus B
+    A = ss.betaln(A_a + 1, A_b + 1)
+    # B+C is likelihood of target cluster post-join
+    BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
+
+    #     L(join)  L(split)
+    MLs = A + BC - (AB + C)
+    MLs_max = np.max(MLs)
+    p = np.exp(MLs - MLs_max)/np.exp(MLs - MLs_max).sum()
+
+    # choose to join a cluster or make a new one (choice_idx = 0) 
+    choice_idx = np.random.choice(
+      np.r_[0:(len(clust_counts) + 1)],
+      p = np.exp(MLs - MLs_max)/np.exp(MLs - MLs_max).sum()
+    )
+    choice = np.r_[-1, clust_counts.keys()][choice_idx]
 
     # propose to join a cluster
     if choice != -1:
+        C_a = clust_sums[choice][0]
+        C_b = clust_sums[choice][1]
+
         # accept proposal via Metropolis
         # A+B,C -> A,B+C
-        # A+B is likelihood of current cluster B is part of
-        AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
         # C is likelihood of target cluster pre-join
         C = ss.betaln(C_a + 1, C_b + 1) 
-        # A is likelihood cluster B is part of, minus B
-        A = ss.betaln(A_a + 1, A_b + 1)
         # B+C is likelihood of target cluster post-join
         BC = ss.betaln(C_a + B_a + 1, C_b + B_b + 1)
 
         ML_join = A + BC
         ML_split = AB + C
+
+        # TODO: add proposal ratio here, since it is no longer symmetric
 
         # accept proposal to join
         if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split):
@@ -152,7 +176,7 @@ for n_it in range(0, 10*len(S)):
 
         # otherwise, keep where it is
         else:
-            # if it was previously assigned to a cluster, keep it there (only applicable to single segments?)
+            # if it was previously assigned to a cluster, keep it there (only applicable to single segments)
             if cur_clust != -1 and cur_clust in clust_counts.keys():
                 clust_counts[cur_clust] += n_move
                 clust_sums[cur_clust] += np.r_[B_a, B_b]
@@ -224,6 +248,7 @@ plts = []
 for clust_idx in S["clust"].value_counts().iloc[np.r_[0:5]].index:
     plts.append(plt.plot(r, s.beta.pdf(r, S.loc[S["clust"] == clust_idx, "min"].sum(), S.loc[S["clust"] == clust_idx, "maj"].sum()))[0])
 
+plt.legend(plts, S["clust"].value_counts().iloc[np.r_[0:5]].index)
 
 
 
