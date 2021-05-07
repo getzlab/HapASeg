@@ -180,14 +180,15 @@ for n_it in range(0, 10*len(S)):
         clust_counts[new_clust_idx] = n_move
         S.iloc[seg_idx, clust_col] = new_clust_idx
 
-        clust_sums[new_clust_idx] = np.r_[S.iloc[seg_idx, min_col].sum(), S.iloc[seg_idx, maj_col].sum()]
+        clust_sums[new_clust_idx] = np.r_[B_a, B_b]
         clust_members[new_clust_idx] = set(seg_idx)
 
     n_assigned += n_move
 
+#
 # plot
 
-from glasbey import glasbey
+#from glasbey import glasbey
 from capy import seq
 
 S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"])
@@ -195,6 +196,7 @@ S["end_gp"] = seq.chrpos2gpos(S["chr"], S["end"])
 
 colors = mpl.cm.get_cmap("tab10").colors
 
+# plot first 20 clusters overlaid (figure 2), and one cluster per subplot (figure 1)
 f1 = plt.figure(2); plt.clf()
 ax = plt.gca()
 ax.set_xlim([0, S["end_gp"].max()])
@@ -214,10 +216,19 @@ for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
         axs[i].add_patch(mpl.patches.Rectangle((r["start_gp"], ci_lo), r["end_gp"] - r["start_gp"], ci_hi - ci_lo, facecolor = colors[i % len(colors)], fill = True, alpha = 0.9, zorder = 1000))
         ax.add_patch(mpl.patches.Rectangle((r["start_gp"], ci_lo), r["end_gp"] - r["start_gp"], ci_hi - ci_lo, facecolor = colors[i % len(colors)], fill = True, alpha = 0.1, zorder = 1000))
 
+# plot beta dists. for clusters that ought to be merged
+
+r = np.linspace(0.495, 0.53, 10000)
+plt.figure(3); plt.clf()
+plts = []
+for clust_idx in S["clust"].value_counts().iloc[np.r_[0:5]].index:
+    plts.append(plt.plot(r, s.beta.pdf(r, S.loc[S["clust"] == clust_idx, "min"].sum(), S.loc[S["clust"] == clust_idx, "maj"].sum()))[0])
 
 
 
 
+
+# old scrap code
 
 clust_col = S.columns.get_loc("clust")
 
