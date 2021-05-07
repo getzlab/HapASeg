@@ -87,9 +87,11 @@ for n_it in range(0, 10*len(S)):
             if clust_counts[cur_clust] == 0:
                 del clust_counts[cur_clust]
                 del clust_sums[cur_clust]
+            else:
+                clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col], S.iloc[seg_idx, maj_col]]
+
             S.iloc[seg_idx, clust_col] = -1
 
-            clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col], S.iloc[seg_idx, maj_col]]
             clust_members[cur_clust] -= set(seg_idx)
             
             n_assigned -= 1
@@ -109,7 +111,9 @@ for n_it in range(0, 10*len(S)):
         del clust_sums[cl_idx]
         S.iloc[seg_idx, clust_col] = -1
 
-        #clust_sums[cl_idx] -= np.r_[0, 0]
+        # NOTE: in the previous code, this accidentally was -=, not =
+        # leaving comment here for posterity
+        #clust_sums[cl_idx] = np.r_[0, 0]
         clust_members[cur_clust] = set()
         
         n_assigned -= n_move 
@@ -120,8 +124,8 @@ for n_it in range(0, 10*len(S)):
     # B is segment/cluster to move
     # A is cluster B is currently part of
     # C is all possible clusters to move to
-    A_a = clust_sums[cur_clust][0]
-    A_b = clust_sums[cur_clust][1]
+    A_a = clust_sums[cur_clust][0] if cur_clust in clust_sums else 0
+    A_b = clust_sums[cur_clust][1] if cur_clust in clust_sums else 0
     B_a = S.iloc[seg_idx, min_col].sum()
     B_b = S.iloc[seg_idx, maj_col].sum()
     C_ab = np.r_[clust_sums.values()] # first term (-1) = make new cluster
@@ -197,7 +201,7 @@ for n_it in range(0, 10*len(S)):
 
     # add to a new cluster
     else:
-        print("new!")
+        #print("new!")
         new_clust_idx = len(clust_counts)
         while new_clust_idx in clust_counts:
             new_clust_idx += 1
