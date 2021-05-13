@@ -715,7 +715,8 @@ class A_MCMC:
 
             bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
             for st, en in bpl:
-                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Ph.iloc[st:en, self.min_idx].sum() + 1, Ph.iloc[st:en, self.maj_idx].sum() + 1)
+                Phi = Ph.iloc[st:en]; Phi = Phi.loc[Phi["include"]]
+                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Phi.iloc[:, self.min_idx].sum() + 1, Phi.iloc[:, self.maj_idx].sum() + 1)
                 ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, pos_col], ci_lo), Ph.iloc[en, pos_col] - Ph.iloc[st, pos_col], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 1/len(self.breakpoint_list), zorder = 1000))
 
             # flip everything back
