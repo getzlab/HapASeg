@@ -134,7 +134,7 @@ class A_MCMC:
         Returns only SNPs flagged for inclusion within the range st:en
         """
         P = self.P.iloc[st:en, col_idx]
-        return P.loc[P["include"]]
+        return P.loc[self.P.iloc[st:en, self.P.columns.get_loc("include")]]
 
     def run(self):
         while self.iter < self.n_iter:
