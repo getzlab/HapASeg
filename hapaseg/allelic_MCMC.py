@@ -679,6 +679,8 @@ class A_MCMC:
 #                continue
 #            plt.scatter(Ph.loc[Ph["flip"] == i, "pos"], o + np.zeros((Ph["flip"] == i).sum()))
 #            o -= 0.01
+        # mask excluded SNPs
+        # TODO: overlay with varying opacities of black based on how frequently this SNP was excluded
 
         # breakpoints 
 #        bp_prob = self.breakpoint_counter[:, 0]/self.breakpoint_counter[:, 1]
