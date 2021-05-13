@@ -44,6 +44,13 @@ class A_MCMC:
         # TODO: recompute CI's too? these are not actually used anywhere
         # TODO: we might want to have site-specific reference bias (inferred from post-burnin segs)
 
+        # whether a SNP is included or pruned
+        self.P["include"] = True
+
+        # prior for pruning
+        # TODO: set from het site panel and/or normal het confidence
+        self.P["include_prior"] = 0.9
+
         #
         # config stuff
 
@@ -121,6 +128,13 @@ class A_MCMC:
         # total log marginal likelihood of all segments
         self.marg_lik = np.full(self.n_iter, np.nan)
         self.marg_lik[0] = np.array(self.seg_marg_liks.values()).sum()
+
+    def _Piloc(self, st, en, col_idx):
+        """
+        Returns only SNPs flagged for inclusion within the range st:en
+        """
+        P = self.P.iloc[st:en, col_idx]
+        return P.loc[P["include"]]
 
     def run(self):
         while self.iter < self.n_iter:
@@ -220,8 +234,8 @@ class A_MCMC:
         ML_split = self.seg_marg_liks[st] + self.seg_marg_liks[mid]
 
         ML_join = ss.betaln(
-          self.P.iloc[st:en, self.min_idx].sum() + 1,
-          self.P.iloc[st:en, self.maj_idx].sum() + 1
+          self._Piloc(st, en, self.min_idx).sum() + 1,
+          self._Piloc(st, en, self.maj_idx).sum() + 1
         )
 
         # proposal dist. ratio
@@ -277,22 +291,22 @@ class A_MCMC:
         # seg 1
         rng_idx = (self.P.index >= bdy1[0]) & (self.P.index < bdy1[1])
 
-        idx = rng_idx & self.P["aidx"]
+        idx = rng_idx & self.P["aidx"] & self.P["include"]
         x1_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         x1_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
-        idx = rng_idx & ~self.P["aidx"]
+        idx = rng_idx & ~self.P["aidx"] & self.P["include"]
         y1_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         y1_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
         # seg 2
         rng_idx = (self.P.index >= bdy2[0]) & (self.P.index < bdy2[1])
 
-        idx = rng_idx & self.P["aidx"]
+        idx = rng_idx & self.P["aidx"] & self.P["include"]
         x2_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         x2_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
-        idx = rng_idx & ~self.P["aidx"]
+        idx = rng_idx & ~self.P["aidx"] & self.P["include"]
         y2_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
         y2_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
 
@@ -331,14 +345,14 @@ class A_MCMC:
                 # TODO: memoize partial sums
 
                 # prob. that left segment is on hap. A
-                p_A1 = s.beta.logsf(0.5, self.P.iloc[st:mid, self.min_idx].sum() + 1, self.P.iloc[st:mid, self.maj_idx].sum() + 1)
+                p_A1 = s.beta.logsf(0.5, self._Piloc(st, mid, self.min_idx).sum() + 1, self._Piloc(st, mid, self.maj_idx).sum() + 1)
                 # prob. that right segment is on hap. A
-                p_A2 = s.beta.logsf(0.5, self.P.iloc[mid:en, self.min_idx].sum() + 1, self.P.iloc[mid:en, self.maj_idx].sum() + 1)
+                p_A2 = s.beta.logsf(0.5, self._Piloc(mid, en, self.min_idx).sum() + 1, self._Piloc(mid, en, self.maj_idx).sum() + 1)
 
                 # prob. that left segment is on hap. B
-                p_B1 = s.beta.logcdf(0.5, self.P.iloc[st:mid, self.min_idx].sum() + 1, self.P.iloc[st:mid, self.maj_idx].sum() + 1)
+                p_B1 = s.beta.logcdf(0.5, self._Piloc(st, mid, self.min_idx).sum() + 1, self._Piloc(st, mid, self.maj_idx).sum() + 1)
                 # prob. that right segment is on hap. B
-                p_B2 = s.beta.logcdf(0.5, self.P.iloc[mid:en, self.min_idx].sum() + 1, self.P.iloc[mid:en, self.maj_idx].sum() + 1)
+                p_B2 = s.beta.logcdf(0.5, self._Piloc(mid, en, self.min_idx).sum() + 1, self._Piloc(mid, en, self.maj_idx).sum() + 1)
 
                 if i == 0:
                     V[i, :] = [p_A1, p_B1]
@@ -480,8 +494,8 @@ class A_MCMC:
         ML = 0
         for st_bp, en_bp in np.c_[bps[:-1], bps[1:]]:
             ML += ss.betaln(
-              self.P.iloc[st_bp:en_bp, self.min_idx].sum() + 1,
-              self.P.iloc[st_bp:en_bp, self.maj_idx].sum() + 1
+              self._Piloc(st_bp, en_bp, self.min_idx).sum() + 1,
+              self._Piloc(st_bp, en_bp, self.maj_idx).sum() + 1
             )
 
         #
@@ -522,8 +536,8 @@ class A_MCMC:
                 self.seg_marg_liks.__delitem__(x)
             for st_bp, en_bp in np.c_[bps[:-1], bps[1:]]:
                 self.seg_marg_liks[st_bp] = ss.betaln(
-                  self.P.iloc[st_bp:en_bp, self.min_idx].sum() + 1,
-                  self.P.iloc[st_bp:en_bp, self.maj_idx].sum() + 1
+                  self._Piloc(st_bp, en_bp, self.min_idx).sum() + 1,
+                  self._Piloc(st_bp, en_bp, self.maj_idx).sum() + 1
                 )
 
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] - ML_orig + ML
@@ -602,12 +616,12 @@ class A_MCMC:
 
         # M-H acceptance
         seg_lik_1 = ss.betaln(
-          self.P.iloc[st:mid, self.min_idx].sum() + 1,
-          self.P.iloc[st:mid, self.maj_idx].sum() + 1
+          self._Piloc(st, mid, self.min_idx).sum() + 1,
+          self._Piloc(st, mid, self.maj_idx).sum() + 1
         )
         seg_lik_2 = ss.betaln(
-          self.P.iloc[mid:en, self.min_idx].sum() + 1,
-          self.P.iloc[mid:en, self.maj_idx].sum() + 1
+          self._Piloc(mid, en, self.min_idx).sum() + 1,
+          self._Piloc(mid, en, self.maj_idx).sum() + 1
         )
 
         ML_split = seg_lik_1 + seg_lik_2
