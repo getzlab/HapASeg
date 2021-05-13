@@ -15,8 +15,7 @@ self = H
 self.P["include"] = True
 self.P["include_prior"] = 0.9
 
-bp_idx = 10
-bpl = np.array(self.breakpoint_list[bp_idx]); bpl = np.c_[bpl[:-1], bpl[1:]]
+bpl = np.array(self.breakpoints); bpl = np.c_[bpl[:-1], bpl[1:]]
 
 plt.figure(1); plt.clf()
 _, axs = plt.subplots(10, 2, num = 1)
@@ -24,6 +23,10 @@ _, axs = plt.subplots(10, 2, num = 1)
 incl_cols = self.P.columns.get_indexer(["include", "include_prior"])
 
 for st, en in bpl:
+    # don't prune short segments
+    if en - st <= 2:
+        continue
+
     T = self.P.iloc[st:en, np.r_[self.min_idx, self.maj_idx, incl_cols]]
     I = T.loc[T["include"]]
     E = T.loc[~T["include"]]
