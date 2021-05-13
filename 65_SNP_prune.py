@@ -68,7 +68,7 @@ for st, en in bpl:
     # compute probability of proposing the reverse jump
     T_star = T.loc[[choice_idx]]
 
-    # reverse jump would exclude
+    # reverse jump excludes
     if not T_star.iat[0, T_star.columns.get_loc("include")]:
         A_inc_s_star = I["MIN_COUNT"].sum() + T_star["MIN_COUNT"].values
         B_inc_s_star = I["MAJ_COUNT"].sum() + T_star["MAJ_COUNT"].values
@@ -76,7 +76,7 @@ for st, en in bpl:
         I_star = pd.concat([I, T_star]).sort_index()
         E_star = E.drop(T_star.index)
 
-    # reverse jump would include
+    # reverse jump includes
     else:
         A_inc_s_star = I["MIN_COUNT"].sum() - T_star["MIN_COUNT"].values
         B_inc_s_star = I["MAJ_COUNT"].sum() - T_star["MAJ_COUNT"].values
@@ -110,6 +110,7 @@ for st, en in bpl:
 
     # accept via Metropolis
     if np.log(np.random.rand()) < np.minimum(0, (r_cat[choice_idx] + q_rat).item()):
+        # update inclusion flag
         self.P.at[choice_idx, "include"] = ~self.P.at[choice_idx, "include"]
 
 #    A = self.P.iloc[st:en, np.r_[self.min_idx, incl_cols]]
@@ -146,3 +147,14 @@ for st, en in bpl:
 #    q = p_e/p_e.sum()
 #
 #    seg_idx = np.random.choice(len(q), p = q)
+        # update marginal likelihoods
+        T.at[choice_idx, "include"] = ~T.at[choice_idx, "include"]
+
+        ML_orig = self.seg_marg_liks[st]
+        self.seg_marg_liks[st] = ss.betaln(
+          T.loc[T["include"], "MIN_COUNT"].sum() + 1,
+          T.loc[T["include"], "MAJ_COUNT"].sum() + 1,
+        )
+        self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] - ML_orig + self.seg_marg_liks[st]
+
+        # TODO: update segment partial sums (when we actually use these)
