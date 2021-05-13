@@ -51,6 +51,9 @@ class A_MCMC:
         # TODO: set from het site panel and/or normal het confidence
         self.P["include_prior"] = 0.9
 
+        # state of inclusion at nth iteration
+        self.include = []
+
         #
         # config stuff
 
@@ -105,6 +108,7 @@ class A_MCMC:
         # cumsum arrays for each segment
 
         # will be populated by compute_cumsums()
+        # NOTE: not currently used for anything
 
         self.cs_MAJ = sc.SortedDict()
         self.cs_MIN = sc.SortedDict()
@@ -138,8 +142,8 @@ class A_MCMC:
 
     def run(self):
         while self.iter < self.n_iter:
-            # perform a split, combine, or phase correct operation
-            op = np.random.choice(3)
+            # perform a split, combine, phase correct, or prune operation
+            op = np.random.choice(4)
             if op == 0:
                 if self.combine(np.random.choice(self.breakpoints[:-1]), force = False) == -1:
                     continue
@@ -151,6 +155,8 @@ class A_MCMC:
                     self.rephase()
                 else:
                     continue
+            elif op == 3:
+                self.prune()
 
             # if we're only running up to burnin, bail
             if self.quit_after_burnin and self.burned_in:
@@ -172,9 +178,10 @@ class A_MCMC:
                 # breakpoint list is liable to change after phase correction, so clear it
                 self.breakpoint_list = []
 
-            # save set of breakpoints and phase intervals if burned in 
+            # save set of breakpoints, phase intervals, and prune states if burned in 
             if self.burned_in and not self.iter % 100:
                 self.breakpoint_list.append(self.breakpoints.copy())
+                self.include.append(self.P["include"].copy())
                 if self.phase_correction_ready:
                     self.phase_interval_list.append(self.F.copy())
 
@@ -648,6 +655,116 @@ class A_MCMC:
                 self.incr_bp_counter(st = st, en = en)
 
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
+
+    def prune(self):
+        incl_cols = self.P.columns.get_indexer(["include", "include_prior"])
+
+        bpl = np.array(self.breakpoints); bpl = np.c_[bpl[:-1], bpl[1:]]
+        for st, en in bpl:
+            # don't prune short segments
+            if en - st <= 2:
+                continue
+
+            T = self.P.iloc[st:en, np.r_[self.min_idx, self.maj_idx, incl_cols]]
+            I = T.loc[T["include"]]
+            E = T.loc[~T["include"]]
+
+            A_inc_s = I["MIN_COUNT"].sum()
+            B_inc_s = I["MAJ_COUNT"].sum()
+
+            #
+            # generate proposal dist from posterior ratios:
+
+            # 1. probability to exclude SNPs
+            # q_i = seg(A - A_i, B - B_i) + garbage(A_i, B_i) + (1 - include prior_i)
+            #       - (seg(A, B) + (include prior_i))
+            r_exc = ss.betaln(
+              A_inc_s - I["MIN_COUNT"] + 1,
+              B_inc_s - I["MAJ_COUNT"] + 1
+            ) + ss.betaln(I["MIN_COUNT"] + 1, I["MAJ_COUNT"] + 1) \
+              + np.log(1 - I["include_prior"]) \
+              - (ss.betaln(A_inc_s + 1, B_inc_s + 1) + np.log(I["include_prior"]))
+
+            # 2. probability to include SNPs (that were previously excluded)
+            # q_i = seg(A + A_i, B + B_i) + (include prior_i)
+            #       - (seg(A, B) + garbage(A_i, B_i) + (1 - include prior_i))
+            r_inc = ss.betaln(
+              A_inc_s + E["MIN_COUNT"] + 1,
+              B_inc_s + E["MAJ_COUNT"] + 1
+            ) + np.log(E["include_prior"]) \
+              - (ss.betaln(A_inc_s + 1, B_inc_s + 1) + \
+                ss.betaln(E["MIN_COUNT"] + 1, E["MAJ_COUNT"] + 1) + \
+                np.log(1 - E["include_prior"]))
+
+            r_cat = pd.concat([r_inc, r_exc]).sort_index()
+
+            # normalize posterior ratios to get proposal distribution
+            r_e = np.exp(r_cat - r_cat.max())
+            q = r_e/r_e.sum()
+
+            # draw from proposal
+            choice_idx = np.random.choice(T.index, p = q)
+
+            #
+            # compute probability of proposing the reverse jump
+            T_star = T.loc[[choice_idx]]
+
+            # reverse jump excludes
+            if not T_star.iat[0, T_star.columns.get_loc("include")]:
+                A_inc_s_star = I["MIN_COUNT"].sum() + T_star["MIN_COUNT"].values
+                B_inc_s_star = I["MAJ_COUNT"].sum() + T_star["MAJ_COUNT"].values
+
+                I_star = pd.concat([I, T_star]).sort_index()
+                E_star = E.drop(T_star.index)
+
+            # reverse jump includes
+            else:
+                A_inc_s_star = I["MIN_COUNT"].sum() - T_star["MIN_COUNT"].values
+                B_inc_s_star = I["MAJ_COUNT"].sum() - T_star["MAJ_COUNT"].values
+
+                I_star = I.drop(T_star.index)
+                E_star = pd.concat([E, T_star]).sort_index()
+
+            # regardless, code for computing q_star is the same
+            r_exc_star = ss.betaln(
+              A_inc_s_star - I_star["MIN_COUNT"] + 1,
+              B_inc_s_star - I_star["MAJ_COUNT"] + 1
+            ) + ss.betaln(I_star["MIN_COUNT"] + 1, I_star["MAJ_COUNT"] + 1) \
+              + np.log(1 - I_star["include_prior"]) \
+              - (ss.betaln(A_inc_s_star + 1, B_inc_s_star + 1) + np.log(I_star["include_prior"]))
+
+            r_inc_star = ss.betaln(
+              A_inc_s_star + E_star["MIN_COUNT"] + 1,
+              B_inc_s_star + E_star["MAJ_COUNT"] + 1
+            ) + np.log(E_star["include_prior"]) \
+              - (ss.betaln(A_inc_s_star + 1, B_inc_s_star + 1) + \
+                ss.betaln(E_star["MIN_COUNT"] + 1, E_star["MAJ_COUNT"] + 1) + \
+                np.log(1 - E_star["include_prior"]))
+
+            r_cat_star = pd.concat([r_inc_star, r_exc_star]).sort_index()
+
+            r_e_star = np.exp(r_cat_star - r_cat_star.max())
+            q_star = (r_e_star/r_e_star.sum())[T_star.index].values
+
+            # proposal ratio term
+            q_rat = np.log(q_star) - np.log(q[choice_idx])
+
+            # accept via Metropolis
+            if np.log(np.random.rand()) < np.minimum(0, (r_cat[choice_idx] + q_rat).item()):
+                # update inclusion flag
+                self.P.at[choice_idx, "include"] = ~self.P.at[choice_idx, "include"]
+
+                # update marginal likelihoods
+                T.at[choice_idx, "include"] = ~T.at[choice_idx, "include"]
+
+                ML_orig = self.seg_marg_liks[st]
+                self.seg_marg_liks[st] = ss.betaln(
+                  T.loc[T["include"], "MIN_COUNT"].sum() + 1,
+                  T.loc[T["include"], "MAJ_COUNT"].sum() + 1,
+                )
+                self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] - ML_orig + self.seg_marg_liks[st]
+
+                # TODO: update segment partial sums (when we actually use these)
 
     def incr_bp_counter(self, st, en, mid = None):
         if mid is None:
