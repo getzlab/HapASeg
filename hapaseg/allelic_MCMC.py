@@ -220,8 +220,8 @@ class A_MCMC:
         ML_split = self.seg_marg_liks[st] + self.seg_marg_liks[mid]
 
         ML_join = ss.betaln(
-          self.P.loc[st:(en - 1), "MIN_COUNT"].sum() + 1,
-          self.P.loc[st:(en - 1), "MAJ_COUNT"].sum() + 1
+          self.P.iloc[st:en, self.min_idx].sum() + 1,
+          self.P.iloc[st:en, self.maj_idx].sum() + 1
         )
 
         # proposal dist. ratio
@@ -602,12 +602,12 @@ class A_MCMC:
 
         # M-H acceptance
         seg_lik_1 = ss.betaln(
-          self.P.loc[st:(mid - 1), "MIN_COUNT"].sum() + 1,
-          self.P.loc[st:(mid - 1), "MAJ_COUNT"].sum() + 1
+          self.P.iloc[st:mid, self.min_idx].sum() + 1,
+          self.P.iloc[st:mid, self.maj_idx].sum() + 1
         )
         seg_lik_2 = ss.betaln(
-          self.P.loc[mid:(en - 1), "MIN_COUNT"].sum() + 1,
-          self.P.loc[mid:(en - 1), "MAJ_COUNT"].sum() + 1
+          self.P.iloc[mid:en, self.min_idx].sum() + 1,
+          self.P.iloc[mid:en, self.maj_idx].sum() + 1
         )
 
         ML_split = seg_lik_1 + seg_lik_2
