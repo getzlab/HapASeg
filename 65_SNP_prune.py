@@ -113,40 +113,6 @@ for st, en in bpl:
         # update inclusion flag
         self.P.at[choice_idx, "include"] = ~self.P.at[choice_idx, "include"]
 
-#    A = self.P.iloc[st:en, np.r_[self.min_idx, incl_cols]]
-#    A_inc = A.loc[A["include"]]; A_exc = A.loc[~A["include"]]
-#    B = self.P.iloc[st:en, np.r_[self.maj_idx, incl_cols]];
-#    B_inc = B.loc[B["include"]]; B_exc = B.loc[~B["include"]]
-#
-#    A_inc_s = A_inc["MIN_COUNT"].sum()
-#    A_exc_s = A_exc["MIN_COUNT"].sum()
-#    B_inc_s = B_inc["MAJ_COUNT"].sum()
-#    B_exc_s = B_exc["MAJ_COUNT"].sum()
-#
-#    # generate proposal dist from likelihood ratios:
-#    # q_i =   seg(A - A_i, B - B_i) + garbage(A_i, B_i) + (1 - include prior)
-#    #       - (seg(A, B) + (include prior))
-#    p_inc = ss.betaln(
-#      A_inc_s - A_inc["MIN_COUNT"] + 1,
-#      B_inc_s - B_inc["MAJ_COUNT"] + 1
-#    ) + ss.betaln(A_inc["MIN_COUNT"] + 1, B_inc["MAJ_COUNT"] + 1) \
-#      + np.log(1 - A_inc["include_prior"]) \
-#      - (ss.betaln(A_inc_s + 1, B_inc_s + 1) + np.log(A_inc["include_prior"]))
-#    # q_i = seg(A, B) + (include prior)
-#    #       - (seg(-A_i, -B_i) + garbage(A_i, B_i) + (1 - include prior)
-#    p_exc = ss.betaln(A_inc_s + A_exc + 1, B_exc_s + B_exc + 1) + np.log(A_exc["include_prior"]) \
-#      - (ss.betaln(A_exc_s + 1, B_exc_s + 1))
-#
-#ss.betaln(
-#      A_exc_s - A_exc["MIN_COUNT"] + 1,
-#      B_exc_s - B_exc["MAJ_COUNT"] + 1
-#    ) + ss.betaln(A_exc["MIN_COUNT"], B_exc["MAJ_COUNT"]) \
-#      + np.log(1 - A_exc["include_prior"]) \
-#      - (ss.betaln(A_exc_s, B_exc_s) + np.log(A_exc["include_prior"]))
-#    p_e = np.exp(p - p.max())
-#    q = p_e/p_e.sum()
-#
-#    seg_idx = np.random.choice(len(q), p = q)
         # update marginal likelihoods
         T.at[choice_idx, "include"] = ~T.at[choice_idx, "include"]
 
