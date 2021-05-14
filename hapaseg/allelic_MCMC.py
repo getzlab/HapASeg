@@ -48,8 +48,7 @@ class A_MCMC:
         self.P["include"] = True
 
         # prior for pruning
-        # TODO: set from het site panel and/or normal het confidence
-        self.P["include_prior"] = 0.9
+        self.P["include_prior"] = self._set_prune_prior()
 
         # state of inclusion at nth iteration
         self.include = []
@@ -777,6 +776,13 @@ class A_MCMC:
                   )
 
                 # TODO: update segment partial sums (when we actually use these)
+
+    def _set_prune_prior(self):
+        if all([x in self.P.columns for x in ["REF_COUNT_N", "ALT_COUNT_N"]]):
+            # TODO: also account for het site panel
+            return np.diff(s.beta.cdf([0.4, 0.6], self.P["ALT_COUNT_N"].values[:, None] + 1, self.P["REF_COUNT_N"].values[:, None] + 1), 1)
+        else:
+            return 0.9
 
     def incr_bp_counter(self, st, en, mid = None):
         if mid is None:

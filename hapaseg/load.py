@@ -12,12 +12,13 @@ class HapasegReference:
       phased_VCF = "test.vcf",
       readbacked_phased_VCF = None,
       allele_counts = "3328.tumor.tsv",
+      allele_counts_N = None,
       coverage = None,
       cytoband_file = "cytoBand.txt"
     ):
         #
         # load in VCF
-        self.allele_counts = self.load_VCF(phased_VCF, allele_counts, readbacked_phased_VCF)
+        self.allele_counts = self.load_VCF(phased_VCF, allele_counts, allele_counts_N, readbacked_phased_VCF)
 
         #
         # load in coverage; merge with allele counts
@@ -27,7 +28,7 @@ class HapasegReference:
         self.chromosome_intervals = self.parse_cytoband(cytoband_file)
 
     @staticmethod
-    def load_VCF(VCF, allele_counts, RBP_VCF = None):
+    def load_VCF(VCF, allele_counts, allele_counts_N = None, RBP_VCF = None):
         P = pd.read_csv(VCF, sep = "\t", comment = "#", names = ["chr", "pos", "x", "ref", "alt", "y", "z", "a", "b", "hap"], header = None)
         P = P.loc[:, ~P.columns.str.match('^.$')]
 
@@ -48,6 +49,10 @@ class HapasegReference:
         # pull in altcounts
         C = pd.read_csv(allele_counts, sep = "\t")
         P = P.merge(C, how = "inner", left_on = ["chr", "pos"], right_on = ["CONTIG", "POSITION"]).drop(columns = ["CONTIG", "POSITION"])
+
+        if allele_counts_N is not None:
+            C = pd.read_csv(allele_counts_N, sep = "\t").rename(columns = lambda x : x + "_N")
+            P = P.merge(C, how = "inner", left_on = ["chr", "pos"], right_on = ["CONTIG_N", "POSITION_N"]).drop(columns = ["CONTIG_N", "POSITION_N"])
 
         # for now we discard all unphased sites. later we might want to use them
         # if they provide addition power
