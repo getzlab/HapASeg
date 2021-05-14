@@ -659,6 +659,10 @@ class A_MCMC:
     def prune(self):
         incl_cols = self.P.columns.get_indexer(["include", "include_prior"])
 
+        # we will incrementally update this
+        self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
+
+        # prune SNPs within every breakpoint
         bpl = np.array(self.breakpoints); bpl = np.c_[bpl[:-1], bpl[1:]]
         for st, en in bpl:
             # don't prune short segments
@@ -757,12 +761,20 @@ class A_MCMC:
                 # update marginal likelihoods
                 T.at[choice_idx, "include"] = ~T.at[choice_idx, "include"]
 
-                ML_orig = self.seg_marg_liks[st]
+                self.marg_lik[self.iter] -= self.seg_marg_liks[st]
                 self.seg_marg_liks[st] = ss.betaln(
                   T.loc[T["include"], "MIN_COUNT"].sum() + 1,
                   T.loc[T["include"], "MAJ_COUNT"].sum() + 1,
                 )
-                self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] - ML_orig + self.seg_marg_liks[st]
+                self.marg_lik[self.iter] += self.seg_marg_liks[st]
+
+                # account for SNPs sent to "garbage" in likelihood (they are
+                # effectively their own segments)
+                self.marg_lik[self.iter] += (1 if ~self.P.at[choice_idx, "include"] else -1)* \
+                  ss.betaln(
+                    self.P.at[choice_idx, "MIN_COUNT"] + 1,
+                    self.P.at[choice_idx, "MAJ_COUNT"] + 1
+                  )
 
                 # TODO: update segment partial sums (when we actually use these)
 
