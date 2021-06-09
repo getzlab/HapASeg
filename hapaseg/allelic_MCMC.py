@@ -155,7 +155,10 @@ class A_MCMC:
                 else:
                     continue
             elif op == 3:
-                self.prune()
+                if np.random.rand() < 0.01:
+                    self.prune()
+                else:
+                    continue
 
             # if we're only running up to burnin, bail
             if self.quit_after_burnin and self.burned_in:
@@ -807,13 +810,6 @@ class A_MCMC:
         if show_CIs:
             ax.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.5, color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx"].astype(np.int)])
 
-#        # phase switches
-#        o = 0
-#        for i in Ph["flip"].unique():
-#            if i == 0:
-#                continue
-#            plt.scatter(Ph.loc[Ph["flip"] == i, "pos"], o + np.zeros((Ph["flip"] == i).sum()))
-#            o -= 0.01
         # mask excluded SNPs
         ax.scatter(Ph["pos"], Ph["median_hap"], color = 'k', alpha = 1 - pd.concat(self.include, axis = 1).mean(1).values)
 
