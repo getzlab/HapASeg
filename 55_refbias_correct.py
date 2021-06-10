@@ -120,3 +120,80 @@ for b_idx in np.random.choice(len(self.breakpoint_list), 20, replace = False):
             balanced_intervals[(st, en)] = (lik_T-lik_S, lik_T, lik_S, self.P.loc[st:(en - 1), "ALT_COUNT"].sum(), self.P.loc[st:(en - 1), "REF_COUNT"].sum())
 
         print(lik_T - lik_S, st, en)
+
+
+######
+
+bp_samp = A.breakpoint_list[0]
+bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
+
+X = []
+for i, (st, en) in enumerate(bpl):
+    x = A.P.iloc[st:en].groupby("allele_A")[["MIN_COUNT", "MAJ_COUNT"]].sum()
+    x["idx"] = i
+    X.append(x)
+
+X = pd.concat(X)
+g = X.groupby("idx").size() == 2
+Y = X.loc[X["idx"].isin(g[g].index)]
+
+f = np.zeros([len(Y)//2, 100])
+for i, (_, g) in enumerate(Y.groupby("idx")):
+    f[i] = g.loc[0, "MIN_COUNT"]/(g.loc[0, "MIN_COUNT"] + g.loc[0, "MAJ_COUNT"])/(g.loc[1, "MIN_COUNT"]/(g.loc[1, "MIN_COUNT"] + g.loc[1, "MAJ_COUNT"]))
+
+    f[i, :] = s.beta.rvs(g.loc[0, "MIN_COUNT"] + 1, g.loc[0, "MAJ_COUNT"] + 1, size = 100)/s.beta.rvs(g.loc[1, "MIN_COUNT"] + 1, g.loc[1, "MAJ_COUNT"] + 1, size = 100)
+    #f[i] = g.loc[0, "MIN_COUNT"]/(g.loc[0, "MIN_COUNT"] + g.loc[0, "MAJ_COUNT"])/(g.loc[1, "MIN_COUNT"]/(g.loc[1, "MIN_COUNT"] + g.loc[1, "MAJ_COUNT"]))
+
+f.mean() # gives a pretty good overall estimate in line with empirical values
+
+# can we add covariates to improve this?
+
+# 0. distance to target/bait boundary
+T = pd.read_csv("exome/broad_custom_exome_v1.Homo_sapiens_assembly19.targets.interval_list", comment = "@", sep = "\t", header = None, names = ["chr", "start", "end", "x", "y"]).loc[:, ["chr", "start", "end"]]
+B = pd.read_csv("exome/broad_custom_exome_v1.Homo_sapiens_assembly19.baits.interval_list", comment = "@", sep = "\t", header = None, names = ["chr", "start", "end", "x", "y"]).loc[:, ["chr", "start", "end"]]
+T = T.append(pd.Series({ "chr" : -1, "start" : -1, "end" : -1 }, name = -1))
+
+from capy import mut
+A.P["targ"] = -1
+tmap = mut.map_mutations_to_targets(A.P, T, inplace = False).astype(np.int64)
+A.P.loc[tmap.index, "targ"] = tmap
+
+# for targets that mapped, distance from closest boundary
+# or relative position [0, 1] within target?
+A.P["dists"] = np.abs(np.c_[A.P["pos"].values] - T.loc[A.P["targ"], ["start", "end"]].values).min(1)
+
+# for targets that didn't map, get closest target
+Pg = A.P.groupby("chr")
+Tg = T.groupby("chr")
+
+for ch, g in Pg:
+    if ch not in Tg.groups:
+        continue
+
+    nomap = g.loc[g["targ"] == -1, "pos"]
+
+    Tch = Tg.get_group(ch)
+    Tch_e = Tch.sort_values("end", ignore_index = True) # sort by end as well
+    # nearest targets
+    nidx_l = Tch["start"].searchsorted(nomap, side = "left")
+    nidx_r = Tch_e["end"].searchsorted(nomap, side = "right")
+
+    A.P.loc[nomap.index, "dists"] = -np.c_[
+      Tch.loc[nidx_l, "start"].values - nomap.values,
+      nomap.values - Tch_e.loc[nidx_r - 1, "end"].values
+    ].min(1)
+
+A.P["seg_res"] = np.nan
+for st, en in bpl:
+    if en - st < 10:
+        continue
+
+    snp_f = s.beta.rvs(A.P.loc[st:en, "MIN_COUNT"] + 1, A.P.loc[st:en, "MAJ_COUNT"] + 1, size = (100, en - st + 1))
+    seg_f = s.beta.rvs(A.P.loc[st:en, "MIN_COUNT"].sum() + 1, A.P.loc[st:en, "MAJ_COUNT"].sum() + 1, size = (100, 1))
+
+    A.P.loc[st:en, "seg_res"] = np.abs(np.log((snp_f/seg_f).mean(0)))
+
+plt.figure(1337); plt.clf()
+plt.scatter(A.P["dists"], A.P["seg_res"], alpha = 0.5)
+
+# 1. panel of tumors?
