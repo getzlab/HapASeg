@@ -143,3 +143,14 @@ for i, (arm, A) in enumerate(self.chunks.groupby("arm")):
     H[i].marg_lik[0] = np.array(H[i].seg_marg_liks.values()).sum()
 
 H[0].run()
+
+#
+# run on just a single chunk
+
+refs = hapaseg.load.HapasegReference(phased_VCF = "exome/6_C1D1_META.eagle.vcf", allele_counts = "exome/6_C1D1_META.tumor.tsv", allele_counts_N = "exome/6_C1D1_META.normal.tsv")
+
+A = hapaseg.allelic_MCMC.A_MCMC(P = refs.allele_counts.iloc[0:543], n_iter = 20000, phase_correct = True, ref_bias = 0.93)
+A.run()
+
+A = hapaseg.allelic_MCMC.A_MCMC(P = refs.allele_counts.iloc[0:543], n_iter = 20000)
+A.run()
