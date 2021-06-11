@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import scipy.stats as s
 import sortedcontainers as sc
 from itertools import chain
 
@@ -15,7 +16,6 @@ class AllelicMCMCRunner:
       n_iter = 20000,
       phase_correct = True,
       misphase_prior = 0.001,
-      _ref_bias = 1.0 # temporary parameter; will ultimately be inferred immediately post-burnin
     ):
         self.client = c
         self.P = allele_counts
@@ -25,7 +25,6 @@ class AllelicMCMCRunner:
         self.n_iter = n_iter
         self.phase_correct = phase_correct
         self.misphase_prior = misphase_prior
-        self._ref_bias = _ref_bias
 
         # make ranges
         t = mut.map_mutations_to_targets(self.P, self.chr_int, inplace = False)
@@ -53,6 +52,30 @@ class AllelicMCMCRunner:
         self.chunks["results"] = self.client.gather(futures)
 
         #
+        # compute reference bias
+        X = []
+        j = 0
+        for chunk in self.chunks["results"]:
+            bpl = np.array(chunk.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
+
+            for i, (st, en) in enumerate(bpl):
+                x = chunk.P.iloc[st:en].groupby("allele_A")[["MIN_COUNT", "MAJ_COUNT"]].sum()
+                x["idx"] = i + j
+                X.append(x)
+
+            j += len(chunk.P)
+
+        X = pd.concat(X)
+        g = X.groupby("idx").size() == 2
+        Y = X.loc[X["idx"].isin(g[g].index)]
+
+        f = np.zeros([len(Y)//2, 100])
+        for i, (_, g) in enumerate(Y.groupby("idx")):
+            f[i, :] = s.beta.rvs(g.loc[0, "MIN_COUNT"] + 1, g.loc[0, "MAJ_COUNT"] + 1, size = 100)/s.beta.rvs(g.loc[1, "MIN_COUNT"] + 1, g.loc[1, "MAJ_COUNT"] + 1, size = 100)
+
+        ref_bias = f.mean()
+
+        #
         # concatenate burned in chunks for each arm
         H = [None]*len(self.chunks["arm"].unique())
         for i, (arm, A) in enumerate(self.chunks.groupby("arm")):
@@ -62,7 +85,7 @@ class AllelicMCMCRunner:
               n_iter = self.n_iter,
               phase_correct = self.phase_correct,
               misphase_prior = self.misphase_prior,
-              ref_bias = self._ref_bias # TODO: infer dynamically from burnin chunks
+              ref_bias = ref_bias
             )
 
             # replicate constructor steps to define initial breakpoint set and
