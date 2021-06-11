@@ -1,0 +1,3 @@
+[submodule "wolf/tasks/het_pulldown_from_callstats_TOOL"]
+	path = wolf/tasks/het_pulldown_from_callstats_TOOL
+	url = git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git
