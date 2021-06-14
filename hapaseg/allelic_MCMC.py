@@ -302,26 +302,26 @@ class A_MCMC:
         rng_idx = (self.P.index >= bdy1[0]) & (self.P.index < bdy1[1])
 
         idx = rng_idx & self.P["aidx"] & self.P["include"]
-        x1_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
-        x1_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
+        x1_A = self.P.loc[idx, "ALT_COUNT"].sum()
+        x1_B = self.P.loc[idx, "REF_COUNT"].sum()
 
         idx = rng_idx & ~self.P["aidx"] & self.P["include"]
-        y1_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
-        y1_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
+        y1_A = self.P.loc[idx, "ALT_COUNT"].sum()
+        y1_B = self.P.loc[idx, "REF_COUNT"].sum()
 
         # seg 2
         rng_idx = (self.P.index >= bdy2[0]) & (self.P.index < bdy2[1])
 
         idx = rng_idx & self.P["aidx"] & self.P["include"]
-        x2_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
-        x2_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
+        x2_A = self.P.loc[idx, "ALT_COUNT"].sum()
+        x2_B = self.P.loc[idx, "REF_COUNT"].sum()
 
         idx = rng_idx & ~self.P["aidx"] & self.P["include"]
-        y2_A = self.P.loc[idx, "ALT_COUNT"].sum() + 1
-        y2_B = self.P.loc[idx, "REF_COUNT"].sum() + 1
+        y2_A = self.P.loc[idx, "ALT_COUNT"].sum()
+        y2_B = self.P.loc[idx, "REF_COUNT"].sum()
 
-        lik_mis   = ss.betaln(x1_A + y1_B + y2_A + x2_B, y1_A + x1_B + x2_A + y2_B)
-        lik_nomis = ss.betaln(x1_A + y1_B + x2_A + y2_B, y1_A + x1_B + y2_A + x2_B)
+        lik_mis   = ss.betaln(x1_A + y1_B + y2_A + x2_B + 1, y1_A + x1_B + x2_A + y2_B + 1)
+        lik_nomis = ss.betaln(x1_A + y1_B + x2_A + y2_B + 1, y1_A + x1_B + y2_A + x2_B + 1)
 
         # logsumexp
         m = np.maximum(lik_mis, lik_nomis)
