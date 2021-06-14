@@ -573,12 +573,12 @@ class A_MCMC:
         cs_MAJ = np.zeros(en - st, dtype = np.int)
         cs_MAJ[0] = self.P.iat[st, self.maj_idx]
         for i in range(st + 1, en):
-            cs_MAJ[i - st] = cs_MAJ[i - st - 1] + self.P.iat[i, self.maj_idx]
+            cs_MAJ[i - st] = cs_MAJ[i - st - 1] + (self.P.iat[i, self.maj_idx] if self.P.iat[i, self.P.columns.get_loc("include")] else 0)
         # minor
         cs_MIN = np.zeros(en - st, dtype = np.int)
         cs_MIN[0] = self.P.iat[st, self.min_idx]
         for i in range(st + 1, en):
-            cs_MIN[i - st] = cs_MIN[i - st - 1] + self.P.iat[i, self.min_idx]
+            cs_MIN[i - st] = cs_MIN[i - st - 1] + (self.P.iat[i, self.min_idx] if self.P.iat[i, self.P.columns.get_loc("include")] else 0)
 
         # marginal likelihoods
         ml = ss.betaln(cs_MAJ + 1, cs_MIN + 1) + ss.betaln(cs_MAJ[-1] - cs_MAJ + 1, cs_MIN[-1] - cs_MIN + 1)
