@@ -617,8 +617,12 @@ class A_MCMC:
         b = np.random.choice(np.r_[0:len(split_probs)], p = split_probs)
         mid = b + st + 1
 
-        # chosen split point is the segment end, so we're not splitting this segment
-        if b == len(split_probs) - 1:
+        # chosen split point is either (a) the segment end, or (b) would result
+        # in a segment consisting only of pruned SNPs.
+        # either way, we're not splitting this segment
+        if b == len(split_probs) - 1 or \
+           not len(self._Piloc(st, mid, self.P.columns.get_loc("include"))) or \
+           not len(self._Piloc(mid, en, self.P.columns.get_loc("include"))):
             if self.burned_in:
                 self.incr_bp_counter(st = st, en = en)
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
