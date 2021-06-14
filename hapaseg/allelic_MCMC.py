@@ -132,12 +132,14 @@ class A_MCMC:
         self.marg_lik = np.full(self.n_iter, np.nan)
         self.marg_lik[0] = np.array(self.seg_marg_liks.values()).sum()
 
-    def _Piloc(self, st, en, col_idx):
+    def _Piloc(self, st, en, col_idx, incl_idx = None):
         """
         Returns only SNPs flagged for inclusion within the range st:en
         """
         P = self.P.iloc[st:en, col_idx]
-        return P.loc[self.P.iloc[st:en, self.P.columns.get_loc("include")]]
+        return P.loc[
+          self.P.iloc[st:en, self.P.columns.get_loc("include")] if incl_idx is None else incl_idx
+        ]
 
     def run(self):
         while self.iter < self.n_iter:

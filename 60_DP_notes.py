@@ -27,7 +27,7 @@ for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
         r.P.iloc[st:en, min_idx] = x
 
     #for bpl, pil in zip(r.breakpoint_list, r.phase_interval_list):
-    for bp_samp, pi_samp in zip(r.breakpoint_list, r.phase_interval_list):
+    for bp_samp, pi_samp, inc_samp in zip(r.breakpoint_list, r.phase_interval_list, r.include):
         # flip everything according to sample
         for st, en in pi_samp.intervals():
             x = r.P.iloc[st:en, maj_idx].copy()
@@ -41,8 +41,8 @@ for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
             all_segs.append([
               st, en,
               r.P.loc[st, "chr"], r.P.loc[st, "pos"], r.P.loc[en, "pos"],
-              r.P.iloc[st:en, min_idx].sum(),
-              r.P.iloc[st:en, maj_idx].sum()
+              r._Piloc(st, en, min_idx, inc_samp).sum(),
+              r._Piloc(st, en, maj_idx, inc_samp).sum()
             ])
 
         # flip everything back
