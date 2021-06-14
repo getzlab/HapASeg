@@ -177,8 +177,9 @@ class A_MCMC:
                 self.correct_phases()
                 self.phase_correction_ready = True
 
-                # breakpoint list is liable to change after phase correction, so clear it
+                # breakpoint/prune lists are liable to change after phase correction, so clear them 
                 self.breakpoint_list = []
+                self.include = []
 
             # save set of breakpoints, phase intervals, and prune states if burned in 
             if self.burned_in and not self.iter % 100:
