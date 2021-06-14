@@ -9,7 +9,7 @@ import scipy.sparse as sp
 import scipy.special as ss
 import sortedcontainers as sc
 
-allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.pickle")
+allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.pickle")
 
 all_segs = []
 
