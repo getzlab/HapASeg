@@ -167,12 +167,12 @@ for n_it in range(0, 10*len(S)):
     #     L(join)  L(split)
     MLs = A + BC - (AB + C)
     MLs_max = np.max(MLs)
-    p = np.exp(MLs - MLs_max)/np.exp(MLs - MLs_max).sum()
 
     # choose to join a cluster or make a new one (choice_idx = 0) 
+    T = 1 # temperature parameter for scaling choice distribution
     choice_idx = np.random.choice(
       np.r_[0:(len(clust_counts) + 1)],
-      p = np.exp(MLs - MLs_max)/np.exp(MLs - MLs_max).sum()
+      p = np.exp(T*(MLs - MLs_max))/np.exp(T*(MLs - MLs_max)).sum()
     )
     choice = np.r_[-1, clust_counts.keys()][choice_idx]
 
