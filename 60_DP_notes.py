@@ -74,6 +74,7 @@ x, y = intervals.all_overlaps_both(S["start_gp"].values, S["end_gp"].values, S.i
 z = np.zeros_like(x)
 
 O = sp.dok_matrix(sp.coo_matrix((ss.betaln(mn.sum(1) + 1, mj.sum(1) + 1) - ss.betaln(mn + 1, mj + 1).sum(1), (x, y))))
+O_d = O.todense() # TODO: dense lookup are much faster; we might want to store this as a block matrix for space savings, since we don't expect elements far from the diagonal
 
 # other fields of S
 S["clust"] = -1 # initially, all segments are unassigned
@@ -180,6 +181,9 @@ for n_it in range(0, 10*len(S)):
         C_a = clust_sums[choice][0]
         C_b = clust_sums[choice][1]
 
+        # compute prior odds ratio for all overlaps between segments
+        p_odd = O_d[np.array(list(clust_members[choice]))][:, seg_idx].sum()
+
         # accept proposal via Metropolis
         # A+B,C -> A,B+C
         # C is likelihood of target cluster pre-join
@@ -193,7 +197,7 @@ for n_it in range(0, 10*len(S)):
         # TODO: add proposal ratio here, since it is no longer symmetric
 
         # accept proposal to join
-        if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split):
+        if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + p_odd):
             clust_counts[choice] += n_move 
             clust_sums[choice] += np.r_[B_a, B_b]
             S.iloc[seg_idx, clust_col] = choice
