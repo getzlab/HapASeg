@@ -2,12 +2,15 @@ import colorama
 import itertools
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import ncls
 import numpy as np
 import pandas as pd
 import scipy.stats as s
 import scipy.sparse as sp
 import scipy.special as ss
 import sortedcontainers as sc
+
+from capy import seq
 
 allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.pickle")
 
@@ -55,11 +58,24 @@ for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
 S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj"])
 
 # aggregate duplicate segments (effectively weighting by occurrence)
+# XXX: how "effective" is this? weighting probability of choosing cluster by number
+#      of occurrences != weighting probability of choosing by increasing counts
 S = S.groupby(["chr", "start", "end"])[["min", "maj"]].sum().join(
   S.drop(columns = ["min", "maj"]).set_index(["chr", "start", "end"]),
   how = "left"
 ).drop_duplicates().reset_index()
 
+# construct overlap matrix
+S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"])
+S["end_gp"] = seq.chrpos2gpos(S["chr"], S["end"])
+
+intervals = ncls.NCLS(S["start_gp"], S["end_gp"], S.index)
+x, y = intervals.all_overlaps_both(S["start_gp"].values, S["end_gp"].values, S.index.values)
+z = np.zeros_like(x)
+
+O = sp.dok_matrix(sp.coo_matrix((ss.betaln(mn.sum(1) + 1, mj.sum(1) + 1) - ss.betaln(mn + 1, mj + 1).sum(1), (x, y))))
+
+# other fields of S
 S["clust"] = -1 # initially, all segments are unassigned
 clust_col = S.columns.get_loc("clust")
 min_col = S.columns.get_loc("min")
@@ -223,10 +239,6 @@ for n_it in range(0, 10*len(S)):
 # plot
 
 #from glasbey import glasbey
-from capy import seq
-
-S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"])
-S["end_gp"] = seq.chrpos2gpos(S["chr"], S["end"])
 
 colors = mpl.cm.get_cmap("tab10").colors
 
