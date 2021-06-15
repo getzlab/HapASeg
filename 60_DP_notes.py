@@ -53,7 +53,13 @@ for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
             r.P.iloc[st:en, min_idx] = x
 
 S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj"])
-S = S.drop_duplicates()
+
+# aggregate duplicate segments (effectively weighting by occurrence)
+S = S.groupby(["chr", "start", "end"])[["min", "maj"]].sum().join(
+  S.drop(columns = ["min", "maj"]).set_index(["chr", "start", "end"]),
+  how = "left"
+).drop_duplicates().reset_index()
+
 S["clust"] = -1 # initially, all segments are unassigned
 clust_col = S.columns.get_loc("clust")
 min_col = S.columns.get_loc("min")
