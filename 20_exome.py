@@ -74,7 +74,7 @@ import dask.distributed as dd
 c = dd.Client(n_workers = 36)
 c = dd.Client()
 
-refs = hapaseg.load.HapasegReference(phased_VCF = "exome/6_C1D1_META.eagle.vcf", allele_counts = "exome/6_C1D1_META.tumor.tsv")
+refs = hapaseg.load.HapasegReference(phased_VCF = "exome/6_C1D1_META.eagle.vcf", allele_counts = "exome/6_C1D1_META.tumor.tsv", allele_counts_N = "exome/6_C1D1_META.normal.tsv")
 
 runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
   refs.allele_counts,
