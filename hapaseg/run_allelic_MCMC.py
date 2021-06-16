@@ -26,6 +26,8 @@ class AllelicMCMCRunner:
         self.phase_correct = phase_correct
         self.misphase_prior = misphase_prior
 
+        self.ref_bias = np.nan
+
         # make ranges
         t = mut.map_mutations_to_targets(self.P, self.chr_int, inplace = False)
         self.groups = t.groupby(t).apply(lambda x : [x.index.min(), x.index.max()]).to_frame(name = "bdy")
@@ -73,7 +75,7 @@ class AllelicMCMCRunner:
         for i, (_, g) in enumerate(Y.groupby("idx")):
             f[i, :] = s.beta.rvs(g.loc[0, "MIN_COUNT"] + 1, g.loc[0, "MAJ_COUNT"] + 1, size = 100)/s.beta.rvs(g.loc[1, "MIN_COUNT"] + 1, g.loc[1, "MAJ_COUNT"] + 1, size = 100)
 
-        ref_bias = f.mean()
+        self.ref_bias = f.mean()
 
         #
         # concatenate burned in chunks for each arm
@@ -85,7 +87,7 @@ class AllelicMCMCRunner:
               n_iter = self.n_iter,
               phase_correct = self.phase_correct,
               misphase_prior = self.misphase_prior,
-              ref_bias = ref_bias
+              ref_bias = self.ref_bias
             )
 
             # replicate constructor steps to define initial breakpoint set and
