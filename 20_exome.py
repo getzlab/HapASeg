@@ -82,12 +82,11 @@ runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
   c,
   #phase_correct = False,
   misphase_prior = 3e-3,
-  #_ref_bias = 0.936 # tmp: will be automatically inferred later
 )
 allelic_segs = runner.run_all()
 
-#allelic_segs.to_pickle("exome/6_C1D1_META.allelic_segs.pickle")
-allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.pickle")
+#allelic_segs.to_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.pickle")
+allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.pickle")
 
 #
 # debug why reverting intervals in F won't restore us to the original state
