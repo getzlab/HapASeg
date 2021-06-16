@@ -89,6 +89,28 @@ allelic_segs = runner.run_all()
 allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.pickle")
 
 #
+# add overdispersion (~0.92)
+refs.allele_counts[[
+  "REF_COUNT",
+  "ALT_COUNT",
+  "REF_COUNT_N",
+  "ALT_COUNT_N",
+  "MAJ_COUNT",
+  "MIN_COUNT"
+]] *= 0.92
+
+runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
+  refs.allele_counts,
+  refs.chromosome_intervals,
+  c,
+  misphase_prior = 3e-3,
+)
+allelic_segs = runner.run_all()
+
+#allelic_segs.to_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.pickle")
+allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.pickle")
+
+#
 # debug why reverting intervals in F won't restore us to the original state
 
 refs = hapaseg.load.HapasegReference(phased_VCF = "exome/6_C1D1_META.eagle.vcf", allele_counts = "exome/6_C1D1_META.tumor.tsv")
