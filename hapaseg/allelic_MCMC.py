@@ -33,7 +33,8 @@ class A_MCMC:
 
         # factor by which to downscale all reference alleles, in order to
         # correct for bias against the alternate allele due to capture or alignment
-        self.P["REF_COUNT"] *= ref_bias
+        self.ref_bias = ref_bias
+        self.P["REF_COUNT"] *= self.ref_bias
         self.P["MAJ_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "ALT_COUNT"], self.P.loc[~self.P["aidx"], "REF_COUNT"]])
         self.P["MIN_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "REF_COUNT"], self.P.loc[~self.P["aidx"], "ALT_COUNT"]])
 
