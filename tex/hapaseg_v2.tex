@@ -144,6 +144,16 @@ The overall MCMC procedure is:
 
 The MCMC is extremely fast, since each iteration only involves computing partial sums in \eqref{psum_1}, \eqref{psum_2}, and \eqref{psum_3} which can be memoized between iterations. In theory, storing all possible partial sums would require $O(N^2)$ space, but in practice we only ever need blocks close to the diagonal, so the partial sum matrix can be stored sparse, with space complexity $O(\bar{N}_s\bar{B}^2)\ll O(N^2)$, where $\bar{N}_s$ is the average number of segments and $\bar{B}$ the average length of each segment. The MCMC is also efficiently parallelized: the most compute-intensive phase is at the beginning when each SNP belongs to its own segment. Blocks of adjacent SNPs are burned-in in parallel, which are then concatenated post burnin to sample the final segmentation posterior. During this step, each chromosome arm can be run in parallel, since we do not expect reliable phasing across the centromere.
 
+\subsection{SNP pruning}
+
+We optionally can propose a third operation each iteration: SNP pruning. Within a given segment, some SNPs' haplotypic imbalance $a_i/(a_i+b_i)$ can differ considerably from the true haplotypic imbalance of the segment, whether due to random chance or systematic bias (e.g., mapping issues, poor base qualities, etc.)
+
+We can prune these SNPs from a segment, using an MCMC step similar to splitting a segment. For the $k$th SNP in the $j$th segment, we compute the marginal likelihood of the segment minus SNP $k$:
+\begin{align*}
+\mathcal{L}_j(k) = \beta(A_{[s_j,e_j)} - a_k, B_{[s_j,e_j)} - b_k),
+\end{align*}
+and propose removing $k$ with probability $p(k)=\mathcal{L}_j(k)/\sum_k\mathcal{L}_j(k)$.
+
 \section{Phasing}
 
 We impute phasing using a phased reference panel (e.g.\ 1000 Genomes). If the tool used for imputation reports per-SNP phasing probabilities (i.e., the probability that SNP $i$ is incorrectly phased with respect to $i+1$), we annotate each SNP with misphase probability $m_i$. If no per-SNP probabilities are given, we use a uniform probability $m_0$ for all SNPs. We could potentially use a fixed non-uniform prior based on genetic linkage distances.
