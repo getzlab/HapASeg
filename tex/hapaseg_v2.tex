@@ -243,6 +243,12 @@ Up until now, we have assumed that all uncertainty is \textit{aleatoric} --- all
 %name other sources>
 %<once we have initial segmentation, we fit beta distribution to counts within each segment; average ratio (weighted by segment lengths)  of sum parameters to fit parameters is overdispersion factor
 
+\section{Non-adjacent segment clustering}
+
+(In-progress)
+
+\noindent Once we have a final set of phase-corrected samples from the distribution over segmentations, we cluster non-adjacent segments using a procedure similar to the MCMC for joining/splitting adjacent segments.
+
 %Now suppose that there are many disjoint segments $\mathcal{S}_j\in\{\mathcal{S}\}$, each with a potentially different allelic imbalance. 
 %The total likelihood of a given segmentation is
 %\begin{align*}
