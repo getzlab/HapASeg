@@ -232,6 +232,17 @@ edge [<-,blue] (B1);
 
 After burnin, we take another few MCMC samples and run the aforementioned phasing correction algorithm on each segmentation. This effectively gives us a set of samples $([s_i,e_i),\phi_i)\sim\Phi$ from the posterior distribution $\Phi$ of empirical absolute phase orientations. We can then add a third state to the segmentation MCMC: in addition to proposing that adjacent segments be joined or a given segment be split, we can also choose a region $r_i=[s_i,e_i)$ and phase orientation $\phi_i$ at random from $\Phi$ and flip its phase orientation. If $s_i$ or $e_i$ coincides with a segmentation breakpoint at the current state of the chain, we propose a join; if not, we introduce a new breakpoint at the region boundary and propose a split. The flip is accepted using the same Metropolis criterion as \eqref{metro}, with proposal ratio equal to 1.
 
+\section{Miscellaneous corrections}
+
+\subsection{Reference bias correction}
+
+\subsection{Overdispersion estimation}
+
+Up until now, we have assumed that all uncertainty is \textit{aleatoric} --- all noise on a segment likelihood $\mathcal{L}(f|A_{[s,e)},B_{[s,e)})$ is assumed to come from translating counts $A,B$ to a fraction $f$. However, this is not the only source of noise. 
+
+%name other sources>
+%<once we have initial segmentation, we fit beta distribution to counts within each segment; average ratio (weighted by segment lengths)  of sum parameters to fit parameters is overdispersion factor
+
 %Now suppose that there are many disjoint segments $\mathcal{S}_j\in\{\mathcal{S}\}$, each with a potentially different allelic imbalance. 
 %The total likelihood of a given segmentation is
 %\begin{align*}
