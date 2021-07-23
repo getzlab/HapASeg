@@ -275,9 +275,90 @@ Up until now, we have assumed that all uncertainty is \textit{aleatoric} --- all
 
 \section{Non-adjacent segment clustering}
 
-(In-progress)
+\textit{(In-progress)}\\
 
-\noindent Once we have a final set of phase-corrected samples from the distribution over segmentations, we cluster non-adjacent segments using a procedure similar to the MCMC for joining/splitting adjacent segments.
+\noindent Once we have a final set of phase-corrected samples from the distribution over segmentations, we cluster non-adjacent segments using a procedure similar to the MCMC for joining/splitting adjacent segments. Starting with a segmentation sample $\psi_i\sim\Psi$, we assume that each segment $S_{i,1},\dots, S_{i,j},\dots S_{i,N_i}\in \psi_i$ initially belongs to its own cluster, $C_1,\dots,C_{N_i}$. A segment can propose to join another cluster, or split off into a new cluster. Let $S$ be the segment to move, $C_s$ be the cluster that $S$ is currently part of, and $\mathbf C$ be the set of all possible clusters to join, i.e., $\mathbf{C} = \{C_1,\dots,C_{N_i}\}\setminus\{C_s\}$.
+
+Denote the $\ell$th segment belonging to the $k$th cluster as $S^k_{i,\ell}\in C_k$. Let $A^k_\ell$ be the sum of reads belonging to haplotype $\mathcal A$ across all SNPs in $S^k_{i,\ell}$, and $B^k_\ell$ be the sum of reads belonging to haplotype $\mathcal B$. 
+The marginal likelihood of $C_k$ is a function of the sum of the phased alt/ref counts belonging to the segments within the cluster, i.e.
+\begin{align*}
+\mathcal{M}(C_k) = \beta(\textstyle\sum_\ell A^k_\ell + 1, \textstyle\sum_\ell  B^k_\ell + 1).
+\end{align*}
+It is analogous to the marginal likelihood defined in \eqref{psum_1}, but summing over allele counts in non-adjacent segments.
+
+The procedure for moving $S$ works as follows:
+
+\begin{enumerate}
+\item Pick a segment $S$ at random. Compute the marginal likelihood of removing $S$ from $C_s$,
+\begin{align*}
+\mathcal{M}(C_s-S) = \beta(\textstyle\sum_\ell A^s_\ell - A_S + 1, \textstyle\sum_\ell B^s_\ell - B_S + 1),
+\end{align*}
+where $A_S$ and $B_S$ are the summed allele counts for $S$.
+\item Compute the marginal likelihoods for every other possible cluster $C_k\in\mathbf{C}$ that $S$ can join,
+\begin{align*}
+\mathcal{M}(C_k) = \beta(\textstyle\sum_\ell A^k_{\ell} + 1, \textstyle\sum_\ell B^k_{\ell} + 1)\qquad \forall k\in\{1,\dots,N_i\}\setminus\{s\}.
+\end{align*}
+\item Compute the marginal likelihood of each $C_k\in\mathbf{C}$, if $S$ joins it:
+\begin{align*}
+\mathcal{M}(C_k+S) = \beta(\textstyle\sum_\ell A^k_{\ell} + A_S + 1, \textstyle\sum_\ell B^k_{\ell} + B_S + 1)\qquad \forall k\in\{1,\dots,N_i\}\setminus\{s\}
+\end{align*}
+\item The likelihood ratio of $S$ joining each $C_k$ is thus
+\begin{align*}
+\mathcal{M}((C_s,C_k)\to (C_s-S,C_k+S)) &\equiv\mathcal{M}(S\to C_k)\\
+&= \frac{\mathcal{M}(C_s-S)\times\mathcal{M}(C_k+S)}{\mathcal{M}(C_s)\times\mathcal{M}(C_k)}\qquad \forall k\in\{1,\dots,N_i\}\setminus\{s\},
+\end{align*}
+the ratio of the joint likelihood of $S$ remaining in $C_s$ and $C_k$ existing as-is (numerator) versus the joint likelihood of $S$ being removed from $C_s$ and being added to $C_k$ (denominator).
+\item Finally, we define the marginal likelihood of $S$ joining a new cluster, $C_{N_i+1}$. This is simply the marginal likelihood of $S$ existing as the only member of a new cluster, $\mathcal{M}(C_{N_i+1}) = \mathcal{M}(S) = \beta(A_S+1,B_S+1)$. The likelihood ratio is then
+\begin{align*}
+\mathcal{M}((C_s,C_k)\to (C_s-S,C_{N_i+1})) &\equiv\mathcal{M}(S\to C_{N_i+1})\\
+&= \frac{\mathcal{M}(C_s-S)\times\mathcal{M}(S)}{\mathcal{M}(C_s)\times\mathcal{M}(C_k)}.
+\end{align*}
+\end{enumerate}
+
+We construct a proposal distribution proportional to the likelihood ratios,
+\begin{align*}
+q(S\to C_k|S\in C_s) = \frac{\mathcal{M}(S\to C_{k})}{\sum_{\kappa\in\{1,\dots,N_{i+1}\}\setminus\{s\}}\mathcal{M}(S\to C_{\kappa})},
+\end{align*}
+and probabilistically accept the proposed move according to the Metropolis criterion,
+\begin{align*}
+...
+\end{align*}
+
+To speed up the clustering, we can also propose joining two clusters. The marginal likelihood of combining clusters $C_{k_1}$ and $C_{k_2}$ is
+\begin{align*}
+\mathcal{M}(C_{k_1}+C_{k_2})=\beta(\textstyle\sum_{\ell}A^{k_1}_\ell + \textstyle\sum_{\ell}A^{k_2}_\ell + 1,\textstyle\sum_{\ell}B^k_\ell + \textstyle\sum_{\ell}B^{k_2}_\ell + 1),
+\end{align*}
+so the likelihood ratio is
+\begin{align*}
+\mathcal{M}((C_{k_1},C_{k_2})\to C_{k_1}+C_{k_2}) = \frac{\mathcal{M}(C_{k_1}+C_{k_2})}{\mathcal{M}(C_{k_1})\times \mathcal{M}(C_{k_2})}.
+\end{align*}
+
+As with the procedure for assigning segments to clusters, we pick a cluster $C_{k_1}$ at random, enumerate the likelihood ratios of its joining all other clusters $C_{k_2}\in\{C_1,\dots,C_{N_i}\}\setminus\{C_{k_1}\}$, and probabilistically propose a cluster to join proportional to the likelihood ratios.
+
+%    # B is segment/cluster to move
+%    # A is cluster B is currently part of
+%    # C is all possible clusters to move to
+%    A_a = clust_sums[cur_clust][0] if cur_clust in clust_sums else 0
+%    A_b = clust_sums[cur_clust][1] if cur_clust in clust_sums else 0
+%    B_a = S.iloc[seg_idx, min_col].sum()
+%    B_b = S.iloc[seg_idx, maj_col].sum()
+%    C_ab = np.r_[clust_sums.values()] # first term (-1) = make new cluster
+%
+%    # A+B,C -> A,B+C
+%
+%    # A+B is likelihood of current cluster B is part of
+%    AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
+%    # C is likelihood of target cluster pre-join
+%    C = ss.betaln(C_ab[:, 0] + 1, C_ab[:, 1] + 1)
+%    # A is likelihood cluster B is part of, minus B
+%    A = ss.betaln(A_a + 1, A_b + 1)
+%    # B+C is likelihood of target cluster post-join
+%    BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
+%
+%    #     L(join)  L(split)
+%    MLs = A + BC - (AB + C)
+
+%$p(S_{i,j}
 
 %Now suppose that there are many disjoint segments $\mathcal{S}_j\in\{\mathcal{S}\}$, each with a potentially different allelic imbalance. 
 %The total likelihood of a given segmentation is
