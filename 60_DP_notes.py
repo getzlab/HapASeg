@@ -192,7 +192,6 @@ for n_it in range(0, 10*len(S)):
         ML_join = A + BC_c
         ML_split = AB + C_c
 
-        # TODO: add proposal ratio here, since it is no longer symmetric
         #AB+C <- A+BC
 
         # BC is likelihood of target cluster post-join
