@@ -148,7 +148,7 @@ The MCMC is extremely fast, since each iteration only involves computing partial
 
 We optionally propose a third operation during each iteration: SNP pruning. Within a given segment, some SNPs' haplotypic imbalance $a_i/(a_i+b_i)$ can differ considerably from the true haplotypic imbalance of the segment, whether due to random chance or systematic bias (e.g., mapping issues, poor base qualities, etc.)
 
-We can prune these SNPs from a segment, using an MCMC step similar to splitting a segment. For the $k$th SNP in the $j$th segment $\mathcal{S}_j$, we compute the marginal likelihood of the segment minus SNP $k$:
+We can prune these SNPs from a segment, using an MCMC step similar to splitting a segment. For the $k$th SNP in the $j$th segment $S_j$, we compute the marginal likelihood of the segment minus SNP $k$:
 \begin{align*}
 \mathcal{M}^{-}_j(k) = \beta(\underbrace{A_{[s_j,e_j)} - a_k}_{A^{-k}_{[s_j,e_j)}}, \underbrace{B_{[s_j,e_j)} - b_k}_{B^{-k}_{[s_j,e_j)}})\times\beta(a_k, b_k).
 \end{align*}
@@ -161,27 +161,27 @@ If $k$ had already been removed from $j$, the marginal likelihood of adding it b
 
 The posterior ratio for removing $k$ is
 \begin{align*}
-p(\mathcal{S}_j/(\mathcal{S}_j-k))=\frac{\mathcal{M}^{-}_j(k)}{\mathcal{M}^{+}_j(k)}\times\frac{(1 - p^{+}(k))}{p^{+}(k)},\btag{prune_postr}
-%p(\mathcal{S}_j\to\mathcal{S}_j-k)=\min\lt\{1,\frac{\mathcal{M}^{-}_j(k)}{\mathcal{M}^{+}_j(k)}\times\frac{(1 - p^{+}(k))}{p^{+}(k)}\times\frac{q(+|-)}{q(-|+)}\rt\},\btag{prune_metro}
+p(S_j/(S_j-k))=\frac{\mathcal{M}^{-}_j(k)}{\mathcal{M}^{+}_j(k)}\times\frac{(1 - p^{+}(k))}{p^{+}(k)},\btag{prune_postr}
+%p(S_j\toS_j-k)=\min\lt\{1,\frac{\mathcal{M}^{-}_j(k)}{\mathcal{M}^{+}_j(k)}\times\frac{(1 - p^{+}(k))}{p^{+}(k)}\times\frac{q(+|-)}{q(-|+)}\rt\},\btag{prune_metro}
 \end{align*}
 where $p^{+}(k)$ is a prior probability of including $k$. %, and $q$ is the probability of proposing to remove/add $k$, which we will define in a bit.
 The ratio for adding $k$ if it had already been removed is just the reciprocal of \eqref{prune_postr}.
 
 To propose a SNP to prune within a segment, we enumerate the probabilities $P_R$ of removing each SNP, along with the probabilities $P_A$ of adding back any SNPs that had been previously removed:
 \begin{align*}
-P_R &= \{p(\mathcal{S}_j/(S_j - k))\mid k\in \mathcal{S}_j, k\notin R\}\\
-P_A &= \{p((\mathcal{S}_j - k)/S_j)\mid k\in \mathcal{S}_j, k\in R\}
+P_R &= \{p(S_j/(S_j - k))\mid k\in S_j, k\notin R\}\\
+P_A &= \{p((S_j - k)/S_j)\mid k\in S_j, k\in R\}
 \end{align*}
 where $R$ is the set of SNPs that had been previously removed. Let $P_{\cup}=P_R\cup P_A$. We define our proposal distribution $q$ by normalizing each member of $P_\cup$, i.e.
 \begin{align*}
-q(\mathcal{S}_j-k|\mathcal{S}_j) &= \frac{p(\mathcal{S}_j/(\mathcal{S}_j-k))}{\sum_{p\in P_\cup} p}\qquad k\notin R\\
-q(\mathcal{S}_j|\mathcal{S}_j-k) &= \frac{p((\mathcal{S}_j-k)/\mathcal{S}_j)}{\sum_{p\in P_\cup} p}\qquad k\in R.
+q(S_j-k|S_j) &= \frac{p(S_j/(S_j-k))}{\sum_{p\in P_\cup} p}\qquad k\notin R\\
+q(S_j|S_j-k) &= \frac{p((S_j-k)/S_j)}{\sum_{p\in P_\cup} p}\qquad k\in R.
 \end{align*}
 
 We accept or reject a proposed removal or addition with the Metropolis criterion, defined by the product of the posterior and proposal distribution ratios. Our prior distribution can come from a panel of normals (e.g., the fraction of heterozygous normals in which the het genotype confidence is high) or the matched normal itself (e.g., the confidence that the SNP is heterozygous in the matched normal).
 
 %\begin{align*}
-%p(\mathcal{S}_j-k\to\mathcal{S}_j)=\min\lt\{1,\frac{\mathcal{M}^{+}_j(k)}{\mathcal{M}_j}\times\frac{(1 - p^{+}(k))}{p^{+}(k)}\times\frac{q(+|-)}{q(-|+)}\rt\}
+%p(S_j-k\toS_j)=\min\lt\{1,\frac{\mathcal{M}^{+}_j(k)}{\mathcal{M}_j}\times\frac{(1 - p^{+}(k))}{p^{+}(k)}\times\frac{q(+|-)}{q(-|+)}\rt\}
 %\end{align*}
 
 \section{Phasing}
