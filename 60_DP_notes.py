@@ -170,9 +170,10 @@ for n_it in range(0, 10*len(S)):
 
     # choose to join a cluster or make a new one (choice_idx = 0) 
     T = 1 # temperature parameter for scaling choice distribution
+    choice_p = np.exp(T*(MLs - MLs_max))/np.exp(T*(MLs - MLs_max)).sum()
     choice_idx = np.random.choice(
       np.r_[0:(len(clust_counts) + 1)],
-      p = np.exp(T*(MLs - MLs_max))/np.exp(T*(MLs - MLs_max)).sum()
+      p = choice_p
     )
     choice = np.r_[-1, clust_counts.keys()][choice_idx]
 
@@ -196,8 +197,14 @@ for n_it in range(0, 10*len(S)):
 
         # TODO: add proposal ratio here, since it is no longer symmetric
 
+        MLs_rev = (BC + C_c) - (BC_c + C)
+        MLs_rev_max = np.max(MLs_rev)
+        choice_p_rev = np.exp(T*(MLs_rev - MLs_rev_max))/np.exp(T*(MLs_rev - MLs_rev_max)).sum()
+
+        q_rat = np.log(choice_p_rev[choice_idx]) - np.log(choice_p[choice_idx])
+
         # accept proposal to join
-        if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + p_odd):
+        if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + p_odd + q_rat):
             clust_counts[choice] += n_move 
             clust_sums[choice] += np.r_[B_a, B_b]
             S.iloc[seg_idx, clust_col] = choice
