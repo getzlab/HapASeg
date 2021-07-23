@@ -120,12 +120,12 @@ Initially, each SNP belongs to its own segment. At random, we pick two adjacent 
 \end{align*}
 where marginal likelihoods are
 \begin{align*}
-\mathcal{M}(S^\ast) &= \beta(\underbrace{\textstyle\sum_{\{i|x_i\in [s_j, e_{j+1})\}}a_i}_{A_{[s_j,e_{j+1})}},\underbrace{\textstyle\sum_{\{i|x_i\in [s_j, e_{j+1})\}}b_i}_{B_{[s_j,e_{j+1})}})\btag{psum_1}\\
-\mathcal{M}(S) &= \beta(A_{[s_j,e_j)},B_{[s_j,e_j)})\times \beta(A_{[s_{j+1},e_{j+1})},B_{[s_{j+1},e_{j+1})}).\btag{psum_2}
+\mathcal{M}(S^\ast) &= \beta(\underbrace{\textstyle\sum_{\{i|x_i\in [s_j, e_{j+1})\}}a_i}_{A_{[s_j,e_{j+1})}}+1,\underbrace{\textstyle\sum_{\{i|x_i\in [s_j, e_{j+1})\}}b_i}_{B_{[s_j,e_{j+1})}}+1)\btag{psum_1}\\
+\mathcal{M}(S) &= \beta(A_{[s_j,e_j)}+1,B_{[s_j,e_j)}+1)\times \beta(A_{[s_{j+1},e_{j+1})}+1,B_{[s_{j+1},e_{j+1})}+1).\btag{psum_2}
 \end{align*}
 We can also split segments of length $>1$. Rather than picking a breakpoint within the segment at random, we probabilistically tailor our proposal distribution. For each position $k\in [s_j,e_j)$, we compute
 \begin{align*}
-\mathcal{L}_j(k) = \beta(A_{[s_j,k)},B_{[s_j,k)})\times\beta(A_{[k,e_j)},B_{[k,e_j)}),\btag{psum_3}
+\mathcal{L}_j(k) = \beta(A_{[s_j,k)}+1,B_{[s_j,k)}+1)\times\beta(A_{[k,e_j)}+1,B_{[k,e_j)}+1),\btag{psum_3}
 \end{align*}
 and propose picking $k$ as the breakpoint with probability $p_j(k)=\mathcal{L}_j(k)/\sum_k \mathcal{L}_j(k)$. Our proposal distributions are
 \begin{align*}
@@ -150,13 +150,13 @@ We optionally propose a third operation during each iteration: SNP pruning. With
 
 We can prune these SNPs from a segment, using an MCMC step similar to splitting a segment. For the $k$th SNP in the $j$th segment $S_j$, we compute the marginal likelihood of the segment minus SNP $k$:
 \begin{align*}
-\mathcal{M}^{-}_j(k) = \beta(\underbrace{A_{[s_j,e_j)} - a_k}_{A^{-k}_{[s_j,e_j)}}, \underbrace{B_{[s_j,e_j)} - b_k}_{B^{-k}_{[s_j,e_j)}})\times\beta(a_k, b_k).
+\mathcal{M}^{-}_j(k) = \beta(\underbrace{A_{[s_j,e_j)} - a_k}_{A^{-k}_{[s_j,e_j)}} + 1, \underbrace{B_{[s_j,e_j)} - b_k}_{B^{-k}_{[s_j,e_j)}} + 1)\times\beta(a_k + 1, b_k + 1).
 \end{align*}
 Note that this is extremely similar to the likelihood of splitting a segment given in \eqref{psum_3}, with the ``segment'' being split out the single SNP $k$, which can be anywhere within $j$.
 
 If $k$ had already been removed from $j$, the marginal likelihood of adding it back is
 \begin{align*}
-\mathcal{M}^{+}_j(k) = \beta(A^{-k}_{[s_j,e_j)} + a_k, B^{-k}_{[s_j,e_j)} + b_k).
+\mathcal{M}^{+}_j(k) = \beta(A^{-k}_{[s_j,e_j)} + a_k + 1, B^{-k}_{[s_j,e_j)} + b_k + 1).
 \end{align*}
 
 The posterior ratio for removing $k$ is
