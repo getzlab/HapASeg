@@ -89,7 +89,7 @@ clust_members = sc.SortedDict({ 0 : set({0}) })
 
 for n_it in range(0, 10*len(S)):
     if not n_it % 1000:
-        print(S["clust"].value_counts().drop(-1).value_counts().sort_index())
+        print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
 
     #
     # pick either a segment or a cluster at random (50:50 prob.)
