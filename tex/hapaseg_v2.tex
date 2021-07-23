@@ -120,12 +120,12 @@ Initially, each SNP belongs to its own segment. At random, we pick two adjacent 
 \end{align*}
 where marginal likelihoods are
 \begin{align*}
-\mathcal{M}(S^\ast) &= \beta(\underbrace{\textstyle\sum_{\{i|x_i\in [s_j, e_{j+1})\}}a_i}_{A_{[s_j,e_{j+1})}},\underbrace{\textstyle\sum_{\{i|x_i\in [s_j, e_{j+1})\}}b_i}_{B_{[s_j,e_{j+1})}})\btag{psum_1}\\
-\mathcal{M}(S) &= \beta(A_{[s_j,e_j)},B_{[s_j,e_j)})\times \beta(A_{[s_{j+1},e_{j+1})},B_{[s_{j+1},e_{j+1})}).\btag{psum_2}
+\mathcal{M}(S^\ast) &= \beta(\underbrace{\textstyle\sum_{\{i|x_i\in [s_j, e_{j+1})\}}a_i}_{A_{[s_j,e_{j+1})}}+1,\underbrace{\textstyle\sum_{\{i|x_i\in [s_j, e_{j+1})\}}b_i}_{B_{[s_j,e_{j+1})}}+1)\btag{psum_1}\\
+\mathcal{M}(S) &= \beta(A_{[s_j,e_j)}+1,B_{[s_j,e_j)}+1)\times \beta(A_{[s_{j+1},e_{j+1})}+1,B_{[s_{j+1},e_{j+1})}+1).\btag{psum_2}
 \end{align*}
 We can also split segments of length $>1$. Rather than picking a breakpoint within the segment at random, we probabilistically tailor our proposal distribution. For each position $k\in [s_j,e_j)$, we compute
 \begin{align*}
-\mathcal{L}_j(k) = \beta(A_{[s_j,k)},B_{[s_j,k)})\times\beta(A_{[k,e_j)},B_{[k,e_j)}),\btag{psum_3}
+\mathcal{L}_j(k) = \beta(A_{[s_j,k)}+1,B_{[s_j,k)}+1)\times\beta(A_{[k,e_j)}+1,B_{[k,e_j)}+1),\btag{psum_3}
 \end{align*}
 and propose picking $k$ as the breakpoint with probability $p_j(k)=\mathcal{L}_j(k)/\sum_k \mathcal{L}_j(k)$. Our proposal distributions are
 \begin{align*}
@@ -139,10 +139,50 @@ The overall MCMC procedure is:
 \item With equal probability, pick whether to attempt a merge or split this iteration.
 \item If we choose to merge, uniformly pick segment $j$ at random from 1 to $N-1$. Probabilistically merge it with segment $j+1$ with probability defined in \eqref{metro}.
 \item If we choose to split, uniformly pick $j$ at random from 1 to $N$, propose a breakpoint within $j$ via \eqref{psum_3}, and accept the proposal with probability defined as the reciprocal of \eqref{metro}. Proposing a breakpoint at the end of the segment is equivalent to not accepting any proposal at all and leaving the chain as-is.
-\item Iterate until chain is burned-in, then iterate some more until a sufficient number of samples have been collected. Because the chain moves slowly between iterations, I ``thin'' the chain and only save every $n$th sample ($n\sim 100$).
+\item A given state of the chain constitutes a sample $\psi_i$ from the overall distribution of segmentations, $\Psi$. We iterate the chain until it is burned-in, then iterate some more until a sufficient number of samples $\psi_1,\dots,\psi_n\sim\Psi$ have been collected. Because the chain moves slowly between iterations (each iteration only modifies a single segment), we ``thin'' the chain and only save every $n$th sample ($n\sim 100$). In the future, we might want to adjust the thinning amount to reflect the average number of segments $\bar{N}_s$ at a given point in the chain, since we expect each $\bar{N}_s$ iterations will modify every single segment.
 \end{enumerate}
 
 The MCMC is extremely fast, since each iteration only involves computing partial sums in \eqref{psum_1}, \eqref{psum_2}, and \eqref{psum_3} which can be memoized between iterations. In theory, storing all possible partial sums would require $O(N^2)$ space, but in practice we only ever need blocks close to the diagonal, so the partial sum matrix can be stored sparse, with space complexity $O(\bar{N}_s\bar{B}^2)\ll O(N^2)$, where $\bar{N}_s$ is the average number of segments and $\bar{B}$ the average length of each segment. The MCMC is also efficiently parallelized: the most compute-intensive phase is at the beginning when each SNP belongs to its own segment. Blocks of adjacent SNPs are burned-in in parallel, which are then concatenated post burnin to sample the final segmentation posterior. During this step, each chromosome arm can be run in parallel, since we do not expect reliable phasing across the centromere.
+
+\subsection{SNP pruning}
+
+We optionally propose a third operation during each iteration: SNP pruning. Within a given segment, some SNPs' haplotypic imbalance $a_i/(a_i+b_i)$ can differ considerably from the true haplotypic imbalance of the segment, whether due to random chance or systematic bias (e.g., mapping issues, poor base qualities, etc.)
+
+We can prune these SNPs from a segment, using an MCMC step similar to splitting a segment. For the $k$th SNP in the $j$th segment $S_j$, we compute the marginal likelihood of the segment minus SNP $k$:
+\begin{align*}
+\mathcal{M}^{-}_j(k) = \beta(\underbrace{A_{[s_j,e_j)} - a_k}_{A^{-k}_{[s_j,e_j)}} + 1, \underbrace{B_{[s_j,e_j)} - b_k}_{B^{-k}_{[s_j,e_j)}} + 1)\times\beta(a_k + 1, b_k + 1).
+\end{align*}
+Note that this is extremely similar to the likelihood of splitting a segment given in \eqref{psum_3}, with the ``segment'' being split out the single SNP $k$, which can be anywhere within $j$.
+
+If $k$ had already been removed from $j$, the marginal likelihood of adding it back is
+\begin{align*}
+\mathcal{M}^{+}_j(k) = \beta(A^{-k}_{[s_j,e_j)} + a_k + 1, B^{-k}_{[s_j,e_j)} + b_k + 1).
+\end{align*}
+
+The posterior ratio for removing $k$ is
+\begin{align*}
+p(S_j/(S_j-k))=\frac{\mathcal{M}^{-}_j(k)}{\mathcal{M}^{+}_j(k)}\times\frac{(1 - p^{+}(k))}{p^{+}(k)},\btag{prune_postr}
+%p(S_j\toS_j-k)=\min\lt\{1,\frac{\mathcal{M}^{-}_j(k)}{\mathcal{M}^{+}_j(k)}\times\frac{(1 - p^{+}(k))}{p^{+}(k)}\times\frac{q(+|-)}{q(-|+)}\rt\},\btag{prune_metro}
+\end{align*}
+where $p^{+}(k)$ is a prior probability of including $k$. %, and $q$ is the probability of proposing to remove/add $k$, which we will define in a bit.
+The ratio for adding $k$ if it had already been removed is just the reciprocal of \eqref{prune_postr}.
+
+To propose a SNP to prune within a segment, we enumerate the probabilities $P_R$ of removing each SNP, along with the probabilities $P_A$ of adding back any SNPs that had been previously removed:
+\begin{align*}
+P_R &= \{p(S_j/(S_j - k))\mid k\in S_j, k\notin R\}\\
+P_A &= \{p((S_j - k)/S_j)\mid k\in S_j, k\in R\}
+\end{align*}
+where $R$ is the set of SNPs that had been previously removed. Let $P_{\cup}=P_R\cup P_A$. We define our proposal distribution $q$ by normalizing each member of $P_\cup$, i.e.
+\begin{align*}
+q(S_j-k|S_j) &= \frac{p(S_j/(S_j-k))}{\sum_{p\in P_\cup} p}\qquad k\notin R\\
+q(S_j|S_j-k) &= \frac{p((S_j-k)/S_j)}{\sum_{p\in P_\cup} p}\qquad k\in R.
+\end{align*}
+
+We accept or reject a proposed removal or addition with the Metropolis criterion, defined by the product of the posterior and proposal distribution ratios. Our prior distribution can come from a panel of normals (e.g., the fraction of heterozygous normals in which the het genotype confidence is high) or the matched normal itself (e.g., the confidence that the SNP is heterozygous in the matched normal).
+
+%\begin{align*}
+%p(S_j-k\toS_j)=\min\lt\{1,\frac{\mathcal{M}^{+}_j(k)}{\mathcal{M}_j}\times\frac{(1 - p^{+}(k))}{p^{+}(k)}\times\frac{q(+|-)}{q(-|+)}\rt\}
+%\end{align*}
 
 \section{Phasing}
 
@@ -221,6 +261,104 @@ edge [<-,blue] (B1);
 \end{figure}
 
 After burnin, we take another few MCMC samples and run the aforementioned phasing correction algorithm on each segmentation. This effectively gives us a set of samples $([s_i,e_i),\phi_i)\sim\Phi$ from the posterior distribution $\Phi$ of empirical absolute phase orientations. We can then add a third state to the segmentation MCMC: in addition to proposing that adjacent segments be joined or a given segment be split, we can also choose a region $r_i=[s_i,e_i)$ and phase orientation $\phi_i$ at random from $\Phi$ and flip its phase orientation. If $s_i$ or $e_i$ coincides with a segmentation breakpoint at the current state of the chain, we propose a join; if not, we introduce a new breakpoint at the region boundary and propose a split. The flip is accepted using the same Metropolis criterion as \eqref{metro}, with proposal ratio equal to 1.
+
+\section{Miscellaneous corrections}
+
+\subsection{Reference bias correction}
+
+\subsection{Overdispersion estimation}
+
+Up until now, we have assumed that all uncertainty is \textit{aleatoric} --- all noise on a segment likelihood $\mathcal{L}(f|A_{[s,e)},B_{[s,e)})$ is assumed to come from translating counts $A,B$ to a fraction $f$. However, this is not the only source of noise. 
+
+%name other sources>
+%<once we have initial segmentation, we fit beta distribution to counts within each segment; average ratio (weighted by segment lengths)  of sum parameters to fit parameters is overdispersion factor
+
+\section{Non-adjacent segment clustering}
+
+\textit{(In-progress)}\\
+
+\noindent Once we have a final set of phase-corrected samples from the distribution over segmentations, we cluster non-adjacent segments using a procedure similar to the MCMC for joining/splitting adjacent segments. Starting with a segmentation sample $\psi_i\sim\Psi$, we assume that each segment $S_{i,1},\dots, S_{i,j},\dots S_{i,N_i}\in \psi_i$ initially belongs to its own cluster, $C_1,\dots,C_{N_i}$. A segment can propose to join another cluster, or split off into a new cluster. Let $S$ be the segment to move, $C_s$ be the cluster that $S$ is currently part of, and $\mathbf C$ be the set of all possible clusters to join, i.e., $\mathbf{C} = \{C_1,\dots,C_{N_i}\}\setminus\{C_s\}$.
+
+Denote the $\ell$th segment belonging to the $k$th cluster as $S^k_{i,\ell}\in C_k$. Let $A^k_\ell$ be the sum of reads belonging to haplotype $\mathcal A$ across all SNPs in $S^k_{i,\ell}$, and $B^k_\ell$ be the sum of reads belonging to haplotype $\mathcal B$. 
+The marginal likelihood of $C_k$ is a function of the sum of the phased alt/ref counts belonging to the segments within the cluster, i.e.
+\begin{align*}
+\mathcal{M}(C_k) = \beta(\textstyle\sum_\ell A^k_\ell + 1, \textstyle\sum_\ell  B^k_\ell + 1).
+\end{align*}
+It is analogous to the marginal likelihood defined in \eqref{psum_1}, but summing over allele counts in non-adjacent segments.
+
+The procedure for moving $S$ works as follows:
+
+\begin{enumerate}
+\item Pick a segment $S$ at random. Compute the marginal likelihood of removing $S$ from $C_s$,
+\begin{align*}
+\mathcal{M}(C_s-S) = \beta(\textstyle\sum_\ell A^s_\ell - A_S + 1, \textstyle\sum_\ell B^s_\ell - B_S + 1),
+\end{align*}
+where $A_S$ and $B_S$ are the summed allele counts for $S$.
+\item Compute the marginal likelihoods for every other possible cluster $C_k\in\mathbf{C}$ that $S$ can join,
+\begin{align*}
+\mathcal{M}(C_k) = \beta(\textstyle\sum_\ell A^k_{\ell} + 1, \textstyle\sum_\ell B^k_{\ell} + 1)\qquad \forall k\in\{1,\dots,N_i\}\setminus\{s\}.
+\end{align*}
+\item Compute the marginal likelihood of each $C_k\in\mathbf{C}$, if $S$ joins it:
+\begin{align*}
+\mathcal{M}(C_k+S) = \beta(\textstyle\sum_\ell A^k_{\ell} + A_S + 1, \textstyle\sum_\ell B^k_{\ell} + B_S + 1)\qquad \forall k\in\{1,\dots,N_i\}\setminus\{s\}
+\end{align*}
+\item The likelihood ratio of $S$ joining each $C_k$ is thus
+\begin{align*}
+\mathcal{M}((C_s,C_k)\to (C_s-S,C_k+S)) &\equiv\mathcal{M}(S\to C_k)\\
+&= \frac{\mathcal{M}(C_s-S)\times\mathcal{M}(C_k+S)}{\mathcal{M}(C_s)\times\mathcal{M}(C_k)}\qquad \forall k\in\{1,\dots,N_i\}\setminus\{s\},
+\end{align*}
+the ratio of the joint likelihood of $S$ remaining in $C_s$ and $C_k$ existing as-is (numerator) versus the joint likelihood of $S$ being removed from $C_s$ and being added to $C_k$ (denominator).
+\item Finally, we define the marginal likelihood of $S$ joining a new cluster, $C_{N_i+1}$. This is simply the marginal likelihood of $S$ existing as the only member of a new cluster, $\mathcal{M}(C_{N_i+1}) = \mathcal{M}(S) = \beta(A_S+1,B_S+1)$. The likelihood ratio is then
+\begin{align*}
+\mathcal{M}((C_s,C_k)\to (C_s-S,C_{N_i+1})) &\equiv\mathcal{M}(S\to C_{N_i+1})\\
+&= \frac{\mathcal{M}(C_s-S)\times\mathcal{M}(S)}{\mathcal{M}(C_s)\times\mathcal{M}(C_k)}.
+\end{align*}
+\end{enumerate}
+
+We construct a proposal distribution proportional to the likelihood ratios,
+\begin{align*}
+q(S\to C_k|S\in C_s) = \frac{\mathcal{M}(S\to C_{k})}{\sum_{\kappa\in\{1,\dots,N_{i+1}\}\setminus\{s\}}\mathcal{M}(S\to C_{\kappa})},
+\end{align*}
+and probabilistically accept the proposed move according to the Metropolis criterion,
+\begin{align*}
+...
+\end{align*}
+
+To speed up the clustering, we can also propose joining two clusters. The marginal likelihood of combining clusters $C_{k_1}$ and $C_{k_2}$ is
+\begin{align*}
+\mathcal{M}(C_{k_1}+C_{k_2})=\beta(\textstyle\sum_{\ell}A^{k_1}_\ell + \textstyle\sum_{\ell}A^{k_2}_\ell + 1,\textstyle\sum_{\ell}B^k_\ell + \textstyle\sum_{\ell}B^{k_2}_\ell + 1),
+\end{align*}
+so the likelihood ratio is
+\begin{align*}
+\mathcal{M}((C_{k_1},C_{k_2})\to C_{k_1}+C_{k_2}) = \frac{\mathcal{M}(C_{k_1}+C_{k_2})}{\mathcal{M}(C_{k_1})\times \mathcal{M}(C_{k_2})}.
+\end{align*}
+
+As with the procedure for assigning segments to clusters, we pick a cluster $C_{k_1}$ at random, enumerate the likelihood ratios of its joining all other clusters $C_{k_2}\in\{C_1,\dots,C_{N_i}\}\setminus\{C_{k_1}\}$, and probabilistically propose a cluster to join proportional to the likelihood ratios.
+
+%    # B is segment/cluster to move
+%    # A is cluster B is currently part of
+%    # C is all possible clusters to move to
+%    A_a = clust_sums[cur_clust][0] if cur_clust in clust_sums else 0
+%    A_b = clust_sums[cur_clust][1] if cur_clust in clust_sums else 0
+%    B_a = S.iloc[seg_idx, min_col].sum()
+%    B_b = S.iloc[seg_idx, maj_col].sum()
+%    C_ab = np.r_[clust_sums.values()] # first term (-1) = make new cluster
+%
+%    # A+B,C -> A,B+C
+%
+%    # A+B is likelihood of current cluster B is part of
+%    AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
+%    # C is likelihood of target cluster pre-join
+%    C = ss.betaln(C_ab[:, 0] + 1, C_ab[:, 1] + 1)
+%    # A is likelihood cluster B is part of, minus B
+%    A = ss.betaln(A_a + 1, A_b + 1)
+%    # B+C is likelihood of target cluster post-join
+%    BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
+%
+%    #     L(join)  L(split)
+%    MLs = A + BC - (AB + C)
+
+%$p(S_{i,j}
 
 %Now suppose that there are many disjoint segments $\mathcal{S}_j\in\{\mathcal{S}\}$, each with a potentially different allelic imbalance. 
 %The total likelihood of a given segmentation is
