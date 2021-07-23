@@ -179,23 +179,33 @@ for n_it in range(0, 10*len(S)):
 
     # propose to join a cluster
     if choice != -1:
-        C_a = clust_sums[choice][0]
-        C_b = clust_sums[choice][1]
-
         # compute prior odds ratio for all overlaps between segments
         p_odd = O_d[np.array(list(clust_members[choice]))][:, seg_idx].sum()
 
         # accept proposal via Metropolis
         # A+B,C -> A,B+C
         # C is likelihood of target cluster pre-join
-        C = ss.betaln(C_a + 1, C_b + 1) 
+        C_c = C[choice_idx]
         # B+C is likelihood of target cluster post-join
-        BC = ss.betaln(C_a + B_a + 1, C_b + B_b + 1)
+        BC_c = BC[choice_idx]
 
-        ML_join = A + BC
-        ML_split = AB + C
+        ML_join = A + BC_c
+        ML_split = AB + C_c
 
         # TODO: add proposal ratio here, since it is no longer symmetric
+        #AB+C <- A+BC
+
+        # BC is likelihood of target cluster post-join
+        # == BC_c
+
+        # A is likelihood of all clusters pre-join
+        # == C above
+
+        # C is likelihood of target cluster without join
+        # == C_c
+
+        # AB is likelihood of all clusters post-join
+        # == BC above
 
         MLs_rev = (BC + C_c) - (BC_c + C)
         MLs_rev_max = np.max(MLs_rev)
