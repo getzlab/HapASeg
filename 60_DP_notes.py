@@ -86,10 +86,17 @@ n_assigned = 1
 clust_counts = sc.SortedDict({ 0 : 1 })
 clust_sums = sc.SortedDict({ -1 : np.r_[0, 0], 0 : np.r_[S.loc[0, "min"], S.loc[0, "maj"]]})
 clust_members = sc.SortedDict({ 0 : set({0}) })
+clust_assignments_over_chain = [[] for i in range(len(S))]
+
+burned_in = False
 
 for n_it in range(0, 10*len(S)):
     if not n_it % 1000:
         print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
+
+    # we are burned in once all segments are assigned to a cluster
+    if not burned_in and (S["clust"] != -1).all():
+        burned_in = True
 
     #
     # pick either a segment or a cluster at random (50:50 prob.)
@@ -214,6 +221,11 @@ for n_it in range(0, 10*len(S)):
 
             clust_members[choice].update(set(seg_idx))
 
+            # track cluster assignment for segment(s)
+            if burned_in:
+                for s in seg_idx:
+                    clust_assignments_over_chain[s].append(choice)
+
         # otherwise, keep where it is
         else:
             # if it was previously assigned to a cluster, keep it there (only applicable to single segments)
@@ -223,6 +235,11 @@ for n_it in range(0, 10*len(S)):
                 S.iloc[seg_idx, clust_col] = cur_clust
 
                 clust_members[cur_clust].update(set(seg_idx))
+
+                # track cluster assignment for segment(s)
+                if burned_in:
+                    for s in seg_idx:
+                        clust_assignments_over_chain[s].append(cur_clust)
 
             # otherwise, assign it to a new cluster
             else: 
@@ -235,6 +252,11 @@ for n_it in range(0, 10*len(S)):
                 clust_sums[new_clust_idx] = np.r_[B_a, B_b]
                 clust_members[new_clust_idx] = set(seg_idx)
 
+                # track cluster assignment for segment(s)
+                if burned_in:
+                    for s in seg_idx:
+                        clust_assignments_over_chain[s].append(new_clust_idx)
+
     # add to a new cluster
     else:
         #print("new!")
@@ -246,6 +268,11 @@ for n_it in range(0, 10*len(S)):
 
         clust_sums[new_clust_idx] = np.r_[B_a, B_b]
         clust_members[new_clust_idx] = set(seg_idx)
+
+        # track cluster assignment for segment(s)
+        if burned_in:
+            for s in seg_idx:
+                clust_assignments_over_chain[s].append(new_clust_idx)
 
     n_assigned += n_move
 
