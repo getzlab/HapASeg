@@ -303,20 +303,36 @@ for a in axs:
     a.set_yticks([])
 
 for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
+    if clust_idx == -1:
+        continue
     for _, r in S.loc[S["clust"] == clust_idx].iterrows():
         ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], r["min"] + 1, r["maj"] + 1)
         axs[i].add_patch(mpl.patches.Rectangle((r["start_gp"], ci_lo), r["end_gp"] - r["start_gp"], ci_hi - ci_lo, facecolor = colors[i % len(colors)], fill = True, alpha = 0.9, zorder = 1000))
         ax.add_patch(mpl.patches.Rectangle((r["start_gp"], ci_lo), r["end_gp"] - r["start_gp"], ci_hi - ci_lo, facecolor = colors[i % len(colors)], fill = True, alpha = 0.1, zorder = 1000))
 
-# plot beta dists. for clusters that ought to be merged
+# plot beta dists. for clusters
 
-r = np.linspace(0.495, 0.53, 10000)
+r = np.linspace(0.4, 1, 1000)
 plt.figure(3); plt.clf()
 plts = []
-for clust_idx in S["clust"].value_counts().iloc[np.r_[0:5]].index:
-    plts.append(plt.plot(r, s.beta.pdf(r, S.loc[S["clust"] == clust_idx, "min"].sum(), S.loc[S["clust"] == clust_idx, "maj"].sum()))[0])
+for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
+    if clust_idx == -1:
+        continue
+    plts.append(plt.plot(r, s.beta.pdf(r, S.loc[S["clust"] == clust_idx, "min"].sum(), S.loc[S["clust"] == clust_idx, "maj"].sum()), color = colors[i % len(colors)])[0])
 
-plt.legend(plts, S["clust"].value_counts().iloc[np.r_[0:5]].index)
+plt.legend(plts, S["clust"].value_counts().index[0:20])
+
+# plot beta dists. for segments, colored by cluster assignment
+
+r = np.linspace(0.4, 1, 1000)
+plt.figure(4); plt.clf()
+plts = []
+for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
+    if clust_idx == -1:
+        continue
+    for _, mn, mj in S.loc[S["clust"] == clust_idx, ["min", "maj"]].itertuples():
+        plt.plot(r, s.beta.pdf(r, mn, mj), color = colors[i % len(colors)], alpha = 0.3)
+
 
 
 
