@@ -93,6 +93,7 @@ burned_in = False
 for n_it in range(0, 10*len(S)):
     if not n_it % 1000:
         print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
+        print("n unassigned: {}".format((S["clust"] == -1).sum()))
 
     # we are burned in once all segments are assigned to a cluster
     if not burned_in and (S["clust"] != -1).all():
