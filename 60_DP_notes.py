@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 import ncls
 import numpy as np
+import numpy_groupies as npg
 import pandas as pd
 import scipy.stats as s
 import scipy.sparse as sp
@@ -342,7 +343,49 @@ for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
         plt.plot(r, s.beta.pdf(r, mn, mj), color = colors[i % len(colors)], alpha = 0.3)
 
 
+# use cluster mean for each segment
 
+s2c = np.r_[segs_to_clusters]
+
+f1 = plt.figure(21); plt.clf()
+ax = plt.gca()
+ax.set_xlim([0, S["end_gp"].max()])
+ax.set_ylim([0, 1])
+
+for seg_assignments in s2c:
+    S_a = npg.aggregate(seg_assignments, S["min"])
+    S_b = npg.aggregate(seg_assignments, S["maj"])
+
+    for i, clust_idx in enumerate(seg_assignments):
+        r = S.iloc[i]
+        ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], S_a[clust_idx] + 1, S_b[clust_idx] + 1)
+        ax.add_patch(
+          mpl.patches.Rectangle(
+            (r["start_gp"], ci_lo),
+            r["end_gp"] - r["start_gp"],
+            ci_hi - ci_lo,
+            facecolor = colors[clust_idx % len(colors)],
+            fill = True,
+            zorder = 1000,
+            alpha = 1/10
+          )
+        )
+
+# chromosome boundaries
+chrbdy = allelic_segs.dropna().loc[:, ["start", "end"]]
+chr_ends = chrbdy.loc[chrbdy["start"] != 0, "end"].cumsum()
+for chrbdy in chr_ends[:-1]:
+    plt.axvline(chrbdy, color = 'k')
+
+# allelic imbalances given purity (alpha)
+alpha = 2*(0.8) - 1 # plug into (...) allelic imbalance corresponding to LoH eyeballed from plot
+phis = np.r_[1, 1/2, 2/3, 3/4, 3/5, 4/5, 4/7, 5/6, 5/7, 5/8, 5/9]
+for phi in phis:
+    plt.axhline(alpha*phi + (1 - alpha)/2, color = 'k', linestyle = ':')
+
+ax2 = plt.twinx()
+ax2.set_yticks(alpha*phis + (1 - alpha)/2)
+ax2.set_yticklabels(["0:1", "1:1", "1:2", "1:3", "2:3", "1:4", "3:4", "1:5", "2:5", "3:5", "4:5"])
 
 
 # old scrap code
