@@ -139,7 +139,7 @@ for n_it in range(0, 10*len(S)):
         # NOTE: in the previous code, this accidentally was -=, not =
         # leaving comment here for posterity
         #clust_sums[cl_idx] = np.r_[0, 0]
-        clust_members[cur_clust] = set()
+        clust_members[cl_idx] = set()
 
         move_clust = True
 
