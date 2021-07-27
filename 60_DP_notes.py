@@ -343,6 +343,20 @@ for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
         plt.plot(r, s.beta.pdf(r, mn, mj), color = colors[i % len(colors)], alpha = 0.3)
 
 
+# probabilistic assignment of segments to clusters
+
+f1 = plt.figure(20); plt.clf()
+ax = plt.gca()
+ax.set_xlim([0, S["end_gp"].max()])
+ax.set_ylim([0, 1])
+
+for i, r in S.iterrows():
+    ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], r["min"] + 1, r["maj"] + 1)
+    clust_trace = np.bincount(clusters_to_segs[i])
+    clust_probs = clust_trace/clust_trace.sum()
+    for prob, idx in zip(clust_probs[clust_trace > 0], np.flatnonzero(clust_trace)):
+        ax.add_patch(mpl.patches.Rectangle((r["start_gp"], ci_lo), r["end_gp"] - r["start_gp"], ci_hi - ci_lo, facecolor = colors[idx % len(colors)], fill = True, alpha = prob, zorder = 1000))
+
 # use cluster mean for each segment
 
 s2c = np.r_[segs_to_clusters]
