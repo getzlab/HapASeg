@@ -84,7 +84,8 @@ S["lik"] = ss.betaln(S.loc[:, "min"] + 1, S.loc[:, "maj"] + 1)
 clust_counts = sc.SortedDict({ 0 : 1 })
 clust_sums = sc.SortedDict({ -1 : np.r_[0, 0], 0 : np.r_[S.loc[0, "min"], S.loc[0, "maj"]]})
 clust_members = sc.SortedDict({ 0 : set({0}) })
-clust_assignments_over_chain = [[] for i in range(len(S))]
+clusters_to_segs = [[] for i in range(len(S))]
+segs_to_clusters = []
 
 burned_in = False
 
@@ -233,7 +234,7 @@ for n_it in range(0, 10*len(S)):
         # track cluster assignment for segment(s)
         if burned_in:
             for seg in seg_idx:
-                clust_assignments_over_chain[seg].append(choice if choice != -1 else new_clust_idx)
+                clusters_to_segs[seg].append(choice if choice != -1 else new_clust_idx)
 
     # otherwise, keep (restore) current chain configuration
     else:
@@ -272,7 +273,12 @@ for n_it in range(0, 10*len(S)):
         # track cluster assignment for segment(s)
         if burned_in:
             for seg in seg_idx:
-                clust_assignments_over_chain[seg].append(cur_clust if not move_clust else cl_idx)
+                clusters_to_segs[seg].append(cur_clust if not move_clust else cl_idx)
+
+    # track global state of cluster assignments
+    # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
+    if burned_in and not n_it % len(S)/(len(clust_counts)*2):
+        segs_to_clusters.append(S["clust"].copy())
 
 #
 # plot
