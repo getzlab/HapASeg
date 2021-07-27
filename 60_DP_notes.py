@@ -238,8 +238,8 @@ for n_it in range(0, 10*len(S)):
 
         # track cluster assignment for segment(s)
         if burned_in:
-            for s in seg_idx:
-                clust_assignments_over_chain[s].append(choice if choice != -1 else new_clust_idx)
+            for seg in seg_idx:
+                clust_assignments_over_chain[seg].append(choice if choice != -1 else new_clust_idx)
 
     # otherwise, keep (restore) current chain configuration
     else:
@@ -277,8 +277,8 @@ for n_it in range(0, 10*len(S)):
 
         # track cluster assignment for segment(s)
         if burned_in:
-            for s in seg_idx:
-                clust_assignments_over_chain[s].append(cur_clust if not move_clust else cl_idx)
+            for seg in seg_idx:
+                clust_assignments_over_chain[seg].append(cur_clust if not move_clust else cl_idx)
 
     n_assigned += n_move
 
