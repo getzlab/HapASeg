@@ -81,8 +81,6 @@ maj_col = S.columns.get_loc("maj")
 S.iloc[0, clust_col] = 0 # first segment is assigned to cluster 0
 S["lik"] = ss.betaln(S.loc[:, "min"] + 1, S.loc[:, "maj"] + 1)
 
-n_assigned = 1
-
 clust_counts = sc.SortedDict({ 0 : 1 })
 clust_sums = sc.SortedDict({ -1 : np.r_[0, 0], 0 : np.r_[S.loc[0, "min"], S.loc[0, "maj"]]})
 clust_members = sc.SortedDict({ 0 : set({0}) })
@@ -122,8 +120,6 @@ for n_it in range(0, 10*len(S)):
             S.iloc[seg_idx, clust_col] = -1
 
             clust_members[cur_clust] -= set(seg_idx)
-            
-            n_assigned -= 1
 
     # pick a cluster at random
     else:
@@ -144,8 +140,6 @@ for n_it in range(0, 10*len(S)):
         # leaving comment here for posterity
         #clust_sums[cl_idx] = np.r_[0, 0]
         clust_members[cur_clust] = set()
-        
-        n_assigned -= n_move 
 
         move_clust = True
 
@@ -279,8 +273,6 @@ for n_it in range(0, 10*len(S)):
         if burned_in:
             for seg in seg_idx:
                 clust_assignments_over_chain[seg].append(cur_clust if not move_clust else cl_idx)
-
-    n_assigned += n_move
 
 #
 # plot
