@@ -124,6 +124,10 @@ for n_it in range(0, 10*len(S)):
 
     # pick a cluster at random
     else:
+        # it only makes sense to try joining two clusters if there are at least two of them!
+        if len(clust_counts) < 2:
+            continue
+
         cl_idx = np.random.choice(clust_counts.keys())
         seg_idx = np.r_[list(clust_members[cl_idx])]
         n_move = len(seg_idx)
@@ -170,6 +174,11 @@ for n_it in range(0, 10*len(S)):
     #     L(join)  L(split)
     MLs = A + BC - (AB + C)
     MLs_max = np.max(MLs)
+
+    # if we are moving an entire cluster, it does not make sense to let it
+    # create a new cluster, since this will make cluster indices inconsistent.
+    if move_clust:
+        MLs[0] = -np.inf
 
     # choose to join a cluster or make a new one (choice_idx = 0) 
     T = 1 # temperature parameter for scaling choice distribution
