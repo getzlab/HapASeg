@@ -196,4 +196,21 @@ for st, en in bpl:
 plt.figure(1337); plt.clf()
 plt.scatter(A.P["dists"], A.P["seg_res"], alpha = 0.5)
 
-# 1. panel of tumors?
+# 1. use matched normal as empirical measure of ref bias
+
+import hapaseg
+refs = hapaseg.load.HapasegReference(phased_VCF = "exome/6_C1D1_META.eagle.vcf", allele_counts = "exome/6_C1D1_META.tumor.tsv", allele_counts_N = "exome/6_C1D1_META.normal.tsv")
+
+A = refs.allele_counts
+f_T = A["ALT_COUNT"]/(A["REF_COUNT"] + A["ALT_COUNT"])
+f_N = A["ALT_COUNT_N"]/(A["REF_COUNT_N"] + A["ALT_COUNT_N"])
+
+T_het_idx = s.beta.cdf(0.6, A["ALT_COUNT"] + 1, A["REF_COUNT"] + 1) - s.beta.cdf(0.4, A["ALT_COUNT"] + 1, A["REF_COUNT"] + 1) > 0.7
+
+plt.figure(21); plt.clf()
+plt.scatter(f_T.loc[T_het_idx], f_N[T_het_idx], alpha = 0.2)
+plt.scatter(f_T, f_N, alpha = 0.05)
+plt.xlabel("Tumor")
+plt.ylabel("Normal")
+plt.xlim([0.5, 1.5])
+plt.ylim([0.5, 1.5])

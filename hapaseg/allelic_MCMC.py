@@ -31,15 +31,16 @@ class A_MCMC:
         # dataframe stuff
         self.P = P.copy().reset_index()
 
+        # factor by which to downscale all reference alleles, in order to
+        # correct for bias against the alternate allele due to capture or alignment
+        self.ref_bias = ref_bias
+        self.P["REF_COUNT"] *= self.ref_bias
+        self.P["MAJ_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "ALT_COUNT"], self.P.loc[~self.P["aidx"], "REF_COUNT"]])
+        self.P["MIN_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "REF_COUNT"], self.P.loc[~self.P["aidx"], "ALT_COUNT"]])
+
         # column indices for iloc
         self.min_idx = self.P.columns.get_loc("MIN_COUNT")
         self.maj_idx = self.P.columns.get_loc("MAJ_COUNT")
-
-        # factor by which to downscale all reference alleles, in order to
-        # correct for bias against the alternate allele due to capture or alignment
-        self.P["REF_COUNT"] *= ref_bias
-        self.P["MAJ_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "ALT_COUNT"], self.P.loc[~self.P["aidx"], "REF_COUNT"]])
-        self.P["MIN_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "REF_COUNT"], self.P.loc[~self.P["aidx"], "ALT_COUNT"]])
 
         # TODO: recompute CI's too? these are not actually used anywhere
         # TODO: we might want to have site-specific reference bias (inferred from post-burnin segs)
