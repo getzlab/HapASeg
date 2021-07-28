@@ -86,7 +86,8 @@ def run_DP(S):
     max_clust_idx = 0
     burned_in = False
 
-    for n_it in range(0, 100*len(S)):
+    n_it = 0
+    while len(segs_to_clusters) < 50: # TODO: allow this to be tweaked
         if not n_it % 1000:
             print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
             print("n unassigned: {}".format((S["clust"] == -1).sum()))
@@ -283,6 +284,10 @@ def run_DP(S):
         # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
         if burned_in and not n_it % len(S)/(len(clust_counts)*2):
             segs_to_clusters.append(S["clust"].copy())
+
+        n_it += 1
+
+    return segs_to_clusters
 
 #
 # plot
