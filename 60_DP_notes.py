@@ -290,6 +290,17 @@ def run_DP(S):
     _, segs_to_clusters = np.unique(np.r_[segs_to_clusters], return_inverse = True)
     return segs_to_clusters.reshape([-1, len(S)])
 
+# map trace of segment cluster assignments to the SNPs within
+def map_seg_clust_assignments_to_SNPs(segs_to_clusters, S):
+    st_col = S.columns.get_loc("SNP_st")
+    en_col = S.columns.get_loc("SNP_en")
+    snps_to_clusters = np.zeros((segs_to_clusters.shape[0], S.iloc[-1, en_col]), dtype = int)
+    for i, seg_assign in enumerate(segs_to_clusters):
+        for j, seg in enumerate(seg_assign):
+            snps_to_clusters[i, S.iloc[j, st_col]:S.iloc[j, en_col]] = seg
+
+    return snps_to_clusters
+
 #
 # plot
 
