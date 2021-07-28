@@ -91,6 +91,7 @@ clust_members = sc.SortedDict({ 0 : set({0}) })
 clusters_to_segs = [[] for i in range(len(S))]
 segs_to_clusters = []
 
+max_clust_idx = 0
 burned_in = False
 
 for n_it in range(0, 10*len(S)):
@@ -227,14 +228,12 @@ for n_it in range(0, 10*len(S)):
     if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + q_rat):
         # create new cluster
         if choice == -1:
-            new_clust_idx = len(clust_counts)
-            while new_clust_idx in clust_counts:
-                new_clust_idx += 1
-            clust_counts[new_clust_idx] = n_move
-            S.iloc[seg_idx, clust_col] = new_clust_idx
+            max_clust_idx += 1
+            clust_counts[max_clust_idx] = n_move
+            S.iloc[seg_idx, clust_col] = max_clust_idx
 
-            clust_sums[new_clust_idx] = np.r_[B_a, B_b]
-            clust_members[new_clust_idx] = set(seg_idx)
+            clust_sums[max_clust_idx] = np.r_[B_a, B_b]
+            clust_members[max_clust_idx] = set(seg_idx)
 
         # join existing cluster
         else:
@@ -247,7 +246,7 @@ for n_it in range(0, 10*len(S)):
         # track cluster assignment for segment(s)
         if burned_in:
             for seg in seg_idx:
-                clusters_to_segs[seg].append(choice if choice != -1 else new_clust_idx)
+                clusters_to_segs[seg].append(choice if choice != -1 else max_clust_idx)
 
     # otherwise, keep (restore) current chain configuration
     else:
