@@ -20,6 +20,7 @@ all_segs = []
 maj_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MAJ_COUNT")
 min_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
 
+chunk_offset = 0
 for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
     r = H["results"]
     
@@ -43,7 +44,7 @@ for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
         # get major/minor sums for each segment
         for st, en in bpl:
             all_segs.append([
-              st, en,
+              st + chunk_offset, en + chunk_offset,
               r.P.loc[st, "chr"], r.P.loc[st, "pos"], r.P.loc[en, "pos"],
               r._Piloc(st, en, min_idx, inc_samp).sum(),
               r._Piloc(st, en, maj_idx, inc_samp).sum()
@@ -55,6 +56,8 @@ for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
             x = r.P.iloc[st:en, maj_idx].copy()
             r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
             r.P.iloc[st:en, min_idx] = x
+
+    chunk_offset += len(r.P)
 
 S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj"])
 
