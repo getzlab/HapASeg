@@ -287,7 +287,8 @@ def run_DP(S):
 
         n_it += 1
 
-    return segs_to_clusters
+    _, segs_to_clusters = np.unique(np.r_[segs_to_clusters], return_inverse = True)
+    return segs_to_clusters.reshape([-1, len(S)])
 
 #
 # plot
