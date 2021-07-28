@@ -76,10 +76,14 @@ def load_seg_sample(samp_idx):
 
     return S
 
-def run_DP(S):
-    clust_counts = sc.SortedDict({ 0 : 1 })
-    clust_sums = sc.SortedDict({ -1 : np.r_[0, 0], 0 : np.r_[S.loc[0, "min"], S.loc[0, "maj"]]})
-    clust_members = sc.SortedDict({ 0 : set({0}) })
+def run_DP(S, seg_prior = None):
+    # TODO: I don't think we actually need clust_counts anymore, since we aren't doing a true DP process where the probability of joining a cluster depends on the number of members
+    clust_counts = sc.SortedDict(S["clust"].value_counts().drop(-1, errors = "ignore"))
+    clust_sums = sc.SortedDict({
+      **{ k : np.r_[v["min"], v["maj"]] for k, v in S.groupby("clust")[["min", "maj"]].sum().to_dict(orient = "index").items() },
+      **{-1 : np.r_[0, 0]}
+    })
+    clust_members = sc.SortedDict({ k : set(v) for k, v in S.groupby("clust").groups.items() if k != -1 })
     clusters_to_segs = [[] for i in range(len(S))]
     segs_to_clusters = []
 
