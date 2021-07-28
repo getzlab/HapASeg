@@ -175,12 +175,13 @@ def run_DP(S, seg_prior = None):
 
         #     L(join)  L(split)
         MLs = A + BC - (AB + C)
-        MLs_max = np.max(MLs)
 
         # if we are moving an entire cluster, it does not make sense to let it
         # create a new cluster, since this will make cluster indices inconsistent.
         if move_clust:
             MLs[0] = -np.inf
+
+        MLs_max = np.max(MLs)
 
         # choose to join a cluster or make a new one (choice_idx = 0) 
         T = 1 # temperature parameter for scaling choice distribution
