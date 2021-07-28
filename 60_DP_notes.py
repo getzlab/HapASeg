@@ -13,26 +13,27 @@ import sortedcontainers as sc
 
 from capy import seq
 
-allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.pickle")
-
-all_segs = []
+allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.pickle")
 
 maj_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MAJ_COUNT")
 min_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
 
-chunk_offset = 0
-for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
-    r = H["results"]
-    
-    # set phasing orientation back to original
-    for st, en in r.F.intervals():
-        # code excised from flip_hap
-        x = r.P.iloc[st:en, maj_idx].copy()
-        r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
-        r.P.iloc[st:en, min_idx] = x
+def load_seg_sample(samp_idx):
+    all_segs = []
 
-    #for bpl, pil in zip(r.breakpoint_list, r.phase_interval_list):
-    for bp_samp, pi_samp, inc_samp in zip(r.breakpoint_list, r.phase_interval_list, r.include):
+    chunk_offset = 0
+    for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
+        r = H["results"]
+        
+        # set phasing orientation back to original
+        for st, en in r.F.intervals():
+            # code excised from flip_hap
+            x = r.P.iloc[st:en, maj_idx].copy()
+            r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
+            r.P.iloc[st:en, min_idx] = x
+
+        # draw breakpoint, phasing, and SNP inclusion sample from segmentation MCMC trace
+        bp_samp, pi_samp, inc_samp = (r.breakpoint_list[samp_idx], r.phase_interval_list[samp_idx], r.include[samp_idx])
         # flip everything according to sample
         for st, en in pi_samp.intervals():
             x = r.P.iloc[st:en, maj_idx].copy()
@@ -57,33 +58,23 @@ for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
             r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
             r.P.iloc[st:en, min_idx] = x
 
-    chunk_offset += len(r.P)
+        chunk_offset += len(r.P)
 
-S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj"])
+    # convert samples into dataframe
+    S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj"])
 
-# aggregate duplicate segments (effectively weighting by occurrence)
-# XXX: how "effective" is this? weighting probability of choosing cluster by number
-#      of occurrences != weighting probability of choosing by increasing counts
-S = S.groupby(["chr", "start", "end"])[["min", "maj"]].sum().join(
-  S.drop(columns = ["min", "maj"]).set_index(["chr", "start", "end"]),
-  how = "left"
-).drop_duplicates().reset_index()
+    # construct overlap matrix
+    S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"])
+    S["end_gp"] = seq.chrpos2gpos(S["chr"], S["end"])
 
-# construct overlap matrix
-S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"])
-S["end_gp"] = seq.chrpos2gpos(S["chr"], S["end"])
+    # other fields of S
+    S["clust"] = -1 # initially, all segments are unassigned
+    clust_col = S.columns.get_loc("clust")
+    min_col = S.columns.get_loc("min")
+    maj_col = S.columns.get_loc("maj")
+    S.iloc[0, clust_col] = 0 # first segment is assigned to cluster 0
 
-intervals = ncls.NCLS(S["start_gp"], S["end_gp"], S.index)
-x, y = intervals.all_overlaps_both(S["start_gp"].values, S["end_gp"].values, S.index.values)
-z = np.zeros_like(x)
-
-# other fields of S
-S["clust"] = -1 # initially, all segments are unassigned
-clust_col = S.columns.get_loc("clust")
-min_col = S.columns.get_loc("min")
-maj_col = S.columns.get_loc("maj")
-S.iloc[0, clust_col] = 0 # first segment is assigned to cluster 0
-S["lik"] = ss.betaln(S.loc[:, "min"] + 1, S.loc[:, "maj"] + 1)
+    return S
 
 def run_DP(S):
     clust_counts = sc.SortedDict({ 0 : 1 })
