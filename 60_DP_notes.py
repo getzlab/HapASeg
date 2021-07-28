@@ -85,212 +85,213 @@ maj_col = S.columns.get_loc("maj")
 S.iloc[0, clust_col] = 0 # first segment is assigned to cluster 0
 S["lik"] = ss.betaln(S.loc[:, "min"] + 1, S.loc[:, "maj"] + 1)
 
-clust_counts = sc.SortedDict({ 0 : 1 })
-clust_sums = sc.SortedDict({ -1 : np.r_[0, 0], 0 : np.r_[S.loc[0, "min"], S.loc[0, "maj"]]})
-clust_members = sc.SortedDict({ 0 : set({0}) })
-clusters_to_segs = [[] for i in range(len(S))]
-segs_to_clusters = []
+def run_DP(S):
+    clust_counts = sc.SortedDict({ 0 : 1 })
+    clust_sums = sc.SortedDict({ -1 : np.r_[0, 0], 0 : np.r_[S.loc[0, "min"], S.loc[0, "maj"]]})
+    clust_members = sc.SortedDict({ 0 : set({0}) })
+    clusters_to_segs = [[] for i in range(len(S))]
+    segs_to_clusters = []
 
-max_clust_idx = 0
-burned_in = False
+    max_clust_idx = 0
+    burned_in = False
 
-for n_it in range(0, 10*len(S)):
-    if not n_it % 1000:
-        print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
-        print("n unassigned: {}".format((S["clust"] == -1).sum()))
+    for n_it in range(0, 100*len(S)):
+        if not n_it % 1000:
+            print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
+            print("n unassigned: {}".format((S["clust"] == -1).sum()))
 
-    # we are burned in once all segments are assigned to a cluster
-    if not burned_in and (S["clust"] != -1).all():
-        burned_in = True
+        # we are burned in once all segments are assigned to a cluster
+        if not burned_in and (S["clust"] != -1).all():
+            burned_in = True
 
-    #
-    # pick either a segment or a cluster at random (50:50 prob.)
-    move_clust = False
+        #
+        # pick either a segment or a cluster at random (50:50 prob.)
+        move_clust = False
 
-    # pick a segment at random
-    if np.random.rand() < 0.5:
-    #if np.random.rand() < 1:
-        seg_idx = np.r_[np.random.choice(len(S))]
-        n_move = 1
+        # pick a segment at random
+        if np.random.rand() < 0.5:
+        #if np.random.rand() < 1:
+            seg_idx = np.r_[np.random.choice(len(S))]
+            n_move = 1
 
-        # if segment was already assigned to a cluster, unassign it
-        cur_clust = int(S.iloc[seg_idx, clust_col])
-        if cur_clust != -1:
-            clust_counts[cur_clust] -= 1
-            if clust_counts[cur_clust] == 0:
-                del clust_counts[cur_clust]
-                del clust_sums[cur_clust]
-            else:
-                clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col], S.iloc[seg_idx, maj_col]]
+            # if segment was already assigned to a cluster, unassign it
+            cur_clust = int(S.iloc[seg_idx, clust_col])
+            if cur_clust != -1:
+                clust_counts[cur_clust] -= 1
+                if clust_counts[cur_clust] == 0:
+                    del clust_counts[cur_clust]
+                    del clust_sums[cur_clust]
+                else:
+                    clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col], S.iloc[seg_idx, maj_col]]
 
+                S.iloc[seg_idx, clust_col] = -1
+
+                clust_members[cur_clust] -= set(seg_idx)
+
+        # pick a cluster at random
+        else:
+            # it only makes sense to try joining two clusters if there are at least two of them!
+            if len(clust_counts) < 2:
+                continue
+
+            cl_idx = np.random.choice(clust_counts.keys())
+            seg_idx = np.r_[list(clust_members[cl_idx])]
+            n_move = len(seg_idx)
+            cur_clust = -1 # only applicable for individual segments, so we set to -1 here
+                           # (this is so that subsequent references to clust_sums[cur_clust]
+                           # will return (0, 0))
+
+            # unassign all segments within this cluster
+            # (it will either be joined with a new cluster, or remade again into its own cluster)
+            del clust_counts[cl_idx]
+            del clust_sums[cl_idx]
             S.iloc[seg_idx, clust_col] = -1
 
-            clust_members[cur_clust] -= set(seg_idx)
+            # NOTE: in the previous code, this accidentally was -=, not =
+            # leaving comment here for posterity
+            #clust_sums[cl_idx] = np.r_[0, 0]
+            clust_members[cl_idx] = set()
 
-    # pick a cluster at random
-    else:
-        # it only makes sense to try joining two clusters if there are at least two of them!
-        if len(clust_counts) < 2:
-            continue
+            move_clust = True
 
-        cl_idx = np.random.choice(clust_counts.keys())
-        seg_idx = np.r_[list(clust_members[cl_idx])]
-        n_move = len(seg_idx)
-        cur_clust = -1 # only applicable for individual segments, so we set to -1 here
-                       # (this is so that subsequent references to clust_sums[cur_clust]
-                       # will return (0, 0))
+        # choose to join a cluster or make a new one
+        # probabilities determined by similarity of segment/cluster to existing ones
 
-        # unassign all segments within this cluster
-        # (it will either be joined with a new cluster, or remade again into its own cluster)
-        del clust_counts[cl_idx]
-        del clust_sums[cl_idx]
-        S.iloc[seg_idx, clust_col] = -1
+        # B is segment/cluster to move
+        # A is cluster B is currently part of
+        # C is all possible clusters to move to
+        A_a = clust_sums[cur_clust][0] if cur_clust in clust_sums else 0
+        A_b = clust_sums[cur_clust][1] if cur_clust in clust_sums else 0
+        B_a = S.iloc[seg_idx, min_col].sum() # TODO: slow if seg_idx contains many SNPs
+        B_b = S.iloc[seg_idx, maj_col].sum()
+        C_ab = np.r_[clust_sums.values()] # first term (-1) = make new cluster
 
-        # NOTE: in the previous code, this accidentally was -=, not =
-        # leaving comment here for posterity
-        #clust_sums[cl_idx] = np.r_[0, 0]
-        clust_members[cl_idx] = set()
+        # A+B,C -> A,B+C
 
-        move_clust = True
+        # A+B is likelihood of current cluster B is part of
+        AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
+        # C is likelihood of target cluster pre-join
+        C = ss.betaln(C_ab[:, 0] + 1, C_ab[:, 1] + 1)
+        # A is likelihood cluster B is part of, minus B
+        A = ss.betaln(A_a + 1, A_b + 1)
+        # B+C is likelihood of target cluster post-join
+        BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
 
-    # choose to join a cluster or make a new one
-    # probabilities determined by similarity of segment/cluster to existing ones
+        #     L(join)  L(split)
+        MLs = A + BC - (AB + C)
+        MLs_max = np.max(MLs)
 
-    # B is segment/cluster to move
-    # A is cluster B is currently part of
-    # C is all possible clusters to move to
-    A_a = clust_sums[cur_clust][0] if cur_clust in clust_sums else 0
-    A_b = clust_sums[cur_clust][1] if cur_clust in clust_sums else 0
-    B_a = S.iloc[seg_idx, min_col].sum()
-    B_b = S.iloc[seg_idx, maj_col].sum()
-    C_ab = np.r_[clust_sums.values()] # first term (-1) = make new cluster
+        # if we are moving an entire cluster, it does not make sense to let it
+        # create a new cluster, since this will make cluster indices inconsistent.
+        if move_clust:
+            MLs[0] = -np.inf
 
-    # A+B,C -> A,B+C
+        # choose to join a cluster or make a new one (choice_idx = 0) 
+        T = 1 # temperature parameter for scaling choice distribution
+        choice_p = np.exp(T*(MLs - MLs_max))/np.exp(T*(MLs - MLs_max)).sum()
+        choice_idx = np.random.choice(
+          np.r_[0:(len(clust_counts) + 1)],
+          p = choice_p
+        )
+        choice = np.r_[-1, clust_counts.keys()][choice_idx]
 
-    # A+B is likelihood of current cluster B is part of
-    AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
-    # C is likelihood of target cluster pre-join
-    C = ss.betaln(C_ab[:, 0] + 1, C_ab[:, 1] + 1)
-    # A is likelihood cluster B is part of, minus B
-    A = ss.betaln(A_a + 1, A_b + 1)
-    # B+C is likelihood of target cluster post-join
-    BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
+        # accept proposal via Metropolis
+        # A+B,C -> A,B+C
+        # C is likelihood of target cluster pre-join
+        C_c = C[choice_idx]
+        # B+C is likelihood of target cluster post-join
+        BC_c = BC[choice_idx]
 
-    #     L(join)  L(split)
-    MLs = A + BC - (AB + C)
-    MLs_max = np.max(MLs)
+        ML_join = A + BC_c
+        ML_split = AB + C_c
 
-    # if we are moving an entire cluster, it does not make sense to let it
-    # create a new cluster, since this will make cluster indices inconsistent.
-    if move_clust:
-        MLs[0] = -np.inf
+        #AB+C <- A+BC
 
-    # choose to join a cluster or make a new one (choice_idx = 0) 
-    T = 1 # temperature parameter for scaling choice distribution
-    choice_p = np.exp(T*(MLs - MLs_max))/np.exp(T*(MLs - MLs_max)).sum()
-    choice_idx = np.random.choice(
-      np.r_[0:(len(clust_counts) + 1)],
-      p = choice_p
-    )
-    choice = np.r_[-1, clust_counts.keys()][choice_idx]
+        # BC is likelihood of target cluster post-join
+        # == BC_c
 
-    # accept proposal via Metropolis
-    # A+B,C -> A,B+C
-    # C is likelihood of target cluster pre-join
-    C_c = C[choice_idx]
-    # B+C is likelihood of target cluster post-join
-    BC_c = BC[choice_idx]
+        # A is likelihood of all clusters pre-join
+        # == C above
 
-    ML_join = A + BC_c
-    ML_split = AB + C_c
+        # C is likelihood of target cluster without join
+        # == C_c
 
-    #AB+C <- A+BC
+        # AB is likelihood of all clusters post-join
+        # == BC above
 
-    # BC is likelihood of target cluster post-join
-    # == BC_c
+        MLs_rev = (BC + C_c) - (BC_c + C)
+        MLs_rev_max = np.max(MLs_rev)
+        choice_p_rev = np.exp(T*(MLs_rev - MLs_rev_max))/np.exp(T*(MLs_rev - MLs_rev_max)).sum()
 
-    # A is likelihood of all clusters pre-join
-    # == C above
+        q_rat = np.log(choice_p_rev[choice_idx]) - np.log(choice_p[choice_idx]) 
 
-    # C is likelihood of target cluster without join
-    # == C_c
+        # accept proposal
+        if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + q_rat):
+            # create new cluster
+            if choice == -1:
+                max_clust_idx += 1
+                clust_counts[max_clust_idx] = n_move
+                S.iloc[seg_idx, clust_col] = max_clust_idx
 
-    # AB is likelihood of all clusters post-join
-    # == BC above
+                clust_sums[max_clust_idx] = np.r_[B_a, B_b]
+                clust_members[max_clust_idx] = set(seg_idx)
 
-    MLs_rev = (BC + C_c) - (BC_c + C)
-    MLs_rev_max = np.max(MLs_rev)
-    choice_p_rev = np.exp(T*(MLs_rev - MLs_rev_max))/np.exp(T*(MLs_rev - MLs_rev_max)).sum()
+            # join existing cluster
+            else:
+                clust_counts[choice] += n_move 
+                clust_sums[choice] += np.r_[B_a, B_b]
+                S.iloc[seg_idx, clust_col] = choice
 
-    q_rat = np.log(choice_p_rev[choice_idx]) - np.log(choice_p[choice_idx]) 
+                clust_members[choice].update(set(seg_idx))
 
-    # accept proposal
-    if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + q_rat):
-        # create new cluster
-        if choice == -1:
-            max_clust_idx += 1
-            clust_counts[max_clust_idx] = n_move
-            S.iloc[seg_idx, clust_col] = max_clust_idx
+            # track cluster assignment for segment(s)
+            if burned_in:
+                for seg in seg_idx:
+                    clusters_to_segs[seg].append(choice if choice != -1 else max_clust_idx)
 
-            clust_sums[max_clust_idx] = np.r_[B_a, B_b]
-            clust_members[max_clust_idx] = set(seg_idx)
-
-        # join existing cluster
+        # otherwise, keep (restore) current chain configuration
         else:
-            clust_counts[choice] += n_move 
-            clust_sums[choice] += np.r_[B_a, B_b]
-            S.iloc[seg_idx, clust_col] = choice
+            # previously unassigned segment was rejected from making a new cluster (should never happen)
+            if choice == -1 and cur_clust == -1:
+                breakpoint()
 
-            clust_members[choice].update(set(seg_idx))
+            # we proposed moving a single segment
+            if not move_clust:
+                # previously assigned segment was rejected from joining an existing cluster
+                if cur_clust != -1:
+                    if cur_clust not in clust_counts:
+                        clust_counts[cur_clust] = n_move
+                        clust_sums[cur_clust] = np.r_[B_a, B_b]
+                        clust_members[cur_clust] = set(seg_idx)
+                    else:
+                        clust_counts[cur_clust] += n_move 
+                        clust_sums[cur_clust] += np.r_[B_a, B_b]
+                        clust_members[cur_clust].update(set(seg_idx))
+            
+                    S.iloc[seg_idx, clust_col] = cur_clust
 
-        # track cluster assignment for segment(s)
-        if burned_in:
-            for seg in seg_idx:
-                clusters_to_segs[seg].append(choice if choice != -1 else max_clust_idx)
+                # if a previously unassigned segment was rejected from joining an existing cluster,
+                # we don't need to do anything: it remains unassigned
 
-    # otherwise, keep (restore) current chain configuration
-    else:
-        # previously unassigned segment was rejected from making a new cluster (should never happen)
-        if choice == -1 and cur_clust == -1:
-            breakpoint()
+            # we proposed moving a whole cluster
+            else:
+                clust_counts[cl_idx] = n_move
+                S.iloc[seg_idx, clust_col] = cl_idx
 
-        # we proposed moving a single segment
-        if not move_clust:
-            # previously assigned segment was rejected from joining an existing cluster
-            if cur_clust != -1:
-                if cur_clust not in clust_counts:
-                    clust_counts[cur_clust] = n_move
-                    clust_sums[cur_clust] = np.r_[B_a, B_b]
-                    clust_members[cur_clust] = set(seg_idx)
-                else:
-                    clust_counts[cur_clust] += n_move 
-                    clust_sums[cur_clust] += np.r_[B_a, B_b]
-                    clust_members[cur_clust].update(set(seg_idx))
-        
-                S.iloc[seg_idx, clust_col] = cur_clust
+                clust_sums[cl_idx] = np.r_[B_a, B_b]
+                clust_members[cl_idx] = set(seg_idx)
 
-            # if a previously unassigned segment was rejected from joining an existing cluster,
-            # we don't need to do anything: it remains unassigned
+                S.iloc[seg_idx, clust_col] = cl_idx
 
-        # we proposed moving a whole cluster
-        else:
-            clust_counts[cl_idx] = n_move
-            S.iloc[seg_idx, clust_col] = cl_idx
+            # track cluster assignment for segment(s)
+            if burned_in:
+                for seg in seg_idx:
+                    clusters_to_segs[seg].append(cur_clust if not move_clust else cl_idx)
 
-            clust_sums[cl_idx] = np.r_[B_a, B_b]
-            clust_members[cl_idx] = set(seg_idx)
-
-            S.iloc[seg_idx, clust_col] = cl_idx
-
-        # track cluster assignment for segment(s)
-        if burned_in:
-            for seg in seg_idx:
-                clusters_to_segs[seg].append(cur_clust if not move_clust else cl_idx)
-
-    # track global state of cluster assignments
-    # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
-    if burned_in and not n_it % len(S)/(len(clust_counts)*2):
-        segs_to_clusters.append(S["clust"].copy())
+        # track global state of cluster assignments
+        # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
+        if burned_in and not n_it % len(S)/(len(clust_counts)*2):
+            segs_to_clusters.append(S["clust"].copy())
 
 #
 # plot
