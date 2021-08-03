@@ -127,7 +127,6 @@ def run_DP(S, seg_prior = None):
 
                 S.iloc[seg_idx, clust_col] = -1
 
-
         # pick a cluster at random
         else:
             # it only makes sense to try joining two clusters if there are at least two of them!
@@ -282,8 +281,6 @@ def run_DP(S, seg_prior = None):
             # we proposed moving a whole cluster
             else:
                 clust_counts[cl_idx] = n_move
-                S.iloc[seg_idx, clust_col] = cl_idx
-
                 clust_sums[cl_idx] = np.r_[B_a, B_b]
                 clust_members[cl_idx] = set(seg_idx)
 
