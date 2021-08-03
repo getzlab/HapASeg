@@ -221,9 +221,14 @@ def run_DP(S, seg_prior = None):
         # == BC above
 
         MLs_rev = (BC + C_c) - (BC_c + C)
-        MLs_rev_max = np.max(MLs_rev)
-        choice_p_rev = np.exp(T*(MLs_rev - MLs_rev_max))/np.exp(T*(MLs_rev - MLs_rev_max)).sum()
 
+        # when moving an entire cluster, we cannot open a new one
+        if move_clust:
+            MLs_rev[0] = -np.inf
+
+        MLs_rev_max = np.max(MLs_rev)
+
+        choice_p_rev = np.exp(T*(MLs_rev - MLs_rev_max))/np.exp(T*(MLs_rev - MLs_rev_max)).sum()
         q_rat = np.log(choice_p_rev[choice_idx]) - np.log(choice_p[choice_idx]) 
 
         # accept proposal
