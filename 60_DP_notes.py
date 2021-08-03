@@ -120,12 +120,13 @@ def run_DP(S, seg_prior = None):
                 if clust_counts[cur_clust] == 0:
                     del clust_counts[cur_clust]
                     del clust_sums[cur_clust]
+                    del clust_members[cur_clust]
                 else:
                     clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col], S.iloc[seg_idx, maj_col]]
+                    clust_members[cur_clust] -= set(seg_idx)
 
                 S.iloc[seg_idx, clust_col] = -1
 
-                clust_members[cur_clust] -= set(seg_idx)
 
         # pick a cluster at random
         else:
@@ -144,12 +145,12 @@ def run_DP(S, seg_prior = None):
             # (it will either be joined with a new cluster, or remade again into its own cluster)
             del clust_counts[cl_idx]
             del clust_sums[cl_idx]
+            del clust_members[cl_idx]
             S.iloc[seg_idx, clust_col] = -1
 
             # NOTE: in the previous code, this accidentally was -=, not =
             # leaving comment here for posterity
             #clust_sums[cl_idx] = np.r_[0, 0]
-            clust_members[cl_idx] = set()
 
             move_clust = True
 
