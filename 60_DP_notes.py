@@ -90,7 +90,7 @@ def run_DP(S, seg_prior = None):
     clusters_to_segs = [[] for i in range(len(S))]
     segs_to_clusters = []
 
-    max_clust_idx = 0
+    max_clust_idx = np.max(clust_members.keys())
     burned_in = False
 
     n_it = 0
