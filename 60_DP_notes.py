@@ -1,4 +1,5 @@
 import colorama
+import copy
 import itertools
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -23,7 +24,7 @@ def load_seg_sample(samp_idx):
 
     chunk_offset = 0
     for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
-        r = H["results"]
+        r = copy.deepcopy(H["results"])
         
         # set phasing orientation back to original
         for st, en in r.F.intervals():
