@@ -78,9 +78,12 @@ def load_seg_sample(samp_idx):
     return S
 
 def run_DP(S, seg_prior = None):
+    # define column indices
     clust_col = S.columns.get_loc("clust")
     min_col = S.columns.get_loc("min")
     maj_col = S.columns.get_loc("maj")
+
+    # initialize cluster tracking hash tables
 
     # TODO: I don't think we actually need clust_counts anymore, since we aren't doing a true DP process where the probability of joining a cluster depends on the number of members
     clust_counts = sc.SortedDict(S["clust"].value_counts().drop(-1, errors = "ignore"))
@@ -92,10 +95,13 @@ def run_DP(S, seg_prior = None):
     # for the first round, this is { -1 : np.r_[0, 0], 0 : np.r_[S[0, "min"], S[0, "maj"]] }
     clust_members = sc.SortedDict({ k : set(v) for k, v in S.groupby("clust").groups.items() if k != -1 })
     # for the first round, this is { 0 : {0} }
+
+    max_clust_idx = np.max(clust_members.keys())
+
+    # containers for saving the MCMC trace
     clusters_to_segs = [[] for i in range(len(S))]
     segs_to_clusters = []
 
-    max_clust_idx = np.max(clust_members.keys())
     burned_in = False
 
     n_it = 0
