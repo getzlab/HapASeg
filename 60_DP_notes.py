@@ -355,6 +355,35 @@ def map_seg_clust_assignments_to_SNPs(segs_to_clusters, S):
 
     return snps_to_clusters
 
+# TODO: implement cumulative prior?
+
+#
+# test code for running multiple iterations of DP, implementing prior on clustering 
+
+for n_it in range(10):
+    S = load_seg_sample(n_it) # XXX: should this be randomized? FIXME: need to determine total number of segmentation samples
+
+    # get prior on segments' cluster assignments, if we've already performed a clustering step
+    seg_clust_prior = None
+    if n_it > 0:
+        n_clust_bins = snps_to_clusters.max() + 1
+        seg_clust_prior = np.zeros([n_clust_bins, len(S)])
+        for i, r in enumerate(S.itertuples()):
+            seg_clust_prior[:, i] = np.bincount(snps_to_clusters[:, r.SNP_st:r.SNP_en].ravel(), minlength = n_clust_bins)
+
+        # we also initialize the cluster assignments in S based on the previous DP
+        np.random.choice(seg_clust_prior.shape[0], p = seg_clust_prior[:, 0]/seg_clust_prior[:, 0].sum())
+        S["clust"] = [np.random.choice(seg_clust_prior.shape[0], p = x/x.sum()) for x in seg_clust_prior.T]
+
+    s2c = run_DP(S, seg_clust_prior)
+    snps_to_clusters = map_seg_clust_assignments_to_SNPs(s2c, S)
+
+
+# Dirichlet marginal likelihood:
+
+def multibetaln(alpha):
+    return ss.gammaln(alpha).sum(1) - ss.gammaln(alpha.sum(1))
+
 #
 # plot
 
