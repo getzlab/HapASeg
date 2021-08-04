@@ -196,12 +196,12 @@ def run_DP(S, seg_prior = None):
             # assignments of segment/cluster being moved in previous iterations of DP
             alpha1 = seg_clust_prior[:, seg_idx].sum(1)[None, :]
 
-            # 1 x n_clust
+            # dim(alpha1) = 1 x n_clust (\psi_{i-1})
 
             # assignments of all target clusters over previous iterations of DP
             # TODO: this should be dynamically updated, rather than recomputed every single iteration
             alpha2 = np.zeros([clust_counts.keys()[-1] + 2, seg_clust_prior.shape[0]])
-            # n_clust (\psi_i) x n_clust (\psi_{i-1})
+            # dim(alpha2) = n_clust (\psi_i) x n_clust (\psi_{i-1})
             for k, v in clust_members.items():
                 alpha2[k + 1, :] = seg_clust_prior[:, list(v)].sum(1) # k + 1 to let alpha2[0, :] correspond to probability of opening new cluster (all zeros)
 
