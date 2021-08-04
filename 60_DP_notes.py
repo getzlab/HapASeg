@@ -95,6 +95,7 @@ def run_DP(S, seg_prior = None):
     burned_in = False
 
     n_it = 0
+    n_it_last = 0
     while len(segs_to_clusters) < 50: # TODO: allow this to be tweaked
         if not n_it % 1000:
             print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
@@ -294,8 +295,9 @@ def run_DP(S, seg_prior = None):
 
         # track global state of cluster assignments
         # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
-        if burned_in and not n_it % len(S)/(len(clust_counts)*2):
+        if burned_in and n_it - n_it_last > len(S)/(len(clust_counts)*2):
             segs_to_clusters.append(S["clust"].copy())
+            n_it_last = n_it
 
         n_it += 1
 
