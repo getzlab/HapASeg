@@ -78,6 +78,10 @@ def load_seg_sample(samp_idx):
     return S
 
 def run_DP(S, seg_prior = None):
+    clust_col = S.columns.get_loc("clust")
+    min_col = S.columns.get_loc("min")
+    maj_col = S.columns.get_loc("maj")
+
     # TODO: I don't think we actually need clust_counts anymore, since we aren't doing a true DP process where the probability of joining a cluster depends on the number of members
     clust_counts = sc.SortedDict(S["clust"].value_counts().drop(-1, errors = "ignore"))
     # for the first round of clustering, this is { 0 : 1 }
