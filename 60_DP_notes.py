@@ -244,8 +244,9 @@ def run_DP(S, seg_prior = None):
         # B+C is likelihood of target cluster post-join
         BC_c = BC[choice_idx]
 
-        ML_join = A + BC_c #+ join_prior_lik[choice_idx]
-        ML_split = AB + C_c #+ join_prior_lik[cur_clust] # what if we're moving a whole cluster, and cur_clust == -1?
+
+        ML_join = A + BC_c + (join_prior_lik[choice_idx] if seg_prior is not None else 0)
+        ML_split = AB + C_c + (join_prior_lik[clust_sums.index(cur_clust) if cur_clust in clust_sums else 0] if seg_prior is not None else 0)
 
         #AB+C <- A+BC
 
