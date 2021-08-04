@@ -188,8 +188,37 @@ def run_DP(S, seg_prior = None):
         # B+C is likelihood of target cluster post-join
         BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
 
+        # prior terms
+        alpha0 = 1 # hyperparameter for similarities between segments TODO: make tunable
+        join_prior_lik = 0
+        if seg_prior is not None:
+            # seg_clust_prior: n_clust (\psi_{i-1}) x n_seg
+            # assignments of segment/cluster being moved in previous iterations of DP
+            alpha1 = seg_clust_prior[:, seg_idx].sum(1)[None, :]
+
+            # 1 x n_clust
+
+            # assignments of all target clusters over previous iterations of DP
+            # TODO: this should be dynamically updated, rather than recomputed every single iteration
+            alpha2 = np.zeros([clust_counts.keys()[-1] + 2, seg_clust_prior.shape[0]])
+            # n_clust (\psi_i) x n_clust (\psi_{i-1})
+            for k, v in clust_members.items():
+                alpha2[k + 1, :] = seg_clust_prior[:, list(v)].sum(1) # k + 1 to let alpha2[0, :] correspond to probability of opening new cluster (all zeros)
+
+            # subtract off values of segment/cluster being moved (XXX: not necessary -- we've already removed segment being moved from the cluster it was previously part of)
+            #alpha2[[cur_clust + 1], :] -= alpha1
+            # XXX: in the writeup, it says that we consider the marginal likelihood of every other possible cluster that S could join, excluding the one that S was already part of. we don't actually do this here. should we? S going back to the cluster it was originally part of is equivalent to not accepting the move. how does this factor into the MCMC?
+
+            # subset rows of alpha2 to only clusters that currently exist
+            alpha2 = alpha2[np.r_[-1, clust_members.keys()] + 1, :]
+
+            join_prior_lik = multibetaln(alpha1 + alpha2 + alpha0) - (multibetaln(alpha1 + alpha0) + multibetaln(alpha2 + alpha0))
+
+            # we do not impose any prior on opening a new cluster
+            join_prior_lik[0] = 0
+
         #     L(join)  L(split)
-        MLs = A + BC - (AB + C)
+        MLs = A + BC - (AB + C) + join_prior_lik
 
         # if we are moving an entire cluster, it does not make sense to let it
         # create a new cluster, since this will make cluster indices inconsistent.
@@ -208,14 +237,15 @@ def run_DP(S, seg_prior = None):
         choice = np.r_[-1, clust_counts.keys()][choice_idx]
 
         # accept proposal via Metropolis
+        # XXX: do we actually need this step, or is choice_p an accurate representation of the normalized full conditional?
         # A+B,C -> A,B+C
         # C is likelihood of target cluster pre-join
         C_c = C[choice_idx]
         # B+C is likelihood of target cluster post-join
         BC_c = BC[choice_idx]
 
-        ML_join = A + BC_c
-        ML_split = AB + C_c
+        ML_join = A + BC_c #+ join_prior_lik[choice_idx]
+        ML_split = AB + C_c #+ join_prior_lik[cur_clust] # what if we're moving a whole cluster, and cur_clust == -1?
 
         #AB+C <- A+BC
 
@@ -231,7 +261,7 @@ def run_DP(S, seg_prior = None):
         # AB is likelihood of all clusters post-join
         # == BC above
 
-        MLs_rev = (BC + C_c) - (BC_c + C)
+        MLs_rev = (BC + C_c) - (BC_c + C) + join_prior_lik
 
         # when moving an entire cluster, we cannot open a new one
         if move_clust:
