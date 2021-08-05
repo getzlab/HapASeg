@@ -64,16 +64,13 @@ def load_seg_sample(samp_idx):
     # convert samples into dataframe
     S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj"])
 
-    # construct overlap matrix
+    # convert chr-relative positions to absolute genomic coordinates
     S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"])
     S["end_gp"] = seq.chrpos2gpos(S["chr"], S["end"])
 
-    # other fields of S
+    # initial cluster assignments
     S["clust"] = -1 # initially, all segments are unassigned
-    clust_col = S.columns.get_loc("clust")
-    min_col = S.columns.get_loc("min")
-    maj_col = S.columns.get_loc("maj")
-    S.iloc[0, clust_col] = 0 # first segment is assigned to cluster 0
+    S.iloc[0, S.columns.get_loc("clust")] = 0 # first segment is assigned to cluster 0
 
     return S
 
