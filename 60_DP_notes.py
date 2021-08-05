@@ -21,6 +21,8 @@ min_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
 
 def load_seg_sample(samp_idx):
     all_segs = []
+    all_SNPs = []
+    all_PIs = []
 
     chunk_offset = 0
     for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
@@ -32,6 +34,9 @@ def load_seg_sample(samp_idx):
             x = r.P.iloc[st:en, maj_idx].copy()
             r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
             r.P.iloc[st:en, min_idx] = x
+
+        # save SNPs for this chunk
+        all_SNPs.append(np.c_[r.P["MAJ_COUNT"], r.P["MIN_COUNT"]])
 
         # draw breakpoint, phasing, and SNP inclusion sample from segmentation MCMC trace
         bp_samp, pi_samp, inc_samp = (r.breakpoint_list[samp_idx], r.phase_interval_list[samp_idx], r.include[samp_idx])
@@ -52,12 +57,8 @@ def load_seg_sample(samp_idx):
               r._Piloc(st, en, maj_idx, inc_samp).sum()
             ])
 
-        # flip everything back
-        for st, en in pi_samp.intervals():
-            # TODO: can replace with flip_hap()?
-            x = r.P.iloc[st:en, maj_idx].copy()
-            r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
-            r.P.iloc[st:en, min_idx] = x
+        # save phase orientations for this chunk
+        all_PIs.append(pi_samp.intervals() + chunk_offset)
 
         chunk_offset += len(r.P)
 
@@ -72,7 +73,7 @@ def load_seg_sample(samp_idx):
     S["clust"] = -1 # initially, all segments are unassigned
     S.iloc[0, S.columns.get_loc("clust")] = 0 # first segment is assigned to cluster 0
 
-    return S
+    return S, np.concatenate(all_SNPs), np.concatenate(all_PIs)
 
 def run_DP(S, seg_prior = None):
     # define column indices
