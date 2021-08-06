@@ -75,6 +75,15 @@ def load_seg_sample(samp_idx):
     S["clust"] = -1 # initially, all segments are unassigned
     S.iloc[0, S.columns.get_loc("clust")] = 0 # first segment is assigned to cluster 0
 
+    # pre-clustering rephasing
+    ph_lod = np.maximum(-300,
+      s.beta.logcdf(0.5, S["min"] + 1, S["maj"] + 1) - 
+      s.beta.logsf(0.5, S["min"] + 1, S["maj"] + 1)
+    )
+
+    # XXX: rather than setting a hard cutoff, could we do a weighted flip of min/maj based on the LoD?
+    S.loc[ph_lod > 4, ["min", "maj"]] = S.loc[ph_lod > 4, ["min", "maj"]].values[:, ::-1]
+
     return S, pd.concat(all_SNPs, ignore_index = True), np.concatenate(all_BPs), np.concatenate(all_PIs)
 
 def run_DP(S, seg_prior = None):
