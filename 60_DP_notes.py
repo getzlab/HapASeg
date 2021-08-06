@@ -90,7 +90,7 @@ def load_seg_sample(samp_idx):
 
     return S, pd.concat(all_SNPs, ignore_index = True), np.concatenate(all_BPs), np.concatenate(all_PIs)
 
-def run_DP(S, seg_prior = None):
+def run_DP(S, seg_clust_prior = None):
     #
     # define column indices
     clust_col = S.columns.get_loc("clust")
@@ -224,7 +224,7 @@ def run_DP(S, seg_prior = None):
         # prior terms
         alpha0 = 1 # hyperparameter for similarities between segments TODO: make tunable
         join_prior_lik = 0
-        if seg_prior is not None:
+        if seg_clust_prior is not None:
             # seg_clust_prior: n_clust (\psi_{i-1}) x n_seg
             # assignments of segment/cluster being moved in previous iterations of DP
             alpha1 = seg_clust_prior[:, seg_idx].sum(1)[None, :]
@@ -277,9 +277,10 @@ def run_DP(S, seg_prior = None):
         # B+C is likelihood of target cluster post-join
         BC_c = BC[choice_idx]
 
+        #breakpoint()
 
-        ML_join = A + BC_c + (join_prior_lik[choice_idx] if seg_prior is not None else 0)
-        ML_split = AB + C_c + (join_prior_lik[clust_sums.index(cur_clust) if cur_clust in clust_sums else 0] if seg_prior is not None else 0)
+        ML_join = A + BC_c + (join_prior_lik[choice_idx] if seg_clust_prior is not None else 0)
+        ML_split = AB + C_c + (join_prior_lik[clust_sums.index(cur_clust) if cur_clust in clust_sums else 0] if seg_clust_prior is not None else 0)
 
         #AB+C <- A+BC
 
