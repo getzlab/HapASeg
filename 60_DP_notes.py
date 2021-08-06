@@ -523,6 +523,39 @@ ax2 = plt.twinx()
 ax2.set_yticks(alpha*phis + (1 - alpha)/2)
 ax2.set_yticklabels(["0:1", "1:1", "1:2", "1:3", "2:3", "1:4", "3:4", "1:5", "2:5", "3:5", "4:5"])
 
+# }}}
+
+#
+# multi DP iteration/multi segment sample plots {{{
+
+clust_u = np.unique(snps_to_clusters)
+color_idx = dict(zip(clust_u, np.r_[0:len(clust_u)]))
+
+plt.figure(1337); plt.clf()
+for i, snp_assignments in enumerate(snps_to_clusters):
+    Seg = Segs[i//N_clust_samps]
+    seg_assignments = snp_assignments[Seg["SNP_st"]]
+
+    S_a = npg.aggregate(seg_assignments, Seg["min"])
+    S_b = npg.aggregate(seg_assignments, Seg["maj"])
+
+    CIs = s.beta.ppf([0.025, 0.5, 0.975], S_a[:, None] + 1, S_b[:, None] + 1)
+
+    for su in np.unique(seg_assignments):
+        idx = seg_assignments == su
+
+        plt.plot(
+          np.c_[Seg.loc[idx, "start_gp"], Seg.loc[idx, "end_gp"], np.full(idx.sum(), np.nan)].ravel(),
+          (CIs[su, 1]*np.ones([idx.sum(), 3])).ravel(),
+          color = np.array(colors)[color_idx[su] % len(colors)],
+          linewidth = 1,
+          alpha = 0.1,
+          zorder = 1000
+        )
+
+    plt.scatter(SNPs["gpos"], SNPs["min"]/(SNPs[["min", "maj"]].sum(1)), s = 0.01, color = 'k', zorder = 0, alpha = 0.1)
+
+# }}}
 
 # old scrap code
 
