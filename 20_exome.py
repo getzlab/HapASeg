@@ -103,11 +103,13 @@ runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
   refs.allele_counts,
   refs.chromosome_intervals,
   c,
+  #phase_correct = False,
   misphase_prior = 3e-3,
 )
 allelic_segs = runner.run_all()
 
 #allelic_segs.to_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.pickle")
+#allelic_segs.to_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.no_phase_correct.pickle")
 allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.pickle")
 
 #
