@@ -14,8 +14,7 @@ import sortedcontainers as sc
 
 from capy import seq
 
-allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.pickle")
-
+allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.no_phase_correct.pickle")
 
 def load_seg_sample(samp_idx):
     all_segs = []
@@ -25,6 +24,9 @@ def load_seg_sample(samp_idx):
 
     maj_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MAJ_COUNT")
     min_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
+
+    alt_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("ALT_COUNT")
+    ref_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("REF_COUNT")
 
     chunk_offset = 0
     for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
@@ -38,35 +40,42 @@ def load_seg_sample(samp_idx):
             r.P.iloc[st:en, min_idx] = x
 
         # save SNPs for this chunk
-        all_SNPs.append(pd.DataFrame({ "maj" : r.P["MAJ_COUNT"], "min" : r.P["MIN_COUNT"], "gpos" : seq.chrpos2gpos(r.P.loc[st, "chr"], r.P["pos"]) }))
+        all_SNPs.append(pd.DataFrame({ "maj" : r.P["MAJ_COUNT"], "min" : r.P["MIN_COUNT"], "gpos" : seq.chrpos2gpos(r.P.loc[0, "chr"], r.P["pos"]) }))
 
         # draw breakpoint, phasing, and SNP inclusion sample from segmentation MCMC trace
-        bp_samp, pi_samp, inc_samp = (r.breakpoint_list[samp_idx], r.phase_interval_list[samp_idx], r.include[samp_idx])
+        bp_samp, pi_samp, inc_samp = (r.breakpoint_list[samp_idx], r.phase_interval_list[samp_idx] if r.phase_correct else None, r.include[samp_idx])
         # flip everything according to sample
-        for st, en in pi_samp.intervals():
-            x = r.P.iloc[st:en, maj_idx].copy()
-            r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
-            r.P.iloc[st:en, min_idx] = x
+        if r.phase_correct:
+            for st, en in pi_samp.intervals():
+                x = r.P.iloc[st:en, maj_idx].copy()
+                r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
+                r.P.iloc[st:en, min_idx] = x
 
         bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
 
         # get major/minor sums for each segment
+        # also get {alt, ref} x {aidx, bidx}
         for st, en in bpl:
             all_segs.append([
-              st + chunk_offset, en + chunk_offset,
-              r.P.loc[st, "chr"], r.P.loc[st, "pos"], r.P.loc[en, "pos"],
-              r._Piloc(st, en, min_idx, inc_samp).sum(),
-              r._Piloc(st, en, maj_idx, inc_samp).sum()
+              st + chunk_offset, en + chunk_offset,                        # SNP index for seg
+              r.P.loc[st, "chr"], r.P.loc[st, "pos"], r.P.loc[en, "pos"],  # chromosomal position of seg
+              r._Piloc(st, en, min_idx, inc_samp).sum(),                   # min/maj counts
+              r._Piloc(st, en, maj_idx, inc_samp).sum(),
+
+              r._Piloc(st, en, alt_idx, inc_samp & r.P["aidx"]).sum(),     # allele A alt/ref
+              r._Piloc(st, en, ref_idx, inc_samp & r.P["aidx"]).sum(),
+              r._Piloc(st, en, alt_idx, inc_samp & ~r.P["aidx"]).sum(),    # allele B alt/ref
+              r._Piloc(st, en, ref_idx, inc_samp & ~r.P["aidx"]).sum()
             ])
 
         # save breakpoints/phase orientations for this chunk
         all_BPs.append(bpl + chunk_offset)
-        all_PIs.append(pi_samp.intervals() + chunk_offset)
+        all_PIs.append(pi_samp.intervals() + chunk_offset if r.phase_correct else [])
 
         chunk_offset += len(r.P)
 
     # convert samples into dataframe
-    S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj"])
+    S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj", "A_alt", "A_ref", "B_alt", "B_ref"])
 
     # convert chr-relative positions to absolute genomic coordinates
     S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"])
@@ -76,23 +85,24 @@ def load_seg_sample(samp_idx):
     S["clust"] = -1 # initially, all segments are unassigned
     S.iloc[0, S.columns.get_loc("clust")] = 0 # first segment is assigned to cluster 0
 
-    # pre-clustering rephasing
-    ph_lod = np.maximum(-300,
-      s.beta.logcdf(0.5, S["min"] + 1, S["maj"] + 1) - 
-      s.beta.logsf(0.5, S["min"] + 1, S["maj"] + 1)
-    )
-
-    # XXX: rather than setting a hard cutoff, could we do a weighted flip of min/maj based on the LoD?
-    S.loc[ph_lod > 4, ["min", "maj"]] = S.loc[ph_lod > 4, ["min", "maj"]].values[:, ::-1]
+    # initial phasing orientation
+    S["flipped"] = False
 
     return S, pd.concat(all_SNPs, ignore_index = True), np.concatenate(all_BPs), np.concatenate(all_PIs)
 
 def run_DP(S, seg_prior = None):
+    #
     # define column indices
     clust_col = S.columns.get_loc("clust")
     min_col = S.columns.get_loc("min")
     maj_col = S.columns.get_loc("maj")
+    aalt_col = S.columns.get_loc("A_alt")
+    aref_col = S.columns.get_loc("A_ref")
+    balt_col = S.columns.get_loc("B_alt")
+    bref_col = S.columns.get_loc("B_ref")
+    flip_col = S.columns.get_loc("flipped")
 
+    #
     # initialize cluster tracking hash tables
 
     # TODO: I don't think we actually need clust_counts anymore, since we aren't doing a true DP process where the probability of joining a cluster depends on the number of members
@@ -175,6 +185,18 @@ def run_DP(S, seg_prior = None):
 
             move_clust = True
 
+        #
+        # perform phase correction on segment/cluster
+        # flip min/maj with probability that alleles are oriented the "wrong" way
+        x = s.beta.rvs(S.iloc[seg_idx, aalt_col].sum() + 1, S.iloc[seg_idx, aref_col].sum() + 1, size = [len(seg_idx), 30])
+        y = s.beta.rvs(S.iloc[seg_idx, balt_col].sum() + 1, S.iloc[seg_idx, bref_col].sum() + 1, size = [len(seg_idx), 30])
+        if np.random.rand() < (x > y).mean():
+            S.iloc[seg_idx, [min_col, maj_col]] = S.iloc[seg_idx, [min_col, maj_col]].values[:, ::-1]
+            S.iloc[seg_idx, [aalt_col, balt_col]] = S.iloc[seg_idx, [aalt_col, balt_col]].values[:, ::-1]
+            S.iloc[seg_idx, [aref_col, bref_col]] = S.iloc[seg_idx, [aref_col, bref_col]].values[:, ::-1]
+            S.iloc[seg_idx, flip_col] = ~S.iloc[seg_idx, flip_col]
+
+        #
         # choose to join a cluster or make a new one
         # probabilities determined by similarity of segment/cluster to existing ones
 
@@ -198,6 +220,7 @@ def run_DP(S, seg_prior = None):
         # B+C is likelihood of target cluster post-join
         BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
 
+        #
         # prior terms
         alpha0 = 1 # hyperparameter for similarities between segments TODO: make tunable
         join_prior_lik = 0
@@ -390,9 +413,19 @@ for n_it in range(10):
         for i, r in enumerate(S.itertuples()):
             seg_clust_prior[:, i] = np.bincount(snps_to_clusters[:N_clust_samps*n_it, r.SNP_st:r.SNP_en].ravel(), minlength = n_clust_bins)
 
-        # we also initialize the cluster assignments in S based on the previous DP
+        # initialize the cluster assignments in S based on the previous DP
         np.random.choice(seg_clust_prior.shape[0], p = seg_clust_prior[:, 0]/seg_clust_prior[:, 0].sum())
         S["clust"] = [np.random.choice(seg_clust_prior.shape[0], p = x/x.sum()) for x in seg_clust_prior.T]
+
+        # flip segments based on the previous DP
+        flip_frac = np.r_[[flipped[z].mean() for z in [slice(x, y) for x, y in S[["SNP_st", "SNP_en"]].values]]]
+        S["flipped"] = flip_frac > np.random.rand(len(flip_frac))
+        S.loc[S["flipped"], ["min", "maj"]] = S.loc[S["flipped"], ["min", "maj"]].values[:, ::-1]
+        S.loc[S["flipped"], ["A_alt", "B_alt"]] = S.loc[S["flipped"], ["A_alt", "B_alt"]].values[:, ::-1]
+        S.loc[S["flipped"], ["A_ref", "B_ref"]] = S.loc[S["flipped"], ["A_ref", "B_ref"]].values[:, ::-1]
+
+        # unassign segments with ambiguous flip fraction
+        S.loc[~np.isin(flip_frac, [0, 1]), "clust"] = -1
 
     # run clustering
     s2c = run_DP(S, seg_clust_prior)
@@ -403,6 +436,12 @@ for n_it in range(10):
     # adjust SNPs according to phase orientation for this sample
     for st, en in PIs:
         SNPs.loc[st:en, ["maj", "min"]] = SNPs.loc[st:en, ["maj", "min"]].values[:, ::-1]
+
+    # get probability that individual SNPs are flipped, to use as probability for
+    # flipping segments for next DP iteration
+    flipped = np.zeros(S.iloc[-1, S.columns.get_loc("SNP_en")] + 1, dtype = np.bool)
+    for _, st, en in S.loc[S["flipped"], ["SNP_st", "SNP_en"]].itertuples():
+        flipped[st:en] = True
 
     # save rephased A/B counts for each SNP (may not end up needing this?)
     snp_counts[n_it, :, :] = SNPs.loc[:, ["maj", "min"]]
@@ -449,7 +488,7 @@ for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
 
 # plot beta dists. for clusters
 
-r = np.linspace(0.4, 1, 1000)
+r = np.linspace(0, 1, 2000)
 plt.figure(3); plt.clf()
 plts = []
 for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
@@ -461,7 +500,7 @@ plt.legend(plts, S["clust"].value_counts().index[0:20])
 
 # plot beta dists. for segments, colored by cluster assignment
 
-r = np.linspace(0.4, 1, 1000)
+r = np.linspace(0, 1, 2000)
 plt.figure(4); plt.clf()
 plts = []
 for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
