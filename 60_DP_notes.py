@@ -16,8 +16,6 @@ from capy import seq
 
 allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.pickle")
 
-maj_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MAJ_COUNT")
-min_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
 
 def load_seg_sample(samp_idx):
     all_segs = []
@@ -25,10 +23,13 @@ def load_seg_sample(samp_idx):
     all_PIs = []
     all_BPs = []
 
+    maj_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MAJ_COUNT")
+    min_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
+
     chunk_offset = 0
     for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
         r = copy.deepcopy(H["results"])
-        
+
         # set phasing orientation back to original
         for st, en in r.F.intervals():
             # code excised from flip_hap
