@@ -23,6 +23,7 @@ def load_seg_sample(samp_idx):
     all_segs = []
     all_SNPs = []
     all_PIs = []
+    all_BPs = []
 
     chunk_offset = 0
     for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
@@ -36,7 +37,7 @@ def load_seg_sample(samp_idx):
             r.P.iloc[st:en, min_idx] = x
 
         # save SNPs for this chunk
-        all_SNPs.append(np.c_[r.P["MAJ_COUNT"], r.P["MIN_COUNT"]])
+        all_SNPs.append(pd.DataFrame({ "maj" : r.P["MAJ_COUNT"], "min" : r.P["MIN_COUNT"], "gpos" : seq.chrpos2gpos(r.P.loc[st, "chr"], r.P["pos"]) }))
 
         # draw breakpoint, phasing, and SNP inclusion sample from segmentation MCMC trace
         bp_samp, pi_samp, inc_samp = (r.breakpoint_list[samp_idx], r.phase_interval_list[samp_idx], r.include[samp_idx])
@@ -57,7 +58,8 @@ def load_seg_sample(samp_idx):
               r._Piloc(st, en, maj_idx, inc_samp).sum()
             ])
 
-        # save phase orientations for this chunk
+        # save breakpoints/phase orientations for this chunk
+        all_BPs.append(bpl + chunk_offset)
         all_PIs.append(pi_samp.intervals() + chunk_offset)
 
         chunk_offset += len(r.P)
@@ -73,7 +75,7 @@ def load_seg_sample(samp_idx):
     S["clust"] = -1 # initially, all segments are unassigned
     S.iloc[0, S.columns.get_loc("clust")] = 0 # first segment is assigned to cluster 0
 
-    return S, np.concatenate(all_SNPs), np.concatenate(all_PIs)
+    return S, pd.concat(all_SNPs, ignore_index = True), np.concatenate(all_BPs), np.concatenate(all_PIs)
 
 def run_DP(S, seg_prior = None):
     # define column indices
@@ -340,36 +342,35 @@ def run_DP(S, seg_prior = None):
 
         n_it += 1
 
-    _, segs_to_clusters = np.unique(np.r_[segs_to_clusters], return_inverse = True)
-    return segs_to_clusters.reshape([-1, len(S)])
+    return np.r_[segs_to_clusters]
 
 # map trace of segment cluster assignments to the SNPs within
 def map_seg_clust_assignments_to_SNPs(segs_to_clusters, S):
     st_col = S.columns.get_loc("SNP_st")
     en_col = S.columns.get_loc("SNP_en")
-    snps_to_clusters = np.zeros((segs_to_clusters.shape[0], S.iloc[-1, en_col]), dtype = int)
+    snps_to_clusters = np.zeros((segs_to_clusters.shape[0], S.iloc[-1, en_col] + 1), dtype = int)
     for i, seg_assign in enumerate(segs_to_clusters):
         for j, seg in enumerate(seg_assign):
             snps_to_clusters[i, S.iloc[j, st_col]:S.iloc[j, en_col]] = seg
 
     return snps_to_clusters
 
-# TODO: implement cumulative prior?
-
 #
 # test code for running multiple iterations of DP, implementing prior on clustering 
 
 N_seg_samps = 10
 N_clust_samps = 50
-N_SNPs = 11767
+N_SNPs = 11768
 
-snps_to_clusters = np.zeros((N_clust_samps*N_seg_samps, N_SNPs), dtype = np.int16)
+snps_to_clusters = -1*np.ones((N_clust_samps*N_seg_samps, N_SNPs), dtype = np.int16)
+snp_counts = -1*np.ones((N_seg_samps, N_SNPs, 2))
+Segs = []
 
 seg_sample_idx = np.random.choice(N_clust_samps, N_seg_samps, replace = False) # FIXME: need to determine total number of segmentation samples
 seg_sample_idx = np.r_[47, 17, 27, 39, 23, 37,  3, 18, 42,  1]
 
 for n_it in range(10):
-    S = load_seg_sample(seg_sample_idx[n_it])
+    S, SNPs, BPs, PIs = load_seg_sample(seg_sample_idx[n_it])
 
     # get prior on segments' cluster assignments, if we've already performed a clustering step
     seg_clust_prior = None
@@ -383,9 +384,21 @@ for n_it in range(10):
         np.random.choice(seg_clust_prior.shape[0], p = seg_clust_prior[:, 0]/seg_clust_prior[:, 0].sum())
         S["clust"] = [np.random.choice(seg_clust_prior.shape[0], p = x/x.sum()) for x in seg_clust_prior.T]
 
+    # run clustering
     s2c = run_DP(S, seg_clust_prior)
+
+    # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
     snps_to_clusters[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = map_seg_clust_assignments_to_SNPs(s2c, S)
 
+    # adjust SNPs according to phase orientation for this sample
+    for st, en in PIs:
+        SNPs.loc[st:en, ["maj", "min"]] = SNPs.loc[st:en, ["maj", "min"]].values[:, ::-1]
+
+    # save rephased A/B counts for each SNP (may not end up needing this?)
+    snp_counts[n_it, :, :] = SNPs.loc[:, ["maj", "min"]]
+
+    # save overall segmentation for this sample
+    Segs.append(S)
 
 # Dirichlet marginal likelihood:
 
