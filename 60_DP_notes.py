@@ -412,6 +412,9 @@ def multibetaln(alpha):
 
 colors = mpl.cm.get_cmap("tab10").colors
 
+#
+# single DP iteration plots {{{
+
 # plot first 20 clusters overlaid (figure 2), and one cluster per subplot (figure 1)
 f1 = plt.figure(2); plt.clf()
 ax = plt.gca()
@@ -457,8 +460,12 @@ for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
     for _, mn, mj in S.loc[S["clust"] == clust_idx, ["min", "maj"]].itertuples():
         plt.plot(r, s.beta.pdf(r, mn, mj), color = colors[i % len(colors)], alpha = 0.3)
 
+# }}}
 
-# probabilistic assignment of segments to clusters
+#
+# multi DP iteration plots {{{
+
+# probabilistic assignment of segments to clusters {{{
 
 f1 = plt.figure(20); plt.clf()
 ax = plt.gca()
@@ -472,9 +479,9 @@ for i, r in S.iterrows():
     for prob, idx in zip(clust_probs[clust_trace > 0], np.flatnonzero(clust_trace)):
         ax.add_patch(mpl.patches.Rectangle((r["start_gp"], ci_lo), r["end_gp"] - r["start_gp"], ci_hi - ci_lo, facecolor = colors[idx % len(colors)], fill = True, alpha = prob, zorder = 1000))
 
-# use cluster mean for each segment
+# }}}
 
-s2c = np.r_[segs_to_clusters]
+# use cluster mean for each segment {{{
 
 f1 = plt.figure(21); plt.clf()
 ax = plt.gca()
