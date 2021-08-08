@@ -115,6 +115,7 @@ def run_DP(S, seg_clust_prior = None):
     # for the first round, this is { -1 : np.r_[0, 0], 0 : np.r_[S[0, "min"], S[0, "maj"]] }
     clust_members = sc.SortedDict({ k : set(v) for k, v in S.groupby("clust").groups.items() if k != -1 })
     # for the first round, this is { 0 : {0} }
+    unassigned_segs = sc.SortedList(S.index[S["clust"] == -1])
 
     max_clust_idx = np.max(clust_members.keys())
 
@@ -142,7 +143,13 @@ def run_DP(S, seg_clust_prior = None):
         # pick a segment at random
         if np.random.rand() < 0.5:
         #if np.random.rand() < 1:
-            seg_idx = np.r_[np.random.choice(len(S))]
+            # bias picking unassigned segments if >90% of segments have been assigned
+            # TODO: does this affect the proposal distribution at all?
+            if len(unassigned_segs) > 0 and len(unassigned_segs)/len(S) < 0.1 and np.random.rand() < 0.5:
+                seg_idx = np.r_[np.random.choice(unassigned_segs)]
+            else:
+                seg_idx = np.r_[np.random.choice(len(S))]
+
             n_move = 1
 
             # if segment was already assigned to a cluster, unassign it
@@ -157,6 +164,7 @@ def run_DP(S, seg_clust_prior = None):
                     clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col], S.iloc[seg_idx, maj_col]]
                     clust_members[cur_clust] -= set(seg_idx)
 
+                unassigned_segs.add(seg_idx)
                 S.iloc[seg_idx, clust_col] = -1
 
         # pick a cluster at random
@@ -177,6 +185,7 @@ def run_DP(S, seg_clust_prior = None):
             del clust_counts[cl_idx]
             del clust_sums[cl_idx]
             del clust_members[cl_idx]
+            unassigned_segs.update(seg_idx)
             S.iloc[seg_idx, clust_col] = -1
 
             # NOTE: in the previous code, this accidentally was -=, not =
@@ -326,6 +335,9 @@ def run_DP(S, seg_clust_prior = None):
 
                 clust_members[choice].update(set(seg_idx))
 
+            for si in seg_idx:
+                unassigned_segs.remove(si)
+
             # track cluster assignment for segment(s)
             if burned_in:
                 for seg in seg_idx:
@@ -350,6 +362,7 @@ def run_DP(S, seg_clust_prior = None):
                         clust_sums[cur_clust] += np.r_[B_a, B_b]
                         clust_members[cur_clust].update(set(seg_idx))
             
+                    unassigned_segs.remove(seg_idx)
                     S.iloc[seg_idx, clust_col] = cur_clust
 
                 # if a previously unassigned segment was rejected from joining an existing cluster,
@@ -361,6 +374,8 @@ def run_DP(S, seg_clust_prior = None):
                 clust_sums[cl_idx] = np.r_[B_a, B_b]
                 clust_members[cl_idx] = set(seg_idx)
 
+                for si in seg_idx:
+                    unassigned_segs.remove(si)
                 S.iloc[seg_idx, clust_col] = cl_idx
 
             # track cluster assignment for segment(s)
