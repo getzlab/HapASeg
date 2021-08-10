@@ -105,7 +105,6 @@ def run_DP(S, seg_clust_prior = None):
     #
     # initialize cluster tracking hash tables
 
-    # TODO: I don't think we actually need clust_counts anymore, since we aren't doing a true DP process where the probability of joining a cluster depends on the number of members
     clust_counts = sc.SortedDict(S["clust"].value_counts().drop(-1, errors = "ignore"))
     # for the first round of clustering, this is { 0 : 1 }
     clust_sums = sc.SortedDict({
@@ -260,9 +259,12 @@ def run_DP(S, seg_clust_prior = None):
 
         MLs_max = np.max(MLs)
 
+        count_prior = np.r_[0.1, clust_counts.values()]
+        count_prior /= count_prior.sum()
+
         # choose to join a cluster or make a new one (choice_idx = 0) 
         T = 1 # temperature parameter for scaling choice distribution
-        choice_p = np.exp(T*(MLs - MLs_max))/np.exp(T*(MLs - MLs_max)).sum()
+        choice_p = np.exp(T*(MLs - MLs_max + np.log(count_prior)))/np.exp(T*(MLs - MLs_max + np.log(count_prior))).sum()
         choice_idx = np.random.choice(
           np.r_[0:(len(clust_counts) + 1)],
           p = choice_p
