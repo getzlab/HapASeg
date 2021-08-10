@@ -145,7 +145,6 @@ def run_DP(S, seg_clust_prior = None):
         if np.random.rand() < 0.5:
         #if np.random.rand() < 1:
             # bias picking unassigned segments if >90% of segments have been assigned
-            # TODO: does this affect the proposal distribution at all?
             if len(unassigned_segs) > 0 and len(unassigned_segs)/len(S) < 0.1 and np.random.rand() < 0.5:
                 seg_idx = np.r_[np.random.choice(unassigned_segs)]
             else:
@@ -188,10 +187,6 @@ def run_DP(S, seg_clust_prior = None):
             del clust_members[cl_idx]
             unassigned_segs.update(seg_idx)
             S.iloc[seg_idx, clust_col] = -1
-
-            # NOTE: in the previous code, this accidentally was -=, not =
-            # leaving comment here for posterity
-            #clust_sums[cl_idx] = np.r_[0, 0]
 
             move_clust = True
 
@@ -263,11 +258,6 @@ def run_DP(S, seg_clust_prior = None):
         #     L(join)  L(split)
         MLs = A + BC - (AB + C) + join_prior_lik
 
-        # if we are moving an entire cluster, it does not make sense to let it
-        # create a new cluster, since this will make cluster indices inconsistent.
-        if move_clust:
-            MLs[0] = -np.inf
-
         MLs_max = np.max(MLs)
 
         # choose to join a cluster or make a new one (choice_idx = 0) 
@@ -279,110 +269,37 @@ def run_DP(S, seg_clust_prior = None):
         )
         choice = np.r_[-1, clust_counts.keys()][choice_idx]
 
-        # accept proposal via Metropolis
-        # XXX: do we actually need this step, or is choice_p an accurate representation of the normalized full conditional?
-        # A+B,C -> A,B+C
-        # C is likelihood of target cluster pre-join
-        C_c = C[choice_idx]
-        # B+C is likelihood of target cluster post-join
-        BC_c = BC[choice_idx]
-
-        #breakpoint()
-
-        ML_join = A + BC_c + (join_prior_lik[choice_idx] if seg_clust_prior is not None else 0)
-        ML_split = AB + C_c + (join_prior_lik[clust_sums.index(cur_clust) if cur_clust in clust_sums else 0] if seg_clust_prior is not None else 0)
-
-        #AB+C <- A+BC
-
-        # BC is likelihood of target cluster post-join
-        # == BC_c
-
-        # A is likelihood of all clusters pre-join
-        # == C above
-
-        # C is likelihood of target cluster without join
-        # == C_c
-
-        # AB is likelihood of all clusters post-join
-        # == BC above
-
-        MLs_rev = (BC + C_c) - (BC_c + C) + join_prior_lik
-
-        # when moving an entire cluster, we cannot open a new one
-        if move_clust:
-            MLs_rev[0] = -np.inf
-
-        MLs_rev_max = np.max(MLs_rev)
-
-        choice_p_rev = np.exp(T*(MLs_rev - MLs_rev_max))/np.exp(T*(MLs_rev - MLs_rev_max)).sum()
-        q_rat = np.log(choice_p_rev[choice_idx]) - np.log(choice_p[choice_idx]) 
-
-        # accept proposal
-        if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + q_rat):
-            # create new cluster
-            if choice == -1:
+        # create new cluster
+        if choice == -1:
+            # if we are moving an entire cluster, give it the same index it used to have
+            # otherwise, cluster indices will be inconsistent
+            if move_clust:
+                new_clust_idx = cl_idx
+            else:
                 max_clust_idx += 1
-                clust_counts[max_clust_idx] = n_move
-                S.iloc[seg_idx, clust_col] = max_clust_idx
+                new_clust_idx = max_clust_idx
 
-                clust_sums[max_clust_idx] = np.r_[B_a, B_b]
-                clust_members[max_clust_idx] = set(seg_idx)
+            clust_counts[new_clust_idx] = n_move
+            S.iloc[seg_idx, clust_col] = new_clust_idx
 
-            # join existing cluster
-            else:
-                clust_counts[choice] += n_move 
-                clust_sums[choice] += np.r_[B_a, B_b]
-                S.iloc[seg_idx, clust_col] = choice
+            clust_sums[new_clust_idx] = np.r_[B_a, B_b]
+            clust_members[new_clust_idx] = set(seg_idx)
 
-                clust_members[choice].update(set(seg_idx))
-
-            for si in seg_idx:
-                unassigned_segs.remove(si)
-
-            # track cluster assignment for segment(s)
-            if burned_in:
-                for seg in seg_idx:
-                    clusters_to_segs[seg].append(choice if choice != -1 else max_clust_idx)
-
-        # otherwise, keep (restore) current chain configuration
+        # join existing cluster
         else:
-            # previously unassigned segment was rejected from making a new cluster (should never happen)
-            if choice == -1 and cur_clust == -1:
-                breakpoint()
+            clust_counts[choice] += n_move 
+            clust_sums[choice] += np.r_[B_a, B_b]
+            S.iloc[seg_idx, clust_col] = choice
 
-            # we proposed moving a single segment
-            if not move_clust:
-                # previously assigned segment was rejected from joining an existing cluster
-                if cur_clust != -1:
-                    if cur_clust not in clust_counts:
-                        clust_counts[cur_clust] = n_move
-                        clust_sums[cur_clust] = np.r_[B_a, B_b]
-                        clust_members[cur_clust] = set(seg_idx)
-                    else:
-                        clust_counts[cur_clust] += n_move 
-                        clust_sums[cur_clust] += np.r_[B_a, B_b]
-                        clust_members[cur_clust].update(set(seg_idx))
-            
-                    unassigned_segs.remove(seg_idx)
-                    S.iloc[seg_idx, clust_col] = cur_clust
+            clust_members[choice].update(set(seg_idx))
 
-                # if a previously unassigned segment was rejected from joining an existing cluster,
-                # we don't need to do anything: it remains unassigned
+        for si in seg_idx:
+            unassigned_segs.remove(si)
 
-            # we proposed moving a whole cluster
-            else:
-                clust_counts[cl_idx] = n_move
-                clust_sums[cl_idx] = np.r_[B_a, B_b]
-                clust_members[cl_idx] = set(seg_idx)
-
-                for si in seg_idx:
-                    unassigned_segs.remove(si)
-                S.iloc[seg_idx, clust_col] = cl_idx
-
-            # track cluster assignment for segment(s)
-            if burned_in:
-                for seg in seg_idx:
-                    clusters_to_segs[seg].append(cur_clust if not move_clust else cl_idx)
+        # track cluster assignment for segment(s) (XXX: may not be necessary anymore)
+        if burned_in:
+            for seg in seg_idx:
+                clusters_to_segs[seg].append(choice if choice != -1 else max_clust_idx)
 
         # track global state of cluster assignments
         # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
