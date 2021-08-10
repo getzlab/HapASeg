@@ -170,6 +170,7 @@ def run_DP(S, seg_clust_prior = None):
         else:
             # it only makes sense to try joining two clusters if there are at least two of them!
             if len(clust_counts) < 2:
+                n_it += 1
                 continue
 
             cl_idx = np.random.choice(clust_counts.keys())
