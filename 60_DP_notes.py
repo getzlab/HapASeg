@@ -490,24 +490,43 @@ ax = plt.gca()
 ax.set_xlim([0, S["end_gp"].max()])
 ax.set_ylim([0, 1])
 
-for seg_assignments in s2c:
-    S_a = npg.aggregate(seg_assignments, S["min"])
-    S_b = npg.aggregate(seg_assignments, S["maj"])
+h_points = 72*ax.bbox.height/f1.dpi
 
-    for i, clust_idx in enumerate(seg_assignments):
-        r = S.iloc[i]
-        ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], S_a[clust_idx] + 1, S_b[clust_idx] + 1)
-        ax.add_patch(
-          mpl.patches.Rectangle(
-            (r["start_gp"], ci_lo),
-            r["end_gp"] - r["start_gp"],
-            ci_hi - ci_lo,
-            facecolor = colors[clust_idx % len(colors)],
-            fill = True,
-            zorder = 1000,
-            alpha = 1/10
-          )
+clust_u = np.unique(s2c)
+color_idx = dict(zip(clust_u, np.r_[0:len(clust_u)]))
+
+for seg_assignments, seg_phases in zip(s2c, ph):
+    # reset phases
+    S2 = S.copy()
+    S2.loc[S2["flipped"], ["min", "maj"]] = S2.loc[S2["flipped"], ["min", "maj"]].values[:, ::-1]
+
+    # match phases to current sample
+    S2.loc[seg_phases, ["min", "maj"]] = S2.loc[seg_phases, ["min", "maj"]].values[:, ::-1]
+
+    S_a = npg.aggregate(seg_assignments, S2["min"])
+    S_b = npg.aggregate(seg_assignments, S2["maj"])
+
+    print(ss.betaln(S_a + 1, S_b + 1).sum())
+
+    CIs = s.beta.ppf([0.025, 0.5, 0.975], S_a[:, None] + 1, S_b[:, None] + 1)
+
+    for su in np.unique(seg_assignments):
+        idx = seg_assignments == su
+
+        plt.plot(
+          np.c_[S2.loc[idx, "start_gp"], S2.loc[idx, "end_gp"], np.full(idx.sum(), np.nan)].ravel(),
+          (CIs[su, 1]*np.ones([idx.sum(), 3])).ravel(),
+          color = np.array(colors)[color_idx[su] % len(colors)],
+          linewidth = h_points*(CIs[su, 2] - CIs[su, 0]),
+          alpha = 1/50,
+          zorder = 1000
         )
+
+    # overlay SNPs
+    SNPs2 = SNPs.copy()
+    for _, st, en in S2.loc[seg_phases, ["SNP_st", "SNP_en"]].itertuples():
+        SNPs2.iloc[st:en, [0, 1]] = SNPs2.iloc[st:en, [1, 0]]
+    plt.scatter(SNPs2["gpos"], SNPs2["min"]/(SNPs2[["min", "maj"]].sum(1)), s = 0.01, color = 'k', zorder = 0, alpha = 0.05)
 
 # chromosome boundaries
 chrbdy = allelic_segs.dropna().loc[:, ["start", "end"]]
