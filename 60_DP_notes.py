@@ -122,6 +122,7 @@ def run_DP(S, seg_clust_prior = None):
     # containers for saving the MCMC trace
     clusters_to_segs = [[] for i in range(len(S))]
     segs_to_clusters = []
+    phase_orientations = []
 
     burned_in = False
 
@@ -387,11 +388,12 @@ def run_DP(S, seg_clust_prior = None):
         # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
         if burned_in and n_it - n_it_last > len(S)/(len(clust_counts)*2):
             segs_to_clusters.append(S["clust"].copy())
+            phase_orientations.append(S["flipped"].copy())
             n_it_last = n_it
 
         n_it += 1
 
-    return np.r_[segs_to_clusters]
+    return np.r_[segs_to_clusters], np.r_[phase_orientations]
 
 # map trace of segment cluster assignments to the SNPs within
 def map_seg_clust_assignments_to_SNPs(segs_to_clusters, S):
@@ -404,6 +406,16 @@ def map_seg_clust_assignments_to_SNPs(segs_to_clusters, S):
 
     return snps_to_clusters
 
+def map_seg_phases_to_SNPs(phase, S):
+    st_col = S.columns.get_loc("SNP_st")
+    en_col = S.columns.get_loc("SNP_en")
+    snps_to_phase = np.zeros((phase.shape[0], S.iloc[-1, en_col] + 1), dtype = int)
+    for i, phase_orient in enumerate(phase):
+        for j, ph in enumerate(phase_orient):
+            snps_to_phase[i, S.iloc[j, st_col]:S.iloc[j, en_col]] = ph
+
+    return snps_to_phase
+
 #
 # test code for running multiple iterations of DP, implementing prior on clustering 
 
@@ -412,6 +424,7 @@ N_clust_samps = 50
 N_SNPs = 11768
 
 snps_to_clusters = -1*np.ones((N_clust_samps*N_seg_samps, N_SNPs), dtype = np.int16)
+snps_to_phases = np.zeros((N_clust_samps*N_seg_samps, N_SNPs), dtype = bool)
 snp_counts = -1*np.ones((N_seg_samps, N_SNPs, 2))
 Segs = []
 
@@ -444,10 +457,14 @@ for n_it in range(10):
         S.loc[~np.isin(flip_frac, [0, 1]), "clust"] = -1
 
     # run clustering
-    s2c = run_DP(S, seg_clust_prior)
+    #s2c = run_DP(S, seg_clust_prior)
+    s2c, ph = run_DP(S, None)
 
     # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
     snps_to_clusters[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = map_seg_clust_assignments_to_SNPs(s2c, S)
+
+    # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
+    snps_to_phases[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = map_seg_phases_to_SNPs(ph, S)
 
     # adjust SNPs according to phase orientation for this sample
     for st, en in PIs:
@@ -455,7 +472,7 @@ for n_it in range(10):
 
     # get probability that individual SNPs are flipped, to use as probability for
     # flipping segments for next DP iteration
-    flipped = np.zeros(S.iloc[-1, S.columns.get_loc("SNP_en")] + 1, dtype = np.bool)
+    flipped = np.zeros(S.iloc[-1, S.columns.get_loc("SNP_en")] + 1, dtype = bool)
     for _, st, en in S.loc[S["flipped"], ["SNP_st", "SNP_en"]].itertuples():
         flipped[st:en] = True
 
@@ -597,9 +614,13 @@ clust_u = np.unique(snps_to_clusters)
 color_idx = dict(zip(clust_u, np.r_[0:len(clust_u)]))
 
 plt.figure(1337); plt.clf()
-for i, snp_assignments in enumerate(snps_to_clusters):
-    Seg = Segs[i//N_clust_samps]
+for i, (snp_assignments, phase_assignments) in enumerate(zip(snps_to_clusters, snps_to_phases)):
+    Seg = Segs[i//N_clust_samps].copy()
     seg_assignments = snp_assignments[Seg["SNP_st"]]
+    seg_phases = phase_assignments[Seg["SNP_st"]]
+
+    ph_idx = seg_phases != Seg["flipped"]
+    Seg.loc[ph_idx, ["min", "maj"]] = Seg.loc[ph_idx, ["min", "maj"]].values[:, ::-1]
 
     S_a = npg.aggregate(seg_assignments, Seg["min"])
     S_b = npg.aggregate(seg_assignments, Seg["maj"])
