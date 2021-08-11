@@ -90,7 +90,7 @@ def load_seg_sample(samp_idx):
 
     return S, pd.concat(all_SNPs, ignore_index = True), np.concatenate(all_BPs), np.concatenate(all_PIs)
 
-def run_DP(S, seg_clust_prior = None):
+def run_DP(S, seg_clust_prior = None, clust_prior = None):
     #
     # define column indices
     clust_col = S.columns.get_loc("clust")
@@ -116,7 +116,15 @@ def run_DP(S, seg_clust_prior = None):
     # for the first round, this is { 0 : {0} }
     unassigned_segs = sc.SortedList(S.index[S["clust"] == -1])
 
-    max_clust_idx = np.max(clust_members.keys())
+    # store likelihoods for each cluster in the prior (from previous iterations)
+    clust_prior_liks = None
+    clust_prior_mat = None
+    if clust_prior is not None:
+        clust_prior[-1] = np.r_[0, 0]
+        clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1, v[1] + 1) for k, v in clust_prior.items()})
+        clust_prior_mat = np.r_[clust_prior.values()]
+
+    max_clust_idx = np.max(clust_members.keys() | clust_prior.keys() if clust_prior is not None else {})
 
     # containers for saving the MCMC trace
     clusters_to_segs = [[] for i in range(len(S))]
@@ -260,27 +268,74 @@ def run_DP(S, seg_clust_prior = None):
 
         MLs_max = np.max(MLs)
 
-        count_prior = np.r_[0.1, clust_counts.values()]
+        #
+        # priors
+
+        # prior on previous cluster fractions
+
+        prior_diff = []
+        prior_com = []
+        clust_prior_p = 1
+        if clust_prior is not None: 
+            #
+            # divide prior into three sections:
+            # * clusters in prior not currently active (if picked, will open a new cluster with that ID)
+            # * clusters in prior currently active (if picked, will weight that cluster's posterior probability)
+            # * currently active clusters not in the prior (if picked, would weight cluster's posterior probability with prior probability of making brand new cluster)
+
+            # not currently active
+            prior_diff = clust_prior.keys() - clust_counts.keys()
+
+            # currently active clusters in prior
+            prior_com = clust_counts.keys() & clust_prior.keys()
+
+            # currently active clusters not in prior
+            prior_null = clust_counts.keys() - clust_prior.keys()
+
+            # order of prior vector:
+            # [-1 (totally new cluster), <prior_diff>, <prior_com + prior_null>]
+            prior_idx = np.r_[
+              np.r_[[clust_prior.index(x) for x in prior_diff]],
+              np.r_[[clust_prior.index(x) if x in clust_prior else 0 for x in (prior_com | prior_null)]]
+            ]
+
+            prior_MLs = ss.betaln( # prior clusters + segment
+              np.r_[clust_prior_mat[prior_idx, 0]] + B_a + 1,
+              np.r_[clust_prior_mat[prior_idx, 1]] + B_b + 1
+            ) \
+            - (ss.betaln(B_a + 1, B_b + 1) + np.r_[np.r_[clust_prior_liks.values()][prior_idx]]) # prior clusters, segment
+
+            clust_prior_p = np.maximum(np.exp(prior_MLs - prior_MLs.max())/np.exp(prior_MLs - prior_MLs.max()).sum(), 1e-300)
+
+            # expand MLs to account for multiple new clusters
+            MLs = np.r_[np.full(len(prior_diff), MLs[0]), MLs[1:]]
+            
+        # DP prior based on clusters sizes
+        count_prior = np.r_[np.full(len(prior_diff), 0.1/len(prior_diff)), clust_counts.values()]
         count_prior /= count_prior.sum()
 
         # choose to join a cluster or make a new one (choice_idx = 0) 
         T = 1 # temperature parameter for scaling choice distribution
-        choice_p = np.exp(T*(MLs - MLs_max + np.log(count_prior)))/np.exp(T*(MLs - MLs_max + np.log(count_prior))).sum()
+        choice_p = np.exp(T*(MLs - MLs_max + np.log(count_prior) + np.log(clust_prior_p)))/np.exp(T*(MLs - MLs_max + np.log(count_prior) + np.log(clust_prior_p))).sum()
         choice_idx = np.random.choice(
-          np.r_[0:(len(clust_counts) + 1)],
+          np.r_[0:len(MLs)],
           p = choice_p
         )
-        choice = np.r_[-1, clust_counts.keys()][choice_idx]
+        #choice = np.r_[-1, clust_counts.keys()][choice_idx]
+        # -1 = brand new, -2, -3, ... = -(prior clust index) - 2
+        choice = np.r_[-np.r_[prior_diff] - 2, clust_counts.keys()][choice_idx]
 
         # create new cluster
-        if choice == -1:
+        if choice < 0:
             # if we are moving an entire cluster, give it the same index it used to have
             # otherwise, cluster indices will be inconsistent
             if move_clust:
                 new_clust_idx = cl_idx
-            else:
+            elif choice == -1: # totally new cluster
                 max_clust_idx += 1
                 new_clust_idx = max_clust_idx
+            else: # match index of cluster in prior
+                new_clust_idx = -choice - 2
 
             clust_counts[new_clust_idx] = n_move
             S.iloc[seg_idx, clust_col] = new_clust_idx
