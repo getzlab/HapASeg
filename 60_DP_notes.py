@@ -601,6 +601,52 @@ ax2.set_yticklabels(["0:1", "1:1", "1:2", "1:3", "2:3", "1:4", "3:4", "1:5", "2:
 
 # }}}
 
+# histogram of segment assignments {{{
+
+_, s2cu = np.unique(s2c, return_inverse = True)
+s2cu = s2cu.reshape([50, -1])
+
+s2c_hist = np.zeros((s2cu.max() + 1, s2cu.shape[1]))
+for i in range(s2cu.shape[1]):
+    s2c_hist[:, i] = np.bincount(s2cu[:, i], minlength = s2cu.max() + 1)
+
+s2c_hist /= s2c_hist.sum(0)
+
+# make prior?
+S_a = np.zeros(s2c.max() + 1)
+S_b = np.zeros(s2c.max() + 1)
+for seg_assignments, seg_phases in zip(s2c, ph):
+    # reset phases
+    S2 = S.copy()
+    S2.loc[S2["flipped"], ["min", "maj"]] = S2.loc[S2["flipped"], ["min", "maj"]].values[:, ::-1]
+
+    # match phases to current sample
+    S2.loc[seg_phases, ["min", "maj"]] = S2.loc[seg_phases, ["min", "maj"]].values[:, ::-1]
+
+    S_a += npg.aggregate(seg_assignments, S2["min"], size = s2c.max() + 1)
+    S_b += npg.aggregate(seg_assignments, S2["maj"], size = s2c.max() + 1)
+
+S_a /= N_clust_samps
+S_b /= N_clust_samps
+
+c = np.c_[S_a, S_b]
+plt.figure(333); plt.clf()
+r = np.linspace(0, 1, 1000)
+for a, b in c[c.sum(1) > 0]:
+    plt.plot(r, s.beta.pdf(r, a + 1, b + 1))
+
+clust_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), c[c.sum(1) > 0]))
+
+a_t = 200; b_t = 70
+a_t = 200; b_t = 400
+prior = ss.betaln(a_t + c[c.sum(1) > 0, 0] + 1, b_t + c[c.sum(1) > 0, 1] + 1) - (ss.betaln(a_t + 1, b_t + 1) + ss.betaln(c[c.sum(1) > 0, 0] + 1, c[c.sum(1) > 0, 1] + 1))
+prior_norm = np.exp(prior)/np.exp(prior).sum()
+
+prior = ss.betaln(a_t + c[c.sum(1) > 0, 0] + 1, b_t + c[c.sum(1) > 0, 1] + 1) - (ss.betaln(a_t + 1, b_t + 1) + ss.betaln(c[c.sum(1) > 0, 0] + 1, c[c.sum(1) > 0, 1] + 1))
+prior_norm = np.exp(prior)/np.exp(prior).sum()
+
+# }}}
+
 #
 # multi DP iteration/multi segment sample plots {{{
 
