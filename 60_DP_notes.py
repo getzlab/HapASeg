@@ -90,7 +90,7 @@ def load_seg_sample(samp_idx):
 
     return S, pd.concat(all_SNPs, ignore_index = True), np.concatenate(all_BPs), np.concatenate(all_PIs)
 
-def run_DP(S, seg_clust_prior = None, clust_prior = None):
+def run_DP(S, seg_clust_prior = None, clust_prior = sc.SortedDict()):
     #
     # define column indices
     clust_col = S.columns.get_loc("clust")
@@ -117,12 +117,9 @@ def run_DP(S, seg_clust_prior = None, clust_prior = None):
     unassigned_segs = sc.SortedList(S.index[S["clust"] == -1])
 
     # store likelihoods for each cluster in the prior (from previous iterations)
-    clust_prior_liks = None
-    clust_prior_mat = None
-    if clust_prior is not None:
-        clust_prior[-1] = np.r_[0, 0]
-        clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1, v[1] + 1) for k, v in clust_prior.items()})
-        clust_prior_mat = np.r_[clust_prior.values()]
+    clust_prior[-1] = np.r_[0, 0]
+    clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1, v[1] + 1) for k, v in clust_prior.items()})
+    clust_prior_mat = np.r_[clust_prior.values()]
 
     max_clust_idx = np.max(clust_members.keys() | clust_prior.keys() if clust_prior is not None else {})
 
