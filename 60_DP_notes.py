@@ -635,13 +635,16 @@ ax2.set_yticklabels(["0:1", "1:1", "1:2", "1:3", "2:3", "1:4", "3:4", "1:5", "2:
 # histogram of segment assignments {{{
 
 _, s2cu = np.unique(s2c, return_inverse = True)
-s2cu = s2cu.reshape([50, -1])
+s2cu = s2cu.reshape([N_clust_samps, -1])
 
 s2c_hist = np.zeros((s2cu.max() + 1, s2cu.shape[1]))
 for i in range(s2cu.shape[1]):
     s2c_hist[:, i] = np.bincount(s2cu[:, i], minlength = s2cu.max() + 1)
 
 s2c_hist /= s2c_hist.sum(0)
+
+plt.figure(111); plt.clf()
+plt.imshow(s2c_hist, interpolation = "none", aspect = "auto")
 
 # make prior?
 S_a = np.zeros(s2c.max() + 1)
