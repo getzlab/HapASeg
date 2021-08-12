@@ -681,11 +681,17 @@ prior_norm = np.exp(prior)/np.exp(prior).sum()
 #
 # multi DP iteration/multi segment sample plots {{{
 
-clust_u = np.unique(snps_to_clusters)
-color_idx = dict(zip(clust_u, np.r_[0:len(clust_u)]))
+clust_u, clust_uj = np.unique(snps_to_clusters, return_inverse = True)
+color_idx = dict(zip(clust_u, np.argsort(np.bincount(clust_uj))[::-1]))
 
-plt.figure(1337); plt.clf()
-for i, (snp_assignments, phase_assignments) in enumerate(zip(snps_to_clusters, snps_to_phases)):
+f1 = plt.figure(1337); plt.clf()
+ax = plt.gca()
+ax.set_xlim([0, S["end_gp"].max()])
+ax.set_ylim([0, 1])
+
+h_points = 72*ax.bbox.height/f1.dpi
+
+for i, (snp_assignments, phase_assignments) in zip(np.r_[0:500:10], zip(snps_to_clusters[np.r_[0:500:10]], snps_to_phases[np.r_[0:500:10]])):
     Seg = Segs[i//N_clust_samps].copy()
     seg_assignments = snp_assignments[Seg["SNP_st"]]
     seg_phases = phase_assignments[Seg["SNP_st"]]
@@ -705,12 +711,16 @@ for i, (snp_assignments, phase_assignments) in enumerate(zip(snps_to_clusters, s
           np.c_[Seg.loc[idx, "start_gp"], Seg.loc[idx, "end_gp"], np.full(idx.sum(), np.nan)].ravel(),
           (CIs[su, 1]*np.ones([idx.sum(), 3])).ravel(),
           color = np.array(colors)[color_idx[su] % len(colors)],
-          linewidth = 1,
-          alpha = 0.1,
+          linewidth = h_points*(CIs[su, 2] - CIs[su, 0]),
+          alpha = 1/50,
           zorder = 1000
         )
 
-    plt.scatter(SNPs["gpos"], SNPs["min"]/(SNPs[["min", "maj"]].sum(1)), s = 0.01, color = 'k', zorder = 0, alpha = 0.1)
+    # overlay SNPs
+    SNPs2 = SNPs.copy()
+    for _, st, en in Seg.loc[seg_phases, ["SNP_st", "SNP_en"]].itertuples():
+        SNPs2.iloc[st:en, [0, 1]] = SNPs2.iloc[st:en, [1, 0]]
+    plt.scatter(SNPs2["gpos"], SNPs2["min"]/(SNPs2[["min", "maj"]].sum(1)), s = 0.01, color = 'k', zorder = 0, alpha = 0.05)
 
 # }}}
 
