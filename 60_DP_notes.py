@@ -457,7 +457,14 @@ for n_it in range(N_seg_samps):
     S_b /= N_clust_samps
 
     c = np.c_[S_a, S_b]
-    clust_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), c[c.sum(1) > 0]))
+
+    next_clust_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), c[c.sum(1) > 0]))
+    for k, v in next_clust_prior.items():
+        if k in clust_prior:
+            # iteratively update average
+            clust_prior[k] = clust_prior[k] + (v - clust_prior[k])/(n_it + 1)
+        else:
+            clust_prior[k] = v
 
     # get probability that individual SNPs are flipped, to use as probability for
     # flipping segments for next DP iteration
