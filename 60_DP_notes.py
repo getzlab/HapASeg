@@ -403,7 +403,9 @@ Segs = []
 seg_sample_idx = np.random.choice(N_clust_samps, N_seg_samps, replace = False) # FIXME: need to determine total number of segmentation samples
 seg_sample_idx = np.r_[47, 17, 27, 39, 23, 37,  3, 18, 42,  1]
 
-for n_it in range(10):
+clust_prior = sc.SortedDict()
+
+for n_it in range(N_seg_samps):
     S, SNPs, BPs, PIs = load_seg_sample(seg_sample_idx[n_it])
 
     # get prior on segments' cluster assignments, if we've already performed a clustering step
@@ -415,7 +417,6 @@ for n_it in range(10):
             seg_clust_prior[:, i] = np.bincount(snps_to_clusters[:N_clust_samps*n_it, r.SNP_st:r.SNP_en].ravel(), minlength = n_clust_bins)
 
         # initialize the cluster assignments in S based on the previous DP
-        np.random.choice(seg_clust_prior.shape[0], p = seg_clust_prior[:, 0]/seg_clust_prior[:, 0].sum())
         S["clust"] = [np.random.choice(seg_clust_prior.shape[0], p = x/x.sum()) for x in seg_clust_prior.T]
 
         # flip segments based on the previous DP
@@ -430,17 +431,33 @@ for n_it in range(10):
 
     # run clustering
     #s2c = run_DP(S, seg_clust_prior)
-    s2c, ph = run_DP(S, None)
+    s2c, ph = run_DP(S, None, clust_prior)
 
     # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
     snps_to_clusters[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = map_seg_clust_assignments_to_SNPs(s2c, S)
 
-    # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
+    # assign phase orientations to individual SNPs
     snps_to_phases[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = map_seg_phases_to_SNPs(ph, S)
 
-    # adjust SNPs according to phase orientation for this sample
-    for st, en in PIs:
-        SNPs.loc[st:en, ["maj", "min"]] = SNPs.loc[st:en, ["maj", "min"]].values[:, ::-1]
+    # compute prior on cluster locations
+    S_a = np.zeros(s2c.max() + 1)
+    S_b = np.zeros(s2c.max() + 1)
+    for seg_assignments, seg_phases in zip(s2c, ph):
+        # reset phases
+        S2 = S.copy()
+        S2.loc[S2["flipped"], ["min", "maj"]] = S2.loc[S2["flipped"], ["min", "maj"]].values[:, ::-1]
+
+        # match phases to current sample
+        S2.loc[seg_phases, ["min", "maj"]] = S2.loc[seg_phases, ["min", "maj"]].values[:, ::-1]
+
+        S_a += npg.aggregate(seg_assignments, S2["min"], size = s2c.max() + 1)
+        S_b += npg.aggregate(seg_assignments, S2["maj"], size = s2c.max() + 1)
+
+    S_a /= N_clust_samps
+    S_b /= N_clust_samps
+
+    c = np.c_[S_a, S_b]
+    clust_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), c[c.sum(1) > 0]))
 
     # get probability that individual SNPs are flipped, to use as probability for
     # flipping segments for next DP iteration
@@ -448,8 +465,14 @@ for n_it in range(10):
     for _, st, en in S.loc[S["flipped"], ["SNP_st", "SNP_en"]].itertuples():
         flipped[st:en] = True
 
+    """ {{{
+    # adjust SNPs according to phase orientation for this sample
+    for st, en in PIs:
+        SNPs.loc[st:en, ["maj", "min"]] = SNPs.loc[st:en, ["maj", "min"]].values[:, ::-1]
+
     # save rephased A/B counts for each SNP (may not end up needing this?)
     snp_counts[n_it, :, :] = SNPs.loc[:, ["maj", "min"]]
+    """ #}}}
 
     # save overall segmentation for this sample
     Segs.append(S)
