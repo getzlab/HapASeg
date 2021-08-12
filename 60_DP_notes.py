@@ -391,7 +391,7 @@ def map_seg_phases_to_SNPs(phase, S):
 #
 # test code for running multiple iterations of DP, implementing prior on clustering 
 
-N_seg_samps = 10
+N_seg_samps = 50
 N_clust_samps = 50
 N_SNPs = 11768
 
@@ -400,7 +400,7 @@ snps_to_phases = np.zeros((N_clust_samps*N_seg_samps, N_SNPs), dtype = bool)
 snp_counts = -1*np.ones((N_seg_samps, N_SNPs, 2))
 Segs = []
 
-seg_sample_idx = np.random.choice(N_clust_samps, N_seg_samps, replace = False) # FIXME: need to determine total number of segmentation samples
+seg_sample_idx = np.random.choice(100, N_seg_samps, replace = False) # FIXME: need to determine total number of segmentation samples (it's not necessarily 100!)
 seg_sample_idx = np.r_[47, 17, 27, 39, 23, 37,  3, 18, 42,  1]
 
 clust_prior = sc.SortedDict()
