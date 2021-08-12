@@ -578,8 +578,8 @@ ax.set_ylim([0, 1])
 
 h_points = 72*ax.bbox.height/f1.dpi
 
-clust_u = np.unique(s2c)
-color_idx = dict(zip(clust_u, np.r_[0:len(clust_u)]))
+clust_u, clust_uj = np.unique(s2c, return_inverse = True)
+color_idx = dict(zip(clust_u, np.argsort(np.bincount(clust_uj))[::-1]))
 
 for seg_assignments, seg_phases in zip(s2c, ph):
     # reset phases
