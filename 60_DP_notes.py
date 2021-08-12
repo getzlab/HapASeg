@@ -725,6 +725,35 @@ for i, (snp_assignments, phase_assignments) in zip(np.r_[0:500:10], zip(snps_to_
         SNPs2.iloc[st:en, [0, 1]] = SNPs2.iloc[st:en, [1, 0]]
     plt.scatter(SNPs2["gpos"], SNPs2["min"]/(SNPs2[["min", "maj"]].sum(1)), s = 0.01, color = 'k', zorder = 0, alpha = 0.05)
 
+#
+# plot on the SNP level
+
+f1 = plt.figure(1339); plt.clf()
+ax = plt.gca()
+ax.set_xlim([0, S["end_gp"].max()])
+ax.set_ylim([0, 1])
+
+snps_to_clusters_u = clust_uj.reshape([N_seg_samps, N_clust_samps, -1])
+
+for seg_samp, ph_samp in zip(snps_to_clusters_u, snps_to_phases.reshape([N_seg_samps, N_clust_samps, -1])):
+    snps_to_clusters_hist = np.zeros((seg_samp.max() + 1, N_SNPs))
+
+    for i in range(N_SNPs):
+        snps_to_clusters_hist[:, i] = np.bincount(seg_samp[:, i], minlength = seg_samp.max() + 1)
+
+    snps_to_clusters_hist /= snps_to_clusters_hist.sum(0)
+
+    # reset phases
+    SNPs2 = SNPs.copy()
+    flip_idx = ph_samp.mean(0) > np.random.rand(ph_samp.shape[1])
+    SNPs2.loc[flip_idx, ["maj", "min"]] = SNPs2.loc[flip_idx, ["maj", "min"]].values[:, ::-1]
+
+    for i, clust_row in enumerate(snps_to_clusters_hist):
+        plot_idx = np.flatnonzero(clust_row > 0.1)
+        if len(plot_idx) == 0:
+            continue
+        plt.scatter(SNPs2.loc[plot_idx, "gpos"], SNPs2.loc[plot_idx, "min"]/(SNPs2.loc[plot_idx, ["min", "maj"]].sum(1)), alpha = clust_row[plot_idx]/N_seg_samps, color = np.array(colors)[i % len(colors)], s = 0.1)
+
 # }}}
 
 # old scrap code
