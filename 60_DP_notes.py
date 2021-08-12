@@ -465,6 +465,10 @@ for n_it in range(N_seg_samps):
             clust_prior[k] = clust_prior[k] + (v - clust_prior[k])/(n_it + 1)
         else:
             clust_prior[k] = v
+    # for clusters that don't exist in this iteration, average them with 0
+    for k, v in clust_prior.items():
+        if k != -1 and k not in next_clust_prior:
+            clust_prior[k] -= clust_prior[k]/(n_it + 1)
 
     # get probability that individual SNPs are flipped, to use as probability for
     # flipping segments for next DP iteration
