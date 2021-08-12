@@ -90,7 +90,7 @@ def load_seg_sample(samp_idx):
 
     return S, pd.concat(all_SNPs, ignore_index = True), np.concatenate(all_BPs), np.concatenate(all_PIs)
 
-def run_DP(S, seg_clust_prior = None, clust_prior = sc.SortedDict()):
+def run_DP(S, seg_clust_prior = None, clust_prior = sc.SortedDict(), n_iter = 50):
     #
     # define column indices
     clust_col = S.columns.get_loc("clust")
@@ -132,7 +132,7 @@ def run_DP(S, seg_clust_prior = None, clust_prior = sc.SortedDict()):
 
     n_it = 0
     n_it_last = 0
-    while len(segs_to_clusters) < 50: # TODO: allow this to be tweaked
+    while len(segs_to_clusters) < n_iter:
         if not n_it % 1000:
             print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
             print("n unassigned: {}".format((S["clust"] == -1).sum()))
@@ -431,7 +431,7 @@ for n_it in range(N_seg_samps):
 
     # run clustering
     #s2c = run_DP(S, seg_clust_prior)
-    s2c, ph = run_DP(S, None, clust_prior)
+    s2c, ph = run_DP(S, None, clust_prior, n_iter = N_clust_samps)
 
     # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
     snps_to_clusters[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = map_seg_clust_assignments_to_SNPs(s2c, S)
