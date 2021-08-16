@@ -278,33 +278,34 @@ Up until now, we have assumed that all uncertainty is \textit{aleatoric} --- all
 
 \textit{(In-progress)}\\
 
-\noindent Once we have a final set of phase-corrected samples from the distribution over segmentations, we cluster non-adjacent segments using a procedure similar to the MCMC for joining/splitting adjacent segments. Draw a segmentation sample $\psi_i\sim\Psi$ comprising segments $S_{i,1},\dots, S_{i,j},\dots S_{i,N_i}\in \psi_i$. At each iteration of the clustering MCMC, a segment can propose to join another cluster or split off into a new cluster. Let $S$ be the segment to move, $C_s$ be the cluster that $S$ is currently part of, and $\mathbf C$ be the set of all possible clusters to join, i.e., $\mathbf{C} = \{C_1,\dots,C_{N_m}\}\setminus\{C_s\}$, where $m$ is the MCMC iteration number.
+\noindent Once we have a final set of phase-corrected samples from the distribution over segmentations, we cluster non-adjacent segments using a procedure similar to the MCMC for joining/splitting adjacent segments. Draw a segmentation sample $\psi_i\sim\Psi$ comprising segments $S^i_1,\dots, S^i_j,\dots S^i_{N_i}\in \psi_i$. At each iteration of the clustering MCMC, a segment can propose to join another cluster or split off into a new cluster. Let $S$ be the segment to move, $C_s$ be the cluster that $S$ is currently part of, and $\mathbf C$ be the set of all possible clusters to join, i.e., $\mathbf{C} = \{C_1,\dots,C_{N_m}\}\setminus\{C_s\}$, where $m$ is the MCMC iteration number.
 
-Denote the $\ell$th segment belonging to the $k$th cluster as $S^k_{i,\ell}\in C_k$. Let $A^k_\ell$ be the sum of reads belonging to haplotype $\mathcal A$ across all SNPs in $S^k_{i,\ell}$, and $B^k_\ell$ be the sum of reads belonging to haplotype $\mathcal B$. 
-The marginal likelihood of $C_k$ is a function of the sum of the phased alt/ref counts belonging to the segments within the cluster, i.e.
+Denote the $\ell$th segment belonging to the $k$th cluster as $S^i_{k,\ell}\in C^i_k$. Let $A^i_{k,\ell}$ be the sum of reads belonging to haplotype $\mathcal A$ across all SNPs in $S^i_{k,\ell}$, and $B^i_{k,\ell}$ be the sum of reads belonging to haplotype $\mathcal B$. 
+The marginal likelihood of $C^i_k$ is a function of the sum of the phased alt/ref counts belonging to the segments within the cluster, i.e.
 \begin{align*}
-\mathcal{M}(C_k) = \beta(\textstyle\sum_\ell A^k_\ell + 1, \textstyle\sum_\ell  B^k_\ell + 1).
+\mathcal{M}(C^i_k) = \beta(\textstyle\sum_\ell A^i_{k,\ell} + 1, \textstyle\sum_\ell  B^i_{k,\ell} + 1).
 \end{align*}
 It is analogous to the marginal likelihood defined in \eqref{psum_1}, but summing over allele counts in non-adjacent segments.
 
 \subsection{MCMC procedure}
+\label{DP_section}
 
-We initialize the MCMC with all segments $S_{i,1},\dots,S_{i,N_i}$ unassigned to any cluster. At each iteration of the MCMC, we perform the following steps:
+We initialize the MCMC with all segments $S^i_1,\dots,S^i_{N_i}$ unassigned to any cluster. Since the segmentation sample $i$ is constant across clustering iterations, we will omit it from subsequent terms for brevity. At each iteration of the MCMC, we perform the following steps:
 
 \begin{enumerate}
 \item Pick a segment $S$ at random. Compute the marginal likelihood of removing $S$ from $C_s$, the cluster it is already part of:
 \begin{align*}
-\mathcal{M}(C_s-S) = \beta(\textstyle\sum_\ell A^s_\ell - A_S + 1, \textstyle\sum_\ell B^s_\ell - B_S + 1),
+\mathcal{M}(C_s-S) = \beta(\textstyle\sum_\ell A_{s,\ell} - A_S + 1, \textstyle\sum_\ell B_{s,\ell} - B_S + 1),
 \end{align*}
-where $A_S$ and $B_S$ are the summed allele counts for $S$. If $S$ is not assigned to any cluster, then $\sum_\ell A_\ell^s = 0$ and $\sum_\ell B_\ell^s = 0$.
+where $A_S$ and $B_S$ are the summed allele counts for $S$. If $S$ is not yet assigned to any cluster, then $\sum_\ell A_{s,\ell} = 0$ and $\sum_\ell B_{s,\ell} = 0$.
 \item Compute the marginal likelihoods for every other possible cluster $C_k\in\mathbf{C}$ that $S$ can join,
 \begin{align*}
-\mathcal{M}(C_k) = \beta(\textstyle\sum_\ell A^k_{\ell} + 1, \textstyle\sum_\ell B^k_{\ell} + 1)\qquad \forall k\in\{1,\dots,N_m\}\setminus\{s\}.
+\mathcal{M}(C_k) = \beta(\textstyle\sum_\ell A_{k,\ell} + 1, \textstyle\sum_\ell B_{k,\ell} + 1)\qquad \forall k\in\{1,\dots,N_m\}\setminus\{s\}.
 \end{align*}
 If there are not yet any other clusters, skip to step \ref{newclust}.
 \item Compute the marginal likelihood of each $C_k\in\mathbf{C}$, if $S$ joins it:
 \begin{align*}
-\mathcal{M}(C_k+S) = \beta(\textstyle\sum_\ell A^k_{\ell} + A_S + 1, \textstyle\sum_\ell B^k_{\ell} + B_S + 1)\qquad \forall k\in\{1,\dots,N_m\}\setminus\{s\}
+\mathcal{M}(C_k+S) = \beta(\textstyle\sum_\ell A_{k,\ell} + A_S + 1, \textstyle\sum_\ell B_{k,\ell} + B_S + 1)\qquad \forall k\in\{1,\dots,N_m\}\setminus\{s\}
 \end{align*}
 \item The likelihood ratio of $S$ joining each $C_k$ is thus
 \begin{align*}
@@ -312,32 +313,75 @@ If there are not yet any other clusters, skip to step \ref{newclust}.
 &= \frac{\mathcal{M}(C_s-S)\times\mathcal{M}(C_k+S)}{\mathcal{M}(C_s)\times\mathcal{M}(C_k)}\qquad \forall k\in\{1,\dots,N_m\}\setminus\{s\}.
 \end{align*}
 The numerator is the joint likelihood of $S$ remaining in $C_s$ and $C_k$ existing as-is, and the denominator is the joint likelihood of $S$ being removed from $C_s$ and being added to $C_k$.
-\item \label{newclust} Finally, we define the marginal likelihood of $S$ joining a new cluster, $C_{N_m+1}$. This is the marginal likelihood of $S$ existing as the only member of a new cluster, $\mathcal{M}(C_{N_m+1}) = \mathcal{M}(S) = \beta(A_S+1,B_S+1)$. The likelihood ratio is then
+\item \label{newclust} Finally, we define the marginal likelihood of $S$ starting a new cluster, $C_{N_m+1}$. This is the marginal likelihood of $S$ existing as the only member of a new cluster, $\mathcal{M}(C_{N_m+1}) = \mathcal{M}(S) = \beta(A_S+1,B_S+1)$. The likelihood ratio is then
 \begin{align*}
 \mathcal{M}((C_s,C_k)\to (C_s-S,C_{N_m+1})) &\equiv\mathcal{M}(S\to C_{N_m+1})\\
 &= \frac{\mathcal{M}(C_s-S)\times\mathcal{M}(S)}{\mathcal{M}(C_s)\times\mathcal{M}(C_k)}.
 \end{align*}
 \end{enumerate}
 
-At each step of the MCMC, we construct a proposal distribution proportional to the likelihood ratios,
+We then construct a probability distribution proportional to the likelihood ratios,
 \begin{align*}
-q(S\to C_k|S\in C_s) = \frac{\mathcal{M}(S\to C_{k})}{\sum_{\kappa\in\{1,\dots,N_{m+1}\}\setminus\{s\}}\mathcal{M}(S\to C_{\kappa})},
+p(S\to C_k|S\in C_s) = \frac{\mathcal{M}(S\to C_{k})p_\text{CT}(S\to C_k)}{\sum_{\kappa\in\{1,\dots,N_{m+1}\}\setminus\{s\}}\mathcal{M}(S\to C_{\kappa})p_\text{CT}(S\to C_\kappa)},\btag{dp_gibbs}
 \end{align*}
-and probabilistically accept the proposed move according to the Metropolis criterion,
+where $p_\text{CT}(S\to C_k)$ is a prior probability of $S$ being part of $C_k$. In the manner of a Dirichlet process, we define this prior as proportional to the number of segments $n_k$ already assigned to $C_k$,
 \begin{align*}
-...
+p_\text{CT}(S\to C_k) = \begin{cases}
+\frac{n_k}{\alpha + \sum_k n_k} & k < N_m + 1\\
+\frac{\alpha}{\alpha + \sum_k n_k} & k = N_m + 1
+\end{cases},
 \end{align*}
+where $\alpha$ is a hyperparameter that governs the probability of opening a new cluster.
 
-To speed up the clustering, we can also propose joining two clusters, assuming at least two clusters exist. The marginal likelihood of combining clusters $C_{k_1}$ and $C_{k_2}$ is
+To speed up the clustering, we can also propose combining two clusters, assuming at least two clusters exist. The marginal likelihood of combining clusters $C_{k_1}$ and $C_{k_2}$ is
 \begin{align*}
-\mathcal{M}(C_{k_1}+C_{k_2})=\beta(\textstyle\sum_{\ell}A^{k_1}_\ell + \textstyle\sum_{\ell}A^{k_2}_\ell + 1,\textstyle\sum_{\ell}B^k_\ell + \textstyle\sum_{\ell}B^{k_2}_\ell + 1),
+\mathcal{M}(C_{k_1}+C_{k_2})=\beta(\textstyle\sum_{\ell}A_{k_1,\ell} + \textstyle\sum_{\ell}A_{k_2,\ell} + 1,\textstyle\sum_{\ell}B_{k,\ell} + \textstyle\sum_{\ell}B_{k_2,\ell} + 1),\btag{dpprior}
 \end{align*}
 so the likelihood ratio is
 \begin{align*}
 \mathcal{M}((C_{k_1},C_{k_2})\to C_{k_1}+C_{k_2}) = \frac{\mathcal{M}(C_{k_1}+C_{k_2})}{\mathcal{M}(C_{k_1})\times \mathcal{M}(C_{k_2})}.
 \end{align*}
 
-As with the procedure for assigning segments to clusters, we pick a cluster $C_{k_1}$ at random, enumerate the likelihood ratios of its joining all other clusters $C_{k_2}\in\{C_1,\dots,C_{N_m}\}\setminus\{C_{k_1}\}$, and probabilistically propose a cluster to join, with probability proportional to the likelihood ratios.
+As with the procedure for assigning segments to clusters, we pick a cluster $C_{k_1}$ at random, enumerate the likelihood ratios of its joining all other clusters $C_{k_2}\in\{C_1,\dots,C_{N_m}\}\setminus\{C_{k_1}\}$, and probabilistically join a cluster, with probability proportional to the likelihood ratios, weighted by the prior defined in \eqref{dpprior}.
+
+\subsection{Accounting for multiple segmentation samples}
+
+The above procedure applies to a single sample $\psi_i$ from the overall segmentation distribution $\Psi$, whose samples come from the MCMC described in Section \ref{MCMC_section}.
+
+We want to account for all segmentation samples $\psi_1,\dots,\psi_n\sim\Psi$. For the first sample $\psi_1$, we perform the first clustering $\mathcal{C}_{\psi_1}$ exactly as discussed in Section \ref{DP_section}. Over the course of the MCMC iterations (after some appropriate thinning between iterations), we record the total number of reads at iteration $m$ belonging to haplotype $\mathcal A$ in cluster $C_k$ as $A^i_{k_m} = \sum_\ell A^i_{k_m,\ell}$, and $B^i_{k_m} = \sum_\ell B^i_{k_m,\ell}$ analogously for haplotype $\mathcal B$.
+Denote the average counts for cluster $C_k$ over $M$ total MCMC iterations for the $i$th segmentation sample as
+\begin{align*}
+\bar{A}^i_k = \frac{1}{M}\sum_{m=1}^M A^i_{k_m}\qquad\bar{B}^i_k = \frac{1}{M}\sum_{m=1}^M B^i_{k_m}.
+\end{align*}
+%For all clusters $C^i_k \in \{C^i_1,\dots C^i_N\}$ that ever existed over the course of the MCMC for segmentation $\psi_i$,
+
+In each MCMC iteration of subsequent clusterings $\mathcal{C}_{\psi_i}$, $i > 1$, in addition to the marginal likelihood ratios computed in Section \ref{MCMC_section}, we also compute the marginal likelihood ratio that segment $S$ or cluster $C_k$ should have joined a cluster established in the previous iteration, i.e. in the case of a segment,
+\begin{align*}
+\mathcal{M}(S^i\to C^{i-1}_k) = \frac{\beta(A^i_S + \bar A^{i-1}_k + 1,B^i_S + \bar B^{i-1}_k + 1)}{\beta(A^i_S + 1, B^i_S + 1)\times\beta(\bar A^{i-1}_k + 1, \bar B^{i-1}_k + 1)},\btag{prior_ML}
+\end{align*}
+or in the case of a cluster,
+\begin{align*}
+\mathcal{M}((C^i_{k_1}, C^{i-1}_{k_2})\to C^i_{k_1} + C^{i-1}_{k_2}) = \frac{\beta(\sum_\ell A^i_{k_1,\ell} + \bar A^{i-1}_k + 1, \sum_\ell B^i_{k_1,\ell} + \bar B^{i-1}_k + 1)}{\beta(\sum_\ell A^i_{k_1,\ell} + 1, \sum_\ell B^i_{k_1,\ell} + 1)\times\beta(\bar A^{i-1}_k + 1, \bar B^{i-1}_k + 1)}.
+\end{align*}
+
+We compute the prior probability $p_\text{CL}(S^i\to C^{i-1}_k)$ in exactly the same way as the transition probability in \eqref{dp_gibbs}, namely
+\begin{align*}
+p_\text{CL}(S^i\to C^{i-1}_k) = \frac{\mathcal{M}(S^i\to C^{i-1}_k)}{\sum_k \mathcal{M}(S^i\to C^{i-1}_k)}. 
+\end{align*}
+
+We incorporate this prior into the transition probability \eqref{dp_gibbs}, such that the overall prior for joining a cluster is
+\begin{align*}
+p(S^i\to C^i_k) = p_\text{CT}(S^i\to C^i_k)\times p_\text{CL}(S^i \to C^{i-1}_k).
+\end{align*}
+If cluster $C^i_k$ did not exist in any previous clustering $\mathcal{C}_{\psi_1}\dots \mathcal{C}_{\psi_{i-1}}$, then the numerator of $p_\text{CL}$ is equivalent to opening a new cluster, which is \eqref{prior_ML} with $\bar A^{i-1}_k=0$ and $\bar B^{i-1}_k=0$
+\begin{align*}
+\mathcal{M}(S^i\to C^{i-1}_k|k\notin \mathcal{C}_{\psi_{i-1}}) = \frac{\beta(A^i_S + 1, B^i_S + 1)}{\beta(A^i_S + 1, B^i_S + 1)\times\beta(1,1)}=1.
+\end{align*}
+Likewise, if cluster $C^i_k$ does not exist in the current clustering $\mathcal{C}_{\psi_i}$, we set $p_\text{CL}(S^i\to C^i_k)$ equal to the average number of segments assigned to $C_k$ across all previous clusterings $\mathcal{C}_{\psi_1}\dots \mathcal{C}_{\psi_{i-1}}$.
+
+%Since the segments' boundaries will differ between $\psi_{i_1}$ and $\psi_{i_2}$, we aggregate the assignments of the SNPs within each segment.
+
+%For example, suppose segment $S_{11}$ in segmentation $\psi_1$ contains SNPs 1, 2, and 3, and $S_{12}$ contains SNPs 4 and 5.
 
 %    # B is segment/cluster to move
 %    # A is cluster B is currently part of
