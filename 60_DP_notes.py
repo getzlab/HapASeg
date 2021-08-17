@@ -90,7 +90,7 @@ def load_seg_sample(samp_idx):
 
     return S, pd.concat(all_SNPs, ignore_index = True), np.concatenate(all_BPs), np.concatenate(all_PIs)
 
-def run_DP(S, seg_clust_prior = None, clust_prior = sc.SortedDict(), n_iter = 50):
+def run_DP(S, seg_clust_prior = None, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50):
     #
     # define column indices
     clust_col = S.columns.get_loc("clust")
@@ -103,8 +103,17 @@ def run_DP(S, seg_clust_prior = None, clust_prior = sc.SortedDict(), n_iter = 50
     flip_col = S.columns.get_loc("flipped")
 
     #
-    # initialize cluster tracking hash tables
+    # initialize priors
 
+    # store likelihoods for each cluster in the prior (from previous iterations)
+    clust_prior[-1] = np.r_[0, 0]
+    clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1, v[1] + 1) for k, v in clust_prior.items()})
+    clust_prior_mat = np.r_[clust_prior.values()]
+
+    clust_count_prior[-1] = 0.1 # DP alpha factor, i.e. relative probability of opening new cluster (TODO: make specifiable)
+
+    #
+    # initialize cluster tracking hash tables
     clust_counts = sc.SortedDict(S["clust"].value_counts().drop(-1, errors = "ignore"))
     # for the first round of clustering, this is { 0 : 1 }
     clust_sums = sc.SortedDict({
@@ -308,7 +317,7 @@ def run_DP(S, seg_clust_prior = None, clust_prior = sc.SortedDict(), n_iter = 50
             MLs = np.r_[np.full(len(prior_diff), MLs[0]), MLs[1:]]
             
         # DP prior based on clusters sizes
-        count_prior = np.r_[np.full(len(prior_diff), 0.1/len(prior_diff)), clust_counts.values()]
+        count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_counts.values()]
         count_prior /= count_prior.sum()
 
         # choose to join a cluster or make a new one (choice_idx = 0) 
@@ -404,6 +413,7 @@ seg_sample_idx = np.random.choice(100, N_seg_samps, replace = False) # FIXME: ne
 seg_sample_idx = np.r_[47, 17, 27, 39, 23, 37,  3, 18, 42,  1]
 
 clust_prior = sc.SortedDict()
+clust_count_prior = sc.SortedDict()
 
 for n_it in range(N_seg_samps):
     S, SNPs, BPs, PIs = load_seg_sample(seg_sample_idx[n_it])
@@ -431,7 +441,7 @@ for n_it in range(N_seg_samps):
 
     # run clustering
     #s2c = run_DP(S, seg_clust_prior)
-    s2c, ph = run_DP(S, None, clust_prior, n_iter = N_clust_samps)
+    s2c, ph = run_DP(S, seg_clust_prior = None, clust_prior = clust_prior, clust_count_prior = clust_count_prior, n_iter = N_clust_samps)
 
     # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
     snps_to_clusters[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = map_seg_clust_assignments_to_SNPs(s2c, S)
@@ -439,9 +449,10 @@ for n_it in range(N_seg_samps):
     # assign phase orientations to individual SNPs
     snps_to_phases[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = map_seg_phases_to_SNPs(ph, S)
 
-    # compute prior on cluster locations
+    # compute prior on cluster locations/counts
     S_a = np.zeros(s2c.max() + 1)
     S_b = np.zeros(s2c.max() + 1)
+    N_c = np.zeros(s2c.max() + 1)
     for seg_assignments, seg_phases in zip(s2c, ph):
         # reset phases
         S2 = S.copy()
@@ -453,22 +464,40 @@ for n_it in range(N_seg_samps):
         S_a += npg.aggregate(seg_assignments, S2["min"], size = s2c.max() + 1)
         S_b += npg.aggregate(seg_assignments, S2["maj"], size = s2c.max() + 1)
 
+        N_c += npg.aggregate(seg_assignments, 1, size = s2c.max() + 1)
+
     S_a /= N_clust_samps
     S_b /= N_clust_samps
+    N_c /= N_clust_samps
 
     c = np.c_[S_a, S_b]
 
+#    if n_it > 1:
+#        break
+
     next_clust_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), c[c.sum(1) > 0]))
+    next_clust_count_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), N_c[N_c > 0]))
     for k, v in next_clust_prior.items():
         if k in clust_prior:
-            # iteratively update average
-            clust_prior[k] = clust_prior[k] + (v - clust_prior[k])/(n_it + 1)
+            clust_prior[k] += v
         else:
             clust_prior[k] = v
-    # for clusters that don't exist in this iteration, average them with 0
-    for k, v in clust_prior.items():
-        if k != -1 and k not in next_clust_prior:
-            clust_prior[k] -= clust_prior[k]/(n_it + 1)
+    for k, v in next_clust_count_prior.items():
+        if k in clust_count_prior:
+            clust_count_prior[k] += v
+        else:
+            clust_count_prior[k] = v
+# TODO: get iterative updating working. denominator isn't n_it; it's number of iterations this cluster has existed
+#    for k, v in next_clust_prior.items():
+#        if k in clust_prior:
+#            # iteratively update average
+#            clust_prior[k] += (v - clust_prior[k])/(n_it + 1)
+#        else:
+#            clust_prior[k] = v
+#    # for clusters that don't exist in this iteration, average them with 0
+#    for k, v in clust_prior.items():
+#        if k != -1 and k not in next_clust_prior:
+#            clust_prior[k] -= clust_prior[k]/(n_it + 1)
 
     # get probability that individual SNPs are flipped, to use as probability for
     # flipping segments for next DP iteration
