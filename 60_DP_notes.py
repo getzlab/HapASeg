@@ -400,7 +400,7 @@ def map_seg_phases_to_SNPs(phase, S):
 #
 # test code for running multiple iterations of DP, implementing prior on clustering 
 
-N_seg_samps = 50
+N_seg_samps = 10
 N_clust_samps = 50
 N_SNPs = 11768
 
@@ -516,6 +516,17 @@ for n_it in range(N_seg_samps):
 
     # save overall segmentation for this sample
     Segs.append(S)
+
+# quick visualization of prior
+plt.figure(1234); plt.clf()
+r = np.linspace(0, 1, 1000)
+for x in clust_prior.values():
+    plt.plot(r, s.beta.pdf(r, x[0] + 1, x[1] + 1))
+
+# quick visualization of SNP cluster assignments
+plt.figure(1235); plt.clf()
+_, s2cu = np.unique(snps_to_clusters, return_inverse = True)
+plt.imshow(s2cu.reshape([N_clust_samps*N_seg_samps, -1]), cmap = "jet", interpolation = "none", aspect = "auto")
 
 # Dirichlet marginal likelihood:
 
