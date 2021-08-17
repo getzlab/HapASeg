@@ -140,6 +140,8 @@ for i in range(100):
 plt.figure(3); plt.clf()
 # regressed coverage density
 plt.scatter(Cov_overlap.loc[~naidx, "start_g"], Pi@mu + C[:, [1]]@beta[[1], :], alpha = 1, s = 1)
+# original coverage density
+plt.scatter(Cov_overlap.loc[~naidx, "start_g"], np.log(r) - C[:, [0]], alpha = 1, s = 1)
 
 # regressed coverage
 plt.scatter(Cov_overlap.loc[~naidx, "start_g"], Pi@mu + C@beta, alpha = 1, s = 1)
