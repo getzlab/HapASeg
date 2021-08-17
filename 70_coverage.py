@@ -23,16 +23,14 @@ Cov["end_g"] = seq.chrpos2gpos(Cov["chr"], Cov["end"])
 # add covariates
 Cov["C_len"] = Cov["end"] - Cov["start"] + 1
 #Cov["C_GC"] = 
-#Cov["C_RT"] = 
 
-F = pd.read_csv("/mnt/j/proj/cnv/20201018_hapseg2/covars/GSE137764_H1_GaussiansGSE137764_mooth_scaled_autosome.mat", sep = "\t", header = None).T.rename(columns = { 0 : "chr", 1 : "start", 2 : "end" })
-F.iloc[:, 3:] = F.loc[:, 3:].astype(float)
-F.loc[:, ["start", "end"]] = F.loc[:, ["start", "end"]].astype(int)
-F["chr"] = mut.convert_chr(F["chr"])
-F.to_pickle("covars/GSE137764_H1.pickle")
+#
+# replication timing
 
+# load track
 F = pd.read_pickle("covars/GSE137764_H1.pickle")
 
+# map targets to RT intervals
 tidx = mut.map_mutations_to_targets(Cov.rename(columns = { "start" : "pos" }), F, inplace = False)
 Cov.loc[tidx.index, "C_RT"] = F.iloc[tidx, 3:].mean(1).values
 
