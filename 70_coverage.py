@@ -10,9 +10,11 @@ import sortedcontainers as sc
 
 from capy import mut, seq
 
+#
 # load DP clusters
 clust = np.load("exome/6_C1D1_META.DP_clusts.auto_ref_correct.overdispersion92.no_phase_correct.npz")
 
+#
 # load coverage
 Cov = pd.read_csv("exome/6_C1D1_META.cov", sep = "\t", names = ["chr", "start", "end", "covcorr", "covraw"])
 Cov["chr"] = mut.convert_chr(Cov["chr"])
@@ -20,7 +22,8 @@ Cov = Cov.loc[Cov["chr"] != 0]
 Cov["start_g"] = seq.chrpos2gpos(Cov["chr"], Cov["start"])
 Cov["end_g"] = seq.chrpos2gpos(Cov["chr"], Cov["end"])
 
-# add covariates
+#
+# add covariates {{{
 Cov["C_len"] = Cov["end"] - Cov["start"] + 1
 #Cov["C_GC"] = 
 
@@ -35,13 +38,30 @@ tidx = mut.map_mutations_to_targets(Cov.rename(columns = { "start" : "pos" }), F
 Cov.loc[tidx.index, "C_RT"] = F.iloc[tidx, 3:].mean(1).values
 
 # z-transform
-Cov["C_RT_z"] = (lambda x : x - np.nanmean(x)/np.nanstd(x))(np.log(Cov["C_RT"] + 1e-20))
+Cov["C_RT_z"] = (lambda x : (x - np.nanmean(x))/np.nanstd(x))(np.log(Cov["C_RT"] + 1e-20))
 
 # show RT vs. scaled coverage
 plt.figure(2); plt.clf()
 plt.scatter(Cov["start_g"], np.log(Cov["covcorr"]/Cov["C_len"]), s = 1, alpha = 0.1)
 plt.scatter(Cov["start_g"], 5*Cov["C_RT"] + 4, alpha = 0.1, s = 1)
 
+#
+# GC content
+
+B = pd.read_pickle("covars/GC.pickle")
+Cov = Cov.merge(B.rename(columns = { "gc" : "C_GC" }), left_on = ["chr", "start", "end"], right_on = ["chr", "start", "end"], how = "left")
+
+plt.figure(11); plt.clf()
+plt.scatter(Cov["C_GC"], Cov["covcorr"]/Cov["C_len"], alpha = 0.01, s = 1)
+
+Cov["C_GC_z"] = (lambda x : (x - np.nanmean(x))/np.nanstd(x))(np.log(Cov["C_GC"] + 1e-20))
+
+plt.figure(11); plt.clf()
+plt.scatter(Cov["C_GC_z"], Cov["covcorr"]/Cov["C_len"], alpha = 0.01, s = 1)
+
+# }}}
+
+#
 # load SNPs
 SNPs = pd.read_pickle("exome/6_C1D1_META.SNPs.pickle")
 SNPs["chr"], SNPs["pos"] = seq.gpos2chrpos(SNPs["gpos"])
@@ -84,7 +104,7 @@ Cov_overlap = Cov.loc[overlap_idx, :]
 r = np.c_[Cov_overlap["covcorr"]]
 
 # covariates
-C = np.c_[np.log(Cov_overlap["C_len"]), Cov_overlap["C_RT_z"]]
+C = np.c_[np.log(Cov_overlap["C_len"]), Cov_overlap["C_RT_z"], Cov_overlap["C_GC_z"]]
 
 # cluster assignments
 Pi = Cov_clust_probs_overlap.copy()
@@ -119,7 +139,7 @@ def hessmubeta(mu, beta, r, C, Pi):
 
 # initialize parameters
 mu = np.log(r.mean()*np.ones([Pi.shape[1], 1]))
-beta = np.c_[[1., -1.]]
+beta = np.ones([C.shape[1], 1])
 
 for i in range(100): 
     gmu = gradmu(mu, beta, r, C, Pi)
@@ -139,7 +159,7 @@ for i in range(100):
 # plot
 plt.figure(3); plt.clf()
 # regressed coverage density
-plt.scatter(Cov_overlap.loc[~naidx, "start_g"], Pi@mu + C[:, [1]]@beta[[1], :], alpha = 1, s = 1)
+plt.scatter(Cov_overlap.loc[~naidx, "start_g"], Pi@mu + C@beta - C[:, [0]], alpha = 1, s = 1)
 # original coverage density
 plt.scatter(Cov_overlap.loc[~naidx, "start_g"], np.log(r) - C[:, [0]], alpha = 1, s = 1)
 
