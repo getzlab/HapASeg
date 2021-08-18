@@ -155,6 +155,9 @@ for i in range(100):
     mu -= delta[0:len(mu)]
     beta -= delta[len(mu):]
 
+    if np.linalg.norm(grad) < 1e-5:
+        break
+
 #
 # plot
 plt.figure(3); plt.clf()
