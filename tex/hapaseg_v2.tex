@@ -81,9 +81,17 @@
 \begin{document}
 \noindent\textbf{\textsc{HapASeg}}\\
 \noindent\textsc{Julian Hess}\\
-\noindent 23 July 2021\\
+\noindent 16 August 2021\\
 
-\section{Intro}
+\section{Motivation}
+
+In order to perform cancer phylogenetic analyses, we need extremely accurate CNV calls, since phylogenetic analyses depend on accurate estimation of mutations' CCFs, which in turn depends on accurate estimation of the absolute/subclonal allelic copy numbers at the loci of each mutation. Calling absolute allelic copy number requires accurate calls for both total copy ratio (i.e., the relative amount of genomic mass at each genomic locus) and allelic imbalance (i.e., the relative abundance of one allele versus the other allele at each locus).
+
+Unfortunately, CNV callers have not kept pace with the demands of the field. I see two fundamental flaws with current CNV calling approaches. The first is that they use total copy ratio segmentation, as inferred from genomic coverage, as the primary signal. Genomic coverage carries many systematic biases, which cannot be easily corrected \textit{a priori}. A typical solution is to use a large panel of normals (PoN) to empirically correct for these biases---because these are assumed to be diploid almost everywhere, any systematic fluctuations in their coverage are due to technical artifacts. However, therein lies the second fundamental flaw: the panel of normals must be matched exactly to the sequencing technology and protocol being used to assay the tumor, since each protocol will have its own biases. Assembling PoNs can be tricky, since tumor samples are often of types not typical to normal samples (e.g., FFPE, cfDNA), and properly matching samples to a good PoN adds additional complexity to analyses.
+
+I propose to address this issue by using allelic imbalance segmentation as the primary signal. Allelic imbalance is much less prone to systematic biases, and by incorporating prior phasing information, is extremely robust even at low purities. We will first discuss methods for probabilistically segmenting allelic imbalance, clustering non-adjacent segments into discrete sample-wide levels of imbalance, and finally, leveraging these clusters as a strong prior for total copy ratio segmentation.
+
+\section{Allelic segmentation intro}
 
 Consider a set $\mathcal{S}$ of phased SNPs on haplotypes $\mathcal{A}$ and $\mathcal{B}$. SNP $i$ assigned to $\mathcal{A}$ has alternate read count $a_i$ and reference read count $b_i$, while SNP $j$ assigned to $\mathcal{B}$ has alternate read count $b_j$ and reference read count $a_j$. We can express the allelic imbalance $f$ of $\mathcal{S}$ in terms of the relative fraction of $\mathcal{A}$, which we call the ``haplotypic imbalance.'' In a diploid region of the genome, $f\approx 1/2$. In a triploid region with two copies of $\mathcal{A}$ and one copy of $\mathcal{B}$, $f\approx 2/3$.
 
@@ -112,7 +120,7 @@ Our goal is to find a good allelic segmentation. This requires finding the optim
 \end{align*}
 Unfortunately, for $N$ total SNPs, the total number of possible partitions is $2^N$. Luckily, the space of partitions is amenable to sampling via MCMC. While this won't give us the exact optimal partition, it gives us something even better: the posterior probability of segmentations.
 
-\section{MCMC}
+\section{Allelic segmentation MCMC}
 \label{MCMC_section}
 
 Initially, each SNP belongs to its own segment. At random, we pick two adjacent segments and probabilistically merge them according to the Metropolis criterion:
