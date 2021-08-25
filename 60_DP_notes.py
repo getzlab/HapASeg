@@ -794,6 +794,42 @@ for seg_samp, ph_samp in zip(snps_to_clusters_u, snps_to_phases.reshape([N_seg_s
             continue
         plt.scatter(SNPs2.loc[plot_idx, "gpos"], SNPs2.loc[plot_idx, "min"]/(SNPs2.loc[plot_idx, ["min", "maj"]].sum(1)), alpha = clust_row[plot_idx]/N_seg_samps, color = np.array(colors)[i % len(colors)], s = 0.1)
 
+#
+# plot segments
+
+f = plt.figure(1340); plt.clf()
+ax = plt.gca()
+ax.set_xlim([0, S["end_gp"].max()])
+ax.set_ylim([0, 1])
+
+for seg_samp, ph_samp in zip(snps_to_clusters_u, snps_to_phases.reshape([N_seg_samps, N_clust_samps, -1])): 
+    # reset phases
+    SNPs2 = SNPs.copy()
+    flip_idx = ph_samp.mean(0) > np.random.rand(ph_samp.shape[1])
+    SNPs2.loc[flip_idx, ["maj", "min"]] = SNPs2.loc[flip_idx, ["maj", "min"]].values[:, ::-1]
+
+    # for each clustering sample,
+    for dp_samp in seg_samp[::10, :]:
+        # get boundaries of contiguous DP assignments
+        bdy = np.flatnonzero(np.diff(np.r_[-1, dp_samp, -1]) != 0)
+        bdy = np.c_[bdy[:-1], bdy[1:]]
+        bdy[-1, 1] -= 1
+
+        # cluster assignments
+        clust_idx = dp_samp[bdy[:, 0]]
+
+        # coordinates
+        coords = np.c_[SNPs2.iloc[bdy[:, 0], -1], SNPs2.iloc[bdy[:, 1], -1]]
+
+        # CIs
+        for i, (st, en) in enumerate(bdy):
+            A = SNPs2.iloc[st:en, 1].sum()
+            B = SNPs2.iloc[st:en, 0].sum()
+            ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], A + 1, B + 1)
+
+            # plot segments
+            ax.add_patch(mpl.patches.Rectangle((coords[i, 0], ci_lo), coords[i, 1] - coords[i, 0], ci_hi - ci_lo, facecolor = colors[clust_idx[i] % len(colors)], fill = True, alpha = 0.01, zorder = 1000))
+
 # }}}
 
 # old scrap code
