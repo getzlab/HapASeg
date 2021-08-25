@@ -14,6 +14,9 @@ from capy import mut, seq
 # load DP clusters
 clust = np.load("exome/6_C1D1_META.DP_clusts.auto_ref_correct.overdispersion92.no_phase_correct.npz")
 
+# color info
+colors = mpl.cm.get_cmap("tab10").colors
+
 #
 # load coverage
 Cov = pd.read_csv("exome/6_C1D1_META.cov", sep = "\t", names = ["chr", "start", "end", "covcorr", "covraw"])
@@ -165,6 +168,18 @@ plt.figure(3); plt.clf()
 plt.scatter(Cov_overlap.loc[~naidx, "start_g"], Pi@mu + C@beta - C[:, [0]], alpha = 1, s = 1)
 # original coverage density
 plt.scatter(Cov_overlap.loc[~naidx, "start_g"], np.log(r) - C[:, [0]], alpha = 1, s = 1)
+
+plt.figure(34); plt.clf()
+# probabilistic regression
+for i, p in enumerate(Pi.T):
+    nzidx = p > 0
+    x = Cov_overlap.loc[~naidx, "start_g"].loc[nzidx]
+    plt.scatter(x, np.full(len(x), np.exp(mu[i])), alpha = p[nzidx]**4, s = 1, color = np.array(colors)[i % len(colors)])
+    #plt.scatter(x, np.full(len(x), np.exp(mu[i])), s = (p[nzidx])**2/10)
+plt.xlim((0.0, 2879000000.0))
+
+# overlay corrected target-wise coverage
+plt.scatter(Cov_overlap.loc[~naidx, "start_g"], np.exp(np.log(r) - C@beta), alpha = 0.5, s = 0.1, color = 'k')
 
 # regressed coverage
 plt.scatter(Cov_overlap.loc[~naidx, "start_g"], Pi@mu + C@beta, alpha = 1, s = 1)
