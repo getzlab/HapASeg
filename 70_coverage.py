@@ -109,6 +109,10 @@ r = np.c_[Cov_overlap["covcorr"]]
 # covariates
 C = np.c_[np.log(Cov_overlap["C_len"]), Cov_overlap["C_RT_z"], Cov_overlap["C_GC_z"]]
 
+# (experimenting with covariate subsets)
+#C = np.c_[np.log(Cov_overlap["C_len"]), Cov_overlap["C_GC_z"]]
+#C = np.c_[np.log(Cov_overlap["C_len"]), Cov_overlap["C_RT_z"]]
+
 # cluster assignments
 Pi = Cov_clust_probs_overlap.copy()
 
