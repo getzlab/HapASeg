@@ -81,11 +81,26 @@
 \begin{document}
 \noindent\textbf{\textsc{HapASeg}}\\
 \noindent\textsc{Julian Hess}\\
-\noindent 23 July 2021\\
+\noindent 16 August 2021\\
 
-\section{Intro}
+\section{Motivation}
 
-Consider a set $\mathcal{S}$ of phased SNPs on haplotypes $\mathcal{A}$ and $\mathcal{B}$. SNP $i$ assigned to $\mathcal{A}$ has alternate read count $a_i$ and reference read count $b_i$, while SNP $j$ assigned to $\mathcal{B}$ has alternate read count $b_j$ and reference read count $a_j$. We can express the allelic imbalance $f$ of $\mathcal{S}$ in terms of the relative fraction of $\mathcal{A}$, which we call the ``haplotypic imbalance.'' In a diploid region of the genome, $f\approx 1/2$. In a triploid region with two copies of $\mathcal{A}$ and one copy of $\mathcal{B}$, $f\approx 2/3$.
+In order to perform cancer phylogenetic analyses, we need extremely accurate CNV calls, since phylogenetic analyses depend on accurate estimation of mutations' CCFs, which in turn depends on accurate estimation of the absolute/subclonal allelic copy numbers at the loci of each mutation. Calling absolute allelic copy number requires accurate calls for both total copy ratio (i.e., the relative amount of genomic mass at each genomic locus) and allelic imbalance (i.e., the relative abundance of one allele versus the other allele at each locus).
+
+Unfortunately, CNV callers have not kept pace with the demands of the field. I see two fundamental flaws with current CNV calling approaches. The first is that they use total copy ratio segmentation, as inferred from genomic coverage, as the primary signal. Genomic coverage carries many systematic biases, which cannot be easily corrected \textit{a priori}. A typical solution is to use a large panel of normals (PoN) to empirically correct for these biases---because these are assumed to be diploid almost everywhere, any systematic fluctuations in their coverage are due to technical artifacts. However, therein lies the second fundamental flaw: the panel of normals must be matched exactly to the sequencing technology and protocol being used to assay the tumor, since each protocol will have its own biases. Assembling PoNs can be tricky, since tumor samples are often of types not typical to normal samples (e.g., FFPE, cfDNA), and properly matching samples to a good PoN adds additional complexity to analyses.
+
+I propose to address this issue by using allelic imbalance segmentation as the primary signal. Allelic imbalance is much less prone to systematic biases, and by incorporating prior phasing information, is extremely robust even at low purities. We will first discuss methods for probabilistically segmenting allelic imbalance, clustering non-adjacent segments into discrete sample-wide levels of imbalance, and finally, leveraging these clusters as a strong prior for total copy ratio segmentation.
+
+\section{Allelic segmentation intro}
+
+\begin{figure}
+\centering
+\includegraphics[trim={2cm 9cm 0 3cm},clip,width=10cm]{Figs/fig1.pdf}
+\caption{A depiction of how phased SNPs' readcounts get translated to phased allele counts $a$ and $b$.}
+\label{introfig}
+\end{figure}
+
+Consider a set $\mathcal{S}$ of phased SNPs on haplotypes $\mathcal{A}$ and $\mathcal{B}$. SNP $i$ assigned to $\mathcal{A}$ has alternate read count $a_i$ and reference read count $b_i$, while SNP $j$ assigned to $\mathcal{B}$ has alternate read count $b_j$ and reference read count $a_j$. We can express the allelic imbalance $f$ of $\mathcal{S}$ in terms of the relative fraction of $\mathcal{A}$, which we call the ``haplotypic imbalance.'' In a diploid region of the genome, $f\approx 1/2$. In a triploid region with two copies of $\mathcal{A}$ and one copy of $\mathcal{B}$, $f\approx 2/3$ (Figure \ref{introfig}).
 
 Assuming only aleatoric uncertainty, the likelihood of the haplotypic imbalance $f$ for all SNPs in $\mathcal{S}$ is
 \begin{align*}
@@ -112,7 +127,7 @@ Our goal is to find a good allelic segmentation. This requires finding the optim
 \end{align*}
 Unfortunately, for $N$ total SNPs, the total number of possible partitions is $2^N$. Luckily, the space of partitions is amenable to sampling via MCMC. While this won't give us the exact optimal partition, it gives us something even better: the posterior probability of segmentations.
 
-\section{MCMC}
+\section{Allelic segmentation MCMC}
 \label{MCMC_section}
 
 Initially, each SNP belongs to its own segment. At random, we pick two adjacent segments and probabilistically merge them according to the Metropolis criterion:
@@ -265,20 +280,20 @@ After burnin, we take another few MCMC samples and run the aforementioned phasin
 
 \section{Miscellaneous corrections}
 
+\textit{(not yet documented)}
+
 \subsection{Reference bias correction}
 
 \subsection{Overdispersion estimation}
 
-Up until now, we have assumed that all uncertainty is \textit{aleatoric} --- all noise on a segment likelihood $\mathcal{L}(f|A_{[s,e)},B_{[s,e)})$ is assumed to come from translating counts $A,B$ to a fraction $f$. However, this is not the only source of noise. 
+%Up until now, we have assumed that all uncertainty is \textit{aleatoric} --- all noise on a segment likelihood $\mathcal{L}(f|A_{[s,e)},B_{[s,e)})$ is assumed to come from translating counts $A,B$ to a fraction $f$. However, this is not the only source of noise. 
 
 %name other sources>
 %<once we have initial segmentation, we fit beta distribution to counts within each segment; average ratio (weighted by segment lengths)  of sum parameters to fit parameters is overdispersion factor
 
 \section{Non-adjacent segment clustering}
 
-\textit{(In-progress)}\\
-
-\noindent Once we have a final set of phase-corrected samples from the distribution over segmentations, we cluster non-adjacent segments using a procedure similar to the MCMC for joining/splitting adjacent segments. Draw a segmentation sample $\psi_i\sim\Psi$ comprising segments $S^i_1,\dots, S^i_j,\dots S^i_{N_i}\in \psi_i$. At each iteration of the clustering MCMC, a segment can propose to join another cluster or split off into a new cluster. Let $S$ be the segment to move, $C_s$ be the cluster that $S$ is currently part of, and $\mathbf C$ be the set of all possible clusters to join, i.e., $\mathbf{C} = \{C_1,\dots,C_{N_m}\}\setminus\{C_s\}$, where $m$ is the MCMC iteration number.
+Once we have a final set of phase-corrected samples from the distribution over segmentations, we cluster non-adjacent segments using a procedure similar to the MCMC for joining/splitting adjacent segments. Draw a segmentation sample $\psi_i\sim\Psi$ comprising segments $S^i_1,\dots, S^i_j,\dots S^i_{N_i}\in \psi_i$. At each iteration of the clustering MCMC, a segment can propose to join another cluster or split off into a new cluster. Let $S$ be the segment to move, $C_s$ be the cluster that $S$ is currently part of, and $\mathbf C$ be the set of all possible clusters to join, i.e., $\mathbf{C} = \{C_1,\dots,C_{N_m}\}\setminus\{C_s\}$, where $m$ is the MCMC iteration number.
 
 Denote the $\ell$th segment belonging to the $k$th cluster as $S^i_{k,\ell}\in C^i_k$. Let $A^i_{k,\ell}$ be the sum of reads belonging to haplotype $\mathcal A$ across all SNPs in $S^i_{k,\ell}$, and $B^i_{k,\ell}$ be the sum of reads belonging to haplotype $\mathcal B$. 
 The marginal likelihood of $C^i_k$ is a function of the sum of the phased alt/ref counts belonging to the segments within the cluster, i.e.
@@ -405,6 +420,94 @@ Likewise, if cluster $C^i_k$ does not exist in the current clustering $\mathcal{
 %
 %    #     L(join)  L(split)
 %    MLs = A + BC - (AB + C)
+
+\section{Total copy ratio segmentation}
+
+\textit{(in progress)}
+
+The final result of the aforementioned procedures yields, for each SNP, the probability that it belongs to a given level of allelic imbalance consistent across the sample (i.e., cluster). However, this is only half of the information needed for inferring allelic copy ratio, and in turn absolute allelic copy number. We also need the total copy ratio at each SNP. This is inferred from the overall genomic coverage in intervals spanning the SNPs---typically uniform windows for whole genomes, individual exons for whole exomes---which is ideally proportional to the total amount of genomic mass within each interval.
+
+This problem is confounded by the fact that genomic coverage is systematically biased by both known (e.g., GC content, replication timing, mappability, common germline CNVs) and unknown factors. These are typically addressed via a PoN; 
+%The typical way we address this is by normalizing coverage against a panel of normal samples (PoN); because these are assumed to be diploid almost everywhere, any systematic fluctuations in their coverage are due to technical artifacts. However, the panel of normals must be matched exactly to the sequencing technology and protocol being used to assay the tumor, since each protocol will have its own biases. Assembling PoNs can be tricky, since tumor samples are often of types not typical to normal samples (e.g., FFPE, cfDNA), and properly matching samples to a good PoN adds additional complexity to analyses.
+we can avoid this by self-normalizing within a tumor sample. All genomic regions at the same level of allelic imbalance will have the same total copy ratio, modulo balanced gains/losses, i.e., genome doubling or copy-neutral loss of heterozygosity (CNLoH). Thus, in a sample without any doubling/CNLoH, the average coverage across regions having the same allelic imbalance will robustly estimate the total amount of genomic mass belonging to that region, since it will average over individual intervals' noise.
+
+\subsection{Simple model: no balanced events}
+
+\begin{figure}
+\centering
+\includegraphics[trim={1cm 13cm 0 3cm},clip,width=10cm]{Figs/fig2.pdf}
+\caption{Using allelic imbalance to determine regions that should have the same average coverage, in the absence of balanced events. (Assumes unambiguous assignment of SNPs to clusters, so each $\vec\pi_i$ is one-hot.)}
+\label{NormFig}
+\end{figure}
+
+In the top panel of Figure \ref{NormFig}, we show a sample with three levels of allelic imbalance at $f=1/2$, $2/3$, and $1$. If there are no balanced gains/losses, these respectively correspond to allelic copy numbers of $1/1$ (i.e., diploid), $2/1$ (i.e., gain of one allele), and $1/0$ (i.e., loss of one allele). We can thus estimate the total copy ratio of each cluster via the total genomic coverage within each cluster. We improve this estimate by regressing out known technical factors that bias coverage.
+
+We achieve this via Poisson regression. Assuming genomic coverage is (overdispersed) Poisson distributed across intervals, then the number of reads in the $i$th interval $r_i$ can be modeled as
+\begin{align*}
+r_i \sim \textop{Pois}(\exp(\vec\mu\cdot\vec \pi_i + \vec\beta\cdot\vec c_i + \epsilon_i))\qquad \epsilon_i\sim p(\theta),\btag{poiss0}
+\end{align*}
+where $\vec\pi_i$ is the average cluster assignment probability across all SNPs $S_{i,1},\dots,S_{i,M}$ within interval $i$, i.e.
+\begin{align*}
+\vec \pi_i=\frac{1}{M}\lt[\sum_{m=1}^M\textop{Pr}[S_{i,m}\in C_1],\dots,\sum_{m=1}^M\textop{Pr}[S_{i,m}\in C_N]\rt],
+\end{align*}
+with each assignment probability inferred from the clustering procedure described in the previous section. $\vec\mu$ is a free parameter, whose $j$th element corresponds to the mean coverage of each interval within cluster $C_j$. $\vec\beta$ corresponds to the multiplicative effects covariates $\vec c_i$ have on coverage. $\epsilon_i$ is an optional latent random variable representing overdispersion, parameterized by $\theta$.
+
+The likelihood of this model is
+\begin{align*}
+\mathcal{L}(\vec \mu,\vec\beta,\theta|\{r_i\},\{\vec \pi_i\},\{\vec c_i\}) = \prod_i \int_{\varepsilon} d\epsilon_i \textop{Pois}(r_i;\exp(\vec\mu\cdot\vec \pi_i + \vec\beta\cdot\vec c_i + \epsilon_i))p(\epsilon_i|\theta).
+\end{align*}
+If we assume no overdispersion, $p(\epsilon|\theta)=1$ and this is an ordinary Poisson regression; the maximum likelihood estimate for the parameters can be easily found via Newton-Raphson optimization. If we add overdispersion, then we should either pick $p(\epsilon_i|\theta)$ such that the integral has closed form (e.g., make it a gamma distribution) or such that a good numerical approximation of the integral has a closed form (e.g., make it a log-normal distribution).
+
+After fitting this model, $\vec\mu\cdot\vec\pi_i$ yields the normalized log coverage for the $i$th interval, after regressing out technical covariates. We show this in the bottom panel of Figure \ref{NormFig}. Note that for simplicity, we assume that each SNP is unambiguously assigned to a cluster, so each $\vec\pi_i$ has one element with probability 1 and every other element with probability 0 (i.e., it is one hot). In reality, while most SNPs will have nearly unambiguous cluster assignments, they are probabilistically assigned, so each interval's expected coverage is also actually probabilistic.
+
+\subsection{Accounting for balanced events}
+
+\begin{figure}
+\centering
+\includegraphics[trim={1.5cm 20cm 6.5cm 3cm},clip,width=10cm]{Figs/fig2.pdf}
+\includegraphics[trim={2.5cm 1cm 5cm 21cm},clip,width=10cm]{Figs/fig2.pdf}
+\caption{In the case of balanced events (highlighted in yellow), we cannot assume that the mean coverage for the allelic imbalance cluster the balanced event belongs to will accurately represent its coverage.}
+\label{BalancedNormFig}
+\end{figure}
+
+The aforementioned model only works in the absence of balanced copy number events (i.e., doubling/CNLoH). For example, if a genomic region gains one copy of each haplotype, it will have the same allelic imbalance as a region without the gain but up to double the genomic mass (if the doubling is clonal). Likewise, a region with CNLoH will have the same allelic imbalance as a region with only one allele.
+
+We therefore cannot assume that there is a one-to-one correspondence between levels of allelic imbalance and levels of total copy ratio (Figure \ref{BalancedNormFig}). To account for this, we need to perform an additional round of segmentation on the normalized coverage.
+
+The proposed procedure for this is as follows. Initially, assume that each interval belongs to its own segment by adding an additional $\mu_i$ term to \eqref{poiss0},
+\begin{align*}
+r_i \sim \textop{Pois}(\exp(\vec\mu\cdot\vec \pi_i + \mu_i + \vec\beta\cdot\vec c_i + \epsilon_i)).
+\end{align*}
+
+The likelihood of our model is thus
+\begin{align*}
+\mathcal{L}(\vec \mu,\vec\beta,\{\mu_i\},\theta|\{r_i\},\{\vec \pi_i\},\{\vec c_i\}) = \prod_i \underbrace{\int_{\varepsilon} d\epsilon_i \textop{Pois}(r_i;\exp(\vec\mu\cdot\vec \pi_i + \mu_i + \vec\beta\cdot\vec c_i + \epsilon_i))p(\epsilon_i|\theta)}_{p(r_i|\vec\mu,\mu_i,\vec \beta,\vec \pi_i, \vec c_i)}.
+\end{align*}
+
+To perform inference on this model, we first fit the simplified model of the previous section, i.e., initialize all $\mu_i$ terms to 0, and optimize $\vec\mu$, $\vec\beta$, and optionally $\theta$, if we are adding overdispersion. We then pick two adjacent intervals $r_j$, $r_{j+1}$ at random, and optimize the likelihood if they are joined,
+\begin{align*}
+\mathcal{L}(\vec \mu,\vec\beta,\mu_{j,j+1},\theta|\{r_i\},\{\vec \pi_i\},\{\vec c_i\}) &= p(r_j|\vec\mu, \mu_{j,j+1},\vec\beta,\vec \pi_j, \vec c_j)\times p(r_{j+1}|\vec\mu, \mu_{j,j+1},\vec\beta,\vec \pi_{j+1}, \vec c_{j+1})\\
+&\phantom{{}=}\times\prod_{i\notin\{j,j+1\}} p(r_i|\vec\mu, \mu_i,\vec\beta,\vec \pi_i, \vec c_i).\btag{seg_join}
+%\mathcal{L}(\vec \mu,\vec\beta,\mu_{j,j+1},\theta|\{r_i\}) &= \phantom{{}\times{}}\int_{\varepsilon} d\epsilon_j \textop{Pois}(r_j;\exp(\vec\mu\cdot\vec p_j + \mu_{j,j+1} + \vec\beta\cdot\vec c_j + \epsilon_j))p(\epsilon_j|\theta)\\
+%&\phantom{{}={}}\times\int_{\varepsilon} d\epsilon_{j+1}\textop{Pois}(r_{j+1};\exp(\vec\mu\cdot\vec p_{j+1} + \mu_{j,j+1} + \vec\beta\cdot\vec c_{j+1} + \epsilon_{j+1}))p(\epsilon_{j+1}|\theta)\\
+%&\phantom{{}={}}\times\prod_{i\notin\{j,j+1\}} \int_{\varepsilon} d\epsilon_i \textop{Pois}(\exp(\vec\mu\cdot\vec p_i + \vec\beta\cdot\vec c_i + \epsilon_i))p(\epsilon_i|\theta).
+\end{align*}
+Note that $\mu_{j,j+1}$ is shared between the first two terms. Conversely, the likelihood that they are split is
+\begin{align*}
+\mathcal{L}(\vec \mu,\vec\beta,\mu_{j},\mu_{j+1},\theta|\{r_i\},\{\vec \pi_i\},\{\vec c_i\}) &= p(r_j|\vec\mu, \mu_{j},\vec\beta,\vec \pi_j, \vec c_j)\times p(r_{j+1}|\vec\mu, \mu_{j+1},\vec\beta,\vec \pi_{j+1}, \vec c_{j+1})\\
+&\phantom{{}=}\times\prod_{i\notin\{j,j+1\}} p(r_i|\vec\mu, \mu_i,\vec\beta,\vec \pi_i, \vec c_i).\btag{seg_split}
+\end{align*}
+Here, note that $\mu_j$ and $\mu_{j+1}$ are distinct parameters in the first two terms.
+
+We then compute the marginal likelihoods of \eqref{seg_split} and \eqref{seg_join},
+\begin{align*}
+\mathcal{M}(\text{join}) &= \int d\vec\mu\,d\vec\beta\,d\mu_{j,j+1}\,d\theta\, \mathcal{L}(\vec \mu,\vec\beta,\mu_{j},\mu_{j+1},\theta|\{r_i\},\{\vec \pi_i\},\{\vec c_i\})\\
+\mathcal{M}(\text{split}) &= \int d\vec\mu\,d\vec\beta\,d\mu_{j}\,d\mu_{j+1}\,d\theta\, \mathcal{L}(\vec \mu,\vec\beta,\mu_{j},\mu_{j+1},\theta|\{r_i\},\{\vec \pi_i\},\{\vec c_i\})
+\end{align*}
+and probabilistically join the adjacent intervals with probability
+\begin{align*}
+p(\text{join}) = \frac{\mathcal{M}(\text{join})}{\mathcal{M}(\text{join})+\mathcal{M}(\text{split})}.
+\end{align*}
 
 %$p(S_{i,j}
 
