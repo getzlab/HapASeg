@@ -166,38 +166,45 @@ for i in range(100):
         break
 
 #
-# plot
-plt.figure(3); plt.clf()
-# regressed coverage density
-plt.scatter(Cov_overlap.loc[~naidx, "start_g"], Pi@mu + C@beta - C[:, [0]], alpha = 1, s = 1)
-# original coverage density
-plt.scatter(Cov_overlap.loc[~naidx, "start_g"], np.log(r) - C[:, [0]], alpha = 1, s = 1)
+# plots
 
-plt.figure(34); plt.clf()
-# probabilistic regression
+#
+# regressed coverage density
+plt.figure(3); plt.clf()
+_, axs = plt.subplots(3, 1, sharex = True, sharey = True, num = 3)
+axs[0].scatter(Cov_overlap.loc[~naidx, "start_g"], np.exp(np.log(r) - C[:, [0]]@beta[[0]]), alpha = 1, s = 1)
+axs[0].set_title("Raw coverage density")
+
+axs[1].scatter(Cov_overlap.loc[~naidx, "start_g"], np.exp(np.log(r) - C@beta), alpha = 1, s = 1)
+axs[1].set_title("Corrected coverage density")
+
+axs[2].scatter(Cov_overlap.loc[~naidx, "start_g"], np.exp(np.log(r) - C@beta), s = 0.1, color = 'k')
+
 for i, p in enumerate(Pi.T):
     nzidx = p > 0
     x = Cov_overlap.loc[~naidx, "start_g"].loc[nzidx]
-    plt.scatter(x, np.full(len(x), np.exp(mu[i])), alpha = p[nzidx]**4, s = 1, color = np.array(colors)[i % len(colors)])
-    #plt.scatter(x, np.full(len(x), np.exp(mu[i])), s = (p[nzidx])**2/10)
+    axs[2].scatter(x, np.full(len(x), np.exp(mu[i])), alpha = p[nzidx]**4, s = 1, color = np.array(colors)[i % len(colors)])
+axs[2].set_title("Inferred coverage for each target")
+
 plt.xlim((0.0, 2879000000.0))
-
-# overlay corrected target-wise coverage
-plt.scatter(Cov_overlap.loc[~naidx, "start_g"], np.exp(np.log(r) - C@beta), alpha = 0.5, s = 0.1, color = 'k')
-
-# regressed coverage
-plt.scatter(Cov_overlap.loc[~naidx, "start_g"], Pi@mu + C@beta, alpha = 1, s = 1)
+plt.ylim([0, 400])
 
 # residuals
-plt.scatter(Cov_overlap.loc[~naidx, "start_g"], np.log(r) - (C@beta + Pi@mu), alpha = 1, s = 1)
+plt.figure(444); plt.clf()
+plt.scatter(Cov_overlap.loc[~naidx, "start_g"], np.exp(np.log(r) - (C@beta + Pi@mu)), alpha = 1, s = 1)
+plt.title("Residual coverage")
 
 # predicted vs. residuals
 plt.figure(4); plt.clf()
-plt.scatter(Pi@mu + C@beta, np.log(r - np.exp(Pi@mu + C@beta)), alpha = 0.5, s = 1)
+plt.scatter(Pi@mu + C@beta, np.log(r) - (Pi@mu + C@beta), alpha = 0.5, s = 1)
+plt.xlabel("Predicted log coverage density")
+plt.ylabel("Residuals")
 
 # observed vs. predicted
 plt.figure(5); plt.clf()
 plt.scatter(np.log(r), Pi@mu + C@beta, alpha = 0.5, s = 1)
+plt.xlabel("Observed coverage")
+plt.ylabel("Predicted coverage")
 
 #
 # interpolate
