@@ -231,7 +231,7 @@ Cov_clust_probs_interp = Cov_clust_probs_interp[:, prune_idx]
 r_int = np.c_[Cov["covcorr"]]
 
 # covariates
-C_int = np.c_[np.log(Cov["C_len"]), Cov["C_RT_z"]]
+C_int = np.c_[np.log(Cov["C_len"]), Cov["C_RT_z"], Cov["C_GC_z"]]
 
 # cluster assignments
 Pi_int = Cov_clust_probs_interp.copy()
@@ -243,5 +243,22 @@ C_int = C_int[~naidx]
 Pi_int = Pi_int[~naidx]
 
 plt.figure(33); plt.clf()
-# regressed coverage density
 plt.scatter(Cov.loc[~naidx, "start_g"], Pi_int@mu + C_int[:, [1]]@beta[[1], :], alpha = 1, s = 1)
+
+_, axs = plt.subplots(3, 1, sharex = True, sharey = True, num = 33)
+axs[0].scatter(Cov.loc[~naidx, "start_g"], np.exp(np.log(r_int) - C_int[:, [0]]@beta[[0]]), alpha = 1, s = 1)
+axs[0].set_title("Raw coverage density")
+
+axs[1].scatter(Cov.loc[~naidx, "start_g"], np.exp(np.log(r_int) - C_int@beta), alpha = 1, s = 1)
+axs[1].set_title("Corrected coverage density")
+
+axs[2].scatter(Cov.loc[~naidx, "start_g"], np.exp(np.log(r_int) - C_int@beta), s = 0.1, color = 'k')
+
+for i, p in enumerate(Pi_int.T):
+    nzidx = p > 0
+    x = Cov.loc[~naidx, "start_g"].loc[nzidx]
+    axs[2].scatter(x, np.full(len(x), np.exp(mu[i])), alpha = p[nzidx]**4, s = 1, color = np.array(colors)[i % len(colors)])
+axs[2].set_title("Inferred coverage for each target")
+
+plt.xlim((0.0, 2879000000.0))
+plt.ylim([0, 400])
