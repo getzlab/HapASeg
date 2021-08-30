@@ -13,16 +13,15 @@ sys.path.append(".")
 import hapaseg
 
 
-#
-# load in Corcoran IO workspace
+# ## load in Corcoran IO workspace
 
 WM = dalmatian.WorkspaceManager("corcoran-sada/Corcoran_IO_resistance")
 P = WM.get_pairs()
 S = WM.get_samples()
 
-#
-# grab a low purity Corcoran exome
+# ## grab a low purity Corcoran exome
 
+# +
 # get callstats file
 subprocess.check_call("gsutil cp " + P.loc["18144_6_C1D1_CFDNA_BB", 'MUTECT1_CS_SNV'] + " exome", shell = True)
 
@@ -38,11 +37,13 @@ subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_CFDNA_BB", "case_
 # /mnt/j/proj/cnv/20210326_coverage_collector/covcollect -b /mnt/j/proj/cnv/20201018_hapseg2/exome/18144_6_C1D1_ctDNA.bam \
 # -i targets.bed -o exome/18144_6_C1D1_ctDNA.cov
 
+# -
+
 # phasing performed in another script I haven't yet exported
 
-# run
+# ## Run
 
-c = dd.Client(n_workers = 36)
+# ### Load SNPs/phasing info
 
 refs = hapaseg.load.HapasegReference(
   phased_VCF = "exome/eagle.vcf",
@@ -51,8 +52,8 @@ refs = hapaseg.load.HapasegReference(
   allele_counts_N = "exome/6_C1D1_CFDNA.normal.tsv"
 )
 
-#
-# add overdispersion (empirically estimated at ~0.92)
+# ### add overdispersion (empirically estimated at ~0.92)
+
 refs.allele_counts[[
   "REF_COUNT",
   "ALT_COUNT",
@@ -62,6 +63,10 @@ refs.allele_counts[[
   "MIN_COUNT"
 ]] *= 0.92
 
+# ### Run segmentation
+
+# +
+c = dd.Client(n_workers = 36)
 runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
   refs.allele_counts,
   refs.chromosome_intervals,
@@ -71,9 +76,9 @@ runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
 allelic_segs = runner.run_all()
 
 allelic_segs.to_pickle("exome/6_C1D1_CFDNA.allelic_segs.auto_ref_correct.overdispersion92.no_phase_correct.pickle")
+# -
 
-#
-# get a higher purity exome from the same individual
+# ## get a higher purity exome from the same individual
 
 # get callstats file
 subprocess.check_call("gsutil cp " + P.loc["18144_6_C1D1_tissue_DNA", 'MUTECT1_CS_SNV'] + " exome", shell = True)
@@ -84,7 +89,6 @@ subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_tissue_DNA", "cas
 
 # genotyping/coverage collection/phasing performed in another script I haven't yet exported
 
-c = dd.Client(n_workers = 36)
 
 refs = hapaseg.load.HapasegReference(
   phased_VCF = "exome/6_C1D1_META.eagle.vcf",
@@ -93,8 +97,8 @@ refs = hapaseg.load.HapasegReference(
   allele_counts_N = "exome/6_C1D1_META.normal.tsv"
 )
 
-#
-# add overdispersion (empirically estimated at ~0.92)
+# ### add overdispersion (empirically estimated at ~0.92)
+
 refs.allele_counts[[
   "REF_COUNT",
   "ALT_COUNT",
@@ -104,6 +108,10 @@ refs.allele_counts[[
   "MIN_COUNT"
 ]] *= 0.92
 
+# ### Run segmentation
+
+# +
+c = dd.Client(n_workers = 36)
 runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
   refs.allele_counts,
   refs.chromosome_intervals,
@@ -113,9 +121,9 @@ runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
 allelic_segs = runner.run_all()
 
 allelic_segs.to_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.no_phase_correct.pickle")
+# -
 
-#
-# (scrap code): debug why reverting intervals in F won't restore us to the original state
+# ### (scrap code): debug why reverting intervals in F won't restore us to the original state
 
 refs = hapaseg.load.HapasegReference(phased_VCF = "exome/6_C1D1_META.eagle.vcf", allele_counts = "exome/6_C1D1_META.tumor.tsv")
 
