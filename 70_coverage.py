@@ -56,7 +56,7 @@ plt.scatter(Cov["C_RT_z"], np.log(Cov["covcorr"]/Cov["C_len"]), s = 1, alpha = 0
 plt.xlim([-2.5, 2.5]);
 plt.ylim([4, 7]);
 plt.xlabel("Replication timing (z-score)")
-plt.ylabel("Log coverage density")
+plt.ylabel("Log coverage density");
 
 # ## GC content
 
@@ -71,7 +71,7 @@ plt.scatter(Cov["C_GC_z"], np.log(Cov["covcorr"]/Cov["C_len"]), alpha = 0.01, s 
 plt.xlim([-0.5, 0.5]);
 plt.ylim([4, 7]);
 plt.xlabel("GC content (z-score)")
-plt.ylabel("Log coverage density")
+plt.ylabel("Log coverage density");
 
 # ## GC content vs. RT
 
@@ -80,7 +80,7 @@ plt.scatter(Cov["C_GC_z"], Cov["C_RT_z"], alpha = 0.01, s = 1)
 plt.xlim([-0.75, 0.75])
 plt.ylim([-5, 5])
 plt.xlabel("GC content (z-score)")
-plt.ylabel("Replication timing (z-score)")
+plt.ylabel("Replication timing (z-score)");
 
 # Covariates are correlated, but not to a problematic degree.
 
