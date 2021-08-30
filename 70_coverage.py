@@ -91,17 +91,17 @@ plt.ylabel("Replication timing (z-score)")
 SNPs = pd.read_pickle("exome/6_C1D1_META.SNPs.pickle")
 SNPs["chr"], SNPs["pos"] = seq.gpos2chrpos(SNPs["gpos"])
 
-# ## Map to targets
+# ### Map to targets
 
 SNPs["tidx"] = mut.map_mutations_to_targets(SNPs, Cov, inplace = False)
 # TODO: handle NaN's better
 
-# ## Generate unique clust assignments
+# ### Generate unique clust assignments
 
 clust_u, clust_uj = np.unique(clust["snps_to_clusters"], return_inverse = True)
 clust_uj = clust_uj.reshape(clust["snps_to_clusters"].shape)
 
-# ## Assign coverage intervals to clusters
+# ### Assign coverage intervals to clusters
 # +
 Cov_clust_probs = np.zeros([len(Cov), clust_u.max()])
 
@@ -111,25 +111,25 @@ for targ, snp_idx in SNPs.groupby("tidx").indices.items():
     Cov_clust_probs[int(targ), :] = targ_clust_hist/targ_clust_hist.sum()
 # -
 
-# ## Subset to intervals containing SNPs
+# ### Subset to intervals containing SNPs
 
 overlap_idx = Cov_clust_probs.sum(1) > 0
 Cov_clust_probs_overlap = Cov_clust_probs[overlap_idx, :]
 
-# ## Prune improbable assignments
+# ### Prune improbable assignments
 
 Cov_clust_probs_overlap[Cov_clust_probs_overlap < 0.05] = 0
 Cov_clust_probs_overlap /= Cov_clust_probs_overlap.sum(1)[:, None]
 prune_idx = Cov_clust_probs_overlap.sum(0) > 0
 Cov_clust_probs_overlap = Cov_clust_probs_overlap[:, prune_idx]
 
-# ## Plot cluster assignment probabilities
+# ### Plot cluster assignment probabilities
 
 plt.figure(1, figsize = [19.2, 5.39]); plt.clf()
 plt.imshow(Cov_clust_probs_overlap[:, Cov_clust_probs_overlap.sum(0) > 0].T, aspect = "auto", interpolation = "none", cmap = "jet")
 cb = plt.colorbar();
 cb.set_label("Cluster assignment probability");
-plt.xlabel("SNP index");
+plt.xlabel("Target index");
 plt.ylabel("DP cluster index");
 
 # # Poisson regression
