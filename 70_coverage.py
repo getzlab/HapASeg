@@ -264,6 +264,48 @@ plt.ylim([0, 400]);
 #
 # This also means that the majority of the red LoH cluster is copy-neutral, owing to how close it is to the brown cluster.
 
+# ## Allelic copy ratio
+
+# #### Get average total min/maj counts of each DP cluster
+
+# +
+min_tots = np.zeros(clust_uj.max() + 1)
+maj_tots = np.zeros(clust_uj.max() + 1)
+for clusts, phases in zip(clust_uj, clust["snps_to_phases"]):
+    # reset phases
+    SNPs2 = SNPs.copy()
+    SNPs2.iloc[phases, [0, 1]] = SNPs2.iloc[phases, [1, 0]]
+
+    maj_tots += npg.aggregate(clusts, SNPs2["maj"], size = clust_uj.max() + 1)
+    min_tots += npg.aggregate(clusts, SNPs2["min"], size = clust_uj.max() + 1)
+
+min_tots /= clust_uj.shape[0]
+maj_tots /= clust_uj.shape[0]
+# -
+
+# #### Remove DP clusters that had overall low assignment probabilities
+
+f_prune = (min_tots/(min_tots + maj_tots))[np.flatnonzero(prune_idx)]
+
+# ####  Plot
+
+# +
+plt.figure(4, figsize = [19.2, 5.39]); plt.clf()
+for i, p in enumerate(Pi.T):
+    nzidx = p > 0
+    x = Cov_overlap.loc[~naidx, "start_g"].loc[nzidx]
+    plt.scatter(x, np.full(len(x), np.exp(mu[i])*f_prune[i]), alpha = p[nzidx]**4, s = 1, color = np.array(colors)[i % len(colors)])
+    plt.scatter(x, np.full(len(x), np.exp(mu[i])*(1 - f_prune[i])), alpha = p[nzidx]**4, s = 1, color = np.array(colors)[i % len(colors)])
+
+for chrbdy in chr_ends[:-1]:
+    plt.axvline(chrbdy, color = 'k')
+    
+plt.xlim((0.0, 2879000000.0));
+plt.ylim([0, 400]);
+# -
+
+# Looks like a comb is starting to come together nicely, despite the fact that the coverage segmentation does not yet account for balanced gains! We can clearly see that balanced segments (brown segments at n = 1) are a little too high, not properly accounting for a genome doubled region somewhere.
+
 # ## Residuals
 
 plt.figure(444); plt.clf()
