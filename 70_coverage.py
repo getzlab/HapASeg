@@ -34,7 +34,7 @@ Cov["C_len"] = Cov["end"] - Cov["start"] + 1
 
 # +
 # load track
-F = pd.read_pickle("covars/GSE137764_H1.pickle")
+F = pd.read_pickle("covars/GSE137764_H1.hg19_liftover.pickle")
 
 # map targets to RT intervals
 tidx = mut.map_mutations_to_targets(Cov.rename(columns = { "start" : "pos" }), F, inplace = False)
@@ -42,6 +42,15 @@ Cov.loc[tidx.index, "C_RT"] = F.iloc[tidx, 3:].mean(1).values
 
 # z-transform
 Cov["C_RT_z"] = (lambda x : (x - np.nanmean(x))/np.nanstd(x))(np.log(Cov["C_RT"] + 1e-20))
+
+# hg38 (original track)
+F38 = pd.read_pickle("covars/GSE137764_H1.hg38.pickle")
+
+# map targets to RT intervals
+tidx = mut.map_mutations_to_targets(Cov.rename(columns = { "start" : "pos" }), F38, inplace = False)
+Cov.loc[tidx.index, "C_RT38"] = F38.iloc[tidx, 3:].mean(1).values
+
+Cov["C_RT38_z"] = (lambda x : (x - np.nanmean(x))/np.nanstd(x))(np.log(Cov["C_RT38"] + 1e-20))
 # -
 
 # ### RT vs. coverage density
@@ -49,7 +58,18 @@ Cov["C_RT_z"] = (lambda x : (x - np.nanmean(x))/np.nanstd(x))(np.log(Cov["C_RT"]
 plt.figure(2, figsize = [19.2, 5.39]); plt.clf()
 plt.scatter(Cov["start_g"], np.log(Cov["covcorr"]/Cov["C_len"]), s = 1, alpha = 0.1)
 plt.scatter(Cov["start_g"], 5*Cov["C_RT"] + 4, alpha = 0.1, s = 1)
-plt.legend(["Coverage density", "Replication timing"])
+plt.scatter(Cov["start_g"], 5*Cov["C_RT38"] + 4, alpha = 0.1, s = 1)
+#plt.legend(["Coverage density", "Replication timing"], loc = "")
+
+plt.figure()
+plt.scatter(Cov["C_RT_z"], np.log(Cov["covcorr"]/Cov["C_len"]), s = 1, alpha = 0.05)
+plt.xlim([-2.5, 2.5]);
+plt.ylim([4, 7]);
+
+plt.figure()
+plt.scatter(Cov["C_RT38_z"], np.log(Cov["covcorr"]/Cov["C_len"]), s = 1, alpha = 0.05)
+plt.xlim([-1, 1]);
+plt.ylim([4, 7]);
 
 # ## GC content
 
