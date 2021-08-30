@@ -47,8 +47,8 @@ subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_CFDNA_BB", "case_
 # ### Load SNPs/phasing info
 
 refs = hapaseg.load.HapasegReference(
-  phased_VCF = "exome/eagle.vcf",
-  readbacked_phased_VCF = "exome/whatshap.vcf",
+  phased_VCF = "exome/6_C1D1_CFDNA.eagle.vcf",
+  readbacked_phased_VCF = "exome/6_C1D1_CFDNA.whatshap.vcf",
   allele_counts = "exome/6_C1D1_CFDNA.tumor.tsv",
   allele_counts_N = "exome/6_C1D1_CFDNA.normal.tsv"
 )
