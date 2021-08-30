@@ -247,7 +247,9 @@ plt.xlim((0.0, 2879000000.0));
 plt.ylim([0, 400]);
 # -
 
-# Segment colors correspond to their DP cluster. Looking at the allelic imbalance segementation, the red DP cluster is LoH; the brown cluster is balanced. There are some regions of genome doubling, which is why the brown cluster is sitting a little higher than most targets' coverage density
+# Segment colors correspond to their DP cluster. Looking at the allelic imbalance segementation, the red DP cluster is LoH; the brown cluster is balanced. There are some regions of genome doubling, which is why the brown cluster is sitting a little higher than the coverage densities of most targets it overlaps.
+#
+# This also means that the majority of the red LoH cluster is copy-neutral, owing to how close it is to the brown cluster.
 
 # ## Residuals
 
@@ -256,12 +258,16 @@ plt.scatter(Cov_overlap.loc[~naidx, "start_g"], np.exp(np.log(r) - (C@beta + Pi@
 plt.xlabel("Genomic position")
 plt.ylabel("Residual coverage");
 
+# Residuals are much lower than I would have expected.
+
 # ## Predicted vs. residuals
 
 plt.figure(4); plt.clf()
 plt.scatter(Pi@mu + C@beta, np.log(r) - (Pi@mu + C@beta), alpha = 0.5, s = 1)
 plt.xlabel("Predicted log coverage density")
 plt.ylabel("Residual coverage");
+
+# We observe no bias of predicted coverage versus residuals.
 
 # ## Observed vs. predicted
 
@@ -270,7 +276,9 @@ plt.scatter(np.log(r), Pi@mu + C@beta, alpha = 0.5, s = 1)
 plt.xlabel("Observed coverage (log)")
 plt.ylabel("Predicted coverage (log)");
 
-# Scrap code below; interpolate coverage to targets that don't contain SNPs
+# Regression model is surprisingly accurate.
+
+# #### Scrap code below; interpolate coverage to targets that don't contain SNPs
 
 bdy = np.unique(np.r_[0, np.flatnonzero(overlap_idx), len(Cov_clust_probs)])
 bdy = np.c_[bdy[:-1], bdy[1:]]
