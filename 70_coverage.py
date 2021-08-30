@@ -55,6 +55,8 @@ plt.figure()
 plt.scatter(Cov["C_RT_z"], np.log(Cov["covcorr"]/Cov["C_len"]), s = 1, alpha = 0.05)
 plt.xlim([-2.5, 2.5]);
 plt.ylim([4, 7]);
+plt.xlabel("Replication timing (z-score)")
+plt.ylabel("Log coverage density")
 
 # ## GC content
 
@@ -65,9 +67,11 @@ Cov["C_GC_z"] = (lambda x : (x - np.nanmean(x))/np.nanstd(x))(np.log(Cov["C_GC"]
 # ### GC content vs. coverage density
 
 plt.figure(11); plt.clf()
-plt.scatter(Cov["C_GC"], Cov["covcorr"]/Cov["C_len"], alpha = 0.01, s = 1)
-plt.xlim([0.2,0.8]);
-plt.ylim([0,600]);
+plt.scatter(Cov["C_GC_z"], np.log(Cov["covcorr"]/Cov["C_len"]), alpha = 0.01, s = 1)
+plt.xlim([-0.5, 0.5]);
+plt.ylim([4, 7]);
+plt.xlabel("GC content (z-score)")
+plt.ylabel("Log coverage density")
 
 # }}}
 
