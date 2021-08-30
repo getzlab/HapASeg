@@ -299,9 +299,12 @@ for i, p in enumerate(Pi.T):
 
 for chrbdy in chr_ends[:-1]:
     plt.axvline(chrbdy, color = 'k')
-    
+
+plt.xlabel("Genomic position")
+plt.ylabel("Coverage of major/minor alleles")
+
 plt.xlim((0.0, 2879000000.0));
-plt.ylim([0, 400]);
+plt.ylim([0, 300]);
 # -
 
 # Looks like a comb is starting to come together nicely, despite the fact that the coverage segmentation does not yet account for balanced gains! We can clearly see that balanced segments (brown segments at n = 1) are a little too high, not properly accounting for a genome doubled region somewhere.
