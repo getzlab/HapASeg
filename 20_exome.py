@@ -1,4 +1,5 @@
 import dalmatian
+import dask.distributed as dd
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -8,11 +9,19 @@ import subprocess
 import sys
 from wolf import fc
 
-# grab a low purity Corcoran exome
+sys.path.append(".")
+import hapaseg
+
+
+#
+# load in Corcoran IO workspace
 
 WM = dalmatian.WorkspaceManager("corcoran-sada/Corcoran_IO_resistance")
 P = WM.get_pairs()
 S = WM.get_samples()
+
+#
+# grab a low purity Corcoran exome
 
 # get callstats file
 subprocess.check_call("gsutil cp " + P.loc["18144_6_C1D1_CFDNA_BB", 'MUTECT1_CS_SNV'] + " exome", shell = True)
@@ -22,74 +31,28 @@ subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_CFDNA_BB", "case_
 subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_CFDNA_BB", "case_sample"], "crai_or_bai_path"] + " exome", shell = True)
 
 # pulldown het sites
-/mnt/j/proj/cnv/20200909_hetpull/hetpull.py -c exome/18144_6_C1D1_CFDNA_BB.MuTect1.call_stats.txt \
- -s /mnt/j/db/hg19/gnomad/ACNV_sites/gnomAD_MAF1.txt -r /mnt/j/db/hg19/ref/hs37d5.fa -o exome/6_C1D1_CFDNA -g
+# /mnt/j/proj/cnv/20200909_hetpull/hetpull.py -c exome/18144_6_C1D1_CFDNA_BB.MuTect1.call_stats.txt \
+# -s /mnt/j/db/hg19/gnomad/ACNV_sites/gnomAD_MAF1.txt -r /mnt/j/db/hg19/ref/hs37d5.fa -o exome/6_C1D1_CFDNA -g
 
 # get coverage
+# /mnt/j/proj/cnv/20210326_coverage_collector/covcollect -b /mnt/j/proj/cnv/20201018_hapseg2/exome/18144_6_C1D1_ctDNA.bam \
+# -i targets.bed -o exome/18144_6_C1D1_ctDNA.cov
 
-
-
+# phasing performed in another script I haven't yet exported
 
 # run
-sys.path.append(".")
-import hapaseg
-
-import dask.distributed as dd
 
 c = dd.Client(n_workers = 36)
 
-refs = hapaseg.load.HapasegReference(phased_VCF = "exome/eagle.vcf", readbacked_phased_VCF = "exome/whatshap.vcf", allele_counts = "exome/6_C1D1_CFDNA.tumor.tsv")
-
-runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
-  refs.allele_counts,
-  refs.chromosome_intervals,
-  c,
-  phase_correct = False,
-  misphase_prior = 3e-3,
-  _ref_bias = 0.936 # tmp: will be automatically inferred later
+refs = hapaseg.load.HapasegReference(
+  phased_VCF = "exome/eagle.vcf",
+  readbacked_phased_VCF = "exome/whatshap.vcf",
+  allele_counts = "exome/6_C1D1_CFDNA.tumor.tsv",
+  allele_counts_N = "exome/6_C1D1_CFDNA.normal.tsv"
 )
-allelic_segs = runner.run_all()
-
-#allelic_segs.to_pickle("exome/allelic_segs.no_phase_corr.pickle")
-allelic_segs = pd.read_pickle("exome/allelic_segs.no_phase_corr.pickle")
-allelic_segs2 = pd.read_pickle("exome/allelic_segs.pickle")
-
-allelic_segs["results"].iloc[0].visualize()
-allelic_segs["results"].iloc[1].visualize()
 
 #
-# another Corc exome
-
-# get callstats file
-subprocess.check_call("gsutil cp " + P.loc["18144_6_C1D1_tissue_DNA", 'MUTECT1_CS_SNV'] + " exome", shell = True)
-
-# get BAM/BAI
-subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_tissue_DNA", "case_sample"], "cram_or_bam_path"] + " exome", shell = True)
-subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_tissue_DNA", "case_sample"], "crai_or_bai_path"] + " exome", shell = True)
-
-import hapaseg
-
-import dask.distributed as dd
-
-c = dd.Client(n_workers = 36)
-c = dd.Client()
-
-refs = hapaseg.load.HapasegReference(phased_VCF = "exome/6_C1D1_META.eagle.vcf", allele_counts = "exome/6_C1D1_META.tumor.tsv", allele_counts_N = "exome/6_C1D1_META.normal.tsv")
-
-runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
-  refs.allele_counts,
-  refs.chromosome_intervals,
-  c,
-  #phase_correct = False,
-  misphase_prior = 3e-3,
-)
-allelic_segs = runner.run_all()
-
-#allelic_segs.to_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.pickle")
-allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.pickle")
-
-#
-# add overdispersion (~0.92)
+# add overdispersion (empirically estimated at ~0.92)
 refs.allele_counts[[
   "REF_COUNT",
   "ALT_COUNT",
@@ -103,17 +66,56 @@ runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
   refs.allele_counts,
   refs.chromosome_intervals,
   c,
-  #phase_correct = False,
-  misphase_prior = 3e-3,
+  phase_correct = False
 )
 allelic_segs = runner.run_all()
 
-#allelic_segs.to_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.pickle")
-#allelic_segs.to_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.no_phase_correct.pickle")
-allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.pickle")
+allelic_segs.to_pickle("exome/6_C1D1_CFDNA.allelic_segs.auto_ref_correct.overdispersion92.no_phase_correct.pickle")
 
 #
-# debug why reverting intervals in F won't restore us to the original state
+# get a higher purity exome from the same individual
+
+# get callstats file
+subprocess.check_call("gsutil cp " + P.loc["18144_6_C1D1_tissue_DNA", 'MUTECT1_CS_SNV'] + " exome", shell = True)
+
+# get BAM/BAI
+subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_tissue_DNA", "case_sample"], "cram_or_bam_path"] + " exome", shell = True)
+subprocess.check_call("gsutil cp " + S.loc[P.loc["18144_6_C1D1_tissue_DNA", "case_sample"], "crai_or_bai_path"] + " exome", shell = True)
+
+# genotyping/coverage collection/phasing performed in another script I haven't yet exported
+
+c = dd.Client(n_workers = 36)
+
+refs = hapaseg.load.HapasegReference(
+  phased_VCF = "exome/6_C1D1_META.eagle.vcf",
+  # read-backed phasing not yet performed for this sample
+  allele_counts = "exome/6_C1D1_META.tumor.tsv",
+  allele_counts_N = "exome/6_C1D1_META.normal.tsv"
+)
+
+#
+# add overdispersion (empirically estimated at ~0.92)
+refs.allele_counts[[
+  "REF_COUNT",
+  "ALT_COUNT",
+  "REF_COUNT_N",
+  "ALT_COUNT_N",
+  "MAJ_COUNT",
+  "MIN_COUNT"
+]] *= 0.92
+
+runner = hapaseg.run_allelic_MCMC.AllelicMCMCRunner(
+  refs.allele_counts,
+  refs.chromosome_intervals,
+  c,
+  phase_correct = False
+)
+allelic_segs = runner.run_all()
+
+allelic_segs.to_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.no_phase_correct.pickle")
+
+#
+# (scrap code): debug why reverting intervals in F won't restore us to the original state
 
 refs = hapaseg.load.HapasegReference(phased_VCF = "exome/6_C1D1_META.eagle.vcf", allele_counts = "exome/6_C1D1_META.tumor.tsv")
 
