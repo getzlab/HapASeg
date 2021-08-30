@@ -223,16 +223,26 @@ for i in range(100):
 
 colors = mpl.cm.get_cmap("tab10").colors
 
+# #### Load chromosome boundary coordinates
+
+allelic_segs = pd.read_pickle("exome/6_C1D1_META.allelic_segs.auto_ref_correct.overdispersion92.no_phase_correct.pickle")
+chrbdy = allelic_segs.dropna().loc[:, ["start", "end"]]
+chr_ends = chrbdy.loc[chrbdy["start"] != 0, "end"].cumsum()
+
 # ## Regressed coverage density
 # +
 plt.figure(3, figsize = [19.2,  5.39]); plt.clf()
 _, axs = plt.subplots(3, 1, sharex = True, sharey = True, num = 3)
 axs[0].scatter(Cov_overlap.loc[~naidx, "start_g"], np.exp(np.log(r) - C[:, [0]]@beta[[0]]), alpha = 1, s = 1)
 axs[0].set_title("Raw coverage density")
+for chrbdy in chr_ends[:-1]:
+    axs[0].axvline(chrbdy, color = 'k')
 
 axs[1].scatter(Cov_overlap.loc[~naidx, "start_g"], np.exp(np.log(r) - C@beta), alpha = 1, s = 1)
 axs[1].set_title("Corrected coverage density")
 axs[1].set_ylabel("Coverage density")
+for chrbdy in chr_ends[:-1]:
+    axs[1].axvline(chrbdy, color = 'k')
 
 axs[2].scatter(Cov_overlap.loc[~naidx, "start_g"], np.exp(np.log(r) - C@beta), s = 0.1, color = 'k')
 
@@ -242,6 +252,9 @@ for i, p in enumerate(Pi.T):
     axs[2].scatter(x, np.full(len(x), np.exp(mu[i])), alpha = p[nzidx]**4, s = 1, color = np.array(colors)[i % len(colors)])
 axs[2].set_title("Inferred coverage density for each target")
 axs[2].set_xlabel("Genomic position")
+
+for chrbdy in chr_ends[:-1]:
+    axs[2].axvline(chrbdy, color = 'k')
 
 plt.xlim((0.0, 2879000000.0));
 plt.ylim([0, 400]);
