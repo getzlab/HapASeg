@@ -73,6 +73,17 @@ plt.ylim([4, 7]);
 plt.xlabel("GC content (z-score)")
 plt.ylabel("Log coverage density")
 
+# ## GC content vs. RT
+
+plt.figure(12); plt.clf()
+plt.scatter(Cov["C_GC_z"], Cov["C_RT_z"], alpha = 0.01, s = 1)
+plt.xlim([-0.75, 0.75])
+plt.ylim([-5, 5])
+plt.xlabel("GC content (z-score)")
+plt.ylabel("Replication timing (z-score)")
+
+# Covariates are correlated, but not to a problematic degree.
+
 # }}}
 
 # # Load SNPs
