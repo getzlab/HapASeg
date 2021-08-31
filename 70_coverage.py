@@ -289,13 +289,32 @@ f_prune = (min_tots/(min_tots + maj_tots))[np.flatnonzero(prune_idx)]
 
 # ####  Plot
 
+# To make targets clearer when plotting, show each target as \[start_i, start_{i+1}\]
+
+Cov_overlap["next_g"] = np.r_[Cov_overlap.iloc[1:]["start_g"], 2880794554]
+
 # +
-plt.figure(4, figsize = [19.2, 5.39]); plt.clf()
+plt.figure(6, figsize = [19.2, 5.39]); plt.clf()
 for i, p in enumerate(Pi.T):
-    nzidx = p > 0
-    x = Cov_overlap.loc[~naidx, "start_g"].loc[nzidx]
-    plt.scatter(x, np.full(len(x), np.exp(mu[i])*f_prune[i]), alpha = p[nzidx]**4, s = 1, color = np.array(colors)[i % len(colors)])
-    plt.scatter(x, np.full(len(x), np.exp(mu[i])*(1 - f_prune[i])), alpha = p[nzidx]**4, s = 1, color = np.array(colors)[i % len(colors)])
+    nzidx = p > 0.3
+    x = Cov_overlap.loc[~naidx, ["start_g", "next_g"]].loc[nzidx]
+    for (_, st, en), clust_prob in zip(x.itertuples(), p[nzidx]):
+        plt.plot(
+            np.r_[st, en],
+            np.exp(mu[i])*f_prune[i]*np.r_[1, 1],
+            color = np.array(colors)[i % len(colors)],
+            linewidth = 5,
+            alpha = clust_prob**2,
+            solid_capstyle = "butt"
+        )
+        plt.plot(
+            np.r_[st, en],
+            np.exp(mu[i])*(1 - f_prune[i])*np.r_[1, 1],
+            color = np.array(colors)[i % len(colors)],
+            linewidth = 5,
+            alpha = clust_prob**2,
+            solid_capstyle = "butt"
+        )
 
 for chrbdy in chr_ends[:-1]:
     plt.axvline(chrbdy, color = 'k')
