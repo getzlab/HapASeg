@@ -354,28 +354,8 @@ plt.scatter(np.log(r), Pi@mu + C@beta, alpha = 0.5, s = 1)
 plt.xlabel("Observed coverage (log)")
 plt.ylabel("Predicted coverage (log)");
 
-
 # Regression model is surprisingly accurate.
 
-# ### Allelic imbalance as a function of allelic copynumber and purity
-
-# +
-def imb(alpha, na, tau):
-    return (1 + alpha*(na - 1))/(2*(1 - alpha) + tau*alpha)
-
-alpha = np.linspace(0, 1, 100)
-plt.figure(123); plt.clf()
-for tau in range(1, 6):
-    for na in range(1, tau + 1):
-        if na < tau/2:
-            continue
-        plt.plot(alpha, imb(alpha, na, tau), color = colors[tau - 1], label = f"{na}/{tau}")
-
-labellines.labelLines(plt.gca().get_lines(), zorder=2.5)
-
-plt.xlabel("Purity")
-plt.ylabel("Allelic imbalance");
-# -
 
 # #### Scrap code below; interpolate coverage to targets that don't contain SNPs
 
