@@ -93,7 +93,7 @@ plt.xlabel("Purity")
 plt.ylabel("Allelic imbalance");
 # -
 
-# ### Allelic imbalance curves for a given allelic copynumber are not memoryless
+# ### Are allelic imbalance curves for a given allelic copynumber memoryless?
 
 # +
 plt.figure(126); plt.clf()
@@ -173,6 +173,9 @@ plt.xticks(0.6*np.r_[0.2:1.1:0.1], [f"{x:0.2}" for x in np.r_[0.2:1.1:0.1]])
 
 plt.xlabel("Scale factor")
 plt.ylabel("Allelic imbalance");
+# -
+
+# ### In some cases, yes, they are memoryless!
 
 # +
 plt.figure(127); plt.clf()
@@ -205,6 +208,18 @@ plt.ylabel("Allelic imbalance");
 plt.legend(["3/4", "4/5", "5/6", "6/7"]);
 # -
 
-np.c_[np.r_[3, 4, 5, 6], np.r_[4, 5, 6, 7], np.r_[0.5, 0.6, 1, 1]]
+# ### Multiple allelic copynumbers corresponding to the same allelic imbalance/purity
+
+for t1 in range(1, 10):
+    for n1 in range(1, t1 + 1):
+        for t2 in range(1, 10):
+            for n2 in range(1, t2 + 1):
+                if t1 == t2 and n1 == n2:
+                    continue
+                roots = np.roots([2*(n2-1)-2*(n1-1)+t1*(1-n2)+t2*(n1-1), 2*(n1-1)-2*(n2-1)+t2-t1, 0]);
+                if len(roots) and roots[0] > 0 and roots[0] < 1:
+                    print(f"{roots[0]} {n1}/{t1} {n2}/{t2}")
+
+roots
 
 
