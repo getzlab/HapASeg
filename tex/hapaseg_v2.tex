@@ -100,7 +100,7 @@ I propose to address this issue by using allelic imbalance segmentation as the p
 \label{introfig}
 \end{figure}
 
-Consider a set $\mathcal{S}$ of phased SNPs on haplotypes $\mathcal{A}$ and $\mathcal{B}$. SNP $i$ assigned to $\mathcal{A}$ has alternate read count $a_i$ and reference read count $b_i$, while SNP $j$ assigned to $\mathcal{B}$ has alternate read count $b_j$ and reference read count $a_j$. We can express the allelic imbalance $f$ of $\mathcal{S}$ in terms of the relative fraction of $\mathcal{A}$, which we call the ``haplotypic imbalance.'' In a diploid region of the genome, $f\approx 1/2$. In a triploid region with two copies of $\mathcal{A}$ and one copy of $\mathcal{B}$, $f\approx 2/3$ (Figure \ref{introfig}).
+Consider a set $\mathcal{S}$ of phased SNPs on haplotypes $\mathcal{A}$ and $\mathcal{B}$. SNP $i$ assigned to $\mathcal{A}$ has alternate read count $a_i$ and reference read count $b_i$, while SNP $j$ assigned to $\mathcal{B}$ has alternate read count $b_j$ and reference read count $a_j$. We can express the allelic imbalance $f$ of $\mathcal{S}$ in terms of the relative fraction of $\mathcal{A}$, which we call the ``haplotypic imbalance.'' In a diploid region of the genome, $f = 1/2$. In a triploid region with two copies of $\mathcal{A}$ and one copy of $\mathcal{B}$, $f = 2/3$, given 100\% tumor purity, (Figure \ref{introfig}).
 
 Assuming only aleatoric uncertainty, the likelihood of the haplotypic imbalance $f$ for all SNPs in $\mathcal{S}$ is
 \begin{align*}
