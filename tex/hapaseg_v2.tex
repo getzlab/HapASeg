@@ -429,18 +429,35 @@ The final result of the aforementioned procedures yields, for each SNP, the prob
 
 This problem is confounded by the fact that genomic coverage is systematically biased by both known (e.g., GC content, replication timing, mappability, common germline CNVs) and unknown factors. These are typically addressed via a PoN; 
 %The typical way we address this is by normalizing coverage against a panel of normal samples (PoN); because these are assumed to be diploid almost everywhere, any systematic fluctuations in their coverage are due to technical artifacts. However, the panel of normals must be matched exactly to the sequencing technology and protocol being used to assay the tumor, since each protocol will have its own biases. Assembling PoNs can be tricky, since tumor samples are often of types not typical to normal samples (e.g., FFPE, cfDNA), and properly matching samples to a good PoN adds additional complexity to analyses.
-we can avoid this by self-normalizing within a tumor sample. All genomic regions at the same level of allelic imbalance will have the same total copy ratio, modulo balanced gains/losses, i.e., genome doubling or copy-neutral loss of heterozygosity (CNLoH). Thus, in a sample without any doubling/CNLoH, the average coverage across regions having the same allelic imbalance will robustly estimate the total amount of genomic mass belonging to that region, since it will average over individual intervals' noise.
+we can avoid this by self-normalizing within a tumor sample. We do this by relying on the fact that total copy ratio is \textit{almost} a well-defined function of allelic imbalance---a given level of allelic imbalance will tend to correspond to a single total copy ratio. If total copy ratio were actually a well-defined function of allelic imbalance, then the average coverage across all genomic regions with the same allelic imbalance would be a robust estimator of the total genomic mass belonging to those regions, since any noise modes in the coverage would be averaged out at such a large scale.
 
-\subsection{Simple model: no balanced events}
+Recall that overall haplotypic imbalance $f$ at a given genomic locus is the weighted harmonic mean of the allelic imbalance of the diploid normal ($f_N=1/2$) and the haplotypic imbalance in the tumor ($f_T=n_\mathcal{A}/(n_\mathcal{A} + n_\mathcal{B})$), weighted by their relative genomic masses. In the normal, this is $1 - \alpha$, where $\alpha$ is the purity; in the tumor, this is $\alpha n_\mathcal{A}$. Thus
+\begin{align*}
+f &= \lt[\frac{f_N^{-1}(1-\alpha) + f_T^{-1}n_\mathcal{A}\alpha}{(1 - \alpha) + n_\mathcal{A}\alpha}\rt]^{-1}\\
+&= \lt[\frac{\lt(\frac{1}{2}\rt)^{-1}(1-\alpha) + \lt(\frac{n_\mathcal{A}}{n_\mathcal{A} + n_\mathcal{B}}\rt)^{-1}n_\mathcal{A}\alpha}{(1 - \alpha) + n_\mathcal{A}\alpha}\rt]^{-1}\\
+&= \frac{1 + \alpha(n_\mathcal{A} - 1)}{2(1 - \alpha) + \tau\alpha}
+\end{align*}
+where $\tau$ is the overall tumor ploidy at that locus, i.e.\ $n_\mathcal{A} + n_\mathcal{B}$.
+
+While this does not constitute a well-defined function mapping allelic imbalance to total copy ratio (for instance, balanced genome doubling will always have allelic imbalance of $1/2$, regardless of the actual ploidy), it is pretty close! We visualize this in Figure \ref{ImbFig}.
+
+\begin{figure}
+\centering
+\includegraphics[width=12cm]{Figs/imbalance.pdf}
+\caption{Haplotypic imbalances as a function of tumor purity for different $\mathcal{A}$ allele counts and tumor ploidies, for ploidies from $1\dots 5$. Each line is labeled as <$\mathcal{A}$ allele count>/<tumor ploidy>, e.g. 1/2 corresponds to diploid; 2/2 corresponds to copy-neutral LoH. Note that the curves rarely intersect, indicating that ploidy is nearly a well-defined function of allelic imbalance. Note that this function is not one-to-one: multiple allelic imbalances can map to the same ploidy.}
+\label{ImbFig}
+\end{figure}
+
+\subsection{Na\"ive model --- $\exists g : f\mapsto\tau$}
 
 \begin{figure}
 \centering
 \includegraphics[trim={1cm 13cm 0 3cm},clip,width=10cm]{Figs/fig2.pdf}
-\caption{Using allelic imbalance to determine regions that should have the same average coverage, in the absence of balanced events. (Assumes unambiguous assignment of SNPs to clusters, so each $\vec\pi_i$ is one-hot.)}
+\caption{Using allelic imbalance to determine regions that should have the same average coverage, in the absence of balanced events. (This cartoon figure assumes unambiguous assignment of SNPs to clusters, so each cartoon $\vec\pi_i$ is one-hot.)}
 \label{NormFig}
 \end{figure}
 
-In the top panel of Figure \ref{NormFig}, we show a sample with three levels of allelic imbalance at $f=1/2$, $2/3$, and $1$. If there are no balanced gains/losses, these respectively correspond to allelic copy numbers of $1/1$ (i.e., diploid), $2/1$ (i.e., gain of one allele), and $1/0$ (i.e., loss of one allele). We can thus estimate the total copy ratio of each cluster via the total genomic coverage within each cluster. We improve this estimate by regressing out known technical factors that bias coverage.
+In the top panel of Figure \ref{NormFig}, we show a sample with three levels of allelic imbalance at $f=1/2$, $2/3$, and $1$. Assuming that ploidy is indeed a well-defined function $g$ of allelic imbalance ($\tau = g(f)$), each level of imbalance respectively corresponds to allelic copy numbers of $1/1$ (i.e., diploid), $2/1$ (i.e., gain of one allele), and $1/0$ (i.e., loss of one allele). We can thus estimate the total copy ratio of each cluster via the total genomic coverage within each cluster. We improve this estimate by regressing out known technical factors that bias coverage.
 
 We achieve this via Poisson regression. Assuming genomic coverage is (overdispersed) Poisson distributed across intervals, then the number of reads in the $i$th interval $r_i$ can be modeled as
 \begin{align*}
@@ -460,19 +477,19 @@ If we assume no overdispersion, $p(\epsilon|\theta)=1$ and this is an ordinary P
 
 After fitting this model, $\vec\mu\cdot\vec\pi_i$ yields the normalized log coverage for the $i$th interval, after regressing out technical covariates. We show this in the bottom panel of Figure \ref{NormFig}. Note that for simplicity, we assume that each SNP is unambiguously assigned to a cluster, so each $\vec\pi_i$ has one element with probability 1 and every other element with probability 0 (i.e., it is one hot). In reality, while most SNPs will have nearly unambiguous cluster assignments, they are probabilistically assigned, so each interval's expected coverage is also actually probabilistic.
 
-\subsection{Accounting for balanced events}
+\subsection{A better model --- $\nexists g : f\mapsto\tau$}
 
-\begin{figure}
-\centering
-\includegraphics[trim={1.5cm 20cm 6.5cm 3cm},clip,width=10cm]{Figs/fig2.pdf}
-\includegraphics[trim={2.5cm 1cm 5cm 21cm},clip,width=10cm]{Figs/fig2.pdf}
-\caption{In the case of balanced events (highlighted in yellow), we cannot assume that the mean coverage for the allelic imbalance cluster the balanced event belongs to will accurately represent its coverage.}
-\label{BalancedNormFig}
-\end{figure}
+%\begin{figure}
+%\centering
+%\includegraphics[trim={1.5cm 20cm 6.5cm 3cm},clip,width=10cm]{Figs/fig2.pdf}
+%\includegraphics[trim={2.5cm 1cm 5cm 21cm},clip,width=10cm]{Figs/fig2.pdf}
+%\caption{In the case of balanced events (highlighted in yellow), we cannot assume that the mean coverage for the allelic imbalance cluster the balanced event belongs to will accurately represent its coverage.}
+%\label{BalancedNormFig}
+%\end{figure}
 
-The aforementioned model only works in the absence of balanced copy number events (i.e., doubling/CNLoH). For example, if a genomic region gains one copy of each haplotype, it will have the same allelic imbalance as a region without the gain but up to double the genomic mass (if the doubling is clonal). Likewise, a region with CNLoH will have the same allelic imbalance as a region with only one allele.
+The aforementioned model only works if there is indeed a well-defined function mapping allelic imbalance to ploidy. However, this is clearly not the case: for example, balanced genome doubling will always result in allelic imbalance $1/2$, regardless of the overall ploidy (2, 4, 8, etc.). We can also see from Figure \ref{ImbFig} that at purity $1/2$, $(n_\mathcal{A},\tau) = (1, 1)$ has the same allelic imbalance as $(3, 4)$. Finally, we have not even considered the possibility of subclones, which introduce further ambiguity.
 
-We therefore cannot assume that there is a one-to-one correspondence between levels of allelic imbalance and levels of total copy ratio (Figure \ref{BalancedNormFig}). To account for this, we need to perform an additional round of segmentation on the normalized coverage.
+We therefore cannot assume that total copy ratio is a well-defined function of allelic imbalance. To account for this, we need to perform an additional round of segmentation on the normalized coverage.
 
 The proposed procedure for this is as follows. Initially, assume that each interval belongs to its own segment by adding an additional $\mu_i$ term to \eqref{poiss0},
 \begin{align*}
