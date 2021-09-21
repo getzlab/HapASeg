@@ -40,6 +40,8 @@ labellines.labelLines(plt.gca().get_lines(), zorder=2.5)
 
 plt.xlabel("Purity")
 plt.ylabel("Allelic imbalance");
+
+plt.savefig("tex/Figs/imbalance.pdf")
 # -
 
 # Allelic imbalance curves do not uniquely define states of allelic copynumber, but it's close!
