@@ -171,3 +171,38 @@ plt.xticks(0.6*np.r_[0.2:1.1:0.1], [f"{x:0.2}" for x in np.r_[0.2:1.1:0.1]])
 
 plt.xlabel("Scale factor")
 plt.ylabel("Allelic imbalance");
+
+# +
+plt.figure(127); plt.clf()
+for a in 0.6*np.r_[0.2:1.1:0.1]:
+    plt.scatter(a*np.r_[1, 1, 1, 1], imb(a, np.r_[3, 4, 5, 6], np.r_[4, 5, 6, 7]), c = np.array(colors)[np.r_[4, 5, 6, 7] - 1])
+    
+for na, tau in np.c_[np.r_[3, 4, 5, 6], np.r_[4, 5, 6, 7]]:
+    plt.plot(0.6*np.r_[0.2:1.1:0.1], imb(0.6*np.r_[0.2:1.1:0.1], na, tau), color = colors[tau - 1])
+    
+plt.xticks(0.6*np.r_[0.2:1.1:0.1], [f"{x:0.2}" for x in np.r_[0.2:1.1:0.1]])
+    
+plt.xlabel("Scale factor")
+plt.ylabel("Allelic imbalance");
+
+plt.legend(["3/4", "4/5", "5/6", "6/7"]);
+
+# +
+plt.figure(127); plt.clf()
+for a in 0.6*np.r_[0.2:1.1:0.1]:
+    plt.scatter(a*np.r_[0.5, 0.6, 1, 1], imb(a, np.r_[3, 4, 5, 6], np.r_[4, 5, 6, 7]), c = np.array(colors)[np.r_[4, 5, 6, 7] - 1])
+    
+for na, tau, c in np.c_[np.r_[3, 4, 5, 6], np.r_[4, 5, 6, 7], np.r_[0.5, 0.6, 1, 1]]:
+    plt.plot(0.6*c*np.r_[0.2:1.1:0.1], imb(0.6*np.r_[0.2:1.1:0.1], na, tau), color = colors[int(tau) - 1])
+    
+plt.xticks(0.6*np.r_[0.2:1.1:0.1], [f"{x:0.2}" for x in np.r_[0.2:1.1:0.1]])
+    
+plt.xlabel("Scale factor")
+plt.ylabel("Allelic imbalance");
+
+plt.legend(["3/4", "4/5", "5/6", "6/7"]);
+# -
+
+np.c_[np.r_[3, 4, 5, 6], np.r_[4, 5, 6, 7], np.r_[0.5, 0.6, 1, 1]]
+
+
