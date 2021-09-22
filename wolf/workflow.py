@@ -39,15 +39,19 @@ convert = wolf.Task(
     "ref_fasta_idx" : "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
     "ref_fasta_dict" : "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
   }, 
-  script = """
+  script = r"""
+set -x
 bcftools convert --tsv2vcf ${genotype_file} -c CHROM,POS,AA -s ${sample_name} \
-  -f ${ref_fasta} -Oz -o ${sample_name}.vcf.gz && \
-tabix ${sample_name}.vcf.gz
+  -f ${ref_fasta} -Ou -o all_chrs.bcf && bcftools index all_chrs.bcf
+for chr in $(bcftools view -h all_chrs.bcf | ssed -nR '/^##contig/s/.*ID=(.*),.*/\1/p' | head -n24); do
+  bcftools view -Ou -r ${chr} -o ${chr}.chrsplit.bcf all_chrs.bcf && bcftools index ${chr}.chrsplit.bcf
+done
 """,
   outputs = {
-    "vcf" : "*.vcf.gz",
-    "vcf_idx" : "*.vcf.gz.tbi"
-  }
+    "bcf" : "*.chrsplit.bcf",
+    "bcf_idx" : "*.chrsplit.bcf.csi"
+  },
+  docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.5"
 )
 
 convert_results = convert.run()
