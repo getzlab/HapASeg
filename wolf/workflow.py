@@ -32,6 +32,7 @@ hp_results = hp.run()
 
 # shim task to convert output of het pulldown to VCF
 convert = wolf.Task(
+  name = "convert_het_pulldown",
   inputs = {
     "genotype_file" : hp_results["normal_genotype"],
     "sample_name" : "test",
