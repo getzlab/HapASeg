@@ -56,12 +56,23 @@ done
 
 convert_results = convert.run()
 
-# run Eagle, per chromosome
+# convert.debug(**convert.conf["inputs"])
 
+# ensure that chromosomes/indices/reference VCFs are in the same order
+F = pd.DataFrame(dict(bcf_path = convert_results["bcf"]))
+F = F.set_index(F["bcf_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
+
+F2 = pd.DataFrame(dict(bcf_idx_path = convert_results["bcf_idx"]))
+F2 = F2.set_index(F2["bcf_idx_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
+
+F = F.join(F2)
+
+# run Eagle, per chromosome
 eagle = phasing.eagle(
-  genetic_map_file = "",
-  vcf_in = convert_results["vcf"],
-  vcf_idx_in = convert_results["vcf_idx"],
+  genetic_map_file = "/home/jhess/Downloads/Eagle_v2.4.1/tables/genetic_map_hg38_withX.txt.gz",
+  vcf_in = convert_results["bcf"],
+  vcf_idx_in = convert_results["bcf_idx"],
+  vcf_ref = [],
 )
 
 def workflow():
