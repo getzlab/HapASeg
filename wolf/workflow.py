@@ -25,6 +25,7 @@ hp = het_pulldown.get_het_coverage_from_callstats(
  ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
  ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
  ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
+ dens_cutoff = 0.58
 )
 
 hp_results = hp.run()
