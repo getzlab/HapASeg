@@ -1,3 +1,5 @@
+import glob
+import pandas as pd
 import wolf
 
 #
@@ -17,6 +19,28 @@ phasing = wolf.ImportTask(
 )
 
 # workflow scrap
+
+# localize reference files to RODISK
+
+ref_panel = pd.DataFrame({ "path" : glob.glob("/mnt/j/db/hg38/1kg/*.bcf*") })
+ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
+ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
+
+localization_task = wolf.localization.BatchLocalDisk(
+  files = dict(
+    ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
+    ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
+    ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
+
+    genetic_map_file = "/home/jhess/Downloads/Eagle_v2.4.1/tables/genetic_map_hg38_withX.txt.gz",
+
+    # reference panel
+    **ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
+  ),
+  run_locally = True
+)
+
+localization = localization_task.run()
 
 # get het site coverage/genotypes from callstats
 hp = het_pulldown.get_het_coverage_from_callstats(
