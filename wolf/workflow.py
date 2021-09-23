@@ -103,12 +103,14 @@ F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*csi$"), "index"].str.extr
 
 # run Eagle, per chromosome
 eagle = phasing.eagle(
-  genetic_map_file = "/home/jhess/Downloads/Eagle_v2.4.1/tables/genetic_map_hg38_withX.txt.gz",
-  vcf_in = convert_results["bcf"],
-  vcf_idx_in = convert_results["bcf_idx"],
-  vcf_ref = [],
+  inputs = dict(
+    genetic_map_file = localization["genetic_map_file"],
+    vcf_in = F["bcf_path"],
+    vcf_idx_in = F["bcf_idx_path"],
+    vcf_ref = F["ref_bcf"],
+    vcf_ref_idx = F["ref_bcf_idx"],
+    output_file_prefix = "foo"
+  )
 )
 
-def workflow():
-
-phasing.eagle
+eagle_results = eagle.run()
