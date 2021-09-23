@@ -84,14 +84,22 @@ convert_results = convert.run()
 
 # convert.debug(**convert.conf["inputs"])
 
-# ensure that chromosomes/indices/reference VCFs are in the same order
+# ensure that BCFs/indices/reference BCFs are in the same order
+
+# BCFs
 F = pd.DataFrame(dict(bcf_path = convert_results["bcf"]))
 F = F.set_index(F["bcf_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
 
+# indices
 F2 = pd.DataFrame(dict(bcf_idx_path = convert_results["bcf_idx"]))
 F2 = F2.set_index(F2["bcf_idx_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
 
 F = F.join(F2)
+
+# reference panel BCFs
+R = pd.DataFrame({ "path" : localization } ).reset_index()
+F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*_bcf$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf" }), how = "inner")
+F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*csi$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf_idx" }), how = "inner")
 
 # run Eagle, per chromosome
 eagle = phasing.eagle(
