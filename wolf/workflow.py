@@ -21,6 +21,7 @@ phasing = wolf.ImportTask(
 
 # workflow scrap
 
+#
 # localize reference files to RODISK
 
 ref_panel = pd.DataFrame({ "path" : glob.glob("/mnt/j/db/hg38/1kg/*.bcf*") })
@@ -43,6 +44,7 @@ localization_task = wolf.localization.BatchLocalDisk(
 
 localization = localization_task.run()
 
+#
 # get het site coverage/genotypes from callstats
 hp = het_pulldown.get_het_coverage_from_callstats(
   callstats_file = "gs://fc-secure-66f5eeb9-27c4-4e5c-b9d6-0519aca5889d/pair/05bd347a/05bd347a-3da7-4d1f-9bc6-4375226a0cb4_de3962db-0bd7-4126-85d9-da9ffe131088.MuTect1.call_stats.txt",
@@ -55,6 +57,7 @@ hp = het_pulldown.get_het_coverage_from_callstats(
 
 hp_results = hp.run()
 
+#
 # shim task to convert output of het pulldown to VCF
 convert = wolf.Task(
   name = "convert_het_pulldown",
@@ -84,6 +87,7 @@ convert_results = convert.run()
 
 # convert.debug(**convert.conf["inputs"])
 
+#
 # ensure that BCFs/indices/reference BCFs are in the same order
 
 # BCFs
@@ -101,6 +105,7 @@ R = pd.DataFrame({ "path" : localization } ).reset_index()
 F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*_bcf$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf" }), how = "inner")
 F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*csi$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf_idx" }), how = "inner")
 
+#
 # run Eagle, per chromosome
 eagle = phasing.eagle(
   inputs = dict(
@@ -114,3 +119,17 @@ eagle = phasing.eagle(
 )
 
 eagle_results = eagle.run()
+
+# TODO: run whatshap
+
+#
+# combine VCFs
+combine = wolf.Task(
+  name = "combine_vcfs",
+  inputs = { "vcf_array" },
+  script = "bcftools concat -O u $(cat ${vcf_array} | tr '\n' ' ') | bcftools sort -O v -o combined.vcf",
+  outputs = { "combined_vcf" : "combined.vcf" },
+  docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.5"
+)
+
+combined_results = combine.run(vcf_array = [eagle_results["phased_vcf"]])
