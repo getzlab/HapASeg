@@ -1,4 +1,5 @@
 import glob
+import os
 import pandas as pd
 import wolf
 
@@ -46,9 +47,9 @@ localization = localization_task.run()
 hp = het_pulldown.get_het_coverage_from_callstats(
   callstats_file = "gs://fc-secure-66f5eeb9-27c4-4e5c-b9d6-0519aca5889d/pair/05bd347a/05bd347a-3da7-4d1f-9bc6-4375226a0cb4_de3962db-0bd7-4126-85d9-da9ffe131088.MuTect1.call_stats.txt",
   common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
- ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
- ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
- ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
+ ref_fasta = localization["ref_fasta"],
+ ref_fasta_idx = localization["ref_fasta_idx"],
+ ref_fasta_dict = localization["ref_fasta_dict"],
  dens_cutoff = 0.58
 )
 
@@ -60,9 +61,9 @@ convert = wolf.Task(
   inputs = {
     "genotype_file" : hp_results["normal_genotype"],
     "sample_name" : "test",
-    "ref_fasta" : "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
-    "ref_fasta_idx" : "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
-    "ref_fasta_dict" : "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
+    "ref_fasta" : localization["ref_fasta"],
+    "ref_fasta_idx" : localization["ref_fasta_idx"],
+    "ref_fasta_dict" : localization["ref_fasta_dict"],
   }, 
   script = r"""
 set -x
