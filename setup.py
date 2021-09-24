@@ -1,0 +1,52 @@
+from setuptools import setup
+import re
+import os
+import sys
+
+ver_info = sys.version_info
+if ver_info < (3,7,0):
+    raise RuntimeError("HapASeg requires at least python 3.7")
+
+setup(
+    name = 'HapASeg',
+    version = "0.1",
+    packages = [
+        'hapaseg',
+    ],
+#    package_data={
+#        '':[
+#            'backends/slurm-gcp/*',
+#            'backends/slurm-gcp/scripts/*',
+#            'backends/slurm-docker/src/*',
+#            'backends/dummy/*',
+#            'backends/dummy/conf/*',
+#            'localization/debug.sh'
+#        ],
+#    },
+    entry_points={
+        'console_scripts':[
+            'hapaseg = hapaseg.__main__:main',
+        ]
+    },
+    description = '',
+    url = '',
+    author = 'Julian Hess',
+    author_email = 'jhess@broadinstitute.org',
+    #long_description = long_description,
+    #long_description_content_type = 'text/markdown',
+    install_requires = [
+        'pandas>=0.24.1',
+        'numpy>=1.18.0',
+    ],
+    classifiers = [
+        "Development Status :: 4 - Beta",
+        "Programming Language :: Python :: 3",
+        "Intended Audience :: Science/Research",
+        "Topic :: Scientific/Engineering :: Bio-Informatics",
+        "Topic :: System :: Clustering",
+        "Topic :: System :: Distributed Computing",
+        "Typing :: Typed",
+        "License :: OSI Approved :: BSD License"
+    ],
+    license="BSD3"
+)
