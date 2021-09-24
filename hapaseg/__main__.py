@@ -1,6 +1,7 @@
 import argparse
 import dask.distributed as dd
 import multiprocessing
+import os
 
 from .load import HapasegReference
 from .run_allelic_MCMC import AllelicMCMCRunner
@@ -51,6 +52,8 @@ def parse_args():
     ai_seg_params.add_argument("--phase_correct", action = "store_true")
     ai_seg_params.add_argument("--misphase_prior", default = "0.001")
 
+    parser.add_argument("--output_dir", default = ".")
+
     args = parser.parse_args()
 
     # validate arguments
@@ -63,6 +66,9 @@ def parse_args():
 
 def main(): 
     args = parse_args()
+
+    os.mkdir(args.output_dir)    
+    output_dir = os.path.realpath(args.output_dir)
 
     dask_client = dd.Client(n_workers = args.n_workers)
 
@@ -81,6 +87,11 @@ def main():
     )
 
     allelic_segs = runner.run_all()
+
+    # TODO: checkpoint here
+    allelic_segs.to_pickle(output_dir + "/allelic_imbalance_segments.pickle")
+
+    # TODO: save per-chromosome plots of raw allelic segmentations
 
 if __name__ == "__main__":
     main()
