@@ -19,6 +19,12 @@ phasing = wolf.ImportTask(
   task_name = "phasing"
 )
 
+# for Hapaseg itself
+hapaseg_task = wolf.ImportTask(
+  task_path = ".", # TODO: make remote
+  task_name = "hapaseg"
+)
+
 # workflow scrap
 
 #
@@ -133,3 +139,14 @@ combine = wolf.Task(
 )
 
 combined_results = combine.run(vcf_array = [eagle_results["phased_vcf"]])
+
+#
+# run HapASeg
+hapaseg_task = hapaseg_task.Hapaseg(
+  inputs = {
+    "phased_VCF" : combined_results["combined_vcf"],
+    "tumor_allele_counts" : hp_results["tumor_hets"],
+    "normal_allele_counts" : hp_results["normal_hets"],
+    "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt"
+  }
+)
