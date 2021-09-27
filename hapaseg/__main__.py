@@ -76,7 +76,8 @@ def main():
       phased_VCF = read.phased_VCF,
       readbacked_phased_VCF = args.read_back_phased_VCF,
       allele_counts = args.allele_counts_T,
-      allele_counts_N = args.allele_counts_N
+      allele_counts_N = args.allele_counts_N,
+      cytoband_file = args.cytoband_file
     )
 
     runner = AllelicMCMCRunner(
