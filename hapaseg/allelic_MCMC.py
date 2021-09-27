@@ -158,6 +158,7 @@ class A_MCMC:
                 else:
                     continue
             elif op == 3:
+                continue
                 if np.random.rand() < 0.01:
                     self.prune()
                 else:
