@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import scipy.stats as s
 
-from capy import txt, df
+from capy import txt, df, mut
 from itertools import zip_longest
 
 _chrmap = dict(zip(["chr" + str(x) for x in list(range(1, 23)) + ["X", "Y"]], range(1, 25)))
@@ -31,6 +31,7 @@ class HapasegReference:
     def load_VCF(VCF, allele_counts, allele_counts_N = None, RBP_VCF = None):
         P = pd.read_csv(VCF, sep = "\t", comment = "#", names = ["chr", "pos", "x", "ref", "alt", "y", "z", "a", "b", "hap"], header = None)
         P = P.loc[:, ~P.columns.str.match('^.$')]
+        P["chr"] = mut.convert_chr(P["chr"])
 
         P = txt.parsein(P, 'hap', r'(.)[/|](.)', ["allele_A", "allele_B"]).astype({"allele_A" : int, "allele_B" : int })
         P["phased"] = P["hap"].str[1] == "|"
