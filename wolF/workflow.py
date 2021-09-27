@@ -20,7 +20,7 @@ phasing = wolf.ImportTask(
 )
 
 # for Hapaseg itself
-hapaseg_task = wolf.ImportTask(
+hapaseg = wolf.ImportTask(
   task_path = ".", # TODO: make remote
   task_name = "hapaseg"
 )
@@ -142,7 +142,7 @@ combined_results = combine.run(vcf_array = [eagle_results["phased_vcf"]])
 
 #
 # run HapASeg
-hapaseg_task = hapaseg_task.Hapaseg(
+hapaseg_task = hapaseg.Hapaseg(
   inputs = {
     "phased_VCF" : combined_results["combined_vcf"],
     "tumor_allele_counts" : hp_results["tumor_hets"],
