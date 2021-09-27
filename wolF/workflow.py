@@ -142,7 +142,9 @@ combined_results = combine.run(vcf_array = [eagle_results["phased_vcf"]])
 
 #
 # run HapASeg
-hapaseg_task = hapaseg.Hapaseg(
+
+# load
+hapaseg_load = hapaseg.Hapaseg_load(
   inputs = {
     "phased_VCF" : combined_results["combined_vcf"],
     "tumor_allele_counts" : hp_results["tumor_hets"],
@@ -150,3 +152,21 @@ hapaseg_task = hapaseg.Hapaseg(
     "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt"
   }
 )
+
+hapaseg_load_results = hapaseg_load.run()
+
+# get intervals for burnin
+chunks = pd.read_csv(hapaseg_load_results["scatter_chunks"], sep = "\t")
+
+# burnin chunks
+hapaseg_burnin = hapaseg.Hapaseg_burnin(
+ inputs = {
+   "allele_counts" : hapaseg_load_results["allele_counts"],
+   "start" : chunks["start"],
+   "end" : chunks["end"]
+ }
+)
+
+hapaseg_burnin_results = hapaseg_burnin.run()
+
+# concat burnin chunks, infer reference bias
