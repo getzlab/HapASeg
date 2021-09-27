@@ -67,14 +67,15 @@ def parse_args():
 def main(): 
     args = parse_args()
 
-    os.mkdir(args.output_dir)    
+    if not os.path.isdir(args.output_dir):
+        os.mkdir(args.output_dir)
     output_dir = os.path.realpath(args.output_dir)
 
-    dask_client = dd.Client(n_workers = args.n_workers)
+    dask_client = dd.Client(n_workers = int(args.n_workers))
 
     refs = HapasegReference(
-      phased_VCF = read.phased_VCF,
-      readbacked_phased_VCF = args.read_back_phased_VCF,
+      phased_VCF = args.phased_VCF,
+      readbacked_phased_VCF = args.read_backed_phased_VCF,
       allele_counts = args.allele_counts_T,
       allele_counts_N = args.allele_counts_N,
       cytoband_file = args.cytoband_file
