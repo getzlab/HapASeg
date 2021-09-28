@@ -162,8 +162,8 @@ def main():
         H = A_MCMC(
           P.iloc[int(args.start):int(args.end)],
           quit_after_burnin = args.stop_after_burnin,
-          ref_bias = args.ref_bias,
-          n_iter = args.n_iter
+          ref_bias = float(args.ref_bias),
+          n_iter = int(args.n_iter)
         )
 
         with open(output_dir + "/amcmc_results.pickle", "wb") as f:
