@@ -198,7 +198,6 @@ def main():
         #
         # load scatter intervals
         intervals = pd.read_csv(args.scatter_intervals, sep = "\t")
-        intervals["results"] = None
 
         if len(intervals) != len(args.chunks):
             raise ValueError("Length mismatch in supplied chunks and interval file!")
