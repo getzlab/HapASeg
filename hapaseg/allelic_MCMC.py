@@ -33,10 +33,7 @@ class A_MCMC:
 
         # factor by which to downscale all reference alleles, in order to
         # correct for bias against the alternate allele due to capture or alignment
-        self.ref_bias = ref_bias
-        self.P["REF_COUNT"] *= self.ref_bias
-        self.P["MAJ_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "ALT_COUNT"], self.P.loc[~self.P["aidx"], "REF_COUNT"]])
-        self.P["MIN_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "REF_COUNT"], self.P.loc[~self.P["aidx"], "ALT_COUNT"]])
+        self._set_ref_bias(ref_bias)
 
         # column indices for iloc
         self.min_idx = self.P.columns.get_loc("MIN_COUNT")
@@ -795,6 +792,14 @@ class A_MCMC:
             return np.diff(s.beta.cdf([0.4, 0.6], self.P["ALT_COUNT_N"].values[:, None] + 1, self.P["REF_COUNT_N"].values[:, None] + 1), 1)
         else:
             return 0.9
+
+    def _set_ref_bias(self, ref_bias): 
+        # factor by which to downscale all reference alleles, in order to
+        # correct for bias against the alternate allele due to capture or alignment
+        self.ref_bias = ref_bias
+        self.P["REF_COUNT"] *= self.ref_bias
+        self.P["MAJ_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "ALT_COUNT"], self.P.loc[~self.P["aidx"], "REF_COUNT"]])
+        self.P["MIN_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "REF_COUNT"], self.P.loc[~self.P["aidx"], "ALT_COUNT"]])
 
     def incr_bp_counter(self, st, en, mid = None):
         if mid is None:
