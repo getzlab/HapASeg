@@ -251,12 +251,15 @@ def main():
 
         ref_bias = (f*w).sum()/(100*w.sum())
 
+        with open(output_dir + "/ref_bias.txt", "w") as f:
+            f.write(str(ref_bias))
+
         #
         # concat burned in chunks for each arm
         for arm, Ra in R.groupby("arm"):
             A = A_MCMC(
               pd.concat([x.P for x in Ra["results"]], ignore_index = True),
-              # need to fill in other aspects later
+              # other class properties will be filled in with their correct values later
             )
 
             # replicate constructor steps to define initial breakpoint set and
@@ -270,7 +273,7 @@ def main():
                     A.seg_marg_liks[k + start] = v
             A.breakpoints = sc.SortedSet(np.hstack(breakpoints))
 
-            A.marg_lik = np.full(A.n_iter, np.nan) # need to rescale n_iter later
+            A.marg_lik = np.full(A.n_iter, np.nan) # n_iter and size of this array will be reset later
             A.marg_lik[0] = np.array(A.seg_marg_liks.values()).sum()
 
             with open(output_dir + f"/AMCMC-arm{arm}.pickle", "wb") as f:
