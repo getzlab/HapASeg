@@ -169,4 +169,22 @@ hapaseg_burnin = hapaseg.Hapaseg_burnin(
 
 hapaseg_burnin_results = hapaseg_burnin.run()
 
-# concat burnin chunks, infer reference bias
+# concat burned in chunks, infer reference bias
+hapaseg_concat = hapaseg.Hapaseg_concat(
+ inputs = {
+   "chunks" : [hapaseg_burnin_results["burnin_MCMC"]],
+   "scatter_intervals" : hapaseg_load_results["scatter_chunks"]
+ }
+)
+
+hapaseg_concat_results = hapaseg_concat.run()
+
+# run on arms
+hapaseg_arm_AMCMC = hapaseg.Hapaseg_amcmc(
+ inputs = {
+   "amcmc_object" : hapaseg_concat_results["arms"],
+   "ref_bias" : hapaseg_concat_results["ref_bias"]
+ }
+)
+
+hapaseg_arm_AMCMC_results = hapaseg_arm_AMCMC.run()
