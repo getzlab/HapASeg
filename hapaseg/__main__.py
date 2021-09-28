@@ -76,9 +76,15 @@ def parse_args():
 
     ## amcmc
     amcmc = subparsers.add_parser("amcmc", help = "Run allelic MCMC on a range of SNPs")
-    amcmc.add_argument("--snp_dataframe", required = True)
-    amcmc.add_argument("--start", required = True)
-    amcmc.add_argument("--end", required = True)
+
+    input_group = amcmc.add_mutually_exclusive_group(
+      required = True
+    )
+    input_group.add_argument("--snp_dataframe")
+    input_group.add_argument("--amcmc_object")
+
+    amcmc.add_argument("--start", default = 0)
+    amcmc.add_argument("--end", default = -1)
     amcmc.add_argument("--stop_after_burnin", action = "store_true")
     amcmc.add_argument("--ref_bias", default = 1.0)
     amcmc.add_argument("--n_iter", default = 20000)
@@ -161,13 +167,28 @@ def main():
         chunks.to_csv(output_dir + "/scatter_chunks.tsv", sep = "\t", index = False)
 
     elif args.command == "amcmc":
-        P = pd.read_pickle(args.snp_dataframe)
-        H = A_MCMC(
-          P.iloc[int(args.start):int(args.end)],
-          quit_after_burnin = args.stop_after_burnin,
-          ref_bias = float(args.ref_bias),
-          n_iter = int(args.n_iter)
-        )
+        # loading from SNP dataframe produced by `hapaseg load`
+        if args.snp_dataframe is not None:
+            P = pd.read_pickle(args.snp_dataframe)
+            H = A_MCMC(
+              P.iloc[int(args.start):int(args.end)],
+              quit_after_burnin = args.stop_after_burnin,
+              ref_bias = float(args.ref_bias),
+              n_iter = int(args.n_iter)
+            )
+
+        # loading from allelic MCMC results object produced by `hapaseg amcmc`
+        else:
+            with open(args.amcmc_object, "rb") as f:
+                H = pickle.load(f)
+
+            # update some class properties set in the constructor
+            H._set_ref_bias(float(args.ref_bias))
+            H.n_iter = int(args.n_iter)
+            H.quit_after_burnin = args.stop_after_burnin
+
+            if len(H.marg_lik) > H.n_iter:
+                H.marg_lik = H.marg_lik[:H.n_iter]
 
         with open(output_dir + "/amcmc_results.pickle", "wb") as f:
             pickle.dump(H.run(), f)
