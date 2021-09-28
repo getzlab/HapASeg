@@ -5,6 +5,8 @@ import numpy as np
 import os
 import pandas as pd
 import pickle
+import scipy.stats as s
+import scipy.special as ss
 
 from capy import mut
 
@@ -84,6 +86,7 @@ def parse_args():
     ## concat
     concat = subparsers.add_parser("concat", help = "Concatenate burned-in chunks")
     concat.add_argument("--chunks", required = True, nargs = "+")
+    concat.add_argument("--scatter_intervals", required = True)
 
     ## DP (TODO: will include gather step)
     dp = subparsers.add_parser("dp", help = "Run DP clustering on allelic imbalance segments")
@@ -168,6 +171,67 @@ def main():
 
         with open(output_dir + "/amcmc_results.pickle", "wb") as f:
             pickle.dump(H.run(), f)
+
+    elif args.command == "concat":
+        #
+        # load scatter intervals
+        intervals = pd.read_csv(args.scatter_intervals, sep = "\t")
+        intervals["results"] = None
+
+        if len(intervals) != len(args.chunks):
+            raise ValueError("Length mismatch in supplied chunks and interval file!")
+
+        # load results
+        R = []
+        for chunk_path in args.chunks:
+            with open(chunk_path, "rb") as f:
+                chunk = pickle.load(f)
+            R.append(chunk)
+        R = pd.DataFrame({ "results" : R })
+
+        # ensure results are in the correct order
+        R["first"] = R["results"].apply(lambda x : x.P.loc[0, "index"])
+        R = R.sort_values("first", ignore_index = True)
+
+        # concat with intervals
+        R = pd.concat([R, intervals], axis = 1).drop(columns = ["first"])
+
+        #
+        # compute reference bias
+        X = []
+        j = 0
+        for chunk in R["results"]:
+            bpl = np.array(chunk.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
+
+            for i, (st, en) in enumerate(bpl):
+                x = chunk.P.iloc[st:en].groupby("allele_A")[["MIN_COUNT", "MAJ_COUNT"]].sum()
+                x["idx"] = i + j
+                X.append(x)
+
+            j += len(chunk.P)
+
+        X = pd.concat(X)
+        g = X.groupby("idx").size() == 2
+        Y = X.loc[X["idx"].isin(g[g].index)]
+
+        f = np.zeros([len(Y)//2, 100])
+        l = np.zeros([len(Y)//2, 2])
+        for i, (_, g) in enumerate(Y.groupby("idx")):
+            f[i, :] = s.beta.rvs(g.loc[0, "MIN_COUNT"] + 1, g.loc[0, "MAJ_COUNT"] + 1, size = 100)/s.beta.rvs(g.loc[1, "MIN_COUNT"] + 1, g.loc[1, "MAJ_COUNT"] + 1, size = 100)
+            l[i, :] = np.r_[
+              ss.betaln(g.loc[0, "MIN_COUNT"] + 1, g.loc[0, "MAJ_COUNT"] + 1),
+              ss.betaln(g.loc[1, "MIN_COUNT"] + 1, g.loc[1, "MAJ_COUNT"] + 1),
+            ]
+
+        # weight mean by negative log marginal likelihoods
+        # take smaller of the two likelihoods to account for power imbalance
+        w = np.min(-l, 1, keepdims = True)
+
+        ref_bias = (f*w).sum()/(100*w.sum())
+
+        #
+        # concat burned in chunks for each arm
+        #for arm, Ra in R.groupby("arm"):
 
 if __name__ == "__main__":
     main()
