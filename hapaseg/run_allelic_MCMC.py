@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import scipy.stats as s
+import scipy.special as ss
 import sortedcontainers as sc
 from itertools import chain
 
@@ -72,10 +73,19 @@ class AllelicMCMCRunner:
         Y = X.loc[X["idx"].isin(g[g].index)]
 
         f = np.zeros([len(Y)//2, 100])
+        l = np.zeros([len(Y)//2, 2])
         for i, (_, g) in enumerate(Y.groupby("idx")):
             f[i, :] = s.beta.rvs(g.loc[0, "MIN_COUNT"] + 1, g.loc[0, "MAJ_COUNT"] + 1, size = 100)/s.beta.rvs(g.loc[1, "MIN_COUNT"] + 1, g.loc[1, "MAJ_COUNT"] + 1, size = 100)
+            l[i, :] = np.r_[
+              ss.betaln(g.loc[0, "MIN_COUNT"] + 1, g.loc[0, "MAJ_COUNT"] + 1),
+              ss.betaln(g.loc[1, "MIN_COUNT"] + 1, g.loc[1, "MAJ_COUNT"] + 1),
+            ]
 
-        self.ref_bias = f.mean()
+        # weight mean by negative log marginal likelihoods
+        # take smaller of the two likelihoods to account for power imbalance
+        w = np.min(-l, 1, keepdims = True)
+
+        self.ref_bias = (f*w).sum()/(100*w.sum())
 
         #
         # concatenate burned in chunks for each arm
