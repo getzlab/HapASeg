@@ -7,6 +7,7 @@ import pandas as pd
 import pickle
 import scipy.stats as s
 import scipy.special as ss
+import sortedcontainers as sc
 
 from capy import mut
 
@@ -252,7 +253,29 @@ def main():
 
         #
         # concat burned in chunks for each arm
-        #for arm, Ra in R.groupby("arm"):
+        for arm, Ra in R.groupby("arm"):
+            A = A_MCMC(
+              pd.concat([x.P for x in Ra["results"]], ignore_index = True),
+              # need to fill in other aspects later
+            )
+
+            # replicate constructor steps to define initial breakpoint set and
+            # marginal likelihood dict
+            breakpoints = [None]*len(Ra)
+            A.seg_marg_liks = sc.SortedDict()
+            for j, Ras in enumerate(Ra.itertuples()):
+                start = Ras.start - Ra["start"].iloc[0]
+                breakpoints[j] = np.array(Ras.results.breakpoints) + start
+                for k, v in Ras.results.seg_marg_liks.items():
+                    A.seg_marg_liks[k + start] = v
+            A.breakpoints = sc.SortedSet(np.hstack(breakpoints))
+
+            A.marg_lik = np.full(A.n_iter, np.nan) # need to rescale n_iter later
+            A.marg_lik[0] = np.array(A.seg_marg_liks.values()).sum()
+
+            with open(output_dir + f"/AMCMC-arm{arm}.pickle", "wb") as f:
+                pickle.dump(A, f)
+
 
 if __name__ == "__main__":
     main()
