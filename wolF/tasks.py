@@ -65,6 +65,22 @@ class Hapaseg_concat(wolf.Task):
     """
     output_patterns = {
       "arms" : "AMCMC-arm*.pickle",
-      "ref_bias" : "ref_bias.txt",
+      "ref_bias" : ("ref_bias.txt", wolf.read_file)
+    }
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+
+class Hapaseg_amcmc(wolf.Task):
+    inputs = {
+      "amcmc_object" : None,
+      "ref_bias" : None,
+      "n_iter" : 20000,
+    }
+    script = """
+    hapaseg amcmc --amcmc_object ${amcmc_object} \
+            --ref_bias ${ref_bias} \
+            --n_iter ${n_iter}
+    """
+    output_patterns = {
+      "arm_level_MCMC" : "amcmc_results.pickle"
     }
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
