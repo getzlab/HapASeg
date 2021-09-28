@@ -15,7 +15,7 @@ class Hapaseg(wolf.Task):
             --n_workers 8
     """
     resources = { "cpus-per-task" : 8 }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v343"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
 
 class Hapaseg_load(wolf.Task):
     inputs = {
@@ -35,7 +35,7 @@ class Hapaseg_load(wolf.Task):
       "chromosome_intervals" : "chrom_int.pickle",
       "scatter_chunks" : "scatter_chunks.tsv"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v343"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
 
 class Hapaseg_burnin(wolf.Task):
     inputs = {
@@ -52,4 +52,19 @@ class Hapaseg_burnin(wolf.Task):
     output_patterns = {
       "burnin_MCMC" : "amcmc_results.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v343"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+
+class Hapaseg_concat(wolf.Task):
+    inputs = {
+      "chunks",
+      "scatter_intervals"
+    }
+    script = """
+    CHUNKS_STR=$(cat ${chunks} | tr '\n' ' ')
+    hapaseg concat --chunks $CHUNKS_STR --scatter_intervals ${scatter_intervals}
+    """
+    output_patterns = {
+      "arms" : "AMCMC-arm*.pickle",
+      "ref_bias" : "ref_bias.txt",
+    }
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
