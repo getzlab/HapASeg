@@ -18,7 +18,7 @@ class A_DP:
         self.n_samp = len(self.allelic_segs.iloc[0]["results"].breakpoint_list)
         self.ref_fasta = ref_fasta
 
-    def load_samp(self, samp_idx):
+    def load_seg_samp(self, samp_idx):
         if samp_idx > self.n_samp:
             raise ValueError(f"Only {self.n_samp} MCMC samples were taken!")
 
@@ -89,7 +89,7 @@ class A_DP:
 
         return S, pd.concat(all_SNPs, ignore_index = True)
 
-    def run_DP(S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50):
+    def run_DP(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50):
         #
         # define column indices
         clust_col = S.columns.get_loc("clust")
@@ -372,3 +372,129 @@ class A_DP:
             n_it += 1
 
         return np.r_[segs_to_clusters], np.r_[phase_orientations]
+
+    # map trace of segment cluster assignments to the SNPs within
+    @staticmethod
+    def map_seg_clust_assignments_to_SNPs(segs_to_clusters, S):
+        st_col = S.columns.get_loc("SNP_st")
+        en_col = S.columns.get_loc("SNP_en")
+        snps_to_clusters = np.zeros((segs_to_clusters.shape[0], S.iloc[-1, en_col] + 1), dtype = int)
+        for i, seg_assign in enumerate(segs_to_clusters):
+            for j, seg in enumerate(seg_assign):
+                snps_to_clusters[i, S.iloc[j, st_col]:S.iloc[j, en_col]] = seg
+
+        return snps_to_clusters
+
+    @staticmethod
+    def map_seg_phases_to_SNPs(phase, S):
+        st_col = S.columns.get_loc("SNP_st")
+        en_col = S.columns.get_loc("SNP_en")
+        snps_to_phase = np.zeros((phase.shape[0], S.iloc[-1, en_col] + 1), dtype = int)
+        for i, phase_orient in enumerate(phase):
+            for j, ph in enumerate(phase_orient):
+                snps_to_phase[i, S.iloc[j, st_col]:S.iloc[j, en_col]] = ph
+
+        return snps_to_phase
+
+    def run(self, N_seg_samps = 10, N_clust_samps = 50):
+        seg_sample_idx = np.random.choice(self.n_samp, N_seg_samps, replace = False)
+        S, SNPs = self.load_seg_samp(seg_sample_idx[0])
+        N_SNPs = len(SNPs)
+        
+        snps_to_clusters = -1*np.ones((N_clust_samps*N_seg_samps, N_SNPs), dtype = np.int16)
+        snps_to_phases = np.zeros((N_clust_samps*N_seg_samps, N_SNPs), dtype = bool)
+        snp_counts = -1*np.ones((N_seg_samps, N_SNPs, 2))
+        Segs = []
+
+        clust_prior = sc.SortedDict()
+        clust_count_prior = sc.SortedDict()
+
+        for n_it in range(N_seg_samps):
+            if n_it > 0:
+                S, SNPs = self.load_seg_samp(seg_sample_idx[n_it])
+
+            # get prior on segments' cluster assignments, if we've already performed a clustering step
+            seg_clust_prior = None
+            if n_it > 0:
+                n_clust_bins = snps_to_clusters.max() + 1
+                seg_clust_prior = np.zeros([n_clust_bins, len(S)])
+                for i, r in enumerate(S.itertuples()):
+                    seg_clust_prior[:, i] = np.bincount(snps_to_clusters[:N_clust_samps*n_it, r.SNP_st:r.SNP_en].ravel(), minlength = n_clust_bins)
+
+                # initialize the cluster assignments in S based on the previous DP
+                S["clust"] = [np.random.choice(seg_clust_prior.shape[0], p = x/x.sum()) for x in seg_clust_prior.T]
+
+                # flip segments based on the previous DP
+                flip_frac = np.r_[[flipped[z].mean() for z in [slice(x, y) for x, y in S[["SNP_st", "SNP_en"]].values]]]
+                S["flipped"] = flip_frac > np.random.rand(len(flip_frac))
+                S.loc[S["flipped"], ["min", "maj"]] = S.loc[S["flipped"], ["min", "maj"]].values[:, ::-1]
+                S.loc[S["flipped"], ["A_alt", "B_alt"]] = S.loc[S["flipped"], ["A_alt", "B_alt"]].values[:, ::-1]
+                S.loc[S["flipped"], ["A_ref", "B_ref"]] = S.loc[S["flipped"], ["A_ref", "B_ref"]].values[:, ::-1]
+
+                # unassign segments with ambiguous flip fraction
+                S.loc[~np.isin(flip_frac, [0, 1]), "clust"] = -1
+
+            # run clustering
+            s2c, ph = self.run_DP(S, clust_prior = clust_prior, clust_count_prior = clust_count_prior, n_iter = N_clust_samps)
+
+            # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
+            snps_to_clusters[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = self.map_seg_clust_assignments_to_SNPs(s2c, S)
+
+            # assign phase orientations to individual SNPs
+            snps_to_phases[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = self.map_seg_phases_to_SNPs(ph, S)
+
+            # compute prior on cluster locations/counts
+            S_a = np.zeros(s2c.max() + 1)
+            S_b = np.zeros(s2c.max() + 1)
+            N_c = np.zeros(s2c.max() + 1)
+            for seg_assignments, seg_phases in zip(s2c, ph):
+                # reset phases
+                S2 = S.copy()
+                S2.loc[S2["flipped"], ["min", "maj"]] = S2.loc[S2["flipped"], ["min", "maj"]].values[:, ::-1]
+
+                # match phases to current sample
+                S2.loc[seg_phases, ["min", "maj"]] = S2.loc[seg_phases, ["min", "maj"]].values[:, ::-1]
+
+                S_a += npg.aggregate(seg_assignments, S2["min"], size = s2c.max() + 1)
+                S_b += npg.aggregate(seg_assignments, S2["maj"], size = s2c.max() + 1)
+
+                N_c += npg.aggregate(seg_assignments, 1, size = s2c.max() + 1)
+
+            S_a /= N_clust_samps
+            S_b /= N_clust_samps
+            N_c /= N_clust_samps
+
+            c = np.c_[S_a, S_b]
+
+            next_clust_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), c[c.sum(1) > 0]))
+            next_clust_count_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), N_c[N_c > 0]))
+            for k, v in next_clust_prior.items():
+                if k in clust_prior:
+                    clust_prior[k] += v
+                else:
+                    clust_prior[k] = v
+            for k, v in next_clust_count_prior.items():
+                if k in clust_count_prior:
+                    clust_count_prior[k] += v
+                else:
+                    clust_count_prior[k] = v
+        # TODO: get iterative updating working. denominator isn't n_it; it's number of iterations this cluster has existed
+        #    for k, v in next_clust_prior.items():
+        #        if k in clust_prior:
+        #            # iteratively update average
+        #            clust_prior[k] += (v - clust_prior[k])/(n_it + 1)
+        #        else:
+        #            clust_prior[k] = v
+        #    # for clusters that don't exist in this iteration, average them with 0
+        #    for k, v in clust_prior.items():
+        #        if k != -1 and k not in next_clust_prior:
+        #            clust_prior[k] -= clust_prior[k]/(n_it + 1)
+
+            # get probability that individual SNPs are flipped, to use as probability for
+            # flipping segments for next DP iteration
+            flipped = np.zeros(S.iloc[-1, S.columns.get_loc("SNP_en")] + 1, dtype = bool)
+            for _, st, en in S.loc[S["flipped"], ["SNP_st", "SNP_en"]].itertuples():
+                flipped[st:en] = True
+
+            # save overall segmentation for this sample
+            Segs.append(S)
