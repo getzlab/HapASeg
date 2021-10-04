@@ -318,8 +318,7 @@ class A_DP:
             count_prior /= count_prior.sum()
 
             # choose to join a cluster or make a new one (choice_idx = 0) 
-            T = 1 # temperature parameter for scaling choice distribution
-            choice_p = np.exp(T*(MLs - MLs_max + np.log(count_prior) + np.log(clust_prior_p)))/np.exp(T*(MLs - MLs_max + np.log(count_prior) + np.log(clust_prior_p))).sum()
+            choice_p = np.exp(MLs - MLs_max + np.log(count_prior) + np.log(clust_prior_p))/np.exp(MLs - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
             choice_idx = np.random.choice(
               np.r_[0:len(MLs)],
               p = choice_p
