@@ -1,4 +1,5 @@
 import colorama
+import copy
 import itertools
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -9,19 +10,28 @@ import scipy.sparse as sp
 import scipy.special as ss
 import sortedcontainers as sc
 
+from capy import seq
+
 class A_DP:
-    def __init__(self, allelic_segs):
+    def __init__(self, allelic_segs_pickle):
+        self.allelic_segs = pd.read_pickle(allelic_segs_pickle)
+        self.n_samp = len(self.allelic_segs.iloc[0]["results"].breakpoint_list)
+
+    def load_samp(self, samp_idx):
+        if samp_idx > self.n_samp:
+            raise ValueError(f"Only {self.n_samp} MCMC samples were taken!")
+
         all_segs = []
         all_SNPs = []
 
-        maj_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MAJ_COUNT")
-        min_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
+        maj_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("MAJ_COUNT")
+        min_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
 
-        alt_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("ALT_COUNT")
-        ref_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("REF_COUNT")
+        alt_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("ALT_COUNT")
+        ref_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("REF_COUNT")
 
         chunk_offset = 0
-        for _, H in allelic_segs.dropna(subset = ["results"]).iterrows():
+        for _, H in self.allelic_segs.dropna(subset = ["results"]).iterrows():
             r = copy.deepcopy(H["results"])
 
             # set phasing orientation back to original
