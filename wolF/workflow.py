@@ -188,3 +188,19 @@ hapaseg_arm_AMCMC = hapaseg.Hapaseg_amcmc(
 )
 
 hapaseg_arm_AMCMC_results = hapaseg_arm_AMCMC.run()
+
+# concat arm level results
+A = []
+for arm_file in hapaseg_arm_AMCMC_results["arm_level_MCMC"]:
+    with open(arm_file, "rb") as f:
+        H = pickle.load(f)
+        A.append(pd.Series({ "chr" : H.P["chr"].iloc[0], "start" : H.P["pos"].iloc[0], "end" : H.P["pos"].iloc[-1], "results" : H }))
+
+# get into order
+A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(drop = True)
+
+# save
+# TODO: make temp file
+A.to_pickle("arms.pickle")
+
+# run DP
