@@ -13,8 +13,6 @@ class A_DP:
     def __init__(self, allelic_segs):
         all_segs = []
         all_SNPs = []
-        all_PIs = []
-        all_BPs = []
 
         maj_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MAJ_COUNT")
         min_idx = allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
@@ -62,10 +60,6 @@ class A_DP:
                   r._Piloc(st, en, ref_idx, inc_samp & ~r.P["aidx"]).sum()
                 ])
 
-            # save breakpoints/phase orientations for this chunk
-            all_BPs.append(bpl + chunk_offset)
-            all_PIs.append(pi_samp.intervals() + chunk_offset if r.phase_correct else [])
-
             chunk_offset += len(r.P)
 
         # convert samples into dataframe
@@ -82,4 +76,4 @@ class A_DP:
         # initial phasing orientation
         S["flipped"] = False
 
-        return S, pd.concat(all_SNPs, ignore_index = True), np.concatenate(all_BPs), np.concatenate(all_PIs)
+        return S, pd.concat(all_SNPs, ignore_index = True)
