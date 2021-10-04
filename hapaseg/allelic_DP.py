@@ -13,9 +13,10 @@ import sortedcontainers as sc
 from capy import seq
 
 class A_DP:
-    def __init__(self, allelic_segs_pickle):
+    def __init__(self, allelic_segs_pickle, ref_fasta = None):
         self.allelic_segs = pd.read_pickle(allelic_segs_pickle)
         self.n_samp = len(self.allelic_segs.iloc[0]["results"].breakpoint_list)
+        self.ref_fasta = ref_fasta
 
     def load_samp(self, samp_idx):
         if samp_idx > self.n_samp:
@@ -42,7 +43,7 @@ class A_DP:
                 r.P.iloc[st:en, min_idx] = x
 
             # save SNPs for this chunk
-            all_SNPs.append(pd.DataFrame({ "maj" : r.P["MAJ_COUNT"], "min" : r.P["MIN_COUNT"], "gpos" : seq.chrpos2gpos(r.P.loc[0, "chr"], r.P["pos"]) }))
+            all_SNPs.append(pd.DataFrame({ "maj" : r.P["MAJ_COUNT"], "min" : r.P["MIN_COUNT"], "gpos" : seq.chrpos2gpos(r.P.loc[0, "chr"], r.P["pos"], ref = self.ref_fasta) }))
 
             # draw breakpoint, phasing, and SNP inclusion sample from segmentation MCMC trace
             bp_samp, pi_samp, inc_samp = (r.breakpoint_list[samp_idx], r.phase_interval_list[samp_idx] if r.phase_correct else None, r.include[samp_idx])
@@ -76,8 +77,8 @@ class A_DP:
         S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj", "A_alt", "A_ref", "B_alt", "B_ref"])
 
         # convert chr-relative positions to absolute genomic coordinates
-        S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"])
-        S["end_gp"] = seq.chrpos2gpos(S["chr"], S["end"])
+        S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"], ref = self.ref_fasta)
+        S["end_gp"] = seq.chrpos2gpos(S["chr"], S["end"], ref = self.ref_fasta)
 
         # initial cluster assignments
         S["clust"] = -1 # initially, all segments are unassigned
