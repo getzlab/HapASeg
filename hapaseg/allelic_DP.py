@@ -152,13 +152,17 @@ class A_DP:
 #                J_a = S.iloc[st:(en + 1), min_col].sum()
 #                J_b = S.iloc[st:(en + 1), maj_col].sum()
             SU_a = SU_b = SD_a = SD_b = 0
-            if targ_clust != - 1 and st - 1 > 0 and targ_clust == S.iloc[st - 1, clust_col]:
+            # if target cluster is being moved to the garbage, it won't be joined with upstream/downstream
+            if targ_clust == -2:
+                J_a = 0
+                J_b = 0
+            if targ_clust != - 1 and st - 1 > 0 and (targ_clust == S.iloc[st - 1, clust_col] or targ_clust == -2):
                 J_a += U_a
                 J_b += U_b
             else:
                 SU_a += U_a
                 SU_b += U_b
-            if targ_clust != - 1 and en + 1 < len(S) and targ_clust == S.iloc[en + 1, clust_col]:
+            if targ_clust != - 1 and en + 1 < len(S) and (targ_clust == S.iloc[en + 1, clust_col] or targ_clust == -2):
                 J_a += D_a
                 J_b += D_b
             else:
@@ -173,9 +177,9 @@ class A_DP:
         # for the first round of clustering, this is { 0 : 1 }
         clust_sums = sc.SortedDict({
           **{ k : np.r_[v["min"], v["maj"]] for k, v in S.groupby("clust")[["min", "maj"]].sum().to_dict(orient = "index").items() },
-          **{-1 : np.r_[0, 0]}
+          **{-1 : np.r_[0, 0], -2 : np.r_[0, 0]}
         })
-        # for the first round, this is { -1 : np.r_[0, 0], 0 : np.r_[S[0, "min"], S[0, "maj"]] }
+        # for the first round, this is { -1/-2 : np.r_[0, 0], 0 : np.r_[S[0, "min"], S[0, "maj"]] }
         clust_members = sc.SortedDict({ k : set(v) for k, v in S.groupby("clust").groups.items() if k != -1 })
         # for the first round, this is { 0 : {0} }
         unassigned_segs = sc.SortedList(S.index[S["clust"] == -1])
@@ -276,7 +280,7 @@ class A_DP:
             A_b = clust_sums[cur_clust][1] if cur_clust in clust_sums else 0
             B_a = S.iloc[seg_idx, min_col].sum() # TODO: slow if seg_idx contains many SNPs
             B_b = S.iloc[seg_idx, maj_col].sum()
-            C_ab = np.r_[clust_sums.values()] # first term (-1) = make new cluster
+            C_ab = np.r_[clust_sums.values()] # first terms: (-1) = make new cluster, (-2) = garbage cluster
             #C_ab = np.r_[[v for k, v in clust_sums.items() if k != cur_clust or cur_clust == -1]] # if we don't want to explicitly propose letting B rejoin cur_clust
 
             #
@@ -392,7 +396,7 @@ class A_DP:
             # -1 = brand new, -2, -3, ... = -(prior clust index) - 2
             choice = np.r_[-np.r_[prior_diff] - 2, clust_counts.keys()][choice_idx]
 
-            #breakpoint()
+            breakpoint()
 
             # create new cluster
             if choice < 0:
