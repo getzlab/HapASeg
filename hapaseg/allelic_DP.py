@@ -84,7 +84,7 @@ class A_DP:
 
         # initial cluster assignments
         S["clust"] = -1 # initially, all segments are unassigned
-        S.iloc[0, S.columns.get_loc("clust")] = 0 # first segment is assigned to cluster 0
+        S.iloc[0, S.columns.get_loc("clust")] = 1 # first segment is assigned to cluster 1
 
         # initial phasing orientation
         S["flipped"] = False
@@ -112,6 +112,7 @@ class A_DP:
         clust_prior_mat = np.r_[clust_prior.values()]
 
         clust_count_prior[-1] = 0.1 # DP alpha factor, i.e. relative probability of opening new cluster (TODO: make specifiable)
+        clust_count_prior[0] = 0.01 # relative probability of sending a cluster to the garbage
 
         #
         # assign segments to likeliest prior component {{{
@@ -153,16 +154,16 @@ class A_DP:
 #                J_b = S.iloc[st:(en + 1), maj_col].sum()
             SU_a = SU_b = SD_a = SD_b = 0
             # if target cluster is being moved to the garbage, it won't be joined with upstream/downstream
-            if targ_clust == -2:
+            if targ_clust == 0:
                 J_a = 0
                 J_b = 0
-            if targ_clust != - 1 and st - 1 > 0 and (targ_clust == S.iloc[st - 1, clust_col] or targ_clust == -2):
+            if targ_clust != - 1 and st - 1 > 0 and (targ_clust == S.iloc[st - 1, clust_col] or targ_clust == 0):
                 J_a += U_a
                 J_b += U_b
             else:
                 SU_a += U_a
                 SU_b += U_b
-            if targ_clust != - 1 and en + 1 < len(S) and (targ_clust == S.iloc[en + 1, clust_col] or targ_clust == -2):
+            if targ_clust != - 1 and en + 1 < len(S) and (targ_clust == S.iloc[en + 1, clust_col] or targ_clust == 0):
                 J_a += D_a
                 J_b += D_b
             else:
@@ -174,14 +175,14 @@ class A_DP:
         #
         # initialize cluster tracking hash tables
         clust_counts = sc.SortedDict(S["clust"].value_counts().drop(-1, errors = "ignore"))
-        # for the first round of clustering, this is { 0 : 1 }
+        # for the first round of clustering, this is { 1 : 1 }
         clust_sums = sc.SortedDict({
           **{ k : np.r_[v["min"], v["maj"]] for k, v in S.groupby("clust")[["min", "maj"]].sum().to_dict(orient = "index").items() },
-          **{-1 : np.r_[0, 0], -2 : np.r_[0, 0]}
+          **{-1 : np.r_[0, 0], 0 : np.r_[0, 0]}
         })
-        # for the first round, this is { -1/-2 : np.r_[0, 0], 0 : np.r_[S[0, "min"], S[0, "maj"]] }
+        # for the first round, this is { -1/0 : np.r_[0, 0], 1 : np.r_[S[0, "min"], S[0, "maj"]] }
         clust_members = sc.SortedDict({ k : set(v) for k, v in S.groupby("clust").groups.items() if k != -1 })
-        # for the first round, this is { 0 : {0} }
+        # for the first round, this is { 1 : {0} }
         unassigned_segs = sc.SortedList(S.index[S["clust"] == -1])
 
         max_clust_idx = np.max(clust_members.keys() | clust_prior.keys() if clust_prior is not None else {})
@@ -197,6 +198,7 @@ class A_DP:
         n_it_last = 0
         while len(segs_to_clusters) < n_iter:
             if not n_it % 100:
+                # TODO: print garbage stats here
                 print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
                 print("n unassigned: {}".format((S["clust"] == -1).sum()))
 
@@ -280,7 +282,7 @@ class A_DP:
             A_b = clust_sums[cur_clust][1] if cur_clust in clust_sums else 0
             B_a = S.iloc[seg_idx, min_col].sum() # TODO: slow if seg_idx contains many SNPs
             B_b = S.iloc[seg_idx, maj_col].sum()
-            C_ab = np.r_[clust_sums.values()] # first terms: (-1) = make new cluster, (-2) = garbage cluster
+            C_ab = np.r_[clust_sums.values()] # first terms: (-1) = make new cluster, (0) = garbage cluster
             #C_ab = np.r_[[v for k, v in clust_sums.items() if k != cur_clust or cur_clust == -1]] # if we don't want to explicitly propose letting B rejoin cur_clust
 
             #
@@ -298,6 +300,7 @@ class A_DP:
                 U_a = U_b = D_a = D_b = 0
 
                 # maj/min counts of contiguous upstream segments belonging to the same cluster
+                # TODO: skip over adjacent segments in the garbage
                 U_cl = S.iloc[st - 1, clust_col]
                 j = 1
                 while st - j > 0 and S.iloc[st - j, clust_col] != - 1 and \
@@ -369,7 +372,7 @@ class A_DP:
                 # [-1 (totally new cluster), <prior_diff>, <prior_com + prior_null>]
                 prior_idx = np.r_[
                   np.r_[[clust_prior.index(x) for x in prior_diff]],
-                  np.r_[[clust_prior.index(x) if x in clust_prior else 0 for x in (prior_com | prior_null)]]
+                  np.r_[[clust_prior.index(x) if x in clust_prior else 0 for x in (prior_com | prior_null | {0})]]
                 ]
 
                 prior_MLs = ss.betaln( # prior clusters + segment
@@ -384,7 +387,7 @@ class A_DP:
                 MLs = np.r_[np.full(len(prior_diff), MLs[0]), MLs[1:]]
                 
             # DP prior based on clusters sizes
-            count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_counts.values()]
+            count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_count_prior[0], clust_counts.values()]
             count_prior /= count_prior.sum()
 
             # choose to join a cluster or make a new one (choice_idx = 0) 
