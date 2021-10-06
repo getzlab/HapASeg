@@ -3,6 +3,7 @@ import copy
 import itertools
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import more_itertools
 import numpy as np
 import numpy_groupies as npg
 import pandas as pd
@@ -143,6 +144,29 @@ class A_DP:
 
         # }}}
 
+        def SJliks(targ_clust, st, en, J_a, J_b):
+#            if st == en:
+#                J_a = S.iat[st, min_col].sum()
+#                J_b = S.iat[st, maj_col].sum()
+#            else:
+#                J_a = S.iloc[st:(en + 1), min_col].sum()
+#                J_b = S.iloc[st:(en + 1), maj_col].sum()
+            SU_a = SU_b = SD_a = SD_b = 0
+            if targ_clust != - 1 and st - 1 > 0 and targ_clust == S.iloc[st - 1, clust_col]:
+                J_a += U_a
+                J_b += U_b
+            else:
+                SU_a += U_a
+                SU_b += U_b
+            if targ_clust != - 1 and en + 1 < len(S) and targ_clust == S.iloc[en + 1, clust_col]:
+                J_a += D_a
+                J_b += D_b
+            else:
+                SD_a += D_a
+                SD_b += D_b
+
+            return ss.betaln(SU_a + 1, SU_b + 1) + ss.betaln(J_a + 1, J_b + 1) + ss.betaln(SD_a + 1, SD_b + 1)
+
         #
         # initialize cluster tracking hash tables
         clust_counts = sc.SortedDict(S["clust"].value_counts().drop(-1, errors = "ignore"))
@@ -168,7 +192,7 @@ class A_DP:
         n_it = 0
         n_it_last = 0
         while len(segs_to_clusters) < n_iter:
-            if not n_it % 1000:
+            if not n_it % 100:
                 print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
                 print("n unassigned: {}".format((S["clust"] == -1).sum()))
 
@@ -255,6 +279,48 @@ class A_DP:
             C_ab = np.r_[clust_sums.values()] # first term (-1) = make new cluster
             #C_ab = np.r_[[v for k, v in clust_sums.items() if k != cur_clust or cur_clust == -1]] # if we don't want to explicitly propose letting B rejoin cur_clust
 
+            #
+            # adjacent segment likelihoods
+            adj_AB = 0
+            adj_BC = np.zeros(len(clust_sums))
+
+            ordpairs = np.c_[
+              [np.r_[list(x)][[0, -1]] for x in more_itertools.consecutive_groups(
+                np.sort(seg_idx))
+              ]
+            ]
+
+            for st, en in ordpairs:
+                U_a = U_b = D_a = D_b = 0
+
+                # maj/min counts of contiguous upstream segments belonging to the same cluster
+                U_cl = S.iloc[st - 1, clust_col]
+                j = 1
+                while st - j > 0 and S.iloc[st - j, clust_col] != - 1 and \
+                  S.iloc[st - j, clust_col] == U_cl:
+                    U_a += S.iloc[st - j, min_col]
+                    U_b += S.iloc[st - j, maj_col]
+
+                    j += 1
+
+                # maj/min counts of contiguous downstream segments belonging to the same cluster
+                D_cl = S.iloc[en + 1, clust_col]
+                j = 1
+                while en + j < len(S) and S.iloc[en + j, clust_col] != - 1 and \
+                  S.iloc[en + j, clust_col] == D_cl:
+                    D_a += S.iloc[en + j, min_col]
+                    D_b += S.iloc[en + j, maj_col]
+
+                    j += 1
+
+                # maj/min counts of the segment(s) being moved
+                S_a = S.iloc[st:(en + 1), min_col].sum()
+                S_b = S.iloc[st:(en + 1), maj_col].sum()
+
+                adj_AB += SJliks(cur_clust, st, en, S_a, S_b)
+                for i, cl in enumerate(clust_sums.keys()):
+                    adj_BC[i] += SJliks(cl, st, en, S_a, S_b)
+
             # A+B,C -> A,B+C
 
             # A+B is likelihood of current cluster B is part of
@@ -266,8 +332,8 @@ class A_DP:
             # B+C is likelihood of target cluster post-join
             BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
 
-            #     L(join)  L(split)
-            MLs = A + BC - (AB + C)
+            #     L(join)           L(split)
+            MLs = A + BC + adj_BC - (AB + C + adj_AB)
 
             MLs_max = np.max(MLs)
 
