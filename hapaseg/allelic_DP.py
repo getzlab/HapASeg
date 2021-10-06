@@ -302,28 +302,30 @@ class A_DP:
                 U_a = U_b = D_a = D_b = 0
 
                 # maj/min counts of contiguous upstream segments belonging to the same cluster
-                U_cl = S.iloc[st - 1, clust_col]
-                j = 1
-                while st - j > 0 and S.iloc[st - j, clust_col] != -1 and \
-                  (S.iloc[st - j, clust_col] == U_cl or S.iloc[st - j, clust_col] == 0):
-                    # skip over adjacent segments that are in the garbage;
-                    # we only care about adjacent segments actually assigned to clusters
-                    if S.iloc[st - j, clust_col] != 0:
-                        U_a += S.iloc[st - j, min_col]
-                        U_b += S.iloc[st - j, maj_col]
+                if st - 1 > 0:
+                    U_cl = S.iloc[st - 1, clust_col]
+                    j = 1
+                    while st - j > 0 and S.iloc[st - j, clust_col] != -1 and \
+                      (S.iloc[st - j, clust_col] == U_cl or S.iloc[st - j, clust_col] == 0):
+                        # skip over adjacent segments that are in the garbage;
+                        # we only care about adjacent segments actually assigned to clusters
+                        if S.iloc[st - j, clust_col] != 0:
+                            U_a += S.iloc[st - j, min_col]
+                            U_b += S.iloc[st - j, maj_col]
 
-                    j += 1
+                        j += 1
 
                 # maj/min counts of contiguous downstream segments belonging to the same cluster
-                D_cl = S.iloc[en + 1, clust_col]
-                j = 1
-                while en + j < len(S) and S.iloc[en + j, clust_col] != -1 and \
-                  (S.iloc[en + j, clust_col] == D_cl or S.iloc[en + j, clust_col] == 0):
-                    if S.iloc[en + j, clust_col] != 0:
-                        D_a += S.iloc[en + j, min_col]
-                        D_b += S.iloc[en + j, maj_col]
+                if en + 1 < len(S):
+                    D_cl = S.iloc[en + 1, clust_col]
+                    j = 1
+                    while en + j < len(S) and S.iloc[en + j, clust_col] != -1 and \
+                      (S.iloc[en + j, clust_col] == D_cl or S.iloc[en + j, clust_col] == 0):
+                        if S.iloc[en + j, clust_col] != 0:
+                            D_a += S.iloc[en + j, min_col]
+                            D_b += S.iloc[en + j, maj_col]
 
-                    j += 1
+                        j += 1
 
                 # maj/min counts of the segment(s) being moved
                 S_a = S.iloc[st:(en + 1), min_col].sum()
