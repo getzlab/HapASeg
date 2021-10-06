@@ -200,9 +200,9 @@ class A_DP:
         n_it_last = 0
         while len(segs_to_clusters) < n_iter:
             if not n_it % 100:
-                # TODO: print garbage stats here
-                print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
+                print(S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
                 print("n unassigned: {}".format((S["clust"] == -1).sum()))
+                print("n garbage: {}".format((S["clust"] == 0).sum()))
 
             # we are burned in once all segments are assigned to a cluster
             if not burned_in and (S["clust"] != -1).all():
