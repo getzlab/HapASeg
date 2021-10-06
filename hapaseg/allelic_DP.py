@@ -303,7 +303,7 @@ class A_DP:
                 # TODO: skip over adjacent segments in the garbage
                 U_cl = S.iloc[st - 1, clust_col]
                 j = 1
-                while st - j > 0 and S.iloc[st - j, clust_col] != - 1 and \
+                while st - j > 0 and S.iloc[st - j, clust_col] != -1 and \
                   S.iloc[st - j, clust_col] == U_cl:
                     U_a += S.iloc[st - j, min_col]
                     U_b += S.iloc[st - j, maj_col]
@@ -313,7 +313,7 @@ class A_DP:
                 # maj/min counts of contiguous downstream segments belonging to the same cluster
                 D_cl = S.iloc[en + 1, clust_col]
                 j = 1
-                while en + j < len(S) and S.iloc[en + j, clust_col] != - 1 and \
+                while en + j < len(S) and S.iloc[en + j, clust_col] != -1 and \
                   S.iloc[en + j, clust_col] == D_cl:
                     D_a += S.iloc[en + j, min_col]
                     D_b += S.iloc[en + j, maj_col]
