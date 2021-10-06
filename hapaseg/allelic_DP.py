@@ -153,8 +153,10 @@ class A_DP:
 #                J_a = S.iloc[st:(en + 1), min_col].sum()
 #                J_b = S.iloc[st:(en + 1), maj_col].sum()
             SU_a = SU_b = SD_a = SD_b = 0
-            # if target cluster is being moved to the garbage, it won't be joined with upstream/downstream
+            # if target segments are being moved to the garbage, it is equivalent to making them their own segment, and joining the upstream and downstream segments
             if targ_clust == 0:
+                SU_a = J_a
+                SU_b = J_b
                 J_a = 0
                 J_b = 0
             if targ_clust != - 1 and st - 1 > 0 and (targ_clust == S.iloc[st - 1, clust_col] or targ_clust == 0):
@@ -300,7 +302,7 @@ class A_DP:
                 U_a = U_b = D_a = D_b = 0
 
                 # maj/min counts of contiguous upstream segments belonging to the same cluster
-                # TODO: skip over adjacent segments in the garbage
+                # TODO: skip over adjacent segments that are in the garbage; we only care about adjacent segments actually assigned to clusters
                 U_cl = S.iloc[st - 1, clust_col]
                 j = 1
                 while st - j > 0 and S.iloc[st - j, clust_col] != -1 and \
