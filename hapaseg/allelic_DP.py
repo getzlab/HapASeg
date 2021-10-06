@@ -225,7 +225,7 @@ class A_DP:
 
                 # if segment was already assigned to a cluster, unassign it
                 cur_clust = int(S.iloc[seg_idx, clust_col])
-                if cur_clust != -1:
+                if cur_clust > 0:
                     clust_counts[cur_clust] -= 1
                     if clust_counts[cur_clust] == 0:
                         del clust_counts[cur_clust]
@@ -333,6 +333,9 @@ class A_DP:
                 for i, cl in enumerate(clust_sums.keys()):
                     adj_BC[i] += SJliks(cl, st, en, S_a, S_b, U_a, U_b, D_a, D_b)
 
+            # TODO: make it impossible to send a segment/cluster to the garbage
+            #       if it's only adjacent to unassigned segments (is there a better criteria?)
+
             # A+B,C -> A,B+C
 
             # A+B is likelihood of current cluster B is part of
@@ -402,9 +405,10 @@ class A_DP:
               p = choice_p
             )
             # -1 = brand new, -2, -3, ... = -(prior clust index) - 2
-            choice = np.r_[-np.r_[prior_diff] - 2, clust_counts.keys()][choice_idx]
+            # 0 = garbage
+            choice = np.r_[-np.r_[prior_diff] - 2, 0, clust_counts.keys()][choice_idx]
 
-            breakpoint()
+            #breakpoint()
 
             # create new cluster
             if choice < 0:
@@ -424,6 +428,10 @@ class A_DP:
                 clust_sums[new_clust_idx] = np.r_[B_a, B_b]
                 clust_members[new_clust_idx] = set(seg_idx)
 
+            # send to garbage
+            elif choice == 0:
+                S.iloc[seg_idx, clust_col] = 0
+
             # join existing cluster
             else:
                 clust_counts[choice] += n_move 
@@ -433,7 +441,7 @@ class A_DP:
                 clust_members[choice].update(set(seg_idx))
 
             for si in seg_idx:
-                unassigned_segs.remove(si)
+                unassigned_segs.discard(si)
 
             # track cluster assignment for segment(s) (XXX: may not be necessary anymore)
             if burned_in:
