@@ -145,7 +145,7 @@ class A_DP:
 
         # }}}
 
-        def SJliks(targ_clust, st, en, J_a, J_b):
+        def SJliks(targ_clust, st, en, J_a, J_b, U_a, U_b, D_a, D_b):
 #            if st == en:
 #                J_a = S.iat[st, min_col].sum()
 #                J_b = S.iat[st, maj_col].sum()
@@ -324,9 +324,9 @@ class A_DP:
                 S_a = S.iloc[st:(en + 1), min_col].sum()
                 S_b = S.iloc[st:(en + 1), maj_col].sum()
 
-                adj_AB += SJliks(cur_clust, st, en, S_a, S_b)
+                adj_AB += SJliks(cur_clust, st, en, S_a, S_b, U_a, U_b, D_a, D_b)
                 for i, cl in enumerate(clust_sums.keys()):
-                    adj_BC[i] += SJliks(cl, st, en, S_a, S_b)
+                    adj_BC[i] += SJliks(cl, st, en, S_a, S_b, U_a, U_b, D_a, D_b)
 
             # A+B,C -> A,B+C
 
