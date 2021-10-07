@@ -145,7 +145,7 @@ class A_DP:
 
         # }}}
 
-        def SJliks(targ_clust, st, en, J_a, J_b, U_a, U_b, D_a, D_b):
+        def SJliks(targ_clust, upstream_clust, downstream_clust, J_a, J_b, U_a, U_b, D_a, D_b):
 #            if st == en:
 #                J_a = S.iat[st, min_col].sum()
 #                J_b = S.iat[st, maj_col].sum()
@@ -160,16 +160,13 @@ class A_DP:
                 J_a = 0
                 J_b = 0
 
-                # we cannot send a segment to the garbage adjacent to any unassigned segment
-                if S.iloc[st - 1, clust_col] == -1 or S.iloc[en + 1, clust_col] == -1:
-                    return -np.inf
-            if targ_clust != - 1 and st - 1 > 0 and (targ_clust == S.iloc[st - 1, clust_col] or targ_clust == 0):
+            if targ_clust != - 1 and st - 1 > 0 and (targ_clust == upstream_clust or targ_clust == 0):
                 J_a += U_a
                 J_b += U_b
             else:
                 SU_a += U_a
                 SU_b += U_b
-            if targ_clust != - 1 and en + 1 < len(S) and (targ_clust == S.iloc[en + 1, clust_col] or targ_clust == 0):
+            if targ_clust != - 1 and en + 1 < len(S) and (targ_clust == downstream_clust or targ_clust == 0):
                 J_a += D_a
                 J_b += D_b
             else:
