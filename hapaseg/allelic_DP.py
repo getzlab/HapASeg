@@ -217,25 +217,43 @@ class A_DP:
             #if np.random.rand() < 1:
                 # bias picking unassigned segments if >90% of segments have been assigned
                 if len(unassigned_segs) > 0 and len(unassigned_segs)/len(S) < 0.1 and np.random.rand() < 0.5:
-                    seg_idx = np.r_[np.random.choice(unassigned_segs)]
+                    seg_idx = sc.SortedSet({np.random.choice(unassigned_segs)})
                 else:
-                    seg_idx = np.r_[np.random.choice(len(S))]
+                    seg_idx = sc.SortedSet({np.random.choice(len(S))})
 
-                n_move = 1
+                cur_clust = int(S.iloc[seg_idx, clust_col])
+
+                # expand segment to include all adjacent segments in the same cluster
+                if np.random.rand() < 0.5:
+                    si = seg_idx[0]
+
+                    j = 1
+                    while cur_clust != -1 and si - j > 0 and \
+                      S.iloc[si - j, clust_col] == cur_clust:
+                        seg_idx.add(si - j)
+                        j += 1
+                    j = 1
+                    while cur_clust != -1 and si + j < len(S) and \
+                      S.iloc[si + j, clust_col] == cur_clust:
+                        seg_idx.add(si + j)
+                        j += 1
+
+                seg_idx = np.r_[list(seg_idx)]
+
+                n_move = len(seg_idx)
 
                 # if segment was already assigned to a cluster, unassign it
-                cur_clust = int(S.iloc[seg_idx, clust_col])
                 if cur_clust > 0:
-                    clust_counts[cur_clust] -= 1
+                    clust_counts[cur_clust] -= n_move
                     if clust_counts[cur_clust] == 0:
                         del clust_counts[cur_clust]
                         del clust_sums[cur_clust]
                         del clust_members[cur_clust]
                     else:
-                        clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col], S.iloc[seg_idx, maj_col]]
+                        clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col].sum(), S.iloc[seg_idx, maj_col].sum()]
                         clust_members[cur_clust] -= set(seg_idx)
 
-                    unassigned_segs.add(seg_idx)
+                    unassigned_segs.update(seg_idx)
                     S.iloc[seg_idx, clust_col] = -1
 
             # pick a cluster at random
