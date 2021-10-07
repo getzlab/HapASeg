@@ -308,8 +308,6 @@ class A_DP:
 
             #
             # adjacent segment likelihoods
-            adj_AB = 0
-            adj_BC = np.zeros(len(clust_sums))
 
             ordpairs = np.c_[
               [np.r_[list(x)][[0, -1]] for x in more_itertools.consecutive_groups(
@@ -317,7 +315,13 @@ class A_DP:
               ]
             ]
 
-            for st, en in ordpairs:
+            adj_AB = 0
+            adj_BC = np.zeros(len(clust_sums))
+
+            UD_counts = np.zeros([len(ordpairs), 4])
+            adj_clusters = np.full([len(ordpairs), 2], -1)
+
+            for o, (st, en) in enumerate(ordpairs):
                 U_a = U_b = D_a = D_b = 0
 
                 # maj/min counts of contiguous upstream segments belonging to the same cluster
@@ -329,6 +333,7 @@ class A_DP:
                         j += 1
 
                     U_cl = S.iloc[st - j, clust_col]
+                    adj_clusters[o, 0] = U_cl
 
                     while st - j > 0 and S.iloc[st - j, clust_col] != -1 and \
                       (S.iloc[st - j, clust_col] == U_cl or S.iloc[st - j, clust_col] == 0):
@@ -346,6 +351,7 @@ class A_DP:
                         j += 1
 
                     D_cl = S.iloc[en + j, clust_col]
+                    adj_clusters[o, 1] = D_cl
 
                     while en + j < len(S) and S.iloc[en + j, clust_col] != -1 and \
                       (S.iloc[en + j, clust_col] == D_cl or S.iloc[en + j, clust_col] == 0):
@@ -355,13 +361,58 @@ class A_DP:
 
                         j += 1
 
-                # maj/min counts of the segment(s) being moved
-                S_a = S.iloc[st:(en + 1), min_col].sum()
-                S_b = S.iloc[st:(en + 1), maj_col].sum()
+                UD_counts[o, :] = np.r_[U_a, U_b, D_a, D_b]
 
-                adj_AB += SJliks(cur_clust, st, en, S_a, S_b, U_a, U_b, D_a, D_b)
-                for i, cl in enumerate(clust_sums.keys()):
-                    adj_BC[i] += SJliks(cl, st, en, S_a, S_b, U_a, U_b, D_a, D_b)
+            # if there are any segments being moved adjacent to already existing clusters, get local split/join likelihoods
+            adj_idx = ~(adj_clusters == -1).all(1)
+
+            if adj_idx.any():
+                # maj/min counts of the segment(s) being moved
+                #S_a = S.iloc[st:(en + 1), min_col].sum()
+                S_a = S.iloc[:, min_col].values[st:(en + 1)].sum()
+                #S_b = S.iloc[st:(en + 1), maj_col].sum()
+                S_b = S.iloc[:, maj_col].values[st:(en + 1)].sum()
+
+                for j in np.flatnonzero(adj_idx):
+                    cl_u = adj_clusters[j, 0]
+                    cl_d = adj_clusters[j, 1]
+                    U_a = UD_counts[j, 0]
+                    U_b = UD_counts[j, 1]
+                    D_a = UD_counts[j, 2]
+                    D_b = UD_counts[j, 3]
+
+                    adj_AB += SJliks(
+                      targ_clust = cur_clust, 
+                      upstream_clust = cl_u, 
+                      downstream_clust = cl_d, 
+                      J_a = S_a, 
+                      J_b = S_b,
+                      U_a = U_a,
+                      U_b = U_b,
+                      D_a = D_a,
+                      D_b = D_b
+                    )
+
+                    for cl in {-1, 0, cl_u, cl_d}:
+                        idx = clust_sums.index(cl)
+                        adj_BC[idx] += SJliks(
+                          targ_clust = cl, 
+                          upstream_clust = cl_u, 
+                          downstream_clust = cl_d, 
+                          J_a = S_a, 
+                          J_b = S_b,
+                          U_a = U_a,
+                          U_b = U_b,
+                          D_a = D_a,
+                          D_b = D_b
+                        )
+                        # we cannot send a segment to the garbage adjacent to any unassigned segment
+                        # TODO: this means we cannot throw the first or last segments in the garbage
+                        if cl == 0 and (cl_u == -1 or cl_d == -1):
+                            adj_BC[idx] = -np.inf
+            else:
+                # we cannot send a segment to the garbage adjacent to any unassigned segment
+                adj_BC[clust_sums.index(0)] = -np.inf
 
             # A+B,C -> A,B+C
 
