@@ -188,6 +188,9 @@ class A_DP:
         # for the first round, this is { 1 : {0} }
         unassigned_segs = sc.SortedList(S.index[S["clust"] == -1])
 
+        # store this as numpy for speed
+        clusts = S["clust"].values
+
         max_clust_idx = np.max(clust_members.keys() | clust_prior.keys() if clust_prior is not None else {})
 
         # containers for saving the MCMC trace
@@ -222,7 +225,7 @@ class A_DP:
                 else:
                     seg_idx = sc.SortedSet({np.random.choice(len(S))})
 
-                cur_clust = int(S.iloc[seg_idx, clust_col])
+                cur_clust = int(clusts[seg_idx])
 
                 # expand segment to include all adjacent segments in the same cluster
                 if np.random.rand() < 0.5:
@@ -230,12 +233,12 @@ class A_DP:
 
                     j = 1
                     while cur_clust != -1 and si - j > 0 and \
-                      S.iloc[si - j, clust_col] == cur_clust:
+                      clusts[si - j] == cur_clust:
                         seg_idx.add(si - j)
                         j += 1
                     j = 1
                     while cur_clust != -1 and si + j < len(S) and \
-                      S.iloc[si + j, clust_col] == cur_clust:
+                      clusts[si + j] == cur_clust:
                         seg_idx.add(si + j)
                         j += 1
 
@@ -255,7 +258,7 @@ class A_DP:
                         clust_members[cur_clust] -= set(seg_idx)
 
                     unassigned_segs.update(seg_idx)
-                    S.iloc[seg_idx, clust_col] = -1
+                    clusts[seg_idx] = -1
 
             # pick a cluster at random
             else:
@@ -277,7 +280,7 @@ class A_DP:
                 del clust_sums[cl_idx]
                 del clust_members[cl_idx]
                 unassigned_segs.update(seg_idx)
-                S.iloc[seg_idx, clust_col] = -1
+                clusts[seg_idx] = -1
 
                 move_clust = True
 
@@ -329,16 +332,16 @@ class A_DP:
                     # skip over adjacent segments that are in the garbage;
                     # we only care about adjacent segments actually assigned to clusters
                     j = 1
-                    while st - j > 0 and S.iloc[st - j, clust_col] == 0:
+                    while st - j > 0 and clusts[st - j] == 0:
                         j += 1
 
-                    U_cl = S.iloc[st - j, clust_col]
+                    U_cl = clusts[st - j]
                     adj_clusters[o, 0] = U_cl
 
-                    while st - j > 0 and S.iloc[st - j, clust_col] != -1 and \
-                      (S.iloc[st - j, clust_col] == U_cl or S.iloc[st - j, clust_col] == 0):
+                    while st - j > 0 and clusts[st - j] != -1 and \
+                      (clusts[st - j] == U_cl or clusts[st - j] == 0):
                         # again, skip over segments in the garbage
-                        if S.iloc[st - j, clust_col] != 0:
+                        if clusts[st - j] != 0:
                             U_a += S.iloc[st - j, min_col]
                             U_b += S.iloc[st - j, maj_col]
 
@@ -347,15 +350,15 @@ class A_DP:
                 # maj/min counts of contiguous downstream segments belonging to the same cluster
                 if en + 1 < len(S):
                     j = 1
-                    while en + j < len(S) and S.iloc[en + j, clust_col] == 0:
+                    while en + j < len(S) and clusts[en + j] == 0:
                         j += 1
 
-                    D_cl = S.iloc[en + j, clust_col]
+                    D_cl = clusts[en + j]
                     adj_clusters[o, 1] = D_cl
 
-                    while en + j < len(S) and S.iloc[en + j, clust_col] != -1 and \
-                      (S.iloc[en + j, clust_col] == D_cl or S.iloc[en + j, clust_col] == 0):
-                        if S.iloc[en + j, clust_col] != 0:
+                    while en + j < len(S) and clusts[en + j] != -1 and \
+                      (clusts[en + j] == D_cl or clusts[en + j] == 0):
+                        if clusts[en + j] != 0:
                             D_a += S.iloc[en + j, min_col]
                             D_b += S.iloc[en + j, maj_col]
 
@@ -502,6 +505,7 @@ class A_DP:
 
                 clust_counts[new_clust_idx] = n_move
                 S.iloc[seg_idx, clust_col] = new_clust_idx
+                clusts[seg_idx] = new_clust_idx
 
                 clust_sums[new_clust_idx] = np.r_[B_a, B_b]
                 clust_members[new_clust_idx] = set(seg_idx)
@@ -509,12 +513,14 @@ class A_DP:
             # send to garbage
             elif choice == 0:
                 S.iloc[seg_idx, clust_col] = 0
+                clusts[seg_idx] = 0
 
             # join existing cluster
             else:
                 clust_counts[choice] += n_move 
                 clust_sums[choice] += np.r_[B_a, B_b]
                 S.iloc[seg_idx, clust_col] = choice
+                clusts[seg_idx] = choice
 
                 clust_members[choice].update(set(seg_idx))
 
