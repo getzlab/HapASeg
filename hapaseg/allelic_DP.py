@@ -322,12 +322,17 @@ class A_DP:
 
                 # maj/min counts of contiguous upstream segments belonging to the same cluster
                 if st - 1 > 0:
-                    U_cl = S.iloc[st - 1, clust_col]
+                    # skip over adjacent segments that are in the garbage;
+                    # we only care about adjacent segments actually assigned to clusters
                     j = 1
+                    while st - j > 0 and S.iloc[st - j, clust_col] == 0:
+                        j += 1
+
+                    U_cl = S.iloc[st - j, clust_col]
+
                     while st - j > 0 and S.iloc[st - j, clust_col] != -1 and \
                       (S.iloc[st - j, clust_col] == U_cl or S.iloc[st - j, clust_col] == 0):
-                        # skip over adjacent segments that are in the garbage;
-                        # we only care about adjacent segments actually assigned to clusters
+                        # again, skip over segments in the garbage
                         if S.iloc[st - j, clust_col] != 0:
                             U_a += S.iloc[st - j, min_col]
                             U_b += S.iloc[st - j, maj_col]
@@ -336,8 +341,12 @@ class A_DP:
 
                 # maj/min counts of contiguous downstream segments belonging to the same cluster
                 if en + 1 < len(S):
-                    D_cl = S.iloc[en + 1, clust_col]
                     j = 1
+                    while en + j < len(S) and S.iloc[en + j, clust_col] == 0:
+                        j += 1
+
+                    D_cl = S.iloc[en + j, clust_col]
+
                     while en + j < len(S) and S.iloc[en + j, clust_col] != -1 and \
                       (S.iloc[en + j, clust_col] == D_cl or S.iloc[en + j, clust_col] == 0):
                         if S.iloc[en + j, clust_col] != 0:
