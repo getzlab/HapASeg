@@ -159,6 +159,10 @@ class A_DP:
                 SU_b = J_b
                 J_a = 0
                 J_b = 0
+
+                # we cannot send a segment to the garbage adjacent to any unassigned segment
+                if S.iloc[st - 1, clust_col] == -1 or S.iloc[en + 1, clust_col] == -1:
+                    return -np.inf
             if targ_clust != - 1 and st - 1 > 0 and (targ_clust == S.iloc[st - 1, clust_col] or targ_clust == 0):
                 J_a += U_a
                 J_b += U_b
@@ -352,9 +356,6 @@ class A_DP:
                 adj_AB += SJliks(cur_clust, st, en, S_a, S_b, U_a, U_b, D_a, D_b)
                 for i, cl in enumerate(clust_sums.keys()):
                     adj_BC[i] += SJliks(cl, st, en, S_a, S_b, U_a, U_b, D_a, D_b)
-
-            # TODO: make it impossible to send a segment/cluster to the garbage
-            #       if it's only adjacent to unassigned segments (is there a better criteria?)
 
             # A+B,C -> A,B+C
 
