@@ -325,8 +325,6 @@ class A_DP:
             adj_clusters = np.full([len(ordpairs), 2], -1)
 
             for o, (st, en) in enumerate(ordpairs):
-                U_a = U_b = D_a = D_b = 0
-
                 # maj/min counts of contiguous upstream segments belonging to the same cluster
                 if st - 1 > 0:
                     # skip over adjacent segments that are in the garbage;
@@ -342,8 +340,8 @@ class A_DP:
                       (clusts[st - j] == U_cl or clusts[st - j] == 0):
                         # again, skip over segments in the garbage
                         if clusts[st - j] != 0:
-                            U_a += S.iloc[st - j, min_col]
-                            U_b += S.iloc[st - j, maj_col]
+                            UD_counts[o, 0] += S.iloc[st - j, min_col]
+                            UD_counts[o, 1] += S.iloc[st - j, maj_col]
 
                         j += 1
 
@@ -359,12 +357,10 @@ class A_DP:
                     while en + j < len(S) and clusts[en + j] != -1 and \
                       (clusts[en + j] == D_cl or clusts[en + j] == 0):
                         if clusts[en + j] != 0:
-                            D_a += S.iloc[en + j, min_col]
-                            D_b += S.iloc[en + j, maj_col]
+                            UD_counts[o, 2] += S.iloc[en + j, min_col]
+                            UD_counts[o, 3] += S.iloc[en + j, maj_col]
 
                         j += 1
-
-                UD_counts[o, :] = np.r_[U_a, U_b, D_a, D_b]
 
             # if there are any segments being moved adjacent to already existing clusters, get local split/join likelihoods
             adj_idx = ~(adj_clusters == -1).all(1)
