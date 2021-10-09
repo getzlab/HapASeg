@@ -394,12 +394,45 @@ class A_DP:
                           D_a = D_a,
                           D_b = D_b
                         )
-                        # we cannot send a segment to the garbage adjacent to any unassigned segment
-                        # TODO: this means we cannot throw the first or last segments in the garbage
-                        if cl == 0 and (cl_u == -1 or cl_d == -1):
-                            adj_BC[idx] = -np.inf
+
+                        # adjacency likelihood of this segment joining each possible cluster:
+                        # 1. those it is actually adjacent to (+ new cluster, garbage)
+                        for cl in {-1, 0, cl_u, cl_d}:
+                            idx = clust_sums.index(cl)
+                            adj_BC[idx] += SJliks(
+                              targ_clust = cl, 
+                              upstream_clust = cl_u, 
+                              downstream_clust = cl_d, 
+                              J_a = S_a, 
+                              J_b = S_b,
+                              U_a = U_a,
+                              U_b = U_b,
+                              D_a = D_a,
+                              D_b = D_b
+                            )
+                            # we cannot send a segment to the garbage adjacent to any unassigned segment
+                            # TODO: this means we cannot throw the first or last segments in the garbage
+                            if cl == 0 and (cl_u == -1 or cl_d == -1):
+                                adj_BC[idx] = -np.inf
+
+                        # 2. clusters it is not adjacent to (use default split value)
+                        for cl in clust_sums.keys() - ({-1, 0} | set(adj_clusters[adj_idx].ravel())):
+                            idx = clust_sums.index(cl)
+                            adj_BC[idx] += SJliks(
+                              targ_clust = -1, 
+                              upstream_clust = -1, 
+                              downstream_clust = -1, 
+                              J_a = S_a, 
+                              J_b = S_b,
+                              U_a = U_a,
+                              U_b = U_b,
+                              D_a = D_a,
+                              D_b = D_b
+                            )
+                else:
+                    # we cannot send a segment to the garbage adjacent to any unassigned segment
+                    adj_BC[clust_sums.index(0)] = -np.inf
             else:
-                # we cannot send a segment to the garbage adjacent to any unassigned segment
                 adj_BC[clust_sums.index(0)] = -np.inf
 
             # A+B,C -> A,B+C
