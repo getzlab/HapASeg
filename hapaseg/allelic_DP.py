@@ -312,90 +312,79 @@ class A_DP:
             #
             # adjacent segment likelihoods
 
-            ordpairs = np.c_[
-              [np.r_[list(x)][[0, -1]] for x in more_itertools.consecutive_groups(
-                np.sort(seg_idx))
-              ]
-            ]
-
             adj_AB = 0
             adj_BC = np.zeros(len(clust_sums))
 
-            UD_counts = np.zeros([len(ordpairs), 4])
-            adj_clusters = np.full([len(ordpairs), 2], -1)
+            if not move_clust:
+                ordpairs = np.c_[
+                  [np.r_[list(x)][[0, -1]] for x in more_itertools.consecutive_groups(
+                    np.sort(seg_idx))
+                  ]
+                ]
 
-            for o, (st, en) in enumerate(ordpairs):
-                # maj/min counts of contiguous upstream segments belonging to the same cluster
-                if st - 1 > 0:
-                    # skip over adjacent segments that are in the garbage;
-                    # we only care about adjacent segments actually assigned to clusters
-                    j = 1
-                    while st - j > 0 and clusts[st - j] == 0:
-                        j += 1
+                UD_counts = np.zeros([len(ordpairs), 4])
+                adj_clusters = np.full([len(ordpairs), 2], -1)
 
-                    U_cl = clusts[st - j]
-                    adj_clusters[o, 0] = U_cl
+                for o, (st, en) in enumerate(ordpairs):
+                    # maj/min counts of contiguous upstream segments belonging to the same cluster
+                    if st - 1 > 0:
+                        # skip over adjacent segments that are in the garbage;
+                        # we only care about adjacent segments actually assigned to clusters
+                        j = 1
+                        while st - j > 0 and clusts[st - j] == 0:
+                            j += 1
 
-                    while st - j > 0 and clusts[st - j] != -1 and \
-                      (clusts[st - j] == U_cl or clusts[st - j] == 0):
-                        # again, skip over segments in the garbage
-                        if clusts[st - j] != 0:
-                            UD_counts[o, 0] += S.iloc[st - j, min_col]
-                            UD_counts[o, 1] += S.iloc[st - j, maj_col]
+                        U_cl = clusts[st - j]
+                        adj_clusters[o, 0] = U_cl
 
-                        j += 1
+                        while st - j > 0 and clusts[st - j] != -1 and \
+                          (clusts[st - j] == U_cl or clusts[st - j] == 0):
+                            # again, skip over segments in the garbage
+                            if clusts[st - j] != 0:
+                                UD_counts[o, 0] += S.iloc[st - j, min_col]
+                                UD_counts[o, 1] += S.iloc[st - j, maj_col]
 
-                # maj/min counts of contiguous downstream segments belonging to the same cluster
-                if en + 1 < len(S):
-                    j = 1
-                    while en + j < len(S) and clusts[en + j] == 0:
-                        j += 1
+                            j += 1
 
-                    D_cl = clusts[en + j]
-                    adj_clusters[o, 1] = D_cl
+                    # maj/min counts of contiguous downstream segments belonging to the same cluster
+                    if en + 1 < len(S):
+                        j = 1
+                        while en + j < len(S) and clusts[en + j] == 0:
+                            j += 1
 
-                    while en + j < len(S) and clusts[en + j] != -1 and \
-                      (clusts[en + j] == D_cl or clusts[en + j] == 0):
-                        if clusts[en + j] != 0:
-                            UD_counts[o, 2] += S.iloc[en + j, min_col]
-                            UD_counts[o, 3] += S.iloc[en + j, maj_col]
+                        D_cl = clusts[en + j]
+                        adj_clusters[o, 1] = D_cl
 
-                        j += 1
+                        while en + j < len(S) and clusts[en + j] != -1 and \
+                          (clusts[en + j] == D_cl or clusts[en + j] == 0):
+                            if clusts[en + j] != 0:
+                                UD_counts[o, 2] += S.iloc[en + j, min_col]
+                                UD_counts[o, 3] += S.iloc[en + j, maj_col]
 
-            # if there are any segments being moved adjacent to already existing clusters, get local split/join likelihoods
-            adj_idx = ~(adj_clusters == -1).all(1)
+                            j += 1
 
-            if adj_idx.any():
-                # maj/min counts of the segment(s) being moved
-                #S_a = S.iloc[st:(en + 1), min_col].sum()
-                S_a = S.iloc[:, min_col].values[st:(en + 1)].sum()
-                #S_b = S.iloc[st:(en + 1), maj_col].sum()
-                S_b = S.iloc[:, maj_col].values[st:(en + 1)].sum()
+                # if there are any segments being moved adjacent to already existing clusters, get local split/join likelihoods
+                adj_idx = ~(adj_clusters == -1).all(1)
 
-                for j in np.flatnonzero(adj_idx):
-                    cl_u = adj_clusters[j, 0]
-                    cl_d = adj_clusters[j, 1]
-                    U_a = UD_counts[j, 0]
-                    U_b = UD_counts[j, 1]
-                    D_a = UD_counts[j, 2]
-                    D_b = UD_counts[j, 3]
+                if adj_idx.any():
+                    # maj/min counts of the segment(s) being moved
+                    #S_a = S.iloc[st:(en + 1), min_col].sum()
+                    S_a = S.iloc[:, min_col].values[st:(en + 1)].sum()
+                    #S_b = S.iloc[st:(en + 1), maj_col].sum()
+                    S_b = S.iloc[:, maj_col].values[st:(en + 1)].sum()
 
-                    adj_AB += SJliks(
-                      targ_clust = cur_clust, 
-                      upstream_clust = cl_u, 
-                      downstream_clust = cl_d, 
-                      J_a = S_a, 
-                      J_b = S_b,
-                      U_a = U_a,
-                      U_b = U_b,
-                      D_a = D_a,
-                      D_b = D_b
-                    )
+                    # for each segment/segment block within this cluster,
+                    for j in np.flatnonzero(adj_idx):
+                        cl_u = adj_clusters[j, 0]
+                        cl_d = adj_clusters[j, 1]
+                        U_a = UD_counts[j, 0]
+                        U_b = UD_counts[j, 1]
+                        D_a = UD_counts[j, 2]
+                        D_b = UD_counts[j, 3]
 
-                    for cl in {-1, 0, cl_u, cl_d}:
-                        idx = clust_sums.index(cl)
-                        adj_BC[idx] += SJliks(
-                          targ_clust = cl, 
+                        # adjacency likelihood of this segment remaining where it is
+                        adj_AB += SJliks(
+                          targ_clust = cur_clust, 
                           upstream_clust = cl_u, 
                           downstream_clust = cl_d, 
                           J_a = S_a, 
