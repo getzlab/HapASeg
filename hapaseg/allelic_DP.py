@@ -508,8 +508,6 @@ class A_DP:
             # 0 = garbage
             choice = np.r_[-np.r_[prior_diff] - 2, 0, clust_counts.keys()][choice_idx]
 
-            #breakpoint()
-
             # create new cluster
             if choice < 0:
                 # if we are moving an entire cluster, give it the same index it used to have
