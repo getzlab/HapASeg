@@ -645,6 +645,7 @@ class A_DP:
             S_a = np.zeros(s2c.max() + 1)
             S_b = np.zeros(s2c.max() + 1)
             N_c = np.zeros(s2c.max() + 1)
+            n_iter_clust_exist = np.zeros(s2c.max() + 1)
             for seg_assignments, seg_phases in zip(s2c, ph):
                 # reset phases
                 S2 = S.copy()
@@ -658,6 +659,8 @@ class A_DP:
 
                 N_c += npg.aggregate(seg_assignments, 1, size = s2c.max() + 1)
 
+                n_iter_clust_exist[np.unique(seg_assignments)] += 1
+
             S_a /= N_clust_samps
             S_b /= N_clust_samps
             N_c /= N_clust_samps
@@ -666,27 +669,18 @@ class A_DP:
 
             next_clust_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), c[c.sum(1) > 0]))
             next_clust_count_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), N_c[N_c > 0]))
+
+            # iteratively update priors
             for k, v in next_clust_prior.items():
                 if k in clust_prior:
-                    clust_prior[k] += v
+                    # iteratively update average
+                    clust_prior[k] += (v - clust_prior[k])/(n_iter_clust_exist[k] + 1)
                 else:
                     clust_prior[k] = v
-            for k, v in next_clust_count_prior.items():
-                if k in clust_count_prior:
-                    clust_count_prior[k] += v
-                else:
-                    clust_count_prior[k] = v
-        # TODO: get iterative updating working. denominator isn't n_it; it's number of iterations this cluster has existed
-        #    for k, v in next_clust_prior.items():
-        #        if k in clust_prior:
-        #            # iteratively update average
-        #            clust_prior[k] += (v - clust_prior[k])/(n_it + 1)
-        #        else:
-        #            clust_prior[k] = v
-        #    # for clusters that don't exist in this iteration, average them with 0
-        #    for k, v in clust_prior.items():
-        #        if k != -1 and k not in next_clust_prior:
-        #            clust_prior[k] -= clust_prior[k]/(n_it + 1)
+            # for clusters that don't exist in this iteration, average them with 0
+            for k, v in clust_prior.items():
+                if k != -1 and k not in next_clust_prior:
+                    clust_prior[k] -= clust_prior[k]/(n_iter_clust_exist[k] + 1)
 
             # get probability that individual SNPs are flipped, to use as probability for
             # flipping segments for next DP iteration
