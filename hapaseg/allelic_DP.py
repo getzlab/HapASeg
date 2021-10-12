@@ -203,7 +203,7 @@ class A_DP:
         n_it = 0
         n_it_last = 0
         while len(segs_to_clusters) < n_iter:
-            if not n_it % 100:
+            if not n_it % 1000:
                 print(S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
                 print("n unassigned: {}".format((S["clust"] == -1).sum()))
                 print("n garbage: {}".format((S["clust"] == 0).sum()))
