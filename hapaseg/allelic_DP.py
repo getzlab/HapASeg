@@ -536,6 +536,17 @@ class A_DP:
 
             # join existing cluster
             else:
+                # if we are combining two clusters, take the index of the bigger one
+                # this helps to keep cluster indices consistent
+                if move_clust and clust_counts[choice] < n_move:
+                    clust_counts[cl_idx] = clust_counts[choice]
+                    clust_sums[cl_idx] = clust_sums[choice]
+                    clust_members[cl_idx] = clust_members[choice]
+                    del clust_counts[choice]
+                    del clust_sums[choice]
+                    del clust_members[choice]
+                    choice = cl_idx
+
                 clust_counts[choice] += n_move 
                 clust_sums[choice] += np.r_[B_a, B_b]
                 S.iloc[seg_idx, clust_col] = choice
