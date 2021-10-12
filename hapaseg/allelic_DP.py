@@ -686,6 +686,11 @@ class A_DP:
                     clust_prior[k] -= clust_prior[k]/(n_iter_clust_exist[k] + 1)
                     clust_count_prior[k] -= clust_count_prior[k]/(n_iter_clust_exist[k] + 1)
 
+            # remove zero counts from priors
+            for kk in [k for k, v in clust_count_prior.items() if v == 0]:
+                del clust_prior[kk]
+                del clust_count_prior[kk]
+
             # remove garbage cluster from priors
             del clust_prior[0]
             del clust_count_prior[0]
