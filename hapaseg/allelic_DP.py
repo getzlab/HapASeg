@@ -112,7 +112,7 @@ class A_DP:
         clust_prior_mat = np.r_[clust_prior.values()]
 
         clust_count_prior[-1] = 0.1 # DP alpha factor, i.e. relative probability of opening new cluster (TODO: make specifiable)
-        clust_count_prior[0] = 0.01 # relative probability of sending a cluster to the garbage
+        clust_count_prior[0] = 0.1 # relative probability of sending a cluster to the garbage
 
         #
         # assign segments to likeliest prior component {{{
@@ -495,6 +495,7 @@ class A_DP:
                 
             # DP prior based on clusters sizes
             count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_count_prior[0], clust_counts.values()]
+            #count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_count_prior[0]*(len(S) - len(unassigned_segs)), clust_counts.values()]
             count_prior /= count_prior.sum()
 
             # choose to join a cluster or make a new one (choice_idx = 0) 
