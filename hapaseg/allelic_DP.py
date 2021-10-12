@@ -686,6 +686,10 @@ class A_DP:
                     clust_prior[k] -= clust_prior[k]/(n_iter_clust_exist[k] + 1)
                     clust_count_prior[k] -= clust_count_prior[k]/(n_iter_clust_exist[k] + 1)
 
+            # remove garbage cluster from priors
+            del clust_prior[0]
+            del clust_count_prior[0]
+
             # get probability that individual SNPs are flipped, to use as probability for
             # flipping segments for next DP iteration
             flipped = np.zeros(S.iloc[-1, S.columns.get_loc("SNP_en")] + 1, dtype = bool)
