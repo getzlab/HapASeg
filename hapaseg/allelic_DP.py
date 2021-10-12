@@ -177,14 +177,14 @@ class A_DP:
 
         #
         # initialize cluster tracking hash tables
-        clust_counts = sc.SortedDict(S["clust"].value_counts().drop(-1, errors = "ignore"))
+        clust_counts = sc.SortedDict(S["clust"].value_counts().drop([-1, 0], errors = "ignore"))
         # for the first round of clustering, this is { 1 : 1 }
         clust_sums = sc.SortedDict({
           **{ k : np.r_[v["min"], v["maj"]] for k, v in S.groupby("clust")[["min", "maj"]].sum().to_dict(orient = "index").items() },
           **{-1 : np.r_[0, 0], 0 : np.r_[0, 0]}
         })
         # for the first round, this is { -1/0 : np.r_[0, 0], 1 : np.r_[S[0, "min"], S[0, "maj"]] }
-        clust_members = sc.SortedDict({ k : set(v) for k, v in S.groupby("clust").groups.items() if k != -1 })
+        clust_members = sc.SortedDict({ k : set(v) for k, v in S.groupby("clust").groups.items() if k != -1 and k != 0 })
         # for the first round, this is { 1 : {0} }
         unassigned_segs = sc.SortedList(S.index[S["clust"] == -1])
 
