@@ -672,15 +672,19 @@ class A_DP:
 
             # iteratively update priors
             for k, v in next_clust_prior.items():
+                nccp = next_clust_count_prior[k]
                 if k in clust_prior:
                     # iteratively update average
                     clust_prior[k] += (v - clust_prior[k])/(n_iter_clust_exist[k] + 1)
+                    clust_count_prior[k] += (nccp - clust_count_prior[k])/(n_iter_clust_exist[k] + 1)
                 else:
                     clust_prior[k] = v
+                    clust_count_prior[k] = nccp
             # for clusters that don't exist in this iteration, average them with 0
             for k, v in clust_prior.items():
                 if k != -1 and k not in next_clust_prior:
                     clust_prior[k] -= clust_prior[k]/(n_iter_clust_exist[k] + 1)
+                    clust_count_prior[k] -= clust_count_prior[k]/(n_iter_clust_exist[k] + 1)
 
             # get probability that individual SNPs are flipped, to use as probability for
             # flipping segments for next DP iteration
