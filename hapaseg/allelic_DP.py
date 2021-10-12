@@ -3,6 +3,7 @@ import copy
 import itertools
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import more_itertools
 import numpy as np
 import numpy_groupies as npg
 import pandas as pd
@@ -83,7 +84,7 @@ class A_DP:
 
         # initial cluster assignments
         S["clust"] = -1 # initially, all segments are unassigned
-        S.iloc[0, S.columns.get_loc("clust")] = 0 # first segment is assigned to cluster 0
+        S.iloc[0, S.columns.get_loc("clust")] = 1 # first segment is assigned to cluster 1
 
         # initial phasing orientation
         S["flipped"] = False
@@ -111,6 +112,7 @@ class A_DP:
         clust_prior_mat = np.r_[clust_prior.values()]
 
         clust_count_prior[-1] = 0.1 # DP alpha factor, i.e. relative probability of opening new cluster (TODO: make specifiable)
+        clust_count_prior[0] = 0.1 # relative probability of sending a cluster to the garbage
 
         #
         # assign segments to likeliest prior component {{{
@@ -143,18 +145,51 @@ class A_DP:
 
         # }}}
 
+        def SJliks(targ_clust, upstream_clust, downstream_clust, J_a, J_b, U_a, U_b, D_a, D_b):
+#            if st == en:
+#                J_a = S.iat[st, min_col].sum()
+#                J_b = S.iat[st, maj_col].sum()
+#            else:
+#                J_a = S.iloc[st:(en + 1), min_col].sum()
+#                J_b = S.iloc[st:(en + 1), maj_col].sum()
+            SU_a = SU_b = SD_a = SD_b = 0
+            # if target segments are being moved to the garbage, it is equivalent to making them their own segment, and joining the upstream and downstream segments
+            if targ_clust == 0:
+                SU_a = J_a
+                SU_b = J_b
+                J_a = 0
+                J_b = 0
+
+            if targ_clust != - 1 and st - 1 > 0 and (targ_clust == upstream_clust or targ_clust == 0):
+                J_a += U_a
+                J_b += U_b
+            else:
+                SU_a += U_a
+                SU_b += U_b
+            if targ_clust != - 1 and en + 1 < len(S) and (targ_clust == downstream_clust or targ_clust == 0):
+                J_a += D_a
+                J_b += D_b
+            else:
+                SD_a += D_a
+                SD_b += D_b
+
+            return ss.betaln(SU_a + 1, SU_b + 1) + ss.betaln(J_a + 1, J_b + 1) + ss.betaln(SD_a + 1, SD_b + 1)
+
         #
         # initialize cluster tracking hash tables
         clust_counts = sc.SortedDict(S["clust"].value_counts().drop(-1, errors = "ignore"))
-        # for the first round of clustering, this is { 0 : 1 }
+        # for the first round of clustering, this is { 1 : 1 }
         clust_sums = sc.SortedDict({
           **{ k : np.r_[v["min"], v["maj"]] for k, v in S.groupby("clust")[["min", "maj"]].sum().to_dict(orient = "index").items() },
-          **{-1 : np.r_[0, 0]}
+          **{-1 : np.r_[0, 0], 0 : np.r_[0, 0]}
         })
-        # for the first round, this is { -1 : np.r_[0, 0], 0 : np.r_[S[0, "min"], S[0, "maj"]] }
+        # for the first round, this is { -1/0 : np.r_[0, 0], 1 : np.r_[S[0, "min"], S[0, "maj"]] }
         clust_members = sc.SortedDict({ k : set(v) for k, v in S.groupby("clust").groups.items() if k != -1 })
-        # for the first round, this is { 0 : {0} }
+        # for the first round, this is { 1 : {0} }
         unassigned_segs = sc.SortedList(S.index[S["clust"] == -1])
+
+        # store this as numpy for speed
+        clusts = S["clust"].values
 
         max_clust_idx = np.max(clust_members.keys() | clust_prior.keys() if clust_prior is not None else {})
 
@@ -169,8 +204,9 @@ class A_DP:
         n_it_last = 0
         while len(segs_to_clusters) < n_iter:
             if not n_it % 1000:
-                print(S["clust"].value_counts().drop(-1, errors = "ignore").value_counts().sort_index())
+                print(S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
                 print("n unassigned: {}".format((S["clust"] == -1).sum()))
+                print("n garbage: {}".format((S["clust"] == 0).sum()))
 
             # we are burned in once all segments are assigned to a cluster
             if not burned_in and (S["clust"] != -1).all():
@@ -185,26 +221,44 @@ class A_DP:
             #if np.random.rand() < 1:
                 # bias picking unassigned segments if >90% of segments have been assigned
                 if len(unassigned_segs) > 0 and len(unassigned_segs)/len(S) < 0.1 and np.random.rand() < 0.5:
-                    seg_idx = np.r_[np.random.choice(unassigned_segs)]
+                    seg_idx = sc.SortedSet({np.random.choice(unassigned_segs)})
                 else:
-                    seg_idx = np.r_[np.random.choice(len(S))]
+                    seg_idx = sc.SortedSet({np.random.choice(len(S))})
 
-                n_move = 1
+                cur_clust = int(clusts[seg_idx])
+
+                # expand segment to include all adjacent segments in the same cluster
+                if np.random.rand() < 0.5:
+                    si = seg_idx[0]
+
+                    j = 1
+                    while cur_clust != -1 and si - j > 0 and \
+                      clusts[si - j] == cur_clust:
+                        seg_idx.add(si - j)
+                        j += 1
+                    j = 1
+                    while cur_clust != -1 and si + j < len(S) and \
+                      clusts[si + j] == cur_clust:
+                        seg_idx.add(si + j)
+                        j += 1
+
+                seg_idx = np.r_[list(seg_idx)]
+
+                n_move = len(seg_idx)
 
                 # if segment was already assigned to a cluster, unassign it
-                cur_clust = int(S.iloc[seg_idx, clust_col])
-                if cur_clust != -1:
-                    clust_counts[cur_clust] -= 1
+                if cur_clust > 0:
+                    clust_counts[cur_clust] -= n_move
                     if clust_counts[cur_clust] == 0:
                         del clust_counts[cur_clust]
                         del clust_sums[cur_clust]
                         del clust_members[cur_clust]
                     else:
-                        clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col], S.iloc[seg_idx, maj_col]]
+                        clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col].sum(), S.iloc[seg_idx, maj_col].sum()]
                         clust_members[cur_clust] -= set(seg_idx)
 
-                    unassigned_segs.add(seg_idx)
-                    S.iloc[seg_idx, clust_col] = -1
+                    unassigned_segs.update(seg_idx)
+                    clusts[seg_idx] = -1
 
             # pick a cluster at random
             else:
@@ -226,15 +280,15 @@ class A_DP:
                 del clust_sums[cl_idx]
                 del clust_members[cl_idx]
                 unassigned_segs.update(seg_idx)
-                S.iloc[seg_idx, clust_col] = -1
+                clusts[seg_idx] = -1
 
                 move_clust = True
 
             #
             # perform phase correction on segment/cluster
             # flip min/maj with probability that alleles are oriented the "wrong" way
-            x = s.beta.rvs(S.iloc[seg_idx, aalt_col].sum() + 1, S.iloc[seg_idx, aref_col].sum() + 1, size = [len(seg_idx), 30])
-            y = s.beta.rvs(S.iloc[seg_idx, balt_col].sum() + 1, S.iloc[seg_idx, bref_col].sum() + 1, size = [len(seg_idx), 30])
+            x = s.beta.rvs(S.iloc[seg_idx, aalt_col].sum() + 1, S.iloc[seg_idx, aref_col].sum() + 1, size = [n_move, 30])
+            y = s.beta.rvs(S.iloc[seg_idx, balt_col].sum() + 1, S.iloc[seg_idx, bref_col].sum() + 1, size = [n_move, 30])
             if np.random.rand() < (x > y).mean():
                 S.iloc[seg_idx, [min_col, maj_col]] = S.iloc[seg_idx, [min_col, maj_col]].values[:, ::-1]
                 S.iloc[seg_idx, [aalt_col, balt_col]] = S.iloc[seg_idx, [aalt_col, balt_col]].values[:, ::-1]
@@ -252,8 +306,134 @@ class A_DP:
             A_b = clust_sums[cur_clust][1] if cur_clust in clust_sums else 0
             B_a = S.iloc[seg_idx, min_col].sum() # TODO: slow if seg_idx contains many SNPs
             B_b = S.iloc[seg_idx, maj_col].sum()
-            C_ab = np.r_[clust_sums.values()] # first term (-1) = make new cluster
+            C_ab = np.r_[clust_sums.values()] # first terms: (-1) = make new cluster, (0) = garbage cluster
             #C_ab = np.r_[[v for k, v in clust_sums.items() if k != cur_clust or cur_clust == -1]] # if we don't want to explicitly propose letting B rejoin cur_clust
+
+            #
+            # adjacent segment likelihoods
+
+            adj_AB = 0
+            adj_BC = np.zeros(len(clust_sums))
+
+            if not move_clust:
+                ordpairs = np.c_[
+                  [np.r_[list(x)][[0, -1]] for x in more_itertools.consecutive_groups(
+                    np.sort(seg_idx))
+                  ]
+                ]
+
+                UD_counts = np.zeros([len(ordpairs), 4])
+                adj_clusters = np.full([len(ordpairs), 2], -1)
+
+                for o, (st, en) in enumerate(ordpairs):
+                    # maj/min counts of contiguous upstream segments belonging to the same cluster
+                    if st - 1 > 0:
+                        # skip over adjacent segments that are in the garbage;
+                        # we only care about adjacent segments actually assigned to clusters
+                        j = 1
+                        while st - j > 0 and clusts[st - j] == 0:
+                            j += 1
+
+                        U_cl = clusts[st - j]
+                        adj_clusters[o, 0] = U_cl
+
+                        while st - j > 0 and clusts[st - j] != -1 and \
+                          (clusts[st - j] == U_cl or clusts[st - j] == 0):
+                            # again, skip over segments in the garbage
+                            if clusts[st - j] != 0:
+                                UD_counts[o, 0] += S.iloc[st - j, min_col]
+                                UD_counts[o, 1] += S.iloc[st - j, maj_col]
+
+                            j += 1
+
+                    # maj/min counts of contiguous downstream segments belonging to the same cluster
+                    if en + 1 < len(S):
+                        j = 1
+                        while en + j < len(S) and clusts[en + j] == 0:
+                            j += 1
+
+                        D_cl = clusts[en + j]
+                        adj_clusters[o, 1] = D_cl
+
+                        while en + j < len(S) and clusts[en + j] != -1 and \
+                          (clusts[en + j] == D_cl or clusts[en + j] == 0):
+                            if clusts[en + j] != 0:
+                                UD_counts[o, 2] += S.iloc[en + j, min_col]
+                                UD_counts[o, 3] += S.iloc[en + j, maj_col]
+
+                            j += 1
+
+                # if there are any segments being moved adjacent to already existing clusters, get local split/join likelihoods
+                adj_idx = ~(adj_clusters == -1).all(1)
+
+                if adj_idx.any():
+                    # maj/min counts of the segment(s) being moved
+                    #S_a = S.iloc[st:(en + 1), min_col].sum()
+                    S_a = S.iloc[:, min_col].values[st:(en + 1)].sum()
+                    #S_b = S.iloc[st:(en + 1), maj_col].sum()
+                    S_b = S.iloc[:, maj_col].values[st:(en + 1)].sum()
+
+                    # for each segment/segment block within this cluster,
+                    for j in np.flatnonzero(adj_idx):
+                        cl_u = adj_clusters[j, 0]
+                        cl_d = adj_clusters[j, 1]
+                        U_a = UD_counts[j, 0]
+                        U_b = UD_counts[j, 1]
+                        D_a = UD_counts[j, 2]
+                        D_b = UD_counts[j, 3]
+
+                        # adjacency likelihood of this segment remaining where it is
+                        adj_AB += SJliks(
+                          targ_clust = cur_clust, 
+                          upstream_clust = cl_u, 
+                          downstream_clust = cl_d, 
+                          J_a = S_a, 
+                          J_b = S_b,
+                          U_a = U_a,
+                          U_b = U_b,
+                          D_a = D_a,
+                          D_b = D_b
+                        )
+
+                        # adjacency likelihood of this segment joining each possible cluster:
+                        # 1. those it is actually adjacent to (+ new cluster, garbage)
+                        for cl in {-1, 0, cl_u, cl_d}:
+                            idx = clust_sums.index(cl)
+                            adj_BC[idx] += SJliks(
+                              targ_clust = cl, 
+                              upstream_clust = cl_u, 
+                              downstream_clust = cl_d, 
+                              J_a = S_a, 
+                              J_b = S_b,
+                              U_a = U_a,
+                              U_b = U_b,
+                              D_a = D_a,
+                              D_b = D_b
+                            )
+                            # we cannot send a segment to the garbage adjacent to any unassigned segment
+                            # TODO: this means we cannot throw the first or last segments in the garbage
+                            if cl == 0 and (cl_u == -1 or cl_d == -1):
+                                adj_BC[idx] = -np.inf
+
+                        # 2. clusters it is not adjacent to (use default split value)
+                        for cl in clust_sums.keys() - ({-1, 0} | set(adj_clusters[adj_idx].ravel())):
+                            idx = clust_sums.index(cl)
+                            adj_BC[idx] += SJliks(
+                              targ_clust = -1, 
+                              upstream_clust = -1, 
+                              downstream_clust = -1, 
+                              J_a = S_a, 
+                              J_b = S_b,
+                              U_a = U_a,
+                              U_b = U_b,
+                              D_a = D_a,
+                              D_b = D_b
+                            )
+                else:
+                    # we cannot send a segment to the garbage adjacent to any unassigned segment
+                    adj_BC[clust_sums.index(0)] = -np.inf
+            else:
+                adj_BC[clust_sums.index(0)] = -np.inf
 
             # A+B,C -> A,B+C
 
@@ -266,8 +446,8 @@ class A_DP:
             # B+C is likelihood of target cluster post-join
             BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
 
-            #     L(join)  L(split)
-            MLs = A + BC - (AB + C)
+            #     L(join)           L(split)
+            MLs = A + BC + adj_BC - (AB + C + adj_AB)
 
             MLs_max = np.max(MLs)
 
@@ -299,7 +479,7 @@ class A_DP:
                 # [-1 (totally new cluster), <prior_diff>, <prior_com + prior_null>]
                 prior_idx = np.r_[
                   np.r_[[clust_prior.index(x) for x in prior_diff]],
-                  np.r_[[clust_prior.index(x) if x in clust_prior else 0 for x in (prior_com | prior_null)]]
+                  np.r_[[clust_prior.index(x) if x in clust_prior else 0 for x in (prior_com | prior_null | {0})]]
                 ]
 
                 prior_MLs = ss.betaln( # prior clusters + segment
@@ -314,7 +494,8 @@ class A_DP:
                 MLs = np.r_[np.full(len(prior_diff), MLs[0]), MLs[1:]]
                 
             # DP prior based on clusters sizes
-            count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_counts.values()]
+            count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_count_prior[0], clust_counts.values()]
+            #count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_count_prior[0]*(len(S) - len(unassigned_segs)), clust_counts.values()]
             count_prior /= count_prior.sum()
 
             # choose to join a cluster or make a new one (choice_idx = 0) 
@@ -324,9 +505,8 @@ class A_DP:
               p = choice_p
             )
             # -1 = brand new, -2, -3, ... = -(prior clust index) - 2
-            choice = np.r_[-np.r_[prior_diff] - 2, clust_counts.keys()][choice_idx]
-
-            #breakpoint()
+            # 0 = garbage
+            choice = np.r_[-np.r_[prior_diff] - 2, 0, clust_counts.keys()][choice_idx]
 
             # create new cluster
             if choice < 0:
@@ -342,20 +522,38 @@ class A_DP:
 
                 clust_counts[new_clust_idx] = n_move
                 S.iloc[seg_idx, clust_col] = new_clust_idx
+                clusts[seg_idx] = new_clust_idx
 
                 clust_sums[new_clust_idx] = np.r_[B_a, B_b]
                 clust_members[new_clust_idx] = set(seg_idx)
 
+            # send to garbage
+            elif choice == 0:
+                S.iloc[seg_idx, clust_col] = 0
+                clusts[seg_idx] = 0
+
             # join existing cluster
             else:
+                # if we are combining two clusters, take the index of the bigger one
+                # this helps to keep cluster indices consistent
+                if move_clust and clust_counts[choice] < n_move:
+                    clust_counts[cl_idx] = clust_counts[choice]
+                    clust_sums[cl_idx] = clust_sums[choice]
+                    clust_members[cl_idx] = clust_members[choice]
+                    del clust_counts[choice]
+                    del clust_sums[choice]
+                    del clust_members[choice]
+                    choice = cl_idx
+
                 clust_counts[choice] += n_move 
                 clust_sums[choice] += np.r_[B_a, B_b]
                 S.iloc[seg_idx, clust_col] = choice
+                clusts[seg_idx] = choice
 
                 clust_members[choice].update(set(seg_idx))
 
             for si in seg_idx:
-                unassigned_segs.remove(si)
+                unassigned_segs.discard(si)
 
             # track cluster assignment for segment(s) (XXX: may not be necessary anymore)
             if burned_in:
