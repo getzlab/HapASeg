@@ -627,7 +627,7 @@ class A_DP:
             S_a = np.zeros(s2c.max() + 1)
             S_b = np.zeros(s2c.max() + 1)
             N_c = np.zeros(s2c.max() + 1)
-            n_iter_clust_exist = np.zeros(s2c.max() + 1)
+            n_iter_clust_exist = np.zeros(np.maximum(s2c.max(), clust_prior.peekitem(-1)[0]) + 1)
             for seg_assignments, seg_phases in zip(s2c, ph):
                 # reset phases
                 S2 = S.copy()
