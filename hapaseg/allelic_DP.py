@@ -540,6 +540,7 @@ class A_DP:
                     clust_counts[cl_idx] = clust_counts[choice]
                     clust_sums[cl_idx] = clust_sums[choice]
                     clust_members[cl_idx] = clust_members[choice]
+                    S.iloc[np.flatnonzero(S["clust"] == choice), clust_col] = cl_idx
                     del clust_counts[choice]
                     del clust_sums[choice]
                     del clust_members[choice]
