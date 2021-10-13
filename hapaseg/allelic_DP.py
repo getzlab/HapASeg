@@ -594,7 +594,7 @@ class A_DP:
 
         return snps_to_phase
 
-    def run(self, N_seg_samps = 10, N_clust_samps = 50):
+    def run(self, N_seg_samps = 50, N_clust_samps = 5):
         seg_sample_idx = np.random.choice(self.n_samp - 1, N_seg_samps, replace = False)
         S, SNPs = self.load_seg_samp(seg_sample_idx[0])
         N_SNPs = len(SNPs)
@@ -682,3 +682,5 @@ class A_DP:
 
             # save overall segmentation for this sample
             Segs.append(S)
+
+        return snps_to_clusters, snps_to_phases
