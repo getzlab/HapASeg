@@ -196,7 +196,6 @@ class A_DP:
         max_clust_idx = np.max(clust_members.keys() | clust_prior.keys() if clust_prior is not None else {})
 
         # containers for saving the MCMC trace
-        clusters_to_segs = [[] for i in range(len(S))]
         segs_to_clusters = []
         phase_orientations = []
 
@@ -557,11 +556,6 @@ class A_DP:
 
             for si in seg_idx:
                 unassigned_segs.discard(si)
-
-            # track cluster assignment for segment(s) (XXX: may not be necessary anymore)
-            if burned_in:
-                for seg in seg_idx:
-                    clusters_to_segs[seg].append(choice if choice != -1 else max_clust_idx)
 
             # track global state of cluster assignments
             # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
