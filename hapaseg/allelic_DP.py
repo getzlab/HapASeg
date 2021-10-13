@@ -117,8 +117,7 @@ class A_DP:
         #
         # assign segments to likeliest prior component {{{
 
-        #if len(clust_prior) > 1:
-        if False:
+        if len(clust_prior) > 1:
             for seg_idx in range(len(S)):
                 seg_idx = np.r_[seg_idx]
                 # rephase segment
@@ -138,10 +137,13 @@ class A_DP:
                 P_l = ss.betaln(S_a + P_a + 1, S_b + P_b + 1) - (ss.betaln(S_a + 1, S_b + 1) + ss.betaln(P_a + 1, P_b + 1))
 
                 # probabilistically assign
+                ccp = np.r_[[v for k, v in clust_count_prior.items() if k != -1 and k != 0]]
                 S.iloc[seg_idx, clust_col] = np.random.choice(
                   np.r_[clust_prior.keys()][1:], 
-                  p = np.exp(P_l)/np.exp(P_l).sum()
+                  p = np.exp(P_l)*ccp/(np.exp(P_l)*ccp).sum()
                 )
+
+            # TODO: send segments to garbage
 
         # }}}
 
@@ -611,27 +613,6 @@ class A_DP:
         for n_it in range(N_seg_samps):
             if n_it > 0:
                 S, SNPs = self.load_seg_samp(seg_sample_idx[n_it])
-
-            # get prior on segments' cluster assignments, if we've already performed a clustering step
-            seg_clust_prior = None
-            if n_it > 0:
-                n_clust_bins = snps_to_clusters.max() + 1
-                seg_clust_prior = np.zeros([n_clust_bins, len(S)])
-                for i, r in enumerate(S.itertuples()):
-                    seg_clust_prior[:, i] = np.bincount(snps_to_clusters[:N_clust_samps*n_it, r.SNP_st:r.SNP_en].ravel(), minlength = n_clust_bins)
-
-                # initialize the cluster assignments in S based on the previous DP
-                S["clust"] = [np.random.choice(seg_clust_prior.shape[0], p = x/x.sum()) for x in seg_clust_prior.T]
-
-                # flip segments based on the previous DP
-                flip_frac = np.r_[[flipped[z].mean() for z in [slice(x, y) for x, y in S[["SNP_st", "SNP_en"]].values]]]
-                S["flipped"] = flip_frac > np.random.rand(len(flip_frac))
-                S.loc[S["flipped"], ["min", "maj"]] = S.loc[S["flipped"], ["min", "maj"]].values[:, ::-1]
-                S.loc[S["flipped"], ["A_alt", "B_alt"]] = S.loc[S["flipped"], ["A_alt", "B_alt"]].values[:, ::-1]
-                S.loc[S["flipped"], ["A_ref", "B_ref"]] = S.loc[S["flipped"], ["A_ref", "B_ref"]].values[:, ::-1]
-
-                # unassign segments with ambiguous flip fraction
-                S.loc[~np.isin(flip_frac, [0, 1]), "clust"] = -1
 
             # run clustering
             s2c, ph = self.run_DP(S, clust_prior = clust_prior, clust_count_prior = clust_count_prior, n_iter = N_clust_samps)
