@@ -495,7 +495,10 @@ class A_DP:
                 MLs = np.r_[np.full(len(prior_diff), MLs[0]), MLs[1:]]
                 
             # DP prior based on clusters sizes
-            count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_count_prior[0], clust_counts.values()]
+            count_prior_d = clust_counts.copy()
+            for k in prior_com:
+                count_prior_d[k] += clust_count_prior[k]
+            count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_count_prior[0], count_prior_d.values()]
             #count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_count_prior[0]*(len(S) - len(unassigned_segs)), clust_counts.values()]
             count_prior /= count_prior.sum()
 
