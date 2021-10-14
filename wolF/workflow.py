@@ -63,6 +63,9 @@ hp = het_pulldown.get_het_coverage_from_callstats(
 
 hp_results = hp.run()
 
+# for easy access, link these
+os.symlink(hp_results["tumor_hets"], "genome/05bd347a.tumor_hets.tsv")
+
 #
 # shim task to convert output of het pulldown to VCF
 convert = wolf.Task(
