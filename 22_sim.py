@@ -32,7 +32,7 @@ H["cov"] = H["REF_COUNT"] + H["ALT_COUNT"]
 H["ALT_COUNT_SIM"] = s.binom.rvs(H["cov"], 0.5)
 H["REF_COUNT_SIM"] = H["cov"] - H["ALT_COUNT_SIM"]
 
-H.drop(columns = ["cov", "REF_COUNT", "ALT_COUNT"]).rename(columns = { "ALT_COUNT_SIM" : "ALT_COUNT", "REF_COUNT_SIM" : "REF_COUNT" }).loc[:, ["CONTIG", "POSITION", "REF_COUNT", "ALT_COUNT"]].to_csv("genome/05bd347a.tumor_hets.sim.tsv", sep = "\t", index = False)
+H.drop(columns = ["cov", "REF_COUNT", "ALT_COUNT"]).rename(columns = { "ALT_COUNT_SIM" : "ALT_COUNT", "REF_COUNT_SIM" : "REF_COUNT" }).loc[:, ["CONTIG", "POSITION", "REF_COUNT", "ALT_COUNT"]].to_csv("simulation/05bd347a.tumor_hets.sim.tsv", sep = "\t", index = False)
 
 # workflow code that runs everything from hapaseg_load onwards
 # excised from workflow.py
@@ -108,7 +108,7 @@ with wolf.Workflow(workflow = sim_workflow) as w:
     w.run(
       RUN_NAME = "05bd347a_sim",
       phased_VCF = results.loc[("05bd347a", "combine_vcfs", "0"), ("outputs", "combined_vcf")],
-      tumor_allele_counts = "genome/05bd347a.tumor_hets.sim.tsv",
+      tumor_allele_counts = "simulation/05bd347a.tumor_hets.sim.tsv",
       normal_allele_counts = results.loc[("05bd347a", "get_het_coverage_from_callstats", "0"), ("outputs", "normal_hets")]
     )
 
