@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import pickle
 import prefect
+import tempfile
 import wolf
 
 import dalmatian
