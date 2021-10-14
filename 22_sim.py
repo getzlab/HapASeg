@@ -111,3 +111,13 @@ with wolf.Workflow(workflow = sim_workflow) as w:
       tumor_allele_counts = "genome/05bd347a.tumor_hets.sim.tsv",
       normal_allele_counts = results.loc[("05bd347a", "get_het_coverage_from_callstats", "0"), ("outputs", "normal_hets")]
     )
+
+#
+# NA12878
+
+# download phased VCF/confident regions from Illumina
+
+# ( cd simulation/NA12878/VCF && \
+#   curl --user platgene_ro: -O "ftp://ussd-ftp.illumina.com/2017-1.0/hg38/small_variants/NA12878/NA12878.vcf.gz{,.tbi}" &&
+#   curl --user platgene_ro: -O "ftp://ussd-ftp.illumina.com/2017-1.0/hg38/small_variants/ConfidentRegions.bed.gz{,.tbi}"
+# )
