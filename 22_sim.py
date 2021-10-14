@@ -1,6 +1,8 @@
 import glob
 import os
 import pandas as pd
+import pickle
+import prefect
 import wolf
 
 import dalmatian
@@ -34,12 +36,18 @@ H.drop(columns = ["cov", "REF_COUNT", "ALT_COUNT"]).rename(columns = { "ALT_COUN
 
 # workflow code that runs everything from hapaseg_load onwards
 # excised from workflow.py
-def sim_workflow():
+
+hapaseg = wolf.ImportTask(
+  task_path = ".", # TODO: make remote
+  task_name = "hapaseg"
+)
+
+def sim_workflow(phased_VCF, tumor_allele_counts, normal_allele_counts):
     hapaseg_load_task = hapaseg.Hapaseg_load(
       inputs = {
-        "phased_VCF" : results.loc[("05bd347a", "combine_vcfs", "0"), ("outputs", "combined_vcf")],
-        "tumor_allele_counts" : "genome/05bd347a.tumor_hets.sim.tsv",
-        "normal_allele_counts" : results.loc[("05bd347a", "get_het_coverage_from_callstats", "0"), ("outputs", "normal_hets")],
+        "phased_VCF" : phased_VCF,
+        "tumor_allele_counts" : tumor_allele_counts,
+        "normal_allele_counts" : normal_allele_counts,
         "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt" # TODO: allow to be specified
       }
     )
@@ -97,4 +105,9 @@ def sim_workflow():
     arm_concat = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
 
 with wolf.Workflow(workflow = sim_workflow) as w:
-    w.run(RUN_NAME = "05bd347a_sim")
+    w.run(
+      RUN_NAME = "05bd347a_sim",
+      phased_VCF = results.loc[("05bd347a", "combine_vcfs", "0"), ("outputs", "combined_vcf")],
+      tumor_allele_counts = "genome/05bd347a.tumor_hets.sim.tsv",
+      normal_allele_counts = results.loc[("05bd347a", "get_het_coverage_from_callstats", "0"), ("outputs", "normal_hets")]
+    )
