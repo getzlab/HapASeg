@@ -965,13 +965,15 @@ class DPinstance:
 
                     j = 1
                     while cur_clust != -1 and si - j > 0 and \
-                      clusts[si - j] == cur_clust:
-                        seg_idx.add(si - j)
+                      (clusts[si - j] == cur_clust or clusts[si - j] == 0):
+                        if clusts[si - j] != 0:
+                            seg_idx.add(si - j)
                         j += 1
                     j = 1
                     while cur_clust != -1 and si + j < len(S) and \
-                      clusts[si + j] == cur_clust:
-                        seg_idx.add(si + j)
+                      (clusts[si + j] == cur_clust or clusts[si + j] == 0):
+                        if clusts[si + j] != 0:
+                            seg_idx.add(si + j)
                         j += 1
 
                 seg_idx = np.r_[list(seg_idx)]
