@@ -688,58 +688,65 @@ class A_DP:
         return snps_to_clusters, snps_to_phases
 
 class DPinstance:
-    def __init__(self, ):
+    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50):
+        self.S = S
+        self.clust_prior = clust_prior
+        self.clust_count_prior = clust_count_prior
 
-    def run(self, ):
-    def run_DP(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50):
         #
         # define column indices
-        clust_col = S.columns.get_loc("clust")
-        min_col = S.columns.get_loc("min")
-        maj_col = S.columns.get_loc("maj")
-        aalt_col = S.columns.get_loc("A_alt")
-        aref_col = S.columns.get_loc("A_ref")
-        balt_col = S.columns.get_loc("B_alt")
-        bref_col = S.columns.get_loc("B_ref")
-        flip_col = S.columns.get_loc("flipped")
+        self.clust_col = self.S.columns.get_loc("clust")
+        self.min_col = self.S.columns.get_loc("min")
+        self.maj_col = self.S.columns.get_loc("maj")
+        self.aalt_col = self.S.columns.get_loc("A_alt")
+        self.aref_col = self.S.columns.get_loc("A_ref")
+        self.balt_col = self.S.columns.get_loc("B_alt")
+        self.bref_col = self.S.columns.get_loc("B_ref")
+        self.flip_col = self.S.columns.get_loc("flipped")
 
         #
         # initialize priors
 
         # store likelihoods for each cluster in the prior (from previous iterations)
-        clust_prior[-1] = np.r_[0, 0]
-        clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1, v[1] + 1) for k, v in clust_prior.items()})
-        clust_prior_mat = np.r_[clust_prior.values()]
+        self.clust_prior[-1] = np.r_[0, 0]
+        self.clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1, v[1] + 1) for k, v in self.clust_prior.items()})
+        self.clust_prior_mat = np.r_[self.clust_prior.values()]
 
-        clust_count_prior[-1] = 0.1 # DP alpha factor, i.e. relative probability of opening new cluster (TODO: make specifiable)
-        clust_count_prior[0] = 0.1 # relative probability of sending a cluster to the garbage
+        self.clust_count_prior[-1] = 0.1 # DP alpha factor, i.e. relative probability of opening new cluster (TODO: make specifiable)
+        self.clust_count_prior[0] = 0.1 # relative probability of sending a cluster to the garbage
 
+
+    def rephase(self, seg_idx):
+        n_move = len(seg_idx)
+
+        x = s.beta.rvs(self.S.iloc[seg_idx, self.aalt_col].sum() + 1, S.iloc[seg_idx, self.aref_col].sum() + 1, size = [n_move, 30])
+        y = s.beta.rvs(self.S.iloc[seg_idx, self.balt_col].sum() + 1, S.iloc[seg_idx, self.bref_col].sum() + 1, size = [n_move, 30])
+        if np.random.rand() < (x > y).mean():
+            self.S.iloc[seg_idx, [self.min_col, self.maj_col]] = self.S.iloc[seg_idx, [self.min_col, self.maj_col]].values[:, ::-1]
+            self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]] = self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]].values[:, ::-1]
+            self.S.iloc[seg_idx, [self.aref_col, self.bref_col]] = self.S.iloc[seg_idx, [self.aref_col, self.bref_col]].values[:, ::-1]
+            self.S.iloc[seg_idx, self.flip_col] = ~self.S.iloc[seg_idx, self.flip_col]
+
+    def run(self, n_iter = 50):
         #
         # assign segments to likeliest prior component {{{
 
         if len(clust_prior) > 1:
             for seg_idx in range(len(S)):
-                seg_idx = np.r_[seg_idx]
-                # rephase segment
-                x = s.beta.rvs(S.iloc[seg_idx, aalt_col].sum() + 1, S.iloc[seg_idx, aref_col].sum() + 1, size = [len(seg_idx), 30])
-                y = s.beta.rvs(S.iloc[seg_idx, balt_col].sum() + 1, S.iloc[seg_idx, bref_col].sum() + 1, size = [len(seg_idx), 30])
-                if np.random.rand() < (x > y).mean():
-                    S.iloc[seg_idx, [min_col, maj_col]] = S.iloc[seg_idx, [min_col, maj_col]].values[:, ::-1]
-                    S.iloc[seg_idx, [aalt_col, balt_col]] = S.iloc[seg_idx, [aalt_col, balt_col]].values[:, ::-1]
-                    S.iloc[seg_idx, [aref_col, bref_col]] = S.iloc[seg_idx, [aref_col, bref_col]].values[:, ::-1]
-                    S.iloc[seg_idx, flip_col] = ~S.iloc[seg_idx, flip_col]
+                seg_idx = np.r_[seg_idx] 
+                self.rephase(seg_idx)
 
                 # compute probability that segment belongs to each cluster prior element
-                S_a = S.iloc[seg_idx[0], min_col]
-                S_b = S.iloc[seg_idx[0], maj_col]
-                P_a = clust_prior_mat[1:, 0]
-                P_b = clust_prior_mat[1:, 1]
+                S_a = self.S.iloc[seg_idx[0], self.min_col]
+                S_b = self.S.iloc[seg_idx[0], self.maj_col]
+                P_a = self.clust_prior_mat[1:, 0]
+                P_b = self.clust_prior_mat[1:, 1]
                 P_l = ss.betaln(S_a + P_a + 1, S_b + P_b + 1) - (ss.betaln(S_a + 1, S_b + 1) + ss.betaln(P_a + 1, P_b + 1))
 
                 # probabilistically assign
-                ccp = np.r_[[v for k, v in clust_count_prior.items() if k != -1 and k != 0]]
-                S.iloc[seg_idx, clust_col] = np.random.choice(
-                  np.r_[clust_prior.keys()][1:], 
+                ccp = np.r_[[v for k, v in self.clust_count_prior.items() if k != -1 and k != 0]]
+                self.S.iloc[seg_idx, clust_col] = np.random.choice(
+                  np.r_[self.clust_prior.keys()][1:], 
                   p = np.exp(P_l)*ccp/(np.exp(P_l)*ccp).sum()
                 )
 
@@ -892,13 +899,7 @@ class DPinstance:
             #
             # perform phase correction on segment/cluster
             # flip min/maj with probability that alleles are oriented the "wrong" way
-            x = s.beta.rvs(S.iloc[seg_idx, aalt_col].sum() + 1, S.iloc[seg_idx, aref_col].sum() + 1, size = [n_move, 30])
-            y = s.beta.rvs(S.iloc[seg_idx, balt_col].sum() + 1, S.iloc[seg_idx, bref_col].sum() + 1, size = [n_move, 30])
-            if np.random.rand() < (x > y).mean():
-                S.iloc[seg_idx, [min_col, maj_col]] = S.iloc[seg_idx, [min_col, maj_col]].values[:, ::-1]
-                S.iloc[seg_idx, [aalt_col, balt_col]] = S.iloc[seg_idx, [aalt_col, balt_col]].values[:, ::-1]
-                S.iloc[seg_idx, [aref_col, bref_col]] = S.iloc[seg_idx, [aref_col, bref_col]].values[:, ::-1]
-                S.iloc[seg_idx, flip_col] = ~S.iloc[seg_idx, flip_col]
+            self.rephase(seg_idx)
 
             #
             # choose to join a cluster or make a new one
