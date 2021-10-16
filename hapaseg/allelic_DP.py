@@ -320,7 +320,7 @@ class A_DP:
             adj_AB = 0
             adj_BC = np.zeros(len(clust_sums))
 
-            if not move_clust:
+            if not move_clust or (burned_in and move_clust and np.random.rand() < 0.01):
                 ordpairs = np.c_[
                   [np.r_[list(x)][[0, -1]] for x in more_itertools.consecutive_groups(
                     np.sort(seg_idx))
