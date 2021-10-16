@@ -200,6 +200,7 @@ class A_DP:
         phase_orientations = []
 
         burned_in = False
+        seg_touch_idx = np.zeros(len(S), dtype = np.uint16)
 
         n_it = 0
         n_it_last = 0
@@ -209,8 +210,8 @@ class A_DP:
                 print("n unassigned: {}".format((S["clust"] == -1).sum()))
                 print("n garbage: {}".format((S["clust"] == 0).sum()))
 
-            # we are burned in once all segments are assigned to a cluster
-            if not burned_in and (S["clust"] != -1).all():
+            # we are burned in once all segments have been touched, discounting segments currently in the garbage
+            if not burned_in and not n_it % 100 and ((seg_touch_idx > 5) | (clusts == 0)).all():
                 burned_in = True
 
             #
@@ -284,6 +285,9 @@ class A_DP:
                 clusts[seg_idx] = -1
 
                 move_clust = True
+
+            if not burned_in:
+                seg_touch_idx[seg_idx] += 1
 
             #
             # perform phase correction on segment/cluster
