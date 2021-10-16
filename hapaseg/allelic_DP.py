@@ -719,8 +719,8 @@ class DPinstance:
     def rephase(self, seg_idx):
         n_move = len(seg_idx)
 
-        x = s.beta.rvs(self.S.iloc[seg_idx, self.aalt_col].sum() + 1, S.iloc[seg_idx, self.aref_col].sum() + 1, size = [n_move, 30])
-        y = s.beta.rvs(self.S.iloc[seg_idx, self.balt_col].sum() + 1, S.iloc[seg_idx, self.bref_col].sum() + 1, size = [n_move, 30])
+        x = s.beta.rvs(self.S.iloc[seg_idx, self.aalt_col].sum() + 1, self.S.iloc[seg_idx, self.aref_col].sum() + 1, size = [n_move, 30])
+        y = s.beta.rvs(self.S.iloc[seg_idx, self.balt_col].sum() + 1, self.S.iloc[seg_idx, self.bref_col].sum() + 1, size = [n_move, 30])
         if np.random.rand() < (x > y).mean():
             self.S.iloc[seg_idx, [self.min_col, self.maj_col]] = self.S.iloc[seg_idx, [self.min_col, self.maj_col]].values[:, ::-1]
             self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]] = self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]].values[:, ::-1]
@@ -884,8 +884,8 @@ class DPinstance:
         #
         # assign segments to likeliest prior component {{{
 
-        if len(clust_prior) > 1:
-            for seg_idx in range(len(S)):
+        if len(self.clust_prior) > 1:
+            for seg_idx in range(len(self.S)):
                 seg_idx = np.r_[seg_idx] 
                 self.rephase(seg_idx)
 
@@ -898,7 +898,7 @@ class DPinstance:
 
                 # probabilistically assign
                 ccp = np.r_[[v for k, v in self.clust_count_prior.items() if k != -1 and k != 0]]
-                self.S.iloc[seg_idx, clust_col] = np.random.choice(
+                self.S.iloc[seg_idx, self.clust_col] = np.random.choice(
                   np.r_[self.clust_prior.keys()][1:], 
                   p = np.exp(P_l)*ccp/(np.exp(P_l)*ccp).sum()
                 )
@@ -909,36 +909,36 @@ class DPinstance:
 
         #
         # initialize cluster tracking hash tables
-        clust_counts = sc.SortedDict(S["clust"].value_counts().drop([-1, 0], errors = "ignore"))
+        self.clust_counts = sc.SortedDict(self.S["clust"].value_counts().drop([-1, 0], errors = "ignore"))
         # for the first round of clustering, this is { 1 : 1 }
-        clust_sums = sc.SortedDict({
-          **{ k : np.r_[v["min"], v["maj"]] for k, v in S.groupby("clust")[["min", "maj"]].sum().to_dict(orient = "index").items() },
+        self.clust_sums = sc.SortedDict({
+          **{ k : np.r_[v["min"], v["maj"]] for k, v in self.S.groupby("clust")[["min", "maj"]].sum().to_dict(orient = "index").items() },
           **{-1 : np.r_[0, 0], 0 : np.r_[0, 0]}
         })
         # for the first round, this is { -1/0 : np.r_[0, 0], 1 : np.r_[S[0, "min"], S[0, "maj"]] }
-        clust_members = sc.SortedDict({ k : set(v) for k, v in S.groupby("clust").groups.items() if k != -1 and k != 0 })
+        self.clust_members = sc.SortedDict({ k : set(v) for k, v in self.S.groupby("clust").groups.items() if k != -1 and k != 0 })
         # for the first round, this is { 1 : {0} }
-        unassigned_segs = sc.SortedList(S.index[S["clust"] == -1])
+        unassigned_segs = sc.SortedList(self.S.index[self.S["clust"] == -1])
 
         # store this as numpy for speed
-        clusts = S["clust"].values
+        self.clusts = self.S["clust"].values
 
-        max_clust_idx = np.max(clust_members.keys() | clust_prior.keys() if clust_prior is not None else {})
+        max_clust_idx = np.max(self.clust_members.keys() | self.clust_prior.keys() if self.clust_prior is not None else {})
 
         # containers for saving the MCMC trace
-        segs_to_clusters = []
-        phase_orientations = []
+        self.segs_to_clusters = []
+        self.phase_orientations = []
 
         burned_in = False
         seg_touch_idx = np.zeros(len(S), dtype = np.uint16)
 
         n_it = 0
         n_it_last = 0
-        while len(segs_to_clusters) < n_iter:
+        while len(self.segs_to_clusters) < n_iter:
             if not n_it % 1000:
-                print(S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
-                print("n unassigned: {}".format((S["clust"] == -1).sum()))
-                print("n garbage: {}".format((S["clust"] == 0).sum()))
+                print(self.S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
+                print("n unassigned: {}".format((self.S["clust"] == -1).sum()))
+                print("n garbage: {}".format((self.S["clust"] == 0).sum()))
 
             # we are burned in once all segments have been touched, discounting segments currently in the garbage
             if not burned_in and not n_it % 100 and ((seg_touch_idx > 5) | (clusts == 0)).all():
@@ -952,10 +952,10 @@ class DPinstance:
             if np.random.rand() < 0.5:
             #if np.random.rand() < 1:
                 # bias picking unassigned segments if >90% of segments have been assigned
-                if len(unassigned_segs) > 0 and len(unassigned_segs)/len(S) < 0.1 and np.random.rand() < 0.5:
+                if len(unassigned_segs) > 0 and len(unassigned_segs)/len(self.S) < 0.1 and np.random.rand() < 0.5:
                     seg_idx = sc.SortedSet({np.random.choice(unassigned_segs)})
                 else:
-                    seg_idx = sc.SortedSet({np.random.choice(len(S))})
+                    seg_idx = sc.SortedSet({np.random.choice(len(self.S))})
 
                 cur_clust = int(clusts[seg_idx])
 
@@ -980,27 +980,27 @@ class DPinstance:
 
                 # if segment was already assigned to a cluster, unassign it
                 if cur_clust > 0:
-                    clust_counts[cur_clust] -= n_move
-                    if clust_counts[cur_clust] == 0:
-                        del clust_counts[cur_clust]
-                        del clust_sums[cur_clust]
-                        del clust_members[cur_clust]
+                    self.clust_counts[cur_clust] -= n_move
+                    if self.clust_counts[cur_clust] == 0:
+                        del self.clust_counts[cur_clust]
+                        del self.clust_sums[cur_clust]
+                        del self.clust_members[cur_clust]
                     else:
-                        clust_sums[cur_clust] -= np.r_[S.iloc[seg_idx, min_col].sum(), S.iloc[seg_idx, maj_col].sum()]
-                        clust_members[cur_clust] -= set(seg_idx)
+                        self.clust_sums[cur_clust] -= np.r_[self.S.iloc[seg_idx, self.min_col].sum(), self.S.iloc[seg_idx, self.maj_col].sum()]
+                        self.clust_members[cur_clust] -= set(seg_idx)
 
                     unassigned_segs.update(seg_idx)
-                    clusts[seg_idx] = -1
+                    self.clusts[seg_idx] = -1
 
             # pick a cluster at random
             else:
                 # it only makes sense to try joining two clusters if there are at least two of them!
-                if len(clust_counts) < 2:
+                if len(self.clust_counts) < 2:
                     n_it += 1
                     continue
 
-                cl_idx = np.random.choice(clust_counts.keys())
-                seg_idx = np.r_[list(clust_members[cl_idx])]
+                cl_idx = np.random.choice(self.clust_counts.keys())
+                seg_idx = np.r_[list(self.clust_members[cl_idx])]
                 n_move = len(seg_idx)
                 cur_clust = -1 # only applicable for individual segments, so we set to -1 here
                                # (this is so that subsequent references to clust_sums[cur_clust]
@@ -1008,11 +1008,11 @@ class DPinstance:
 
                 # unassign all segments within this cluster
                 # (it will either be joined with a new cluster, or remade again into its own cluster)
-                del clust_counts[cl_idx]
-                del clust_sums[cl_idx]
-                del clust_members[cl_idx]
+                del self.clust_counts[cl_idx]
+                del self.clust_sums[cl_idx]
+                del self.clust_members[cl_idx]
                 unassigned_segs.update(seg_idx)
-                clusts[seg_idx] = -1
+                self.clusts[seg_idx] = -1
 
                 move_clust = True
 
@@ -1073,7 +1073,7 @@ class DPinstance:
             prior_diff = []
             prior_com = []
             clust_prior_p = 1
-            if clust_prior is not None: 
+            if self.clust_prior is not None: 
                 #
                 # divide prior into three sections:
                 # * clusters in prior not currently active (if picked, will open a new cluster with that ID)
@@ -1081,26 +1081,26 @@ class DPinstance:
                 # * currently active clusters not in the prior (if picked, would weight cluster's posterior probability with prior probability of making brand new cluster)
 
                 # not currently active
-                prior_diff = clust_prior.keys() - clust_counts.keys()
+                prior_diff = self.clust_prior.keys() - self.clust_counts.keys()
 
                 # currently active clusters in prior
-                prior_com = clust_counts.keys() & clust_prior.keys()
+                prior_com = self.clust_counts.keys() & self.clust_prior.keys()
 
                 # currently active clusters not in prior
-                prior_null = clust_counts.keys() - clust_prior.keys()
+                prior_null = self.clust_counts.keys() - self.clust_prior.keys()
 
                 # order of prior vector:
                 # [-1 (totally new cluster), <prior_diff>, <prior_com + prior_null>]
                 prior_idx = np.r_[
-                  np.r_[[clust_prior.index(x) for x in prior_diff]],
-                  np.r_[[clust_prior.index(x) if x in clust_prior else 0 for x in (prior_com | prior_null | {0})]]
+                  np.r_[[self.clust_prior.index(x) for x in prior_diff]],
+                  np.r_[[self.clust_prior.index(x) if x in self.clust_prior else 0 for x in (prior_com | prior_null | {0})]]
                 ]
 
                 prior_MLs = ss.betaln( # prior clusters + segment
-                  np.r_[clust_prior_mat[prior_idx, 0]] + B_a + 1,
-                  np.r_[clust_prior_mat[prior_idx, 1]] + B_b + 1
+                  np.r_[self.clust_prior_mat[prior_idx, 0]] + B_a + 1,
+                  np.r_[self.clust_prior_mat[prior_idx, 1]] + B_b + 1
                 ) \
-                - (ss.betaln(B_a + 1, B_b + 1) + np.r_[np.r_[clust_prior_liks.values()][prior_idx]]) # prior clusters, segment
+                - (ss.betaln(B_a + 1, B_b + 1) + np.r_[np.r_[self.clust_prior_liks.values()][prior_idx]]) # prior clusters, segment
 
                 clust_prior_p = np.maximum(np.exp(prior_MLs - prior_MLs.max())/np.exp(prior_MLs - prior_MLs.max()).sum(), 1e-300)
 
@@ -1109,8 +1109,8 @@ class DPinstance:
                 
             # DP prior based on clusters sizes
             # DP alpha factor is split proportionally between prior_diff and -1 (brand new cluster)
-            ccp = np.r_[[clust_count_prior[x] for x in prior_diff]]
-            count_prior = np.r_[clust_count_prior[-1]*ccp/ccp.sum(), clust_count_prior[0], clust_counts.values()]
+            ccp = np.r_[[self.clust_count_prior[x] for x in prior_diff]]
+            count_prior = np.r_[self.clust_count_prior[-1]*ccp/ccp.sum(), self.clust_count_prior[0], self.clust_counts.values()]
             count_prior /= count_prior.sum()
 
             # choose to join a cluster or make a new one (choice_idx = 0) 
@@ -1121,7 +1121,7 @@ class DPinstance:
             )
             # -1 = brand new, -2, -3, ... = -(prior clust index) - 2
             # 0 = garbage
-            choice = np.r_[-np.r_[prior_diff] - 2, 0, clust_counts.keys()][choice_idx]
+            choice = np.r_[-np.r_[prior_diff] - 2, 0, self.clust_counts.keys()][choice_idx]
 
             # create new cluster
             if choice < 0:
@@ -1135,49 +1135,49 @@ class DPinstance:
                 else: # match index of cluster in prior
                     new_clust_idx = -choice - 2
 
-                clust_counts[new_clust_idx] = n_move
-                S.iloc[seg_idx, clust_col] = new_clust_idx
-                clusts[seg_idx] = new_clust_idx
+                self.clust_counts[new_clust_idx] = n_move
+                self.S.iloc[seg_idx, self.clust_col] = new_clust_idx
+                self.clusts[seg_idx] = new_clust_idx
 
-                clust_sums[new_clust_idx] = np.r_[B_a, B_b]
-                clust_members[new_clust_idx] = set(seg_idx)
+                self.clust_sums[new_clust_idx] = np.r_[B_a, B_b]
+                self.clust_members[new_clust_idx] = set(seg_idx)
 
             # send to garbage
             elif choice == 0:
-                S.iloc[seg_idx, clust_col] = 0
-                clusts[seg_idx] = 0
+                self.S.iloc[seg_idx, self.clust_col] = 0
+                self.clusts[seg_idx] = 0
 
             # join existing cluster
             else:
                 # if we are combining two clusters, take the index of the bigger one
                 # this helps to keep cluster indices consistent
-                if move_clust and clust_counts[choice] < n_move:
-                    clust_counts[cl_idx] = clust_counts[choice]
-                    clust_sums[cl_idx] = clust_sums[choice]
-                    clust_members[cl_idx] = clust_members[choice]
-                    S.iloc[np.flatnonzero(S["clust"] == choice), clust_col] = cl_idx
-                    del clust_counts[choice]
-                    del clust_sums[choice]
-                    del clust_members[choice]
+                if move_clust and self.clust_counts[choice] < n_move:
+                    self.clust_counts[cl_idx] = self.clust_counts[choice]
+                    self.clust_sums[cl_idx] = self.clust_sums[choice]
+                    self.clust_members[cl_idx] = self.clust_members[choice]
+                    self.S.iloc[np.flatnonzero(self.S["clust"] == choice), self.clust_col] = cl_idx
+                    del self.clust_counts[choice]
+                    del self.clust_sums[choice]
+                    del self.clust_members[choice]
                     choice = cl_idx
 
-                clust_counts[choice] += n_move 
-                clust_sums[choice] += np.r_[B_a, B_b]
-                S.iloc[seg_idx, clust_col] = choice
-                clusts[seg_idx] = choice
+                self.clust_counts[choice] += n_move 
+                self.clust_sums[choice] += np.r_[B_a, B_b]
+                self.S.iloc[seg_idx, self.clust_col] = choice
+                self.clusts[seg_idx] = choice
 
-                clust_members[choice].update(set(seg_idx))
+                self.clust_members[choice].update(set(seg_idx))
 
             for si in seg_idx:
                 unassigned_segs.discard(si)
 
             # track global state of cluster assignments
             # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
-            if burned_in and n_it - n_it_last > len(S)/(len(clust_counts)*2):
-                segs_to_clusters.append(S["clust"].copy())
-                phase_orientations.append(S["flipped"].copy())
+            if burned_in and n_it - n_it_last > len(self.S)/(len(self.clust_counts)*2):
+                self.segs_to_clusters.append(self.S["clust"].copy())
+                self.phase_orientations.append(self.S["flipped"].copy())
                 n_it_last = n_it
 
             n_it += 1
 
-        return np.r_[segs_to_clusters], np.r_[phase_orientations]
+        return np.r_[self.segs_to_clusters], np.r_[self.phase_orientations]
