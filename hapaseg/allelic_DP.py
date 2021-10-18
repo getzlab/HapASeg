@@ -792,15 +792,15 @@ class DPinstance:
                     j += 1
 
             # maj/min counts of contiguous downstream segments belonging to the same cluster
-            if en + 1 < len(S):
+            if en + 1 < len(self.S):
                 j = 1
-                while en + j < len(S) and self.clusts[en + j] == 0:
+                while en + j < len(self.S) and self.clusts[en + j] == 0:
                     j += 1
 
                 D_cl = self.clusts[en + j]
                 adj_clusters[o, 1] = D_cl
 
-                while en + j < len(S) and self.clusts[en + j] != -1 and \
+                while en + j < len(self.S) and self.clusts[en + j] != -1 and \
                   (self.clusts[en + j] == D_cl or self.clusts[en + j] == 0):
                     if self.clusts[en + j] != 0:
                         UD_counts[o, 2] += self.S.iloc[en + j, self.min_col]
