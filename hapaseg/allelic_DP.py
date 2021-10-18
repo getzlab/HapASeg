@@ -742,13 +742,13 @@ class DPinstance:
             J_a = 0
             J_b = 0
 
-        if targ_clust != - 1 and st - 1 > 0 and (targ_clust == upstream_clust or targ_clust == 0):
+        if targ_clust != - 1 and (targ_clust == upstream_clust or targ_clust == 0):
             J_a += U_a
             J_b += U_b
         else:
             SU_a += U_a
             SU_b += U_b
-        if targ_clust != - 1 and en + 1 < len(self.S) and (targ_clust == downstream_clust or targ_clust == 0):
+        if targ_clust != - 1 and (targ_clust == downstream_clust or targ_clust == 0):
             J_a += D_a
             J_b += D_b
         else:
@@ -808,6 +808,13 @@ class DPinstance:
 
                     j += 1
 
+        # if we are looking at the segments at the very start or very end, set
+        # upstream/downstream cluster indices to garbage
+        if ordpairs[0, 0] == 0:
+            adj_clusters[0, 0] = 0
+        if ordpairs[-1, 1] == len(self.S) - 1:
+            adj_clusters[-1, 1] = 0
+
         # if there are any segments being moved adjacent to already existing clusters, get local split/join likelihoods
         adj_idx = ~(adj_clusters == -1).all(1)
 
@@ -856,7 +863,6 @@ class DPinstance:
                       D_b = D_b
                     )
                     # we cannot send a segment to the garbage adjacent to any unassigned segment
-                    # TODO: this means we cannot throw the first or last segments in the garbage
                     if cl == 0 and (cl_u == -1 or cl_d == -1):
                         adj_BC[idx] = -np.inf
 
@@ -902,8 +908,6 @@ class DPinstance:
                   np.r_[self.clust_prior.keys()][1:], 
                   p = np.exp(P_l)*ccp/(np.exp(P_l)*ccp).sum()
                 )
-
-            # TODO: send segments to garbage
 
         # }}}
 
