@@ -251,69 +251,75 @@ class Cov_MCMC:
             # decide whether to join or split
             if np.random.rand() < 0.5:
                 # join
-                # find intervals from either side
-                l_st, r_st = self.cov_df.iloc[break_pick:break_pick + 2]['SegID'].values
-
-                l_ind = (l_st, break_pick)
-                r_len = self.segLenDict[r_st]
-                r_ind = (break_pick + 1, r_st + r_len)
-
-                ML_join = self.get_ML_join(l_ind, r_ind)
-                ML_split = self.get_ML_split(l_ind, r_ind)
-
-                log_q_join = self.get_logq_join(l_ind, r_ind)
-
-                if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + log_q_join):
-                    # join the segments
-
-                    self.cov_df.iloc[r_ind[0]:r_ind[1]]['SegID'] = l_st
-                    self.segLenDict.discard(r_st)
-                    cur_len = self.segLenDict[l_st]
-                    self.segLenDict[l_st] = cur_len + r_len
-
-                    # update segment list
-                    self.F.discard(r_st)
-                    self.F.discard(r_st - 1)
-                    self.segment_history.append(self.F)
-
-                    #update mu_i values
-                    self.mu_i[l_st:r_ind[1]] = self.mu_shared
+                self.combine(break_pick)
             else:
                 # split
-                # use segment from left
-                l_st = self.cov_df.iloc[break_pick]['SegID'].values
-                seg_len = self.segLenDict[l_st]
+                self.split(break_pick)
 
-                # if singleton segment we cant split, so skip
-                if seg_len == 1:
-                    continue
+    def combine(self, break_pick):
+        # find intervals from either side
+        l_st, r_st = self.cov_df.iloc[break_pick:break_pick + 2]['SegID'].values
 
-                seg_ind = (l_st, l_st + seg_len)
+        l_ind = (l_st, break_pick)
+        r_len = self.segLenDict[r_st]
+        r_ind = (break_pick + 1, r_st + r_len)
 
-                # find where to split
-                l_pk, mid = self.log_p_k((l_st, None), (None, seg_ind[1]))
+        ML_join = self.get_ML_join(l_ind, r_ind)
+        ML_split = self.get_ML_split(l_ind, r_ind)
 
-                l_ind = (l_st, mid)
-                r_ind = (mid, seg_ind[1])
+        log_q_join = self.get_logq_join(l_ind, r_ind)
 
-                ML_join = self.get_ML_join(l_ind, r_ind)
-                ML_split = self.get_ML_split(l_ind, r_ind)
+        if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + log_q_join):
+            # join the segments
 
-                log_q_split = self.get_logq_join(l_pk)
+            self.cov_df.iloc[r_ind[0]:r_ind[1]]['SegID'] = l_st
+            self.segLenDict.discard(r_st)
+            cur_len = self.segLenDict[l_st]
+            self.segLenDict[l_st] = cur_len + r_len
 
-                if np.log(np.random.rand()) < np.minimum(0, ML_split - ML_join + log_q_split):
-                    # split the segments
+            # update segment list
+            self.F.discard(r_st)
+            self.F.discard(r_st - 1)
+            self.segment_history.append(self.F)
 
-                    self.cov_df.iloc[r_ind[0]:r_ind[1]]['SegID'] = r_ind[0]
-                    r_len = r_ind[1] - r_ind[0]
-                    self.segLenDict[r_ind[0]] = r_len
-                    self.segLenDict[l_st] = self.segLenDict[l_st] - r_len
+            # update mu_i values
+            self.mu_i[l_st:r_ind[1]] = self.mu_shared
 
-                    # update segment list
-                    self.F.add(r_ind[0])
-                    self.F.add(r_ind[0])
-                    self.segment_history.append(self.F)
+    def split(self, break_pick):
+        # use segment from left
+        l_st = self.cov_df.iloc[break_pick]['SegID'].values
+        seg_len = self.segLenDict[l_st]
 
-                    # update mu_i values
-                    self.mu_i[l_ind[0]:l_ind[1]] = self.mu_l
-                    self.mu_i[r_ind[0]:r_ind[1]] = self.mu_r
+        # if singleton segment we cant split, so skip
+        if seg_len == 1:
+            return
+
+        seg_ind = (l_st, l_st + seg_len)
+
+        # find where to split
+        l_pk, mid = self.log_p_k((l_st, None), (None, seg_ind[1]))
+
+        l_ind = (l_st, mid)
+        r_ind = (mid, seg_ind[1])
+
+        ML_join = self.get_ML_join(l_ind, r_ind)
+        ML_split = self.get_ML_split(l_ind, r_ind)
+
+        log_q_split = self.get_logq_join(l_pk)
+
+        if np.log(np.random.rand()) < np.minimum(0, ML_split - ML_join + log_q_split):
+            # split the segments
+
+            self.cov_df.iloc[r_ind[0]:r_ind[1]]['SegID'] = r_ind[0]
+            r_len = r_ind[1] - r_ind[0]
+            self.segLenDict[r_ind[0]] = r_len
+            self.segLenDict[l_st] = self.segLenDict[l_st] - r_len
+
+            # update segment list
+            self.F.add(r_ind[0])
+            self.F.add(r_ind[0])
+            self.segment_history.append(self.F)
+
+            # update mu_i values
+            self.mu_i[l_ind[0]:l_ind[1]] = self.mu_l
+            self.mu_i[r_ind[0]:r_ind[1]] = self.mu_r
