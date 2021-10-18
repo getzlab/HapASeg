@@ -757,7 +757,7 @@ class DPinstance:
 
         return ss.betaln(SU_a + 1, SU_b + 1) + ss.betaln(J_a + 1, J_b + 1) + ss.betaln(SD_a + 1, SD_b + 1)
 
-    def compute_adj_liks(self, seg_idx):
+    def compute_adj_liks(self, seg_idx, cur_clust):
         adj_AB = 0
         adj_BC = np.zeros(len(self.clust_sums))
 
@@ -1047,7 +1047,7 @@ class DPinstance:
             adj_BC = np.zeros(len(self.clust_sums))
 
             if not move_clust or (burned_in and move_clust and np.random.rand() < 0.01):
-                adj_AB, adj_BC = self.compute_adj_liks(seg_idx)
+                adj_AB, adj_BC = self.compute_adj_liks(seg_idx, cur_clust)
             else:
                 adj_BC[self.clust_sums.index(0)] = -np.inf
 
