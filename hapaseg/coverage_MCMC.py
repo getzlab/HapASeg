@@ -44,13 +44,15 @@ class Cov_MCMC:
         # init breakpoint set
         self.cov_breaks = sc.SortedSet(np.r_[:len(self.cov_df)])
         #_ = [self.cov_breaks.discard(elt) for elt in self.cov_df.groupby('chr').size().cumsum().values - 1]
-        # chromosome boudaries
+        # chromosome boundaries
         self.chrom_breaks = sc.SortedSet(self.cov_df.groupby('chr').size().cumsum().values - 1)
 
         self.cov_df.loc[:, 'SegID'] = range(len(self.cov_df))
         self.segLenDict = sc.SortedDict(zip(range(len(self.cov_df)), np.ones(len(self.cov_df), dtype=np.int32)))
 
-        self.full_liklihood = []
+        self.update = True
+
+        self.full_likelihood = []
 
     @staticmethod
     def LSE(x):
@@ -179,7 +181,7 @@ class Cov_MCMC:
             if np.linalg.norm(grad) < 1e-5:
                 break
 
-    def split_log_liklihood(self, mu_l, mu_r, ind_l, ind_r):
+    def split_log_likelihood(self, mu_l, mu_r, ind_l, ind_r):
         l_tmp = self.C[ind_l[0]:ind_l[1]] @ self.beta + self.Pi[ind_l[0]:ind_l[1]] @ self.mu + mu_l
         r_tmp = self.C[ind_r[0]:ind_r[1]] @ self.beta + self.Pi[ind_r[0]:ind_r[1]] @ self.mu + mu_r
         outer_l = self.C[:ind_l[0]] @ self.beta + self.Pi[:ind_l[0]] @ self.mu + self.mu_i[:ind_l[0], None]
@@ -189,14 +191,14 @@ class Cov_MCMC:
         e_outer_l = np.exp(outer_l)
         e_outer_r = np.exp(outer_r)
 
-        r_sum = self.r[ind_l[0]:ind_l[1]].T @ l_tmp - e_l.sum() - ss.gammaln(self.r[ind_l[0]:ind_l[1]]).sum()
-        l_sum = self.r[ind_r[0]:ind_r[1]].T @ r_tmp - e_r.sum() - ss.gammaln(self.r[ind_r[0]:ind_r[1]]).sum()
-        outer_sum_l = self.r[:ind_l[0]].T @ outer_l - e_outer_l.sum() - ss.gammaln(self.r[:ind_l[0]]).sum()
-        outer_sum_r = self.r[ind_r[1]:].T @ outer_r - e_outer_r.sum() - ss.gammaln(self.r[ind_r[1]:]).sum()
+        r_sum = self.r[ind_l[0]:ind_l[1]].T @ l_tmp - e_l.sum() - ss.gammaln(self.r[ind_l[0]:ind_l[1]] + 1).sum()
+        l_sum = self.r[ind_r[0]:ind_r[1]].T @ r_tmp - e_r.sum() - ss.gammaln(self.r[ind_r[0]:ind_r[1]] + 1).sum()
+        outer_sum_l = self.r[:ind_l[0]].T @ outer_l - e_outer_l.sum() - ss.gammaln(self.r[:ind_l[0]] + 1).sum()
+        outer_sum_r = self.r[ind_r[1]:].T @ outer_r - e_outer_r.sum() - ss.gammaln(self.r[ind_r[1]:] + 1).sum()
         return l_sum + r_sum + outer_sum_l + outer_sum_r
 
 
-    def join_log_liklihood(self, mu_shared, ind_l, ind_r):
+    def join_log_likelihood(self, mu_shared, ind_l, ind_r):
         joined = self.C[ind_l[0]:ind_r[1]] @ self.beta + self.Pi[ind_l[0]:ind_r[1]] @ self.mu + mu_shared
         outer_l = self.C[:ind_l[0]] @ self.beta + self.Pi[:ind_l[0]] @ self.mu + self.mu_i[:ind_l[0], None]
         outer_r = self.C[ind_r[1]:] @ self.beta + self.Pi[ind_r[1]:] @ self.mu + self.mu_i[ind_r[1]:, None]
@@ -205,21 +207,21 @@ class Cov_MCMC:
         e_outer_l = np.exp(outer_l)
         e_outer_r = np.exp(outer_r)
 
-        joined_sum = self.r[ind_l[0]:ind_r[1]].T @ joined - e_joined.sum() - ss.gammaln(self.r[ind_l[0]:ind_r[1]]).sum()
-        outer_sum_l = self.r[:ind_l[0]].T @ outer_l - e_outer_l.sum() - ss.gammaln(self.r[:ind_l[0]]).sum()
-        outer_sum_r = self.r[ind_r[1]:].T @ outer_r - e_outer_r.sum() - ss.gammaln(self.r[ind_r[1]:]).sum()
+        joined_sum = self.r[ind_l[0]:ind_r[1]].T @ joined - e_joined.sum() - ss.gammaln(self.r[ind_l[0]:ind_r[1]] + 1).sum()
+        outer_sum_l = self.r[:ind_l[0]].T @ outer_l - e_outer_l.sum() - ss.gammaln(self.r[:ind_l[0]] + 1).sum()
+        outer_sum_r = self.r[ind_r[1]:].T @ outer_r - e_outer_r.sum() - ss.gammaln(self.r[ind_r[1]:] + 1).sum()
         return joined_sum + outer_sum_l + outer_sum_r
 
-    def log_liklihood_model(self):
+    def log_likelihood_model(self):
         model = self.C @ self.beta + self.Pi @ self.mu + self.mu_i[:, None]
-        return self.r.T @ model - np.exp(model).sum() - ss.gammaln(self.r).sum()
+        return self.r.T @ model - np.exp(model).sum() - ss.gammaln(self.r + 1).sum()
 
     def get_ML_split(self, l_ind, r_ind):
         mu_l, mu_r, h_split = self.NR_split(l_ind, r_ind, True)
         self.mu_l = mu_l
         self.mu_r = mu_r
         logprod_s = np.log((2 * np.pi) ** (h_split.shape[0] / 2) * (1 / np.sqrt(np.linalg.det(-h_split))))
-        ll_s = self.split_log_liklihood(mu_l, mu_r, l_ind, r_ind)
+        ll_s = self.split_log_likelihood(mu_l, mu_r, l_ind, r_ind)
 
         return ll_s + logprod_s
 
@@ -227,10 +229,10 @@ class Cov_MCMC:
         mu_shared, h_join = self.NR_join(l_ind, r_ind, True)
         self.mu_shared = mu_shared
         logprod_j = np.log((2 * np.pi) ** (h_join.shape[0] / 2) * (1 / np.sqrt(np.linalg.det(-h_join))))
-        ll_j = self.join_log_liklihood(mu_shared, l_ind, r_ind)
+        ll_j = self.join_log_likelihood(mu_shared, l_ind, r_ind)
         return logprod_j + ll_j
 
-    def log_p_k(self, l_ind, r_ind, use_mid = False):
+    def log_p_k(self, l_ind, r_ind, use_mid=False, find_opt=False):
         # iterate through the possible breakpoints and return normalized value of breakpoint k
 
         st = l_ind[0]
@@ -244,11 +246,16 @@ class Cov_MCMC:
         if use_mid:
             return M_lst[l_ind[1] - l_ind[0] - 1] - self.LSE(M_arr)
 
-        else:
-            #find the best place to split ourselves
+        if find_opt:
+            #find the best place to split ourselves -- NO LONGER USED
             argmax = np.argmax(M_arr)
             arg_ind = pos_splits[argmax]
             return M_arr[argmax] - self.LSE(M_arr), arg_ind
+
+        else:
+            ind_pick = np.random.choice(range(len(M_arr)))
+            arg_ind = pos_splits[ind_pick]
+            return M_arr[ind_pick] - self.LSE(M_arr), arg_ind
 
     def get_logq_join(self, l_ind, r_ind):
         return (self.log_p_k(l_ind, r_ind, use_mid=True) - np.log(len(self.cov_breaks))) - (-np.log(len(self.cov_breaks) - 1))
@@ -256,14 +263,16 @@ class Cov_MCMC:
     def get_logq_split(self, l_pk):
         return -np.log(len(self.cov_breaks) - 1) - (l_pk - np.log(len(self.cov_breaks)))
 
-    def run(self, n_iter=1000):
+    def run(self, n_iter=10000):
         for i in tqdm.tqdm(range(n_iter)):
 
             # pick a breakpoint at random
             break_pick = self.cov_breaks[np.random.choice(len(self.cov_breaks))]
-            # print('breakpoint: ', break_pick)
-            # run the optimization with current m_i values
-            self.NR_simp()
+
+            # run the optimization with current mu_i values if something changed since last iteration
+            if self.update:
+                self.NR_simp()
+                self.update = False
 
             # decide whether to join or split
             if np.random.rand() < 0.5:
@@ -272,11 +281,13 @@ class Cov_MCMC:
             else:
                 # split
                 self.split(break_pick)
-            self.full_liklihood.append(self.log_liklihood_model())
+            if iter % 100 == 0:
+                self.full_likelihood.append(self.log_likelihood_model())
 
     def combine(self, break_pick):
         # if breakpooint is between chromosomes, skip
         #TODO decide if we need to re-pick breakpoint in this case
+
         if break_pick in self.chrom_breaks:
             return -1
         # find intervals from either side
@@ -286,14 +297,12 @@ class Cov_MCMC:
         r_len = self.segLenDict[r_st]
         r_ind = (break_pick + 1, int(r_st + r_len))
 
-        #print('attempting join: ', l_ind, r_ind)
         ML_join = self.get_ML_join(l_ind, r_ind)
         ML_split = self.get_ML_split(l_ind, r_ind)
 
         log_q_join = self.get_logq_join(l_ind, r_ind)
 
         if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + log_q_join):
-            #print('joining')
             # join the segments
 
             self.cov_df.iloc[r_ind[0]:r_ind[1], -1] = l_st
@@ -312,6 +321,9 @@ class Cov_MCMC:
             # update breakpoints
             _ = self.cov_breaks.remove(break_pick)
 
+            # need to update mu and beta
+            self.update = True
+
             return break_pick
         return 0
 
@@ -326,7 +338,6 @@ class Cov_MCMC:
 
         seg_ind = (l_st, int(l_st + seg_len))
 
-        #print('attempting split ', seg_ind)
         # find where to split
         l_pk, mid = self.log_p_k((l_st, None), (None, seg_ind[1]))
 
@@ -339,7 +350,6 @@ class Cov_MCMC:
         log_q_split = self.get_logq_split(l_pk)
 
         if np.log(np.random.rand()) < np.minimum(0, ML_split - ML_join + log_q_split):
-            #print('splitting')
             # split the segments
 
             self.cov_df.iloc[r_ind[0]:r_ind[1], -1] = r_ind[0]
@@ -358,6 +368,9 @@ class Cov_MCMC:
 
             #update breakpoints
             self.cov_breaks.add(break_pick)
+
+            # need to update mu and beta
+            self.update = True
 
             return mid
         return 0
