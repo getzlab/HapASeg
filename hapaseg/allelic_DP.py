@@ -961,24 +961,31 @@ class DPinstance:
                 else:
                     seg_idx = sc.SortedSet({np.random.choice(len(self.S))})
 
-                cur_clust = int(clusts[seg_idx])
+                cur_clust = int(self.clusts[seg_idx])
 
-                # expand segment to include all adjacent segments in the same cluster
-                if np.random.rand() < 0.5:
+                # expand segment to include all adjacent segments in the same cluster,
+                # if it has already been assigned to a cluster
+                if cur_clust > 0 and np.random.rand() < 0.5:
                     si = seg_idx[0]
 
                     j = 1
-                    while cur_clust != -1 and si - j > 0 and \
-                      (clusts[si - j] == cur_clust or clusts[si - j] == 0):
-                        if clusts[si - j] != 0:
+                    while si - j > 0 and \
+                      (self.clusts[si - j] == cur_clust or self.clusts[si - j] == 0):
+                        if self.clusts[si - j] != 0:
                             seg_idx.add(si - j)
                         j += 1
                     j = 1
-                    while cur_clust != -1 and si + j < len(S) and \
-                      (clusts[si + j] == cur_clust or clusts[si + j] == 0):
-                        if clusts[si + j] != 0:
+                    while si + j < len(self.S) and \
+                      (self.clusts[si + j] == cur_clust or self.clusts[si + j] == 0):
+                        if self.clusts[si + j] != 0:
                             seg_idx.add(si + j)
                         j += 1
+
+                    # if we've expanded to include all segments in this cluster,
+                    # it is tantamount to moving an entire cluster. skip this iteration.
+                    if len(seg_idx) == self.clust_counts[cur_clust]:
+                        n_it += 1
+                        continue
 
                 seg_idx = np.r_[list(seg_idx)]
 
