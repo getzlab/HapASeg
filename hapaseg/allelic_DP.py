@@ -892,6 +892,56 @@ class DPinstance:
 
         return adj_AB, adj_BC
 
+    def compute_overall_lik(self):
+        #
+        # 1: overall clustering likelihood
+        cl_lik = 0
+        for k, v in self.clust_sums.items():
+            if k < 1:
+                continue
+            cl_lik += ss.betaln(v[0] + 1, v[1] + 1)
+
+        # this does not include unassigned/zero segments; these will be added later
+
+        #
+        # 2: adjacency likelihood
+        # contiguous sets of segments belonging to the same cluster
+        bdy = np.flatnonzero(np.r_[1, np.diff(self.clusts) != 0, 1])
+        bdy = np.c_[bdy[:-1], bdy[1:]]
+
+        # remove zeros by setting each run of zeros to cluster index preceding it
+        clusts_nz = self.clusts.copy()
+        zidx = np.flatnonzero(self.clusts[bdy[:, 0]] == 0)
+        for z in zidx:
+            clusts_nz[bdy[z, 0]:bdy[z, 1]] = clusts_nz[bdy[z - 1, 0]]
+        bdy_nz = np.flatnonzero(np.r_[1, np.diff(clusts_nz) != 0, 1])
+        bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
+
+        # remove runs of unassigned segments
+        bdy_nz = bdy_nz[self.clusts[bdy_nz[:, 0]] != -1]
+
+        # contiguous sets of segments belonging to same cluster, skipping over garbage segments
+        adj_lik = 0
+        for st, en in bdy_nz:
+            nzidx = self.clusts[st:en] != 0
+            adj_lik += ss.betaln(
+              self.S.iloc[st:en, self.min_col].values[nzidx].sum() + 1,
+              self.S.iloc[st:en, self.maj_col].values[nzidx].sum() + 1,
+            )
+
+        #
+        # add unassigned/zero segments
+        # each segment contributes a term to the likelihood
+        z_liks = ss.betaln(
+          self.S.iloc[self.clusts < 1, self.min_col] + 1,
+          self.S.iloc[self.clusts < 1, self.maj_col] + 1
+        ).sum()
+
+        cl_lik += z_liks
+        adj_lik += z_liks
+
+        return cl_lik, adj_lik
+
     def run(self, n_iter = 50):
         #
         # assign segments to likeliest prior component {{{
