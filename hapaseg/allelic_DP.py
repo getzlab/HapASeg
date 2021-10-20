@@ -761,6 +761,7 @@ class DPinstance:
         adj_AB = 0
         adj_BC = np.zeros(len(self.clust_sums))
 
+        # start/end coordinates of consecutive runs of segments being moved
         ordpairs = np.c_[
           [np.r_[list(x)][[0, -1]] for x in more_itertools.consecutive_groups(
             np.sort(seg_idx))
@@ -819,20 +820,25 @@ class DPinstance:
         adj_idx = ~(adj_clusters == -1).all(1)
 
         if adj_idx.any():
-            # maj/min counts of the segment(s) being moved
-            #S_a = S.iloc[st:(en + 1), min_col].sum()
-            S_a = self.S.iloc[:, self.min_col].values[st:(en + 1)].sum()
-            #S_b = S.iloc[st:(en + 1), maj_col].sum()
-            S_b = self.S.iloc[:, self.maj_col].values[st:(en + 1)].sum()
-
             # for each segment/segment block within this cluster,
             for j in np.flatnonzero(adj_idx):
+                # index of cluster upstream of the segment(s) being moved
                 cl_u = adj_clusters[j, 0]
+                # index of cluster downstream of the segment(s) being moved
                 cl_d = adj_clusters[j, 1]
+
+                # min/maj counts of upstream contiguous segments belonging to the same cluster
                 U_a = UD_counts[j, 0]
                 U_b = UD_counts[j, 1]
+                # min/maj counts of downstream contiguous segments belonging to the same cluster
                 D_a = UD_counts[j, 2]
                 D_b = UD_counts[j, 3]
+
+                # min/maj counts of the segment(s) being moved
+                st = ordpairs[j, 0]
+                en = ordpairs[j, 1]
+                S_a = self.S.iloc[:, self.min_col].values[st:(en + 1)].sum()
+                S_b = self.S.iloc[:, self.maj_col].values[st:(en + 1)].sum()
 
                 # adjacency likelihood of this segment remaining where it is
                 adj_AB += self.SJliks(
