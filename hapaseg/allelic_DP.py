@@ -987,9 +987,10 @@ class DPinstance:
                             seg_idx.add(si + j)
                         j += 1
 
-                    # if we've expanded to include all segments in this cluster,
-                    # it is tantamount to moving an entire cluster. skip this iteration.
-                    if len(seg_idx) == self.clust_counts[cur_clust]:
+                    # if we've expanded to include a large fraction (>10%) of segments 
+                    # in this cluster, cluster indexing might become inconsistent.
+                    # skip this iteration
+                    if len(seg_idx) >= 0.1*self.clust_counts[cur_clust]:
                         n_it += 1
                         continue
 
@@ -1083,6 +1084,12 @@ class DPinstance:
             MLs = A + BC + adj_BC - (AB + C + adj_AB)
 
             MLs_max = np.max(MLs)
+
+            # if we are moving multiple contiguous segments assigned to the same
+            # cluster, do not allow them to create a new cluster. this helps keep
+            # cluster indices consistent
+            if n_move > 1 and not move_clust:
+                MLs[self.clust_sums.index(-1)] = -np.inf
 
             #
             # priors
