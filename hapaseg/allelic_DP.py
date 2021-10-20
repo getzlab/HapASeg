@@ -990,7 +990,12 @@ class DPinstance:
         self.phase_orientations = []
 
         burned_in = False
-        seg_touch_idx = np.zeros(len(S), dtype = np.uint16)
+        all_assigned = False
+        seg_touch_idx = np.zeros(len(self.S), dtype = np.uint16)
+
+#        # containers for saving debugging information (overall likelihoods/cluster assignments pre-burnin)
+#        self.lik_tmp = []
+#        self.vc_tmp = []
 
         n_it = 0
         n_it_last = 0
@@ -1000,9 +1005,20 @@ class DPinstance:
                 print("n unassigned: {}".format((self.S["clust"] == -1).sum()))
                 print("n garbage: {}".format((self.S["clust"] == 0).sum()))
 
-            # we are burned in once all segments have been touched, discounting segments currently in the garbage
-            if not burned_in and not n_it % 100 and ((seg_touch_idx > 5) | (clusts == 0)).all():
-                burned_in = True
+            # we are burned in (n_seg/n_clust) iterations after all segments have been touched
+            if not n_it % 100:
+                if not all_assigned and (((seg_touch_idx > 0) | (self.clusts == 0)).all() or \
+                  # if there is only one cluster, then consider every segment to have been touched
+                  # otherwise, waiting for every segment to actually be touched will take forever
+                  len(unassigned_segs) == 0 and len(self.clust_counts) == 1):
+                    all_assigned = True
+                    n_it_last = n_it
+                if not burned_in and all_assigned and \
+                  n_it - n_it_last > len(self.S)/len(self.clust_counts):
+                    burned_in = True
+            
+#                self.lik_tmp.append(self.compute_overall_lik())
+#                self.vc_tmp.append(self.S["clust"].value_counts())
 
             #
             # pick either a segment or a cluster at random (50:50 prob.)
@@ -1086,7 +1102,7 @@ class DPinstance:
 
                 move_clust = True
 
-            if not burned_in:
+            if not all_assigned:
                 seg_touch_idx[seg_idx] += 1
 
             #
@@ -1114,7 +1130,7 @@ class DPinstance:
             adj_AB = 0
             adj_BC = np.zeros(len(self.clust_sums))
 
-            if not move_clust or (burned_in and move_clust and np.random.rand() < 0.01):
+            if not move_clust or (all_assigned and move_clust and np.random.rand() < 0.01):
                 adj_AB, adj_BC = self.compute_adj_liks(seg_idx, cur_clust)
             else:
                 adj_BC[self.clust_sums.index(0)] = -np.inf
@@ -1189,7 +1205,7 @@ class DPinstance:
             count_prior = np.r_[self.clust_count_prior[-1]*ccp/ccp.sum(), self.clust_count_prior[0], self.clust_counts.values()]
             count_prior /= count_prior.sum()
 
-            # choose to join a cluster or make a new one (choice_idx = 0) 
+            # choose to join a cluster or make a new one (choice_idx = 0)
             choice_p = np.exp(MLs - MLs_max + np.log(count_prior) + np.log(clust_prior_p))/np.exp(MLs - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
             choice_idx = np.random.choice(
               np.r_[0:len(MLs)],
