@@ -45,6 +45,8 @@ class A_DP:
                 r.P.iloc[st:en, min_idx] = x
 
             # save SNPs for this chunk
+            # TODO: we only need to do this once; the SNP set won't change between
+            #       segmentation samples
             all_SNPs.append(pd.DataFrame({ "maj" : r.P["MAJ_COUNT"], "min" : r.P["MIN_COUNT"], "gpos" : seq.chrpos2gpos(r.P.loc[0, "chr"], r.P["pos"], ref = self.ref_fasta) }))
 
             # draw breakpoint, phasing, and SNP inclusion sample from segmentation MCMC trace
@@ -122,7 +124,8 @@ class A_DP:
         snps_to_clusters = -1*np.ones((N_clust_samps*N_seg_samps, N_SNPs), dtype = np.int16)
         snps_to_phases = np.zeros((N_clust_samps*N_seg_samps, N_SNPs), dtype = bool)
         snp_counts = -1*np.ones((N_seg_samps, N_SNPs, 2))
-        Segs = []
+
+        DP_runs = [None]*N_seg_samps
 
         clust_prior = sc.SortedDict()
         clust_count_prior = sc.SortedDict()
@@ -132,20 +135,22 @@ class A_DP:
                 S, SNPs = self.load_seg_samp(seg_sample_idx[n_it])
 
             # run clustering
-            s2c, ph = self.run_DP(S, clust_prior = clust_prior, clust_count_prior = clust_count_prior, n_iter = N_clust_samps)
+            DP_runs[n_it] = DPinstance(S, clust_prior = clust_prior, clust_count_prior = clust_count_prior)
+            segs_to_clusters, segs_to_phases = DP_runs[n_it].run(n_iter = N_clust_samps)
 
             # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
-            snps_to_clusters[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = self.map_seg_clust_assignments_to_SNPs(s2c, S)
+            snps_to_clusters[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = self.map_seg_clust_assignments_to_SNPs(segs_to_clusters, S)
 
             # assign phase orientations to individual SNPs
-            snps_to_phases[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = self.map_seg_phases_to_SNPs(ph, S)
+            snps_to_phases[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = self.map_seg_phases_to_SNPs(segs_to_phases, S)
 
             # compute prior on cluster locations/counts
-            S_a = np.zeros(s2c.max() + 1)
-            S_b = np.zeros(s2c.max() + 1)
-            N_c = np.zeros(s2c.max() + 1)
-            n_iter_clust_exist = np.zeros(np.maximum(s2c.max(), clust_prior.peekitem(-1)[0]) + 1)
-            for seg_assignments, seg_phases in zip(s2c, ph):
+            max_clust_idx = segs_to_clusters.max()
+            S_a = np.zeros(max_clust_idx + 1)
+            S_b = np.zeros(max_clust_idx + 1)
+            N_c = np.zeros(max_clust_idx + 1)
+            n_iter_clust_exist = np.zeros(np.maximum(max_clust_idx, clust_prior.peekitem(-1)[0]) + 1)
+            for seg_assignments, seg_phases in zip(segs_to_clusters, segs_to_phases):
                 # reset phases
                 S2 = S.copy()
                 S2.loc[S2["flipped"], ["min", "maj"]] = S2.loc[S2["flipped"], ["min", "maj"]].values[:, ::-1]
@@ -153,10 +158,10 @@ class A_DP:
                 # match phases to current sample
                 S2.loc[seg_phases, ["min", "maj"]] = S2.loc[seg_phases, ["min", "maj"]].values[:, ::-1]
 
-                S_a += npg.aggregate(seg_assignments, S2["min"], size = s2c.max() + 1)
-                S_b += npg.aggregate(seg_assignments, S2["maj"], size = s2c.max() + 1)
+                S_a += npg.aggregate(seg_assignments, S2["min"], size = max_clust_idx + 1)
+                S_b += npg.aggregate(seg_assignments, S2["maj"], size = max_clust_idx + 1)
 
-                N_c += npg.aggregate(seg_assignments, 1, size = s2c.max() + 1)
+                N_c += npg.aggregate(seg_assignments, 1, size = max_clust_idx + 1)
 
                 n_iter_clust_exist[np.unique(seg_assignments)] += 1
 
@@ -193,15 +198,6 @@ class A_DP:
             # remove garbage cluster from priors
             del clust_prior[0]
             del clust_count_prior[0]
-
-            # get probability that individual SNPs are flipped, to use as probability for
-            # flipping segments for next DP iteration
-            flipped = np.zeros(S.iloc[-1, S.columns.get_loc("SNP_en")] + 1, dtype = bool)
-            for _, st, en in S.loc[S["flipped"], ["SNP_st", "SNP_en"]].itertuples():
-                flipped[st:en] = True
-
-            # save overall segmentation for this sample
-            Segs.append(S)
 
         return snps_to_clusters, snps_to_phases
 
