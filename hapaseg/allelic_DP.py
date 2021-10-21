@@ -16,7 +16,7 @@ from capy import seq
 
 class A_DP:
     def __init__(self, allelic_segs_pickle, ref_fasta = None):
-        self.allelic_segs = pd.read_pickle(allelic_segs_pickle)
+        self.allelic_segs = pd.read_pickle(allelic_segs_pickle).dropna(0)
         self.n_samp = self.allelic_segs["results"].apply(lambda x : len(x.breakpoint_list)).min()
         self.ref_fasta = ref_fasta
 
