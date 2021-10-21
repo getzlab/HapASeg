@@ -662,8 +662,6 @@ class DPinstance:
             #     L(join)           L(split)
             MLs = A + BC + adj_BC - (AB + C + adj_AB)
 
-            MLs_max = np.max(MLs)
-
             # if we are moving multiple contiguous segments assigned to the same
             # cluster, do not allow them to create a new cluster. this helps keep
             # cluster indices consistent
@@ -719,7 +717,8 @@ class DPinstance:
             count_prior /= count_prior.sum()
 
             # choose to join a cluster or make a new one (choice_idx = 0)
-            choice_p = np.exp(MLs - MLs_max + np.log(count_prior) + np.log(clust_prior_p))/np.exp(MLs - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
+            num = MLs + np.log(count_prior) + np.log(clust_prior_p)
+            choice_p = np.exp(num - num.max())/np.exp(num - num.max()).sum()
             choice_idx = np.random.choice(
               np.r_[0:len(MLs)],
               p = choice_p
