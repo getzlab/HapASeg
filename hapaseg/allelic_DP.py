@@ -123,7 +123,6 @@ class A_DP:
         
         snps_to_clusters = -1*np.ones((N_clust_samps*N_seg_samps, N_SNPs), dtype = np.int16)
         snps_to_phases = np.zeros((N_clust_samps*N_seg_samps, N_SNPs), dtype = bool)
-        snp_counts = -1*np.ones((N_seg_samps, N_SNPs, 2))
 
         DP_runs = [None]*N_seg_samps
 
