@@ -786,3 +786,102 @@ class DPinstance:
             n_it += 1
 
         return np.r_[self.segs_to_clusters], np.r_[self.phase_orientations]
+
+    #_colors = mpl.cm.get_cmap("tab10").colors
+    _colors = ((np.c_[1:7] & np.r_[4, 2, 1]) > 0).astype(int)
+#   _colors = np.r_[np.c_[87, 182, 55],
+#   np.c_[253, 245, 81],
+#   np.c_[238, 109, 45],
+#   np.c_[204, 43, 30],
+#   np.c_[221, 50, 132],
+#   np.c_[0, 23, 204],
+#   np.c_[75, 172, 227]]/255
+
+    def visualize_segs(self):
+        plt.figure()
+        ax = plt.gca()
+        ax.set_xlim([0, self.S["end_gp"].max()])
+        ax.set_ylim([0, 1])
+
+        n_samp = len(self.segs_to_clusters)
+
+        for s2c, s2ph in zip(self.segs_to_clusters, self.phase_orientations):
+            # rephase segments according to phase orientation sample
+            S_ph = self.S.copy()
+            flip_idx = np.flatnonzero(s2ph != S_ph["flipped"])
+            S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
+
+            s2cu, s2cu_j = np.unique(s2c, return_inverse = True)
+
+            for i, r in enumerate(S_ph.itertuples()):
+                # don't show garbage clusters
+                if s2cu[s2cu_j[i]] == 0:
+                    continue
+
+                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], r.min + 1, r.maj + 1)
+                ax.add_patch(mpl.patches.Rectangle((r.start_gp, ci_lo), r.end_gp - r.start_gp, ci_hi - ci_lo, facecolor = self._colors[s2cu_j[i] % len(self._colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
+
+    def visualize_adjacent_segs(self):
+        plt.figure()
+        ax = plt.gca()
+        ax.set_xlim([0, self.S["end_gp"].max()])
+        ax.set_ylim([0, 1])
+
+        n_samp = len(self.segs_to_clusters)
+
+        for s2c, s2ph in zip(self.segs_to_clusters, self.phase_orientations):
+            # rephase segments according to phase orientation sample
+            S_ph = self.S.copy()
+            flip_idx = np.flatnonzero(s2ph != S_ph["flipped"])
+            S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
+
+            bdy = np.flatnonzero(np.r_[1, np.diff(s2c) != 0, 1])
+            bdy = np.c_[bdy[:-1], bdy[1:]]
+
+            s2c_nz = s2c.copy()
+            zidx = np.flatnonzero(s2c[bdy[:, 0]] == 0)
+            for z in zidx:
+                s2c_nz[bdy[z, 0]:bdy[z, 1]] = s2c_nz[bdy[z - 1, 0]]
+            bdy_nz = np.flatnonzero(np.r_[1, np.diff(s2c_nz) != 0, 1])
+            bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
+
+            s2cu, s2cu_j = np.unique(s2c, return_inverse = True)
+
+            for st, en in bdy_nz:
+                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], S_ph.iloc[st:en, self.min_col].sum() + 1, S_ph.iloc[st:en, self.maj_col].sum() + 1)
+                ax.add_patch(mpl.patches.Rectangle((S_ph.iloc[st]["start_gp"], ci_lo), S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"], np.maximum(0, ci_hi - ci_lo), facecolor = self._colors[s2cu_j[st] % len(self._colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
+
+    def visualize_clusts(self):
+        plt.figure()
+        ax = plt.gca()
+        ax.set_xlim([0, self.S["end_gp"].max()])
+        ax.set_ylim([0, 1])
+
+        n_samp = len(self.segs_to_clusters)
+
+        for s2c, s2ph in zip(self.segs_to_clusters, self.phase_orientations):
+            # rephase segments according to phase orientation sample
+            S_ph = self.S.copy()
+            flip_idx = np.flatnonzero(s2ph != S_ph["flipped"])
+            S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
+
+            # get overall cluster sums
+            clust_min = npg.aggregate(s2c, S_ph["min"])
+            clust_maj = npg.aggregate(s2c, S_ph["maj"])
+            CIs = s.beta.ppf([0.05, 0.5, 0.95], clust_min[:, None] + 1, clust_maj[:, None] + 1)
+
+            # get boundaries of contiguous segments
+            bdy = np.flatnonzero(np.r_[1, np.diff(s2c) != 0, 1])
+            bdy = np.c_[bdy[:-1], bdy[1:]]
+
+            s2c_nz = s2c.copy()
+            zidx = np.flatnonzero(s2c[bdy[:, 0]] == 0)
+            for z in zidx:
+                s2c_nz[bdy[z, 0]:bdy[z, 1]] = s2c_nz[bdy[z - 1, 0]]
+            bdy_nz = np.flatnonzero(np.r_[1, np.diff(s2c_nz) != 0, 1])
+            bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
+
+            s2cu, s2cu_j = np.unique(s2c, return_inverse = True)
+
+            for st, en in bdy_nz:
+                ax.add_patch(mpl.patches.Rectangle((S_ph.iloc[st]["start_gp"], CIs[s2c[st], 0]), S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"], np.maximum(0, np.diff(CIs[s2c[st], [0, -1]])[0]), facecolor = self._colors[s2cu_j[st] % len(self._colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
