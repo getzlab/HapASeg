@@ -473,9 +473,11 @@ class DPinstance:
 
                 # probabilistically assign
                 ccp = np.r_[[v for k, v in self.clust_count_prior.items() if k != -1 and k != 0]]
+                num = P_l + np.log(ccp)
+                num -= num.max()
                 self.S.iloc[seg_idx, self.clust_col] = np.random.choice(
                   np.r_[self.clust_prior.keys()][1:], 
-                  p = np.exp(P_l)*ccp/(np.exp(P_l)*ccp).sum()
+                  p = np.exp(num)/np.exp(num).sum()
                 )
 
         # }}}
