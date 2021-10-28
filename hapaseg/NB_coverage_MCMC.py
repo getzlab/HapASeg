@@ -9,12 +9,11 @@ def LSE(x):
     return lmax + np.log(np.exp(x - lmax).sum())
 
 class PoissonRegression:
-    def __init__(self, r, C, Pi, ):
+    def __init__(self, r, C, Pi):
         self.r = r
         self.C = C
         self.Pi = Pi
 
-        # TODO: set each initial cluster mu to its own average
         self.mu = np.log(r.mean() * np.ones([Pi.shape[1], 1]))
         self.beta = np.ones([C.shape[1], 1])
         self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu)
@@ -86,13 +85,13 @@ class AllelicCluster:
         # all intervals start out in one segment, which also means no breakpoints
         self.segment_ID = np.zeros(r.shape)
         self.segments = sc.SortedSet([0])
-        self.segment_lens = sc.SortedDict((0, len(self.r)))
+        self.segment_lens = sc.SortedDict([(0, len(self.r))])
 
         self.phase_history = []
         self.F = sc.SortedList()
         self.F.update([0, len(self.r)])
 
-        self._init_epsi()
+        self._init_params()
 
     # fits NB model to this cluster using initial params as starting point
     def _init_params(self):
@@ -111,7 +110,7 @@ class AllelicCluster:
             hepsi = self.hessepsi() * self.epsi ** 2 + self.epsi * gepsi
             hmuepsi = self.hessmuepsi()
 
-            grad = np.r[gmu, gepsi * self.epsi + 1]
+            grad = np.r_[gmu, gepsi * self.epsi + 1]
             H = np.r_[np.c_[hmu, hmuepsi], np.c_[hmuepsi, hepsi]]
             delta = np.linalg.inv(H) @ grad
 
@@ -335,18 +334,17 @@ class AllelicCluster:
 
 class NB_MCMC:
 
-    def __init__(self, r, C, Pi, cov_df):
+    def __init__(self, r, C, Pi):
         self.r = r
         self.C = C
         self.Pi = Pi
-        self.cov_df = cov_df.copy()
         self.beta = None
 
         # for now assume that the Pi vector assigns each bin to exactly one cluster
         self.c_assignments = np.argmax(self.Pi, axis=1)
         self.n_clusters = Pi.shape[1]
         self.clusters = [None] * self.n_clusters
-        self.cluster_sizes = np.array([np.sum(self.c_assignments == i) for i in self.n_clusters])
+        self.cluster_sizes = np.array([np.sum(self.c_assignments == i) for i in range(self.n_clusters)])
         self.cluster_probs = self.cluster_sizes / self.cluster_sizes.sum()
         self._init_clusters()
 
