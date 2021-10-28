@@ -19,6 +19,7 @@ class A_DP:
         self.allelic_segs = pd.read_pickle(allelic_segs_pickle).dropna(0)
         self.n_samp = self.allelic_segs["results"].apply(lambda x : len(x.breakpoint_list)).min()
         self.ref_fasta = ref_fasta
+        self.DP_runs = None
 
     def load_seg_samp(self, samp_idx):
         if samp_idx > self.n_samp:
@@ -124,7 +125,7 @@ class A_DP:
         snps_to_clusters = -1*np.ones((N_clust_samps*N_seg_samps, N_SNPs), dtype = np.int16)
         snps_to_phases = np.zeros((N_clust_samps*N_seg_samps, N_SNPs), dtype = bool)
 
-        DP_runs = [None]*N_seg_samps
+        self.DP_runs = [None]*N_seg_samps
 
         clust_prior = sc.SortedDict()
         clust_count_prior = sc.SortedDict()
@@ -134,8 +135,8 @@ class A_DP:
                 S, SNPs = self.load_seg_samp(seg_sample_idx[n_it])
 
             # run clustering
-            DP_runs[n_it] = DPinstance(S, clust_prior = clust_prior, clust_count_prior = clust_count_prior)
-            segs_to_clusters, segs_to_phases = DP_runs[n_it].run(n_iter = N_clust_samps)
+            self.DP_runs[n_it] = DPinstance(S, clust_prior = clust_prior, clust_count_prior = clust_count_prior)
+            segs_to_clusters, segs_to_phases = self.DP_runs[n_it].run(n_iter = N_clust_samps)
 
             # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
             snps_to_clusters[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = self.map_seg_clust_assignments_to_SNPs(segs_to_clusters, S)
