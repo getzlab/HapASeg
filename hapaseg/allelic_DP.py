@@ -204,8 +204,8 @@ class A_DP:
 class DPinstance:
     def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50):
         self.S = S
-        self.clust_prior = clust_prior
-        self.clust_count_prior = clust_count_prior
+        self.clust_prior = clust_prior.copy()
+        self.clust_count_prior = clust_count_prior.copy()
 
         #
         # define column indices
