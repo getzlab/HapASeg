@@ -179,32 +179,33 @@ class A_DP:
                 nccp = next_clust_count_prior[k]
                 if k in clust_prior:
                     # iteratively update average
-                    clust_prior[k] += (v - clust_prior[k])/(n_it + 1)
-                    clust_count_prior[k] += nccp
+                    clust_prior[k] += (v - clust_prior[k])/(n_iter_clust_exist[k] + 1)
+                    clust_count_prior[k] += (nccp - clust_count_prior[k])/(n_iter_clust_exist[k] + 1)
                 else:
                     clust_prior[k] = v
                     clust_count_prior[k] = nccp
             # for clusters that don't exist in this iteration, average them with 0
             for k, v in clust_prior.items():
                 if k != -1 and k not in next_clust_prior:
-                    clust_prior[k] -= clust_prior[k]/(n_it + 1)
+                    clust_prior[k] -= clust_prior[k]/(n_iter_clust_exist[k] + 1)
+                    clust_count_prior[k] -= clust_count_prior[k]/(n_iter_clust_exist[k] + 1)
 
-            # remove transient clusters from priors
-            for kk in [k for k, v in clust_count_prior.items() if v < 1]:
+            # remove zero counts from priors
+            for kk in [k for k, v in clust_count_prior.items() if v == 0]:
                 del clust_prior[kk]
                 del clust_count_prior[kk]
 
             # remove garbage cluster from priors
-            # del clust_prior[0]
-            # del clust_count_prior[0]
+            del clust_prior[0]
+            del clust_count_prior[0]
 
         return snps_to_clusters, snps_to_phases
 
 class DPinstance:
     def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50):
         self.S = S
-        self.clust_prior = clust_prior.copy()
-        self.clust_count_prior = clust_count_prior.copy()
+        self.clust_prior = clust_prior
+        self.clust_count_prior = clust_count_prior
 
         #
         # define column indices
