@@ -358,17 +358,17 @@ class DPinstance:
                 S_b = self.S.iloc[:, self.maj_col].values[st:(en + 1)].sum()
 
                 # adjacency likelihood of this segment remaining where it is
-                adj_AB += self.SJliks(
-                  targ_clust = cur_clust, 
-                  upstream_clust = cl_u, 
-                  downstream_clust = cl_d, 
-                  J_a = S_a, 
-                  J_b = S_b,
-                  U_a = U_a,
-                  U_b = U_b,
-                  D_a = D_a,
-                  D_b = D_b
-                )
+#                adj_AB += self.SJliks(
+#                  targ_clust = cur_clust, 
+#                  upstream_clust = cl_u, 
+#                  downstream_clust = cl_d, 
+#                  J_a = S_a, 
+#                  J_b = S_b,
+#                  U_a = U_a,
+#                  U_b = U_b,
+#                  D_a = D_a,
+#                  D_b = D_b
+#                )
 
                 # adjacency likelihood of this segment joining each possible cluster:
                 # 1. those it is actually adjacent to (+ new cluster, garbage)
@@ -674,16 +674,19 @@ class DPinstance:
             # A+B,C -> A,B+C
 
             # A+B is likelihood of current cluster B is part of
-            AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
+            #AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
             # C is likelihood of target cluster pre-join
             C = ss.betaln(C_ab[:, 0] + 1, C_ab[:, 1] + 1)
             # A is likelihood cluster B is part of, minus B
-            A = ss.betaln(A_a + 1, A_b + 1)
+            #A = ss.betaln(A_a + 1, A_b + 1)
             # B+C is likelihood of target cluster post-join
             BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
 
             #     L(join)           L(split)
-            MLs = A + BC + adj_BC - (AB + C + adj_AB)
+            #MLs = A + BC + adj_BC - (AB + C + adj_AB)
+            # TODO: remove extraneous calculations (e.g. adj_AB, AB, A);
+            #       likelihood simplifies to this in the prior:
+            MLs = adj_BC + BC - C
 
             # if we are moving multiple contiguous segments assigned to the same
             # cluster, do not allow them to create a new cluster. this helps keep
