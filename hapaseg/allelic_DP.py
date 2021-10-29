@@ -202,10 +202,11 @@ class A_DP:
         return snps_to_clusters, snps_to_phases
 
 class DPinstance:
-    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50):
+    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 0.1):
         self.S = S
         self.clust_prior = clust_prior.copy()
         self.clust_count_prior = clust_count_prior.copy()
+        self.alpha = alpha
 
         #
         # define column indices
@@ -226,16 +227,18 @@ class DPinstance:
         self.clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1, v[1] + 1) for k, v in self.clust_prior.items()})
         self.clust_prior_mat = np.r_[self.clust_prior.values()]
 
-        self.clust_count_prior[-1] = 0.1 # DP alpha factor, i.e. relative probability of opening new cluster (TODO: make specifiable)
-        self.clust_count_prior[0] = 0.1 # relative probability of sending a cluster to the garbage
+        self.clust_count_prior[-1] = self.alpha # DP alpha factor, i.e. relative probability of opening new cluster
+        self.clust_count_prior[0] = self.alpha # relative probability of sending a cluster to the garbage
 
 
-    def rephase(self, seg_idx):
-        n_move = len(seg_idx)
+    def rephase(self, seg_idx, force = False):
+        if not force:
+            n_move = len(seg_idx)
 
-        x = s.beta.rvs(self.S.iloc[seg_idx, self.aalt_col].sum() + 1, self.S.iloc[seg_idx, self.aref_col].sum() + 1, size = [n_move, 30])
-        y = s.beta.rvs(self.S.iloc[seg_idx, self.balt_col].sum() + 1, self.S.iloc[seg_idx, self.bref_col].sum() + 1, size = [n_move, 30])
-        if np.random.rand() < (x > y).mean():
+            x = s.beta.rvs(self.S.iloc[seg_idx, self.aalt_col].sum() + 1, self.S.iloc[seg_idx, self.aref_col].sum() + 1, size = [n_move, 30])
+            y = s.beta.rvs(self.S.iloc[seg_idx, self.balt_col].sum() + 1, self.S.iloc[seg_idx, self.bref_col].sum() + 1, size = [n_move, 30])
+
+        if force or np.random.rand() < (x > y).mean():
             self.S.iloc[seg_idx, [self.min_col, self.maj_col]] = self.S.iloc[seg_idx, [self.min_col, self.maj_col]].values[:, ::-1]
             self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]] = self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]].values[:, ::-1]
             self.S.iloc[seg_idx, [self.aref_col, self.bref_col]] = self.S.iloc[seg_idx, [self.aref_col, self.bref_col]].values[:, ::-1]
@@ -463,23 +466,40 @@ class DPinstance:
         if len(self.clust_prior) > 1:
             for seg_idx in range(len(self.S)):
                 seg_idx = np.r_[seg_idx] 
-                self.rephase(seg_idx)
 
                 # compute probability that segment belongs to each cluster prior element
                 S_a = self.S.iloc[seg_idx[0], self.min_col]
                 S_b = self.S.iloc[seg_idx[0], self.maj_col]
                 P_a = self.clust_prior_mat[1:, 0]
                 P_b = self.clust_prior_mat[1:, 1]
-                P_l = ss.betaln(S_a + P_a + 1, S_b + P_b + 1) - (ss.betaln(S_a + 1, S_b + 1) + ss.betaln(P_a + 1, P_b + 1))
 
-                # probabilistically assign
-                ccp = np.r_[[v for k, v in self.clust_count_prior.items() if k != -1 and k != 0]]
+                # prior likelihood ratios for both phase orientations
+                P_l = np.c_[
+                  ss.betaln(S_a + P_a + 1, S_b + P_b + 1) - (ss.betaln(S_a + 1, S_b + 1) + ss.betaln(P_a + 1, P_b + 1)),
+                  ss.betaln(S_b + P_a + 1, S_a + P_b + 1) - (ss.betaln(S_b + 1, S_a + 1) + ss.betaln(P_a + 1, P_b + 1)),
+                ]
+
+                # get count prior
+                ccp = np.c_[[v for k, v in self.clust_count_prior.items() if k != -1 and k != 0]]
+
+                # posterior numerator
                 num = P_l + np.log(ccp)
                 num -= num.max()
-                self.S.iloc[seg_idx, self.clust_col] = np.random.choice(
-                  np.r_[self.clust_prior.keys()][1:], 
-                  p = np.exp(num)/np.exp(num).sum()
+
+                # probabilistically choose a cluster
+                probs = np.exp(num)/np.exp(num).sum()
+                idx = np.tile(np.r_[self.clust_prior.keys()][1:], [2, 1]).T*[1, -1]
+                choice = np.random.choice(
+                  idx.ravel(),
+                  p = probs.ravel()
                 )
+
+                # rephase
+                if choice < 0:
+                    self.rephase(seg_idx, force = True)
+                    choice = -choice
+
+                self.S.iloc[seg_idx, self.clust_col] = choice
 
         # }}}
 
