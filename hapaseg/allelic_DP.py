@@ -20,6 +20,7 @@ class A_DP:
         self.n_samp = self.allelic_segs["results"].apply(lambda x : len(x.breakpoint_list)).min()
         self.ref_fasta = ref_fasta
         self.DP_runs = None
+        self.SNPs = None
 
     def load_seg_samp(self, samp_idx):
         if samp_idx > self.n_samp:
@@ -46,9 +47,13 @@ class A_DP:
                 r.P.iloc[st:en, min_idx] = x
 
             # save SNPs for this chunk
-            # TODO: we only need to do this once; the SNP set won't change between
-            #       segmentation samples
-            all_SNPs.append(pd.DataFrame({ "maj" : r.P["MAJ_COUNT"], "min" : r.P["MIN_COUNT"], "gpos" : seq.chrpos2gpos(r.P.loc[0, "chr"], r.P["pos"], ref = self.ref_fasta) }))
+            if self.SNPs is None:
+                all_SNPs.append(pd.DataFrame({
+                  "maj" : r.P["MAJ_COUNT"],
+                  "min" : r.P["MIN_COUNT"],
+                  "gpos" : seq.chrpos2gpos(r.P.loc[0, "chr"], r.P["pos"], ref = self.ref_fasta),
+                  "allele" : r.P["allele_A"]
+                }))
 
             # draw breakpoint, phasing, and SNP inclusion sample from segmentation MCMC trace
             bp_samp, pi_samp, inc_samp = (r.breakpoint_list[samp_idx], r.phase_interval_list[samp_idx] if r.phase_correct else None, r.include[samp_idx])
@@ -92,7 +97,12 @@ class A_DP:
         # initial phasing orientation
         S["flipped"] = False
 
-        return S, pd.concat(all_SNPs, ignore_index = True)
+        if self.SNPs is None:
+            self.SNPs = pd.concat(all_SNPs, ignore_index = True)
+            CI = s.beta.ppf([0.05, 0.5, 0.95], self.SNPs["min"].values[:, None] + 1, self.SNPs["maj"].values[:, None] + 1)
+            self.SNPs[["f_CI_lo", "f", "f_CI_hi"]] = CI
+
+        return S, self.SNPs
 
     # map trace of segment cluster assignments to the SNPs within
     @staticmethod
