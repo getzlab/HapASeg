@@ -222,78 +222,44 @@ class A_DP:
 
         rb = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]]
 
-        # def scerrorbar(idx, rev = False, alpha = None):
+        def scerrorbar(idx, rev = False, alpha = None):
+            if rev:
+                f = 1 - self.SNPs.loc[idx, "f"]
+                eb_bot = self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_hi"]
+                eb_top = self.SNPs.loc[idx, "f_CI_lo"] - self.SNPs.loc[idx, "f"]
+            else:
+                f = self.SNPs.loc[idx, "f"]
+                eb_bot = self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_lo"]
+                eb_top = self.SNPs.loc[idx, "f_CI_hi"] - self.SNPs.loc[idx, "f"]
+
+            plt.scatter(
+              self.SNPs.loc[idx, "gpos"],
+              f,
+              color = rb[self.SNPs.loc[idx, "allele"]],
+              marker = '.',
+              s = 1,
+              alpha = 1 if alpha is None else alpha
+            )
+
+            # HACK: don't show errorbars for ambiguously phased segments, since their
+            # alphas can only be set in aggregate
+            if alpha is None:
+                plt.errorbar(
+                  x = self.SNPs.loc[idx, "gpos"],
+                  y = f,
+                  yerr = np.c_[
+                    eb_bot,
+                    eb_top
+                  ].T,
+                  fmt = 'none', alpha = 0.1, ecolor = rb[self.SNPs.loc[idx, "allele"]]
+                )
 
         f = plt.figure()
-        idx = ph_prob == 0
-        plt.scatter(
-          self.SNPs.loc[idx, "gpos"],
-          self.SNPs.loc[idx, "f"],
-          color = rb[self.SNPs.loc[idx, "allele"]],
-          marker = '.',
-          s = 1
-        )
-        plt.errorbar(
-          x = self.SNPs.loc[idx, "gpos"],
-          y = self.SNPs.loc[idx, "f"],
-          yerr = np.c_[
-            self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_lo"],
-            self.SNPs.loc[idx, "f_CI_hi"] - self.SNPs.loc[idx, "f"]
-          ].T,
-          fmt = 'none', alpha = 0.1, ecolor = rb[self.SNPs.loc[idx, "allele"]]
-        )
-        idx = ph_prob == 1
-        plt.scatter(
-          self.SNPs.loc[idx, "gpos"],
-          1 - self.SNPs.loc[idx, "f"],
-          color = rb[self.SNPs.loc[idx, "allele"]],
-          marker = '.',
-          s = 1
-        )
-        plt.errorbar(
-          x = self.SNPs.loc[idx, "gpos"],
-          y = 1 - self.SNPs.loc[idx, "f"],
-          yerr = np.c_[
-            self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_hi"],
-            self.SNPs.loc[idx, "f_CI_lo"] - self.SNPs.loc[idx, "f"]
-          ].T,
-          fmt = 'none', alpha = 0.1, ecolor = rb[self.SNPs.loc[idx, "allele"]]
-        )
+        scerrorbar(ph_prob == 0)
+        scerrorbar(ph_prob == 1, rev = True)
         idx = (ph_prob > 0) & (ph_prob < 1)
-        plt.scatter(
-          self.SNPs.loc[idx, "gpos"],
-          self.SNPs.loc[idx, "f"],
-          color = rb[self.SNPs.loc[idx, "allele"]],
-          marker = '.',
-          s = 1,
-          alpha = 1 - ph_prob[idx]
-        )
-        plt.errorbar(
-          x = self.SNPs.loc[idx, "gpos"],
-          y = self.SNPs.loc[idx, "f"],
-          yerr = np.c_[
-            self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_lo"],
-            self.SNPs.loc[idx, "f_CI_hi"] - self.SNPs.loc[idx, "f"]
-          ].T,
-          fmt = 'none', alpha = 0.1, ecolor = rb[self.SNPs.loc[idx, "allele"]]
-        )
-        plt.scatter(
-          self.SNPs.loc[idx, "gpos"],
-          1 - self.SNPs.loc[idx, "f"],
-          color = rb[self.SNPs.loc[idx, "allele"]],
-          marker = '.',
-          s = 1,
-          alpha = ph_prob[idx]
-        )
-        plt.errorbar(
-          x = self.SNPs.loc[idx, "gpos"],
-          y = 1 - self.SNPs.loc[idx, "f"],
-          yerr = np.c_[
-            self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_hi"],
-            self.SNPs.loc[idx, "f_CI_lo"] - self.SNPs.loc[idx, "f"]
-          ].T,
-          fmt = 'none', alpha = 0.1, ecolor = rb[self.SNPs.loc[idx, "allele"]]
-        )
+        scerrorbar(idx, alpha = 1 - ph_prob[idx])
+        scerrorbar(idx, rev = True, alpha = ph_prob[idx])
 
         for d in self.DP_runs:
             d.visualize_clusts(f = f.number, n_samp = snps_to_phases.shape[0], thick = True)
