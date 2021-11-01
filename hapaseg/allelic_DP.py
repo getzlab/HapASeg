@@ -211,16 +211,23 @@ class A_DP:
 
         return snps_to_clusters, snps_to_phases
 
-    def visualize_clusts(self, snps_to_clusters):
-        f = plt.figure()
+    def visualize_segs(self, snps_to_clusters, f = None):
+        f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
         for d in self.DP_runs:
-            d.visualize_clusts(f = f.number, n_samp = snps_to_clusters.shape[0])
+            d.visualize_adjacent_segs(f = f.number, n_samp = snps_to_clusters.shape[0])
 
-    def visualize_SNPs(self, snps_to_phases):
-        # TODO: load in imputed phases for SNPs for coloring
+    def visualize_clusts(self, snps_to_clusters, f = None, thick = False, nocolor = False):
+        f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
+        for d in self.DP_runs:
+            d.visualize_clusts(f = f.number, n_samp = snps_to_clusters.shape[0], thick = thick, nocolor = nocolor)
+
+    def visualize_SNPs(self, snps_to_phases, color = True, f = None):
         ph_prob = snps_to_phases.mean(0)
 
-        rb = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]]
+        if color:
+            rb = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]]
+        else:
+            rb = np.full([2, 3], 0)
 
         def scerrorbar(idx, rev = False, alpha = None):
             if rev:
@@ -254,15 +261,13 @@ class A_DP:
                   fmt = 'none', alpha = 0.1, ecolor = rb[self.SNPs.loc[idx, "allele"]]
                 )
 
-        f = plt.figure()
-        scerrorbar(ph_prob == 0)
-        scerrorbar(ph_prob == 1, rev = True)
+        f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
+        scerrorbar(ph_prob == 0, alpha = None if color else 0.2)
+        scerrorbar(ph_prob == 1, rev = True, alpha = None if color else 0.2)
         idx = (ph_prob > 0) & (ph_prob < 1)
-        scerrorbar(idx, alpha = 1 - ph_prob[idx])
-        scerrorbar(idx, rev = True, alpha = ph_prob[idx])
+        scerrorbar(idx, alpha = (1 - ph_prob[idx])*(1 if color else 0.2))
+        scerrorbar(idx, rev = True, alpha = ph_prob[idx]*(1 if color else 0.2))
 
-        for d in self.DP_runs:
-            d.visualize_clusts(f = f.number, n_samp = snps_to_phases.shape[0], thick = True)
 
 class DPinstance:
     def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 0.1):
@@ -927,8 +932,8 @@ class DPinstance:
                 ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], r.min + 1, r.maj + 1)
                 ax.add_patch(mpl.patches.Rectangle((r.start_gp, ci_lo), r.end_gp - r.start_gp, ci_hi - ci_lo, facecolor = colors[s2c[i] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
 
-    def visualize_adjacent_segs(self):
-        plt.figure()
+    def visualize_adjacent_segs(self, f = None, n_samp = None):
+        plt.figure(num = f, figsize = [17.56, 5.67])
         ax = plt.gca()
         ax.set_xlim([0, self.S["end_gp"].max()])
         ax.set_ylim([0, 1])
@@ -936,7 +941,7 @@ class DPinstance:
         colors = self.get_colors()
         s2cu, s2cu_j = self.get_unique_clust_idxs()
 
-        n_samp = len(self.segs_to_clusters)
+        n_samp = len(self.segs_to_clusters) if n_samp is None else n_samp
 
         for s2c, s2ph in zip(s2cu_j, self.phase_orientations):
             # rephase segments according to phase orientation sample
@@ -958,7 +963,7 @@ class DPinstance:
                 ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], S_ph.iloc[st:en, self.min_col].sum() + 1, S_ph.iloc[st:en, self.maj_col].sum() + 1)
                 ax.add_patch(mpl.patches.Rectangle((S_ph.iloc[st]["start_gp"], ci_lo), S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"], np.maximum(0, ci_hi - ci_lo), facecolor = colors[s2c[st] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
 
-    def visualize_clusts(self, f = None, n_samp = None, thick = False):
+    def visualize_clusts(self, f = None, n_samp = None, thick = False, nocolor = False):
         plt.figure(num = f, figsize = [17.56, 5.67])
         ax = plt.gca()
         ax.set_xlim([0, self.S["end_gp"].max()])
@@ -993,7 +998,6 @@ class DPinstance:
 
             for st, en in bdy:
                 if thick:
-                    color = [0, 1, 0]
                     b = CIs[s2c[st], 1] - 0.01
                     t = CIs[s2c[st], 1] + 0.01
                 else:
@@ -1001,10 +1005,15 @@ class DPinstance:
                     b = CIs[s2c[st], 0]
                     t = CIs[s2c[st], 2]
 
+                if nocolor:
+                    color = [0, 1, 0]
+                else:
+                    color = colors[s2c[st] % len(colors)]
+
                 ax.add_patch(mpl.patches.Rectangle(
                   xy = (S_ph.iloc[st]["start_gp"], b),
                   width = S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"],
-                  height = np.maximum(0, t - b),
+                  height = t - b,
                   facecolor = color,
                   fill = True,
                   alpha = 1/n_samp,
