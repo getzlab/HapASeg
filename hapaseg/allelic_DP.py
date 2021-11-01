@@ -222,6 +222,7 @@ class A_DP:
             d.visualize_clusts(f = f.number, n_samp = snps_to_clusters.shape[0], thick = thick, nocolor = nocolor)
 
     def visualize_SNPs(self, snps_to_phases, color = True, f = None):
+        # TODO: set alpha dynamically, depending on SNP density
         ph_prob = snps_to_phases.mean(0)
 
         if color:
@@ -262,11 +263,11 @@ class A_DP:
                 )
 
         f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
-        scerrorbar(ph_prob == 0, alpha = None if color else 0.2)
-        scerrorbar(ph_prob == 1, rev = True, alpha = None if color else 0.2)
+        scerrorbar(ph_prob == 0, alpha = None if color else 0.4)
+        scerrorbar(ph_prob == 1, rev = True, alpha = None if color else 0.4)
         idx = (ph_prob > 0) & (ph_prob < 1)
-        scerrorbar(idx, alpha = (1 - ph_prob[idx])*(1 if color else 0.2))
-        scerrorbar(idx, rev = True, alpha = ph_prob[idx]*(1 if color else 0.2))
+        scerrorbar(idx, alpha = (1 - ph_prob[idx])*(1 if color else 0.4))
+        scerrorbar(idx, rev = True, alpha = ph_prob[idx]*(1 if color else 0.4))
 
     def plot_chrbdy(self):
         chrbdy = self.allelic_segs.loc[:, ["chr", "start", "end"]]
