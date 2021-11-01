@@ -268,6 +268,32 @@ class A_DP:
         scerrorbar(idx, alpha = (1 - ph_prob[idx])*(1 if color else 0.2))
         scerrorbar(idx, rev = True, alpha = ph_prob[idx]*(1 if color else 0.2))
 
+    def plot_chrbdy(self):
+        chrbdy = self.allelic_segs.loc[:, ["chr", "start", "end"]]
+
+        # plot chromosome boundaries
+        chr_ends = chrbdy.loc[chrbdy["start"] != 0, "end"].cumsum()
+        for end in chr_ends[:-1]:
+            plt.axvline(end, color = 'k')
+        for st, en in np.c_[chr_ends[:-1:2], chr_ends[1::2]]:
+            plt.fill_between([st, en], 0, 1, color = [0.9, 0.9, 0.9], zorder = 0)
+
+        # plot centromere locations
+        centromeres = np.r_[0, chr_ends[:-1]] + chrbdy.loc[chrbdy["start"] != 0, "start"]
+        for cent in centromeres[:-1]:
+            plt.axvline(cent, color = 'k', linestyle = ":")
+
+        # add xticks
+        xt = (np.r_[0, chr_ends[:-1]] + chr_ends)/2
+        xtl = chrbdy.loc[chrbdy["start"] != 0, "chr"]
+        plt.xticks(xt, xtl)
+
+        # alternately stagger xticks 
+        ax = plt.gca()
+        for t in ax.xaxis.get_major_ticks()[1::2]:
+            t.set_pad(15)
+
+        ax.tick_params(axis = "x", length = 0)
 
 class DPinstance:
     def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 0.1):
