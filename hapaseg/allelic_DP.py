@@ -857,12 +857,12 @@ class DPinstance:
             S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
 
             for i, r in enumerate(S_ph.itertuples()):
-                # don't show garbage clusters
-                if s2cu[s2cu_j[i]] == 0:
-                    continue
+                ## don't show garbage clusters
+                #if s2cu[s2c[i]] == 0:
+                #    continue
 
                 ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], r.min + 1, r.maj + 1)
-                ax.add_patch(mpl.patches.Rectangle((r.start_gp, ci_lo), r.end_gp - r.start_gp, ci_hi - ci_lo, facecolor = colors[s2cu[i] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
+                ax.add_patch(mpl.patches.Rectangle((r.start_gp, ci_lo), r.end_gp - r.start_gp, ci_hi - ci_lo, facecolor = colors[s2c[i] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
 
     def visualize_adjacent_segs(self):
         plt.figure()
@@ -884,14 +884,14 @@ class DPinstance:
             bdy = np.flatnonzero(np.r_[1, np.diff(s2c) != 0, 1])
             bdy = np.c_[bdy[:-1], bdy[1:]]
 
-            s2c_nz = s2c.copy()
-            zidx = np.flatnonzero(s2c[bdy[:, 0]] == 0)
-            for z in zidx:
-                s2c_nz[bdy[z, 0]:bdy[z, 1]] = s2c_nz[bdy[z - 1, 0]]
-            bdy_nz = np.flatnonzero(np.r_[1, np.diff(s2c_nz) != 0, 1])
-            bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
+#            s2c_nz = s2c.copy()
+#            zidx = np.flatnonzero(s2c[bdy[:, 0]] == 0)
+#            for z in zidx:
+#                s2c_nz[bdy[z, 0]:bdy[z, 1]] = s2c_nz[bdy[z - 1, 0]]
+#            bdy_nz = np.flatnonzero(np.r_[1, np.diff(s2c_nz) != 0, 1])
+#            bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
 
-            for st, en in bdy_nz:
+            for st, en in bdy:
                 ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], S_ph.iloc[st:en, self.min_col].sum() + 1, S_ph.iloc[st:en, self.maj_col].sum() + 1)
                 ax.add_patch(mpl.patches.Rectangle((S_ph.iloc[st]["start_gp"], ci_lo), S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"], np.maximum(0, ci_hi - ci_lo), facecolor = colors[s2c[st] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
 
@@ -921,12 +921,12 @@ class DPinstance:
             bdy = np.flatnonzero(np.r_[1, np.diff(s2c) != 0, 1])
             bdy = np.c_[bdy[:-1], bdy[1:]]
 
-            s2c_nz = s2c.copy()
-            zidx = np.flatnonzero(s2c[bdy[:, 0]] == 0)
-            for z in zidx:
-                s2c_nz[bdy[z, 0]:bdy[z, 1]] = s2c_nz[bdy[z - 1, 0]]
-            bdy_nz = np.flatnonzero(np.r_[1, np.diff(s2c_nz) != 0, 1])
-            bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
+#            s2c_nz = s2c.copy()
+#            zidx = np.flatnonzero(s2c[bdy[:, 0]] == 0)
+#            for z in zidx:
+#                s2c_nz[bdy[z, 0]:bdy[z, 1]] = s2c_nz[bdy[z - 1, 0]]
+#            bdy_nz = np.flatnonzero(np.r_[1, np.diff(s2c_nz) != 0, 1])
+#            bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
 
-            for st, en in bdy_nz:
+            for st, en in bdy:
                 ax.add_patch(mpl.patches.Rectangle((S_ph.iloc[st]["start_gp"], CIs[s2c[st], 0]), S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"], np.maximum(0, np.diff(CIs[s2c[st], [0, -1]])[0]), facecolor = colors[s2c[st] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
