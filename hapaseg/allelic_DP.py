@@ -139,6 +139,8 @@ class A_DP:
 
         clust_prior = sc.SortedDict()
         clust_count_prior = sc.SortedDict()
+        n_iter_clust_exist = sc.SortedDict()
+        cur_samp_iter = 0
 
         for n_it in range(N_seg_samps):
             if n_it > 0:
@@ -156,10 +158,6 @@ class A_DP:
 
             # compute prior on cluster locations/counts
             max_clust_idx = segs_to_clusters.max()
-            S_a = np.zeros(max_clust_idx + 1)
-            S_b = np.zeros(max_clust_idx + 1)
-            N_c = np.zeros(max_clust_idx + 1)
-            n_iter_clust_exist = np.zeros(np.maximum(max_clust_idx, clust_prior.peekitem(-1)[0]) + 1)
             for seg_assignments, seg_phases in zip(segs_to_clusters, segs_to_phases):
                 # reset phases
                 S2 = S.copy()
@@ -168,46 +166,48 @@ class A_DP:
                 # match phases to current sample
                 S2.loc[seg_phases, ["min", "maj"]] = S2.loc[seg_phases, ["min", "maj"]].values[:, ::-1]
 
-                S_a += npg.aggregate(seg_assignments, S2["min"], size = max_clust_idx + 1)
-                S_b += npg.aggregate(seg_assignments, S2["maj"], size = max_clust_idx + 1)
+                # minor/major counts for each cluster in this iteration
+                S_a = npg.aggregate(seg_assignments, S2["min"], size = max_clust_idx + 1)
+                S_b = npg.aggregate(seg_assignments, S2["maj"], size = max_clust_idx + 1)
+                c = np.c_[S_a, S_b]
 
-                N_c += npg.aggregate(seg_assignments, 1, size = max_clust_idx + 1)
+                # total numer of SNPs for each cluster in this iteration
+                #N_c = npg.aggregate(seg_assignments, S2["SNP_en"] - S2["SNP_st"], size = max_clust_idx + 1)
+                N_c = npg.aggregate(seg_assignments, 1, size = max_clust_idx + 1)
 
-                n_iter_clust_exist[np.unique(seg_assignments)] += 1
+                # iteratively update priors
+                next_clust_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), c[c.sum(1) > 0]))
+                next_clust_count_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), N_c[N_c > 0]))
 
-            S_a /= N_clust_samps
-            S_b /= N_clust_samps
-            N_c /= N_clust_samps
+                for cl in np.unique(seg_assignments):
+                    if cl in n_iter_clust_exist:
+                        n_iter_clust_exist[cl] += 1
+                    else:
+                        n_iter_clust_exist[cl] = 1
+                cur_samp_iter += 1
 
-            c = np.c_[S_a, S_b]
+                for k, v in next_clust_prior.items():
+                    nccp = next_clust_count_prior[k]
+                    if k in clust_prior:
+                        clust_prior[k] += (v - clust_prior[k])/n_iter_clust_exist[k]
+                        clust_count_prior[k] += (nccp - clust_count_prior[k])/cur_samp_iter
+                    else:
+                        clust_prior[k] = v
+                        clust_count_prior[k] = nccp/cur_samp_iter
+                # for clusters that don't exist in this iteration, average counts with zero
+                for k, v in clust_prior.items():
+                    if k != -1 and k not in next_clust_prior:
+                        clust_count_prior[k] -= clust_count_prior[k]/cur_samp_iter
 
-            next_clust_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), c[c.sum(1) > 0]))
-            next_clust_count_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), N_c[N_c > 0]))
 
-            # iteratively update priors
-            for k, v in next_clust_prior.items():
-                nccp = next_clust_count_prior[k]
-                if k in clust_prior:
-                    # iteratively update average
-                    clust_prior[k] += (v - clust_prior[k])/(n_iter_clust_exist[k] + 1)
-                    clust_count_prior[k] += (nccp - clust_count_prior[k])/(n_iter_clust_exist[k] + 1)
-                else:
-                    clust_prior[k] = v
-                    clust_count_prior[k] = nccp
-            # for clusters that don't exist in this iteration, average them with 0
-            for k, v in clust_prior.items():
-                if k != -1 and k not in next_clust_prior:
-                    clust_prior[k] -= clust_prior[k]/(n_iter_clust_exist[k] + 1)
-                    clust_count_prior[k] -= clust_count_prior[k]/(n_iter_clust_exist[k] + 1)
-
-            # remove zero counts from priors
-            for kk in [k for k, v in clust_count_prior.items() if v == 0]:
+            # remove improbable clusters from prior
+            for kk in [k for k, v in clust_count_prior.items() if v < 1]:
                 del clust_prior[kk]
                 del clust_count_prior[kk]
 
             # remove garbage cluster from priors
-            del clust_prior[0]
-            del clust_count_prior[0]
+            #del clust_prior[0]
+            #del clust_count_prior[0]
 
         return snps_to_clusters, snps_to_phases
 
