@@ -837,7 +837,7 @@ class DPinstance:
         si = np.argsort(tot_terr)[::-1]
         terr_cs = np.cumsum(tot_terr[si])/tot_terr.sum()
 
-        return [mpl.cm.get_cmap("rainbow")(x) for x in np.linspace(0, 1, (terr_cs < 0.98).sum())]
+        return [mpl.cm.get_cmap("gist_rainbow")(x) for x in np.linspace(0, 1, (terr_cs < 0.99).sum())]
 
     def visualize_segs(self):
         plt.figure()
