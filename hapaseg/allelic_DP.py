@@ -211,6 +211,93 @@ class A_DP:
 
         return snps_to_clusters, snps_to_phases
 
+    def visualize_clusts(self, snps_to_clusters):
+        f = plt.figure()
+        for d in self.DP_runs:
+            d.visualize_clusts(f = f.number, n_samp = snps_to_clusters.shape[0])
+
+    def visualize_SNPs(self, snps_to_phases):
+        # TODO: load in imputed phases for SNPs for coloring
+        ph_prob = snps_to_phases.mean(0)
+
+        rb = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]]
+
+        # def scerrorbar(idx, rev = False, alpha = None):
+
+        f = plt.figure()
+        idx = ph_prob == 0
+        plt.scatter(
+          self.SNPs.loc[idx, "gpos"],
+          self.SNPs.loc[idx, "f"],
+          color = rb[self.SNPs.loc[idx, "allele"]],
+          marker = '.',
+          s = 1
+        )
+        plt.errorbar(
+          x = self.SNPs.loc[idx, "gpos"],
+          y = self.SNPs.loc[idx, "f"],
+          yerr = np.c_[
+            self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_lo"],
+            self.SNPs.loc[idx, "f_CI_hi"] - self.SNPs.loc[idx, "f"]
+          ].T,
+          fmt = 'none', alpha = 0.1, ecolor = rb[self.SNPs.loc[idx, "allele"]]
+        )
+        idx = ph_prob == 1
+        plt.scatter(
+          self.SNPs.loc[idx, "gpos"],
+          1 - self.SNPs.loc[idx, "f"],
+          color = rb[self.SNPs.loc[idx, "allele"]],
+          marker = '.',
+          s = 1
+        )
+        plt.errorbar(
+          x = self.SNPs.loc[idx, "gpos"],
+          y = 1 - self.SNPs.loc[idx, "f"],
+          yerr = np.c_[
+            self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_hi"],
+            self.SNPs.loc[idx, "f_CI_lo"] - self.SNPs.loc[idx, "f"]
+          ].T,
+          fmt = 'none', alpha = 0.1, ecolor = rb[self.SNPs.loc[idx, "allele"]]
+        )
+        idx = (ph_prob > 0) & (ph_prob < 1)
+        plt.scatter(
+          self.SNPs.loc[idx, "gpos"],
+          self.SNPs.loc[idx, "f"],
+          color = rb[self.SNPs.loc[idx, "allele"]],
+          marker = '.',
+          s = 1,
+          alpha = 1 - ph_prob[idx]
+        )
+        plt.errorbar(
+          x = self.SNPs.loc[idx, "gpos"],
+          y = self.SNPs.loc[idx, "f"],
+          yerr = np.c_[
+            self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_lo"],
+            self.SNPs.loc[idx, "f_CI_hi"] - self.SNPs.loc[idx, "f"]
+          ].T,
+          fmt = 'none', alpha = 0.1, ecolor = rb[self.SNPs.loc[idx, "allele"]]
+        )
+        plt.scatter(
+          self.SNPs.loc[idx, "gpos"],
+          1 - self.SNPs.loc[idx, "f"],
+          color = rb[self.SNPs.loc[idx, "allele"]],
+          marker = '.',
+          s = 1,
+          alpha = ph_prob[idx]
+        )
+        plt.errorbar(
+          x = self.SNPs.loc[idx, "gpos"],
+          y = 1 - self.SNPs.loc[idx, "f"],
+          yerr = np.c_[
+            self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_hi"],
+            self.SNPs.loc[idx, "f_CI_lo"] - self.SNPs.loc[idx, "f"]
+          ].T,
+          fmt = 'none', alpha = 0.1, ecolor = rb[self.SNPs.loc[idx, "allele"]]
+        )
+
+        for d in self.DP_runs:
+            d.visualize_clusts(f = f.number, n_samp = snps_to_phases.shape[0], thick = True)
+
 class DPinstance:
     def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 0.1):
         self.S = S
@@ -905,8 +992,8 @@ class DPinstance:
                 ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], S_ph.iloc[st:en, self.min_col].sum() + 1, S_ph.iloc[st:en, self.maj_col].sum() + 1)
                 ax.add_patch(mpl.patches.Rectangle((S_ph.iloc[st]["start_gp"], ci_lo), S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"], np.maximum(0, ci_hi - ci_lo), facecolor = colors[s2c[st] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
 
-    def visualize_clusts(self):
-        plt.figure()
+    def visualize_clusts(self, f = None, n_samp = None, thick = False):
+        plt.figure(num = f, figsize = [17.56, 5.67])
         ax = plt.gca()
         ax.set_xlim([0, self.S["end_gp"].max()])
         ax.set_ylim([0, 1])
@@ -914,7 +1001,7 @@ class DPinstance:
         colors = self.get_colors()
         s2cu, s2cu_j = self.get_unique_clust_idxs()
 
-        n_samp = len(self.segs_to_clusters)
+        n_samp = len(self.segs_to_clusters) if n_samp is None else n_samp
 
         for s2c, s2ph in zip(s2cu_j, self.phase_orientations):
             # rephase segments according to phase orientation sample
@@ -939,4 +1026,21 @@ class DPinstance:
 #            bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
 
             for st, en in bdy:
-                ax.add_patch(mpl.patches.Rectangle((S_ph.iloc[st]["start_gp"], CIs[s2c[st], 0]), S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"], np.maximum(0, np.diff(CIs[s2c[st], [0, -1]])[0]), facecolor = colors[s2c[st] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
+                if thick:
+                    color = [0, 1, 0]
+                    b = CIs[s2c[st], 1] - 0.01
+                    t = CIs[s2c[st], 1] + 0.01
+                else:
+                    color = colors[s2c[st] % len(colors)]
+                    b = CIs[s2c[st], 0]
+                    t = CIs[s2c[st], 2]
+
+                ax.add_patch(mpl.patches.Rectangle(
+                  xy = (S_ph.iloc[st]["start_gp"], b),
+                  width = S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"],
+                  height = np.maximum(0, t - b),
+                  facecolor = color,
+                  fill = True,
+                  alpha = 1/n_samp,
+                  zorder = 1000)
+                )
