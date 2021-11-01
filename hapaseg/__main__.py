@@ -1,5 +1,6 @@
 import argparse
 import dask.distributed as dd
+import matplotlib.pyplot as plt
 import multiprocessing
 import numpy as np
 import os
@@ -14,6 +15,7 @@ from capy import mut
 from .load import HapasegReference
 from .run_allelic_MCMC import AllelicMCMCRunner
 from .allelic_MCMC import A_MCMC
+from .allelic_DP import A_DP, DPinstance
 
 def parse_args():
     parser = argparse.ArgumentParser(description = "Call somatic copynumber alterations taking advantage of SNP phasing")
@@ -97,6 +99,9 @@ def parse_args():
 
     ## DP (TODO: will include gather step)
     dp = subparsers.add_parser("dp", help = "Run DP clustering on allelic imbalance segments")
+    dp.add_argument("--seg_dataframe", required = True)
+    dp.add_argument("--n_dp_iter", default = 10)
+    dp.add_argument("--n_seg_samps", default = 0)
 
     args = parser.parse_args()
 
@@ -113,6 +118,8 @@ def main():
 
     if not os.path.isdir(args.output_dir):
         os.mkdir(args.output_dir)
+    if not os.path.isdir(args.output_dir + "/figures"):
+        os.mkdir(args.output_dir + "/figures")
     output_dir = os.path.realpath(args.output_dir)
 
     if args.command == "run":
@@ -278,6 +285,53 @@ def main():
             with open(output_dir + f"/AMCMC-arm{arm}.pickle", "wb") as f:
                 pickle.dump(A, f)
 
+    elif args.command == "dp":
+        # load allelic segmentation samples
+        A = A_DP(args.seg_dataframe)
+
+        # run DP
+        snps_to_clusters, snps_to_phases = A.run(
+          N_seg_samps = A.n_samp - 1 if args.n_seg_samps == 0 else args.n_seg_samps,
+          N_clust_samps = args.n_dp_iter
+        )
+
+        # save DP results
+        np.savez(output_dir + "/allelic_DP_SNP_clusts_and_phase_assignments.npz",
+          snps_to_clusters = snps_to_clusters,
+          snps_to_phases = snps_to_phases
+        )
+
+        A.SNPs.to_pickle(output_dir + "/all_SNPs.pickle")
+
+        #
+        # plot DP results
+
+        # 1. phased SNP visualization
+        f = plt.figure(figsize = [17.56, 5.67])
+        A.plot_chrbdy()
+        A.visualize_SNPs(snps_to_phases, color = True, f = f)
+        A.visualize_clusts(snps_to_clusters, f = f, thick = True, nocolor = True)
+        plt.ylabel("Haplotypic imbalance")
+        plt.title("SNP phasing/segmentation")
+        plt.savefig(output_dir + "/figures/SNPs.png", dpi = 300)
+
+        # 2. pre-clustering segments
+        f = plt.figure(figsize = [17.56, 5.67])
+        A.plot_chrbdy()
+        A.visualize_SNPs(snps_to_phases, color = False, f = f)
+        A.visualize_segs(snps_to_clusters, f = f)
+        plt.ylabel("Haplotypic imbalance")
+        plt.title("Allelic segmentation, pre-DP clustering")
+        plt.savefig(output_dir + "/figures/allelic_imbalance_preDP.png", dpi = 300)
+
+        # 3. post-clustering segments
+        f = plt.figure(figsize = [17.56, 5.67])
+        A.plot_chrbdy()
+        A.visualize_SNPs(snps_to_phases, color = False, f = f)
+        A.visualize_clusts(self, snps_to_clusters, f = f, thick = True)
+        plt.ylabel("Haplotypic imbalance")
+        plt.title("Allelic segmentation, post-DP clustering")
+        plt.savefig(output_dir + "/figures/allelic_imbalance_postDP.png", dpi = 300)
 
 if __name__ == "__main__":
     main()
