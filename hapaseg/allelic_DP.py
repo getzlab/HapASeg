@@ -231,18 +231,46 @@ class A_DP:
 
         return self.snps_to_clusters, self.snps_to_phases
 
-    def visualize_segs(self, snps_to_clusters, f = None):
+    def visualize_segs(self, snps_to_clusters = None, f = None, n_vis_samp = None):
         f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
-        for d in self.DP_runs:
-            d.visualize_adjacent_segs(f = f.number, n_samp = snps_to_clusters.shape[0])
 
-    def visualize_clusts(self, snps_to_clusters, f = None, thick = False, nocolor = False):
+        snps_to_clusters = snps_to_clusters if snps_to_clusters is not None else self.snps_to_clusters
+
+        # plot all samples from DP
+        if n_vis_samp is None:
+            run_idx = np.r_[0:self.N_seg_samps]
+            N_seg_samps = self.N_seg_samps
+
+        # only plot up to n_vis_samp _segmentation samples_ from DP
+        # (all DP samples for a given segmentation sample will be plotted)
+        else:
+            run_idx = np.random.choice(self.N_seg_samps, n_vis_samp, replace = False)
+            N_seg_samps = n_vis_samp
+
+        for d in [self.DP_runs[x] for x in run_idx]:
+            d.visualize_adjacent_segs(f = f.number, n_samp = N_seg_samps*self.N_clust_samps)
+
+    def visualize_clusts(self, snps_to_clusters = None, f = None, thick = False, nocolor = False, n_vis_samp = None):
         f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
-        for d in self.DP_runs:
-            d.visualize_clusts(f = f.number, n_samp = snps_to_clusters.shape[0], thick = thick, nocolor = nocolor)
 
-    def visualize_SNPs(self, snps_to_phases, color = True, f = None):
-        # TODO: set alpha dynamically, depending on SNP density
+        snps_to_clusters = snps_to_clusters if snps_to_clusters is not None else self.snps_to_clusters
+
+        # plot all samples from DP
+        if n_vis_samp is None:
+            run_idx = np.r_[0:self.N_seg_samps]
+            N_seg_samps = self.N_seg_samps
+
+        # only plot up to n_vis_samp _segmentation samples_ from DP
+        # (all DP samples for a given segmentation sample will be plotted)
+        else:
+            run_idx = np.random.choice(self.N_seg_samps, n_vis_samp, replace = False)
+            N_seg_samps = n_vis_samp
+
+        for d in [self.DP_runs[x] for x in run_idx]:
+            d.visualize_clusts(f = f.number, n_samp = N_seg_samps*self.N_clust_samps, thick = thick, nocolor = nocolor)
+
+    def visualize_SNPs(self, snps_to_phases = None, color = True, f = None):
+        snps_to_phases = snps_to_phases if snps_to_phases is not None else self.snps_to_phases
         ph_prob = snps_to_phases.mean(0)
 
         if color:
@@ -283,7 +311,7 @@ class A_DP:
                 )
 
         f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
-        scerrorbar(ph_prob == 0, alpha = None if color else 0.4)
+        scerrorbar(ph_prob == 0, alpha = None if color else 0.4) # TODO: set alpha dynamically, depending on SNP density
         scerrorbar(ph_prob == 1, rev = True, alpha = None if color else 0.4)
         idx = (ph_prob > 0) & (ph_prob < 1)
         scerrorbar(idx, alpha = (1 - ph_prob[idx])*(1 if color else 0.4))
