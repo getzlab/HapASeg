@@ -314,6 +314,7 @@ def main():
         plt.ylabel("Haplotypic imbalance")
         plt.title("SNP phasing/segmentation")
         plt.savefig(output_dir + "/figures/SNPs.png", dpi = 300)
+        plt.close()
 
         # 2. pre-clustering segments
         f = plt.figure(figsize = [17.56, 5.67])
@@ -323,6 +324,7 @@ def main():
         plt.ylabel("Haplotypic imbalance")
         plt.title("Allelic segmentation, pre-DP clustering")
         plt.savefig(output_dir + "/figures/allelic_imbalance_preDP.png", dpi = 300)
+        plt.close()
 
         # 3. post-clustering segments
         f = plt.figure(figsize = [17.56, 5.67])
@@ -332,6 +334,7 @@ def main():
         plt.ylabel("Haplotypic imbalance")
         plt.title("Allelic segmentation, post-DP clustering")
         plt.savefig(output_dir + "/figures/allelic_imbalance_postDP.png", dpi = 300)
+        plt.close()
 
 if __name__ == "__main__":
     main()
