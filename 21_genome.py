@@ -10,6 +10,9 @@ import hapaseg
 
 import dask.distributed as dd
 
+#
+# scrap notes for running manually
+
 c = dd.Client()
 
 refs = hapaseg.load.HapasegReference(phased_VCF = "genome/3328.eagle.vcf", allele_counts = "3328.tumor.tsv")
@@ -26,3 +29,12 @@ allelic_segs = runner.run_all()
 allelic_segs = pd.read_pickle("genome/allelic_segs.pickle")
 
 allelic_segs["results"].iloc[0].visualize()
+
+#
+# run with workflow
+import wolf
+from wolF import workflow
+
+with wolf.Workflow(workflow = workflow.workflow) as w:
+    w.run(RUN_NAME = "DLBCL_0138500e", callstats_file = "gs://fc-secure-66f5eeb9-27c4-4e5c-b9d6-0519aca5889d/pair/0138500e-e992-4036-ace4-ddedcd3e7785_ea550049-0c6d-4f04-92e4-ecb9d092661c/gather_M1__2021-07-13--23-17-11_nsuvzba_4ni5beq_ibegd1vbq5k0w/jobs/0/workspace/0138500e-e992-4036-ace4-ddedcd3e7785_ea550049-0c6d-4f04-92e4-ecb9d092661c.MuTect1.call_stats.txt")
+    w.run(RUN_NAME = "DLBCL_06590a5f", callstats_file = "gs://fc-secure-66f5eeb9-27c4-4e5c-b9d6-0519aca5889d/pair/06590a5f-e523-4391-b3fd-59a315cf57d5_0b7d6938-bf3b-4399-bfb4-2d6c8a252e13/gather_M1__2021-07-13--23-01-32_nsuvzba_4ni5beq_ssrormn1nsebm/jobs/0/workspace/06590a5f-e523-4391-b3fd-59a315cf57d5_0b7d6938-bf3b-4399-bfb4-2d6c8a252e13.MuTect1.call_stats.txt")
