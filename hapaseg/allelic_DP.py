@@ -16,11 +16,28 @@ from capy import seq
 
 class A_DP:
     def __init__(self, allelic_segs_pickle, ref_fasta = None):
+        # dataframe of allelic imbalance segmentation samples for each chromosome arm
         self.allelic_segs = pd.read_pickle(allelic_segs_pickle).dropna(0)
+
+        # number of total segmentation samples
         self.n_samp = self.allelic_segs["results"].apply(lambda x : len(x.breakpoint_list)).min()
         self.ref_fasta = ref_fasta
+
+        # DP run objects for each segmentation sample
         self.DP_runs = None
+
+        # dataframe of SNPs
         self.SNPs = None
+
+        # number of segmentation samples used for DP run
+        self.N_seg_samps = None
+        # number of DP samples per segmentation sample
+        self.N_clust_samps = None
+
+        # assignment of SNPs to DP clusters for each MCMC sample
+        self.snps_to_clusters = None
+        # phase correction of SNPs for each MCMC sample
+        self.snps_to_phases = None
 
     def load_seg_samp(self, samp_idx):
         if samp_idx > self.n_samp:
@@ -128,33 +145,36 @@ class A_DP:
         return snps_to_phase
 
     def run(self, N_seg_samps = 50, N_clust_samps = 5):
-        seg_sample_idx = np.random.choice(self.n_samp - 1, N_seg_samps, replace = False)
+        self.N_seg_samps = N_seg_samps
+        self.N_clust_samps = N_clust_samps
+
+        seg_sample_idx = np.random.choice(self.n_samp - 1, self.N_seg_samps, replace = False)
         S, SNPs = self.load_seg_samp(seg_sample_idx[0])
         N_SNPs = len(SNPs)
         
-        snps_to_clusters = -1*np.ones((N_clust_samps*N_seg_samps, N_SNPs), dtype = np.int16)
-        snps_to_phases = np.zeros((N_clust_samps*N_seg_samps, N_SNPs), dtype = bool)
+        self.snps_to_clusters = -1*np.ones((self.N_clust_samps*self.N_seg_samps, N_SNPs), dtype = np.int16)
+        self.snps_to_phases = np.zeros((self.N_clust_samps*self.N_seg_samps, N_SNPs), dtype = bool)
 
-        self.DP_runs = [None]*N_seg_samps
+        self.DP_runs = [None]*self.N_seg_samps
 
         clust_prior = sc.SortedDict()
         clust_count_prior = sc.SortedDict()
         n_iter_clust_exist = sc.SortedDict()
         cur_samp_iter = 0
 
-        for n_it in range(N_seg_samps):
+        for n_it in range(self.N_seg_samps):
             if n_it > 0:
                 S, SNPs = self.load_seg_samp(seg_sample_idx[n_it])
 
             # run clustering
             self.DP_runs[n_it] = DPinstance(S, clust_prior = clust_prior, clust_count_prior = clust_count_prior)
-            segs_to_clusters, segs_to_phases = self.DP_runs[n_it].run(n_iter = N_clust_samps)
+            segs_to_clusters, segs_to_phases = self.DP_runs[n_it].run(n_iter = self.N_clust_samps)
 
             # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
-            snps_to_clusters[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = self.map_seg_clust_assignments_to_SNPs(segs_to_clusters, S)
+            self.snps_to_clusters[self.N_clust_samps*n_it:self.N_clust_samps*(n_it + 1), :] = self.map_seg_clust_assignments_to_SNPs(segs_to_clusters, S)
 
             # assign phase orientations to individual SNPs
-            snps_to_phases[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = self.map_seg_phases_to_SNPs(segs_to_phases, S)
+            self.snps_to_phases[self.N_clust_samps*n_it:self.N_clust_samps*(n_it + 1), :] = self.map_seg_phases_to_SNPs(segs_to_phases, S)
 
             # compute prior on cluster locations/counts
             max_clust_idx = segs_to_clusters.max()
@@ -209,7 +229,7 @@ class A_DP:
             #del clust_prior[0]
             #del clust_count_prior[0]
 
-        return snps_to_clusters, snps_to_phases
+        return self.snps_to_clusters, self.snps_to_phases
 
     def visualize_segs(self, snps_to_clusters, f = None):
         f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
