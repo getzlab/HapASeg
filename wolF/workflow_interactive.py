@@ -207,3 +207,30 @@ A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(dr
 A.to_pickle("arms.pickle")
 
 # run DP
+
+
+#
+# coverage collection notes
+
+split_intervals = wolf.ImportTask(
+  task_path = "/home/jhess/Downloads/split_intervals_TOOL", # TODO: make remote
+  task_name = "split_intervals"
+)
+
+tumor_bam_localization_task = wolf.localization.BatchLocalDisk(
+  files = dict(
+    bam = "/mnt/j/proj/cnv/20201018_hapseg2/exome/18144_6_C1D1_tissue_DNA.bam",
+    bai = "/mnt/j/proj/cnv/20201018_hapseg2/exome/18144_6_C1D1_tissue_DNA.bai"
+  ),
+  run_locally = True
+)
+
+tumor_bam_localization = tumor_bam_localization_task.run()
+
+split_intervals_task = split_intervals.split_intervals(
+  bam = tumor_bam_localization["bam"],
+  bai = tumor_bam_localization["bai"],
+  target_list = "/mnt/j/proj/cnv/20201018_hapseg2/exome/broad_custom_exome_v1.Homo_sapiens_assembly19.targets.interval_list"
+)
+
+split_intervals_results = split_intervals_task.run()
