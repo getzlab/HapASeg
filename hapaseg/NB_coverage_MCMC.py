@@ -144,9 +144,15 @@ class AllelicCluster:
     #TODO something wrong here
     # optimizes mu_i and epsi_i values for either a split segment or a join segment
     def NR_segment(self, ind, ret_hess=False):
-        self.mu_i = self.mu_i_arr[ind[0]]
+        # start by setting mu_i to the average of the residuals
+        mui_init = np.log(np.exp(np.log(self.r[ind[0]:ind[1]]) - (self.mu) - 
+            (self.C[ind[0]:ind[1],:]@self.beta).flatten()).mean())
+        #lepsi_init = np.log((((np.log(self.r[ind[0]:ind[1]]) - self.mu)**2 / self.mu - 1)).sum() / (ind[1]-ind[0]))
+        self.mu_i = mui_init
         self.lepsi_i = self.lepsi_i_arr[ind[0]]
-        for _ in range(100):
+        cur_iter = 0
+        max_iter = 50
+        while(cur_iter < max_iter):
             self.epsi_i = np.exp(self.lepsi_i)
             self.exp = np.exp(self.mu + (self.C[ind[0]:ind[1]] @ self.beta).flatten() + self.mu_i)
 
@@ -162,11 +168,22 @@ class AllelicCluster:
 
             self.mu_i -= delta[0]
             self.lepsi_i -= delta[1]
+
+            if np.isnan(self.mu_i):
+                # if we hit a nan try a new initialization
+                self.mu_i = mui_init + np.random.rand() - 0.5
+                self.lepsi_i = self.lepsi_i_arr[ind[0]]
+                continue
+
             if np.linalg.norm(grad) < 1e-5:
                 print('opt reached')
                 print(np.linalg.det)
                 break
-        
+            
+            if cur_iter == 25:
+                #if its taking this long we should reset with a grid search
+                self.lepsi_i = self.ll_gridsearch(ind)
+            cur_iter += 1
         print(ind, self.mu_i, self.lepsi_i)
         # need to theshold due to overflow
         self.lepsi_i = min(self.lepsi_i, 40)
@@ -180,12 +197,8 @@ class AllelicCluster:
         return ((self.epsi_i * (self.r[ind[0]:ind[1]] - self.exp)) / (self.epsi_i + self.exp)).sum(0)
 
     def gradepsi_i(self, ind):
-        return (ss.digamma(self.r[ind[0]: ind[1]] + self.epsi_i) - ss.digamma(self.epsi_i) + (
-                self.exp - self.r[ind[0]: ind[1]] + self.exp *
-                np.log(self.epsi_i /
-                       (self.exp + self.epsi_i)) + self.epsi_i * np.log(self.epsi_i / (self.exp + self.epsi_i))) /
-                (self.exp + self.epsi_i)).sum(0)
-
+        return (ss.digamma(self.r[ind[0]: ind[1]] + self.epsi_i) - ss.digamma(self.epsi_i) + (self.exp - self.r[ind[0]: ind[1]] + self.exp * np.log(self.epsi_i / (self.exp + self.epsi_i)) + self.epsi_i * np.log(self.epsi_i / (self.exp + self.epsi_i))) /(self.exp + self.epsi_i)).sum(0)
+    
     def hessmu_i(self, ind):
         return (-(self.exp * self.epsi_i * (self.r[ind[0]: ind[1]] + self.epsi_i)) /
                 ((self.exp + self.epsi_i) ** 2)).sum(0)
@@ -216,8 +229,28 @@ class AllelicCluster:
         return (ss.gammaln(self.r + epsi_i_arr) - ss.gammaln(self.r + 1) - ss.gammaln(epsi_i_arr) +
                 (self.r * (self.mu + bc + mu_i_arr - np.log(epsi_i_arr + exp))) +
                 (epsi_i_arr * np.log(epsi_i_arr / (epsi_i_arr + exp)))).sum()
+    
+    @staticmethod
+    def ll_nbinom(r, mu, C, beta, mu_i, lepsi):
+        r = r.flatten()
+        epsi = np.exp(lepsi)
+        bc = (C @ beta).flatten()
+        exp = np.exp(mu + bc + mu_i).flatten()
+        return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
+               (r * (mu + bc + mu_i - np.log(epsi + exp))) +
+               (epsi * np.log(epsi / (epsi + exp)))).sum()
+    
+    #TODO make this into a binary search
+    def ll_gridsearch(self, ind):
+        eps = np.r_[-10:10:0.1]
+        res = np.zeros(eps.shape)
+        r_ind = self.r[ind[0]:ind[1]]
+        C_ind = self.C[ind[0]:ind[1]]
+        for i, ep in enumerate(eps):
+            res[i] = self. ll_nbinom(r_ind, self.mu, C_ind, self.beta, self.mu_i, ep)
+        return eps[np.argmax(res)]
 
-    # #use this as a stand in for now
+# #use this as a stand in for now
     #
     # def ll_cluster(self, mu_i_arr, lepsi_i_arr):
     #     mu_i_arr = mu_i_arr.flatten()
@@ -254,7 +287,7 @@ class AllelicCluster:
             lls.append(ll)
         lls = np.array(lls)
         #print(lls)
-        k_probs = (lls / lls.sum()).flatten()
+        k_probs = (lls - LSE(lls)).flatten()
         #print('all_mus: ', mus)
         if break_pick:
             i = break_pick - ind[0] - 1
@@ -263,11 +296,11 @@ class AllelicCluster:
 
         else:
             # pick a breakpoint based on relative likelihood
-            break_pick = np.random.choice(np.r_[ind[0] + 1: ind[1]], p=k_probs)
+            break_pick = np.random.choice(np.r_[ind[0] + 1: ind[1]], p=np.exp(k_probs))
             print('break_pick: ', break_pick)
             i = break_pick - ind[0] - 1
             print(np.linalg.det(-Hs[i][0]), np.linalg.det(-Hs[i][1]))
-            return break_pick, lls[i], k_probs[i], mus[i], lepsis[i], Hs[i]
+            return lls, break_pick, lls[i], k_probs[i], mus[i], lepsis[i], Hs[i]
 
     def _get_log_ML_approx_join(self, Hess):
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-Hess))) / 2
