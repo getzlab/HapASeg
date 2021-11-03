@@ -151,3 +151,10 @@ class HapasegSNPs:
           np.c_[np.tile(np.c_[np.r_[1:25]], [1, 2]).reshape(-1, 1), CI.reshape(-1, 2)],
           columns = ["chr", "start", "end"]
         )
+
+class HapasegCoverage:
+    def __init__(self,
+      coverage_bed_file,
+      **covariates_bed_files
+    ):
+        pass

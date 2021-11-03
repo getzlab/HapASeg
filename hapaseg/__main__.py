@@ -175,6 +175,9 @@ def main():
         snps.chromosome_intervals.to_pickle(output_dir + "/chrom_int.pickle")
         chunks.to_csv(output_dir + "/scatter_chunks.tsv", sep = "\t", index = False)
 
+    elif args.command == "load_coverage":
+        pass
+
     elif args.command == "amcmc":
         # loading from SNP dataframe produced by `hapaseg load`
         if args.snp_dataframe is not None:
