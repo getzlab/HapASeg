@@ -15,7 +15,7 @@ class Hapaseg(wolf.Task):
             --n_workers 8
     """
     resources = { "cpus-per-task" : 8 }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v455"
 
 class Hapaseg_load(wolf.Task):
     inputs = {
@@ -35,7 +35,7 @@ class Hapaseg_load(wolf.Task):
       "chromosome_intervals" : "chrom_int.pickle",
       "scatter_chunks" : "scatter_chunks.tsv"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v458"
 
 class Hapaseg_burnin(wolf.Task):
     inputs = {
@@ -52,7 +52,7 @@ class Hapaseg_burnin(wolf.Task):
     output_patterns = {
       "burnin_MCMC" : "amcmc_results.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v458"
 
 class Hapaseg_concat(wolf.Task):
     inputs = {
@@ -67,7 +67,7 @@ class Hapaseg_concat(wolf.Task):
       "arms" : "AMCMC-arm*.pickle",
       "ref_bias" : ("ref_bias.txt", wolf.read_file)
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v458"
 
 class Hapaseg_amcmc(wolf.Task):
     inputs = {
@@ -83,4 +83,25 @@ class Hapaseg_amcmc(wolf.Task):
     output_patterns = {
       "arm_level_MCMC" : "amcmc_results.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v458"
+
+class Hapaseg_allelic_DP(wolf.Task):
+    inputs = {
+      "seg_dataframe" : None,
+      "n_dp_iter" : 10,
+      "n_seg_samps" : 0,
+    }
+    script = """
+    hapaseg dp --seg_dataframe ${seg_dataframe} \
+            --n_dp_iter ${n_dp_iter} \
+            --n_seg_samps ${n_seg_samps}
+    """
+    output_patterns = {
+      "cluster_and_phase_assignments" : "allelic_DP_SNP_clusts_and_phase_assignments.npz",
+      "all_SNPs" : "all_SNPs.pickle",
+      "SNP_plot" : "figures/SNPs.png",
+      "seg_plot" : "figures/allelic_imbalance_preDP.png",
+      "clust_plot" : "figures/allelic_imbalance_postDP.png",
+    }
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v459"
+    resources = { "mem" : "5G" }

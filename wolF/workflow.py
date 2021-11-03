@@ -206,3 +206,11 @@ def workflow(
     arm_concat = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
 
     # run DP
+    hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
+     inputs = {
+       "seg_dataframe" : arm_concat,
+       #"n_dp_iter" : 10,   # TODO: allow to be specified?
+       #"n_seg_samps" : 10,
+     }
+    )
+
