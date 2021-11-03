@@ -291,8 +291,9 @@ def main():
 
         # run DP
         snps_to_clusters, snps_to_phases = A.run(
-          N_seg_samps = A.n_samp - 1 if args.n_seg_samps == 0 else args.n_seg_samps,
-          N_clust_samps = args.n_dp_iter
+          # TODO: when we have better type checking, drop the int coersion here
+          N_seg_samps = A.n_samp - 1 if int(args.n_seg_samps) == 0 else int(args.n_seg_samps),
+          N_clust_samps = int(args.n_dp_iter)
         )
 
         # save DP results
