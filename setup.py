@@ -37,6 +37,7 @@ setup(
     install_requires = [
         'pandas>=0.24.1',
         'numpy>=1.18.0',
+        'more-itertools>=8.10.0',
     ],
     classifiers = [
         "Development Status :: 4 - Beta",
