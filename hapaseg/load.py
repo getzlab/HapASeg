@@ -7,21 +7,17 @@ from itertools import zip_longest
 
 _chrmap = dict(zip(["chr" + str(x) for x in list(range(1, 23)) + ["X", "Y"]], range(1, 25)))
 
-class HapasegReference:
+class HapasegSNPs:
     def __init__(self,
       phased_VCF = "test.vcf",
       readbacked_phased_VCF = None,
       allele_counts = "3328.tumor.tsv",
       allele_counts_N = None,
-      coverage = None,
       cytoband_file = "cytoBand.txt"
     ):
         #
         # load in VCF
         self.allele_counts = self.load_VCF(phased_VCF, allele_counts, allele_counts_N, readbacked_phased_VCF)
-
-        #
-        # load in coverage; merge with allele counts
 
         #
         # parse cytoband file for chromosome arm boundaries
