@@ -143,8 +143,8 @@ def workflow(
     #
     # run HapASeg
 
-    # load
-    hapaseg_load_task = hapaseg.Hapaseg_load(
+    # load SNPs
+    hapaseg_load_snps_task = hapaseg.Hapaseg_load_snps(
       inputs = {
         "phased_VCF" : combine_task["combined_vcf"],
         "tumor_allele_counts" : hp_task["tumor_hets"],
@@ -158,12 +158,12 @@ def workflow(
     def get_chunks(scatter_chunks):
         return pd.read_csv(scatter_chunks, sep = "\t")
 
-    chunks = get_chunks(hapaseg_load_task["scatter_chunks"])
+    chunks = get_chunks(hapaseg_load_snps_task["scatter_chunks"])
 
     # burnin chunks
     hapaseg_burnin_task = hapaseg.Hapaseg_burnin(
      inputs = {
-       "allele_counts" : hapaseg_load_task["allele_counts"],
+       "allele_counts" : hapaseg_load_snps_task["allele_counts"],
        "start" : chunks["start"],
        "end" : chunks["end"]
      }
@@ -173,7 +173,7 @@ def workflow(
     hapaseg_concat_task = hapaseg.Hapaseg_concat(
      inputs = {
        "chunks" : [hapaseg_burnin_task["burnin_MCMC"]],
-       "scatter_intervals" : hapaseg_load_task["scatter_chunks"]
+       "scatter_intervals" : hapaseg_load_snps_task["scatter_chunks"]
      }
     )
 

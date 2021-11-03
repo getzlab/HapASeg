@@ -148,7 +148,7 @@ def main():
 
         # TODO: save per-chromosome plots of raw allelic segmentations
 
-    elif args.command == "load":
+    elif args.command == "load_snps":
         # load from VCF
         snps = HapasegSNPs(
           phased_VCF = args.phased_VCF,

@@ -17,7 +17,7 @@ class Hapaseg(wolf.Task):
     resources = { "cpus-per-task" : 8 }
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:v455"
 
-class Hapaseg_load(wolf.Task):
+class Hapaseg_load_snps(wolf.Task):
     inputs = {
       "phased_VCF",
       "tumor_allele_counts",
@@ -25,7 +25,7 @@ class Hapaseg_load(wolf.Task):
       "cytoband_file"
     }
     script = """
-    hapaseg load --phased_VCF ${phased_VCF} \
+    hapaseg load_snps --phased_VCF ${phased_VCF} \
             --allele_counts_T ${tumor_allele_counts} \
             --allele_counts_N ${normal_allele_counts} \
             --cytoband_file ${cytoband_file}
