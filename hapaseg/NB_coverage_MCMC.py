@@ -145,6 +145,7 @@ class AllelicCluster:
     # optimizes mu_i and epsi_i values for either a split segment or a join segment
     def NR_segment(self, ind, ret_hess=False):
         # start by setting mu_i to the average of the residuals
+        print('optimizing :', ind) 
         mui_init = np.log(np.exp(np.log(self.r[ind[0]:ind[1]]) - (self.mu) - 
             (self.C[ind[0]:ind[1],:]@self.beta).flatten()).mean())
         #lepsi_init = np.log((((np.log(self.r[ind[0]:ind[1]]) - self.mu)**2 / self.mu - 1)).sum() / (ind[1]-ind[0]))
@@ -164,27 +165,38 @@ class AllelicCluster:
 
             grad = np.r_[gmu_i, gepsi_i * self.epsi_i]
             H = np.r_[np.c_[hmu_i, hmuepsi_i], np.c_[hmuepsi_i, hepsi_i]]
-            delta = np.linalg.inv(H) @ grad
+            
+            try:
+                inv_H = np.linalg.inv(H)
+            except:
+                print('reached singular matrix. reseeting with grid search')
+                self.lepsi_i = self.ll_gridsearch(ind)
+                continue
+            delta = inv_H @ grad
 
             self.mu_i -= delta[0]
             self.lepsi_i -= delta[1]
 
             if np.isnan(self.mu_i):
                 # if we hit a nan try a new initialization
+                print('hit a nan in optimizer, reseting')
                 self.mu_i = mui_init + np.random.rand() - 0.5
-                self.lepsi_i = self.lepsi_i_arr[ind[0]]
+                self.lepsi_i = self.ll_gridsearch(ind)
                 continue
 
             if np.linalg.norm(grad) < 1e-5:
-                print('opt reached')
-                print(np.linalg.det)
+                #print('opt reached')
+                #print(np.linalg.det)
                 break
             
             if cur_iter == 25:
                 #if its taking this long we should reset with a grid search
+                print('failing to converge. Trying grid search')
                 self.lepsi_i = self.ll_gridsearch(ind)
+
+            
             cur_iter += 1
-        print(ind, self.mu_i, self.lepsi_i)
+        #print(ind, self.mu_i, self.lepsi_i)
         # need to theshold due to overflow
         self.lepsi_i = min(self.lepsi_i, 40)
         if ret_hess:
@@ -261,7 +273,7 @@ class AllelicCluster:
     #     print('in fun:', epsi_i_arr)
     #     return scipy.stats.nbinom.logpmf(self.r, epsi_i_arr, (1 - (exp / (exp + epsi_i_arr)))).sum(0)
 
-    def calc_pk(self, ind, break_pick=None):
+    def calc_pk(self, ind, break_pick=None, debug=False):
         lls = []
         mus = []
         lepsis = []
@@ -283,7 +295,7 @@ class AllelicCluster:
             tmp_lepsi[k: ind[1]] = lepsi_r
 
             ll = self.ll_cluster(tmp_mui, tmp_lepsi)
-            print('ll: ', ll)
+            #print('ll: ', ll)
             lls.append(ll)
         lls = np.array(lls)
         #print(lls)
@@ -292,15 +304,18 @@ class AllelicCluster:
         if break_pick:
             i = break_pick - ind[0] - 1
             # return the probability of proposing a split here along with the optimal parameter values
-            return lls[i], k_probs[i], mus[i], lepsis[i], Hs[i]
-
+            return lls[i], np.exp(k_probs[i]), mus[i], lepsis[i], Hs[i]
+        
         else:
             # pick a breakpoint based on relative likelihood
             break_pick = np.random.choice(np.r_[ind[0] + 1: ind[1]], p=np.exp(k_probs))
-            print('break_pick: ', break_pick)
+            #print('break_pick: ', break_pick)
             i = break_pick - ind[0] - 1
-            print(np.linalg.det(-Hs[i][0]), np.linalg.det(-Hs[i][1]))
-            return lls, break_pick, lls[i], k_probs[i], mus[i], lepsis[i], Hs[i]
+            #print(np.linalg.det(-Hs[i][0]), np.linalg.det(-Hs[i][1]))
+            if debug:
+                return lls, break_pick, lls[i], np.exp(k_probs[i]), mus[i], lepsis[i], Hs[i]
+            
+            return break_pick, lls[i], np.exp(k_probs[i]), mus[i], lepsis[i], Hs[i]
 
     def _get_log_ML_approx_join(self, Hess):
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-Hess))) / 2
@@ -330,7 +345,8 @@ class AllelicCluster:
 
         # pick a random segment
         seg = np.random.choice(self.segments)
-
+        
+        print('attempting split on segment: ', seg)
         #if segment is a singleton then skip
         if self.segment_lens[seg] == 1:
             return -1
@@ -342,6 +358,7 @@ class AllelicCluster:
         _, _, join_log_ML = self._log_ML_join(ind)
         
         print('split log ml ratio: ', split_log_ML - join_log_ML)
+        print('split log mh ratio: ', split_log_ML - join_log_ML + self._log_q_join() - self._log_q_split(pk))
         if np.log(np.random.rand()) < np.minimum(0, split_log_ML - join_log_ML +
                                                     self._log_q_join() - self._log_q_split(pk)):
             print('split!')
@@ -378,7 +395,8 @@ class AllelicCluster:
         seg_l = self.segments[seg_l_ind]
         seg_r = self.segments[seg_l_ind + 1]
         ind = self.get_join_seg_ind(seg_l, seg_r)
-        
+        print('attempting join on segs:', seg_l, seg_r) 
+
         ll_split, pk, mus, lepsis, Hs = self.calc_pk(ind, break_pick=seg_r)
         split_log_ML = ll_split + self._get_log_ML_split(Hs[0], Hs[1])
         mu_share, lepsi_share, join_log_ML = self._log_ML_join(ind)
@@ -440,14 +458,14 @@ class NB_MCMC:
             # decide whether to split or join on this iteration
             #cluster_pick = self.pick_cluster()
             #print("using cluster 18 only for testing")
-            cluster_pick = 11
+            cluster_pick = 1
 
             #self.ll_iter.append(self.clusters[cluster_pick].get_ll())
             if np.random.rand() > 0.5:
                 # split
-                #print("split cluster {}".format(cluster_pick))
+                print("trying to split cluster {}".format(cluster_pick))
                 self.clusters[cluster_pick].split()
             else:
                 # join
-                #print("join cluster {}".format(cluster_pick))
+                print("trying to join cluster {}".format(cluster_pick))
                 self.clusters[cluster_pick].join()
