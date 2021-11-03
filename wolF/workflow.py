@@ -28,13 +28,28 @@ hapaseg = wolf.ImportTask(
   task_name = "hapaseg"
 )
 
+# for coverage collection
+split_intervals = wolf.ImportTask(
+  task_path = "/home/jhess/Downloads/split_intervals_TOOL", # TODO: make remote
+  task_name = "split_intervals"
+)
+
 def workflow(
   callstats_file = None,
+
+  tumor_bam = None,
+  tumor_bai = None,
+  tumor_coverage_bed = None,
+
+  normal_bam = None,
+  normal_bai = None,
+  normal_coverage_bed = None,
+
   common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
+  target_list = None
 ):
     #
     # localize reference files to RODISK
-
     ref_panel = pd.DataFrame({ "path" : glob.glob("/mnt/j/db/hg38/1kg/*.bcf*") })
     ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
     ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
@@ -52,6 +67,54 @@ def workflow(
       ),
       run_locally = True
     )
+
+    #
+    # localize BAMs to RODISK
+    if tumor_bam is not None and tumor_bai is not None:
+        tumor_bam_localization_task = wolf.localization.BatchLocalDisk(
+          "bam" : tumor_bam,
+          "bai" : tumor_bai,
+        )
+        collect_tumor_coverage = True
+    elif tumor_coverage_bed is not None:
+        collect_tumor_coverage = False
+    else:
+        raise ValueError("You must supply either a tumor BAM+BAI or a tumor coverage BED file!")
+
+    use_normal_coverage = True
+    if normal_bam is not None and normal_bai is not None:
+        normal_bam_localization_task = wolf.localization.BatchLocalDisk(
+          "bam" : normal_bam,
+          "bai" : normal_bai,
+        )
+        collect_normal_coverage = True
+    elif normal_coverage_bed is not None:
+        collect_normal_coverage = False
+    else:
+        print("Normal coverage will not be used as a covariate; ability to regress out germline CNVs may suffer.")
+        use_normal_coverage = False
+
+    #
+    # collect or load coverage
+
+    # tumor
+    if collect_tumor_coverage:
+        pass
+        # create scatter intervals
+
+        # dispatch coverage scatter
+        #tumor_coverage_scatter_task = ...
+
+        # gather tumor coverage
+        #tumor_coverage_gather_task = ...
+
+    # load from supplied BED file
+    else:
+        # tumor_coverage_gather_task = { "coverage_bed" : tumor_coverage_bed }
+        pass
+
+    # normal
+    #if collect_normal_coverage:
 
     #
     # get het site coverage/genotypes from callstats
