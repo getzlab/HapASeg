@@ -211,6 +211,9 @@ def workflow(
        "seg_dataframe" : arm_concat,
        #"n_dp_iter" : 10,   # TODO: allow to be specified?
        #"n_seg_samps" : 10,
+       "ref_fasta" : localization_task["ref_fasta"],
+       "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
+       "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink
      }
     )
 

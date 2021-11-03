@@ -90,11 +90,13 @@ class Hapaseg_allelic_DP(wolf.Task):
       "seg_dataframe" : None,
       "n_dp_iter" : 10,
       "n_seg_samps" : 0,
+      "ref_fasta" : None
     }
     script = """
     hapaseg dp --seg_dataframe ${seg_dataframe} \
             --n_dp_iter ${n_dp_iter} \
-            --n_seg_samps ${n_seg_samps}
+            --n_seg_samps ${n_seg_samps} \
+            --ref_fasta ${ref_fasta}
     """
     output_patterns = {
       "cluster_and_phase_assignments" : "allelic_DP_SNP_clusts_and_phase_assignments.npz",
@@ -103,5 +105,5 @@ class Hapaseg_allelic_DP(wolf.Task):
       "seg_plot" : "figures/allelic_imbalance_preDP.png",
       "clust_plot" : "figures/allelic_imbalance_postDP.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v459"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v461"
     resources = { "mem" : "5G" }

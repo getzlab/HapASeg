@@ -102,6 +102,7 @@ def parse_args():
     dp.add_argument("--seg_dataframe", required = True)
     dp.add_argument("--n_dp_iter", default = 10)
     dp.add_argument("--n_seg_samps", default = 0)
+    dp.add_argument("--ref_fasta", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
 
     args = parser.parse_args()
 
@@ -287,7 +288,7 @@ def main():
 
     elif args.command == "dp":
         # load allelic segmentation samples
-        A = A_DP(args.seg_dataframe)
+        A = A_DP(args.seg_dataframe, ref_fasta = args.ref_fasta)
 
         # run DP
         snps_to_clusters, snps_to_phases = A.run(

@@ -68,6 +68,7 @@ class A_DP:
                 all_SNPs.append(pd.DataFrame({
                   "maj" : r.P["MAJ_COUNT"],
                   "min" : r.P["MIN_COUNT"],
+                  # TODO: gpos should be computed earlier, so that that we don't need to pass ref_fasta here
                   "gpos" : seq.chrpos2gpos(r.P.loc[0, "chr"], r.P["pos"], ref = self.ref_fasta),
                   "allele" : r.P["allele_A"]
                 }))
