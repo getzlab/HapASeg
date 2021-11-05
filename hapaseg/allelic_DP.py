@@ -13,6 +13,7 @@ import scipy.special as ss
 import sortedcontainers as sc
 
 from capy import seq
+import .utils as hs_utils
 
 class A_DP:
     def __init__(self, allelic_segs_pickle, ref_fasta = None):
@@ -318,24 +319,24 @@ class A_DP:
         scerrorbar(idx, alpha = (1 - ph_prob[idx])*(1 if color else 0.4))
         scerrorbar(idx, rev = True, alpha = ph_prob[idx]*(1 if color else 0.4))
 
-    def plot_chrbdy(self):
-        chrbdy = self.allelic_segs.loc[:, ["chr", "start", "end"]]
+    def plot_chrbdy(self, cytoband_file):
+        chrbdy = hs_utils.parse_cytoband(cytoband_file)
 
         # plot chromosome boundaries
-        chr_ends = chrbdy.loc[chrbdy["start"] != 0, "end"].cumsum()
+        chr_ends = chrbdy.loc[1::2, "end"].cumsum()
         for end in chr_ends[:-1]:
             plt.axvline(end, color = 'k')
         for st, en in np.c_[chr_ends[:-1:2], chr_ends[1::2]]:
             plt.fill_between([st, en], 0, 1, color = [0.9, 0.9, 0.9], zorder = 0)
 
         # plot centromere locations
-        centromeres = np.r_[0, chr_ends[:-1]] + chrbdy.loc[chrbdy["start"] != 0, "start"]
-        for cent in centromeres[:-1]:
-            plt.axvline(cent, color = 'k', linestyle = ":")
+        for cent in (np.c_[chrbdy.loc[1::2, "start"], chrbdy.loc[::2, "end"]] + np.c_[np.r_[0, chr_ends[:-1]]]).ravel():
+            plt.axvline(cent, color = 'k', linestyle = ":", linewidth = 0.5)
+
 
         # add xticks
         xt = (np.r_[0, chr_ends[:-1]] + chr_ends)/2
-        xtl = chrbdy.loc[chrbdy["start"] != 0, "chr"]
+        xtl = chrbdy.loc[chr_ends.index, "chr"]
         plt.xticks(xt, xtl)
 
         # alternately stagger xticks 
