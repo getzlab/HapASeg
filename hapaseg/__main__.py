@@ -16,6 +16,7 @@ from .load import HapasegSNPs
 from .run_allelic_MCMC import AllelicMCMCRunner
 from .allelic_MCMC import A_MCMC
 from .allelic_DP import A_DP, DPinstance
+import .utils as hs_utils
 
 def parse_args():
     parser = argparse.ArgumentParser(description = "Call somatic copynumber alterations taking advantage of SNP phasing")
@@ -311,7 +312,7 @@ def main():
 
         # 1. phased SNP visualization
         f = plt.figure(figsize = [17.56, 5.67])
-        A.plot_chrbdy(args.cytoband_file)
+        hs_utils.plot_chrbdy(args.cytoband_file)
         A.visualize_SNPs(snps_to_phases, color = True, f = f)
         A.visualize_clusts(snps_to_clusters, f = f, thick = True, nocolor = True, n_vis_samp = 20)
         plt.ylabel("Haplotypic imbalance")
@@ -321,7 +322,7 @@ def main():
 
         # 2. pre-clustering segments
         f = plt.figure(figsize = [17.56, 5.67])
-        A.plot_chrbdy(args.cytoband_file)
+        hs_utils.plot_chrbdy(args.cytoband_file)
         A.visualize_SNPs(snps_to_phases, color = False, f = f)
         A.visualize_segs(snps_to_clusters, f = f, n_vis_samp = 20)
         plt.ylabel("Haplotypic imbalance")
@@ -331,7 +332,7 @@ def main():
 
         # 3. post-clustering segments
         f = plt.figure(figsize = [17.56, 5.67])
-        A.plot_chrbdy(args.cytoband_file)
+        hs_utils.plot_chrbdy(args.cytoband_file)
         A.visualize_SNPs(snps_to_phases, color = False, f = f)
         A.visualize_clusts(snps_to_clusters, f = f, thick = True, n_vis_samp = 20)
         plt.ylabel("Haplotypic imbalance")
