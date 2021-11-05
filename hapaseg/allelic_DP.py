@@ -18,6 +18,7 @@ class A_DP:
     def __init__(self, allelic_segs_pickle, ref_fasta = None):
         # dataframe of allelic imbalance segmentation samples for each chromosome arm
         self.allelic_segs = pd.read_pickle(allelic_segs_pickle).dropna(0)
+        self.allelic_segs = self.allelic_segs.loc[self.allelic_segs["results"].apply(lambda x : len(x.breakpoint_list)) > 0]
 
         # number of total segmentation samples
         self.n_samp = self.allelic_segs["results"].apply(lambda x : len(x.breakpoint_list)).min()
