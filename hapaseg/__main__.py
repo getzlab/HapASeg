@@ -69,13 +69,12 @@ def parse_args():
     ref_group.add_argument("--cytoband_file", required = True)
 
     ## load
-    scatter = subparsers.add_parser("load", help = "Load in phased VCF")
+    scatter = subparsers.add_parser("load_snps", help = "Load in phased VCF")
     scatter.add_argument("--chunk_size", default = 5000) 
     scatter.add_argument("--phased_VCF", required = True)
     scatter.add_argument("--read_backed_phased_VCF")
     scatter.add_argument("--allele_counts_T", required = True)
     scatter.add_argument("--allele_counts_N", required = True)
-    scatter.add_argument("--cytoband_file", required = True)
 
     ## amcmc
     amcmc = subparsers.add_parser("amcmc", help = "Run allelic MCMC on a range of SNPs")
@@ -131,8 +130,7 @@ def main():
           phased_VCF = args.phased_VCF,
           readbacked_phased_VCF = args.read_backed_phased_VCF,
           allele_counts = args.allele_counts_T,
-          allele_counts_N = args.allele_counts_N,
-          cytoband_file = args.cytoband_file
+          allele_counts_N = args.allele_counts_N
         )
 
         runner = AllelicMCMCRunner(
@@ -155,8 +153,7 @@ def main():
           phased_VCF = args.phased_VCF,
           readbacked_phased_VCF = args.read_backed_phased_VCF,
           allele_counts = args.allele_counts_T,
-          allele_counts_N = args.allele_counts_N,
-          cytoband_file = args.cytoband_file
+          allele_counts_N = args.allele_counts_N
         )
 
         # create chunks
