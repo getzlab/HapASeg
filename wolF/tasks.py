@@ -33,7 +33,7 @@ class Hapaseg_load_snps(wolf.Task):
       "allele_counts" : "allele_counts.pickle",
       "scatter_chunks" : "scatter_chunks.tsv"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v470"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v471"
 
 class Hapaseg_burnin(wolf.Task):
     inputs = {
@@ -105,5 +105,5 @@ class Hapaseg_allelic_DP(wolf.Task):
       "seg_plot" : "figures/allelic_imbalance_preDP.png",
       "clust_plot" : "figures/allelic_imbalance_postDP.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v470"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v471"
     resources = { "mem" : "5G" }
