@@ -279,7 +279,9 @@ class A_DP:
         else:
             rb = np.full([2, 3], 0)
 
-        def scerrorbar(idx, rev = False, alpha = None):
+        logistic = lambda A, K, B, M, x : A + (K - A)/(1 + np.exp(-B*(x - M)))
+
+        def scerrorbar(idx, rev = False, alpha = 1, show_CI = True):
             if rev:
                 f = 1 - self.SNPs.loc[idx, "f"]
                 eb_bot = self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_hi"]
@@ -289,18 +291,7 @@ class A_DP:
                 eb_bot = self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_lo"]
                 eb_top = self.SNPs.loc[idx, "f_CI_hi"] - self.SNPs.loc[idx, "f"]
 
-            plt.scatter(
-              self.SNPs.loc[idx, "gpos"],
-              f,
-              color = rb[self.SNPs.loc[idx, "allele"]],
-              marker = '.',
-              s = 1,
-              alpha = 1 if alpha is None else alpha
-            )
-
-            # HACK: don't show errorbars for ambiguously phased segments, since their
-            # alphas can only be set in aggregate
-            if alpha is None:
+            if show_CI:
                 plt.errorbar(
                   x = self.SNPs.loc[idx, "gpos"],
                   y = f,
@@ -308,15 +299,26 @@ class A_DP:
                     eb_bot,
                     eb_top
                   ].T,
-                  fmt = 'none', alpha = 0.1, ecolor = rb[self.SNPs.loc[idx, "allele"]]
+                  fmt = 'none', ecolor = np.c_[rb[self.SNPs.loc[idx, "allele"]], (alpha if isinstance(alpha, np.ndarray) else alpha*np.ones(idx.sum()))**2]
                 )
 
+            plt.scatter(
+              self.SNPs.loc[idx, "gpos"],
+              f,
+              color = rb[self.SNPs.loc[idx, "allele"]],
+              marker = '.',
+              s = 1,
+              alpha = alpha if show_CI else alpha
+            )
+
+        default_alpha = logistic(A = 0.4, K = 0.01, B = 0.00001, M = 120000, x = len(self.SNPs))
+
         f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
-        scerrorbar(ph_prob == 0, alpha = None if color else 0.4) # TODO: set alpha dynamically, depending on SNP density
-        scerrorbar(ph_prob == 1, rev = True, alpha = None if color else 0.4)
+        scerrorbar(ph_prob == 0, alpha = default_alpha, show_CI = color)
+        scerrorbar(ph_prob == 1, rev = True, alpha = default_alpha, show_CI = color)
         idx = (ph_prob > 0) & (ph_prob < 1)
-        scerrorbar(idx, alpha = (1 - ph_prob[idx])*(1 if color else 0.4))
-        scerrorbar(idx, rev = True, alpha = ph_prob[idx]*(1 if color else 0.4))
+        scerrorbar(idx, alpha = (1 - ph_prob[idx])*default_alpha, show_CI = color)
+        scerrorbar(idx, rev = True, alpha = ph_prob[idx]*default_alpha, show_CI = color)
 
 class DPinstance:
     def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 0.1):
