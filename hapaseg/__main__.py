@@ -16,7 +16,7 @@ from .load import HapasegSNPs
 from .run_allelic_MCMC import AllelicMCMCRunner
 from .allelic_MCMC import A_MCMC
 from .allelic_DP import A_DP, DPinstance
-import .utils as hs_utils
+from . import utils as hs_utils
 
 def parse_args():
     parser = argparse.ArgumentParser(description = "Call somatic copynumber alterations taking advantage of SNP phasing")
@@ -76,6 +76,7 @@ def parse_args():
     scatter.add_argument("--read_backed_phased_VCF")
     scatter.add_argument("--allele_counts_T", required = True)
     scatter.add_argument("--allele_counts_N", required = True)
+    scatter.add_argument("--cytoband_file", required = True)
 
     ## amcmc
     amcmc = subparsers.add_parser("amcmc", help = "Run allelic MCMC on a range of SNPs")
@@ -158,7 +159,9 @@ def main():
         )
 
         # create chunks
-        t = mut.map_mutations_to_targets(snps.allele_counts, snps.chromosome_intervals, inplace = False)
+        chromosome_intervals = hs_utils.parse_cytoband(args.cytoband_file)
+
+        t = mut.map_mutations_to_targets(snps.allele_counts, chromosome_intervals, inplace = False)
         groups = t.groupby(t).apply(lambda x : [x.index.min(), x.index.max()]).to_frame(name = "bdy")
         groups["ranges"] = groups["bdy"].apply(lambda x : np.r_[x[0]:x[1]:args.chunk_size, x[1]])
         chunks = pd.DataFrame(
@@ -171,7 +174,6 @@ def main():
 
         # save to disk
         snps.allele_counts.to_pickle(output_dir + "/allele_counts.pickle")
-        snps.chromosome_intervals.to_pickle(output_dir + "/chrom_int.pickle")
         chunks.to_csv(output_dir + "/scatter_chunks.tsv", sep = "\t", index = False)
 
     elif args.command == "load_coverage":

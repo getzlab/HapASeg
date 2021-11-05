@@ -26,13 +26,14 @@ class Hapaseg_load_snps(wolf.Task):
     script = """
     hapaseg load_snps --phased_VCF ${phased_VCF} \
             --allele_counts_T ${tumor_allele_counts} \
-            --allele_counts_N ${normal_allele_counts}
+            --allele_counts_N ${normal_allele_counts} \
+            --cytoband_file ${cytoband_file}
     """
     output_patterns = {
       "allele_counts" : "allele_counts.pickle",
       "scatter_chunks" : "scatter_chunks.tsv"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v458"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v470"
 
 class Hapaseg_burnin(wolf.Task):
     inputs = {
@@ -87,13 +88,15 @@ class Hapaseg_allelic_DP(wolf.Task):
       "seg_dataframe" : None,
       "n_dp_iter" : 10,
       "n_seg_samps" : 0,
-      "ref_fasta" : None
+      "ref_fasta" : None,
+      "cytoband_file" : None
     }
     script = """
     hapaseg dp --seg_dataframe ${seg_dataframe} \
             --n_dp_iter ${n_dp_iter} \
             --n_seg_samps ${n_seg_samps} \
-            --ref_fasta ${ref_fasta}
+            --ref_fasta ${ref_fasta} \
+            --cytoband_file ${cytoband_file}
     """
     output_patterns = {
       "cluster_and_phase_assignments" : "allelic_DP_SNP_clusts_and_phase_assignments.npz",
@@ -102,5 +105,5 @@ class Hapaseg_allelic_DP(wolf.Task):
       "seg_plot" : "figures/allelic_imbalance_preDP.png",
       "clust_plot" : "figures/allelic_imbalance_postDP.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v461"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v470"
     resources = { "mem" : "5G" }

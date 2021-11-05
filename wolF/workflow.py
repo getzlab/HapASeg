@@ -211,7 +211,8 @@ def workflow(
       inputs = {
         "phased_VCF" : combine_task["combined_vcf"],
         "tumor_allele_counts" : hp_task["tumor_hets"],
-        "normal_allele_counts" : hp_task["normal_hets"]
+        "normal_allele_counts" : hp_task["normal_hets"],
+        "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt", # TODO: allow to be specified
       }
     )
 

@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
 
+_chrmap = dict(zip(["chr" + str(x) for x in list(range(1, 23)) + ["X", "Y"]], range(1, 25)))
+
 def parse_cytoband(cytoband):
     cband = pd.read_csv(cytoband, sep = "\t", names = ["chr", "start", "end", "band", "stain"])
     cband["chr"] = cband["chr"].apply(lambda x : _chrmap[x])
