@@ -93,6 +93,10 @@ class AllelicCluster:
         self.F.update([0, len(self.r)])
         
         self.ll_traces = []
+        
+        self.opt_views = []
+        self.mui_views = []
+        self.lepsi_views = []
 
         self._init_params()
 
@@ -155,7 +159,10 @@ class AllelicCluster:
         self.mu_i = mui_init
         self.lepsi_i = self.lepsi_i_arr[ind[0]]
         cur_iter = 0
-        max_iter = 50
+        max_iter = 75
+        self.mu_i, self.lepsi_i = self.stats_optimizer(ind)
+        stats_ll = self.ll_nbinom(self.r[ind[0]:ind[1]], self.mu, self.C[ind[0]:ind[1]], self.beta, np.ones(self.r[ind[0]:ind[1]].shape)*self.mu_i, self.lepsi_i)
+        stats_mui, stats_lepsi = self.mu_i, self.lepsi_i
         while(cur_iter < max_iter):
             self.epsi_i = np.exp(self.lepsi_i)
             self.exp = np.exp(self.mu + (self.C[ind[0]:ind[1]] @ self.beta).flatten() + self.mu_i)
@@ -195,14 +202,23 @@ class AllelicCluster:
             if cur_iter == 25:
                 #if its taking this long we should reset with a grid search
                 print('failing to converge. Trying grid search')
+                self.mu_i = mui_init
                 self.lepsi_i = self.ll_gridsearch(ind)
 
-            if cur_iter == 49:
+            if cur_iter == 50:
+                print('trying stats opt')
+                self.mu_i, self.lepsi_i = self.stats_optimizer(ind)
+
+            if cur_iter == 75:
                 print('failed to optimize: ', ind)
+
             cur_iter += 1
         #print(ind, self.mu_i, self.lepsi_i)
         # need to theshold due to overflow
         self.lepsi_i = min(self.lepsi_i, 40)
+
+        NR_ll = self.ll_nbinom(self.r[ind[0]:ind[1]], self.mu, self.C[ind[0]:ind[1]], self.beta, np.ones(self.r[ind[0]:ind[1]].shape)*self.mu_i, self.lepsi_i)
+        self.opt_views.append((ind, stats_ll, stats_mui, stats_lepsi, NR_ll, self.mu_i, self.lepsi_i))
         if ret_hess:
             return self.mu_i, self.lepsi_i, H
         else:
@@ -234,7 +250,7 @@ class AllelicCluster:
         return seg_l, seg_r + self.segment_lens[seg_r]
     
     def get_ll(self):
-        return self.ll_cluster(self.mu_i_arr, self.lepsi_i_arr)
+        return self.ll_cluster(self.mu_i_arr, self.lepsi_i_arr, True)
     
     # off the shelf optimizer for testing
     def stats_optimizer(self, ind, ret_hess=False):
@@ -249,12 +265,16 @@ class AllelicCluster:
         else:
             return res.params[0], -np.log(res.params[1])
 
-    def ll_cluster(self, mu_i_arr, lepsi_i_arr):
+    def ll_cluster(self, mu_i_arr, lepsi_i_arr, take_sum = True):
         mu_i_arr = mu_i_arr.flatten()
         epsi_i_arr = np.exp(lepsi_i_arr).flatten()
         bc = (self.C @ self.beta).flatten()
         exp = np.exp(self.mu + bc + mu_i_arr).flatten()
-
+        if not take_sum:
+            return (ss.gammaln(self.r + epsi_i_arr) - ss.gammaln(self.r + 1) - ss.gammaln(epsi_i_arr) +
+                    (self.r * (self.mu + bc + mu_i_arr - np.log(epsi_i_arr + exp))) +
+                    (epsi_i_arr * np.log(epsi_i_arr / (epsi_i_arr + exp))))
+        
         return (ss.gammaln(self.r + epsi_i_arr) - ss.gammaln(self.r + 1) - ss.gammaln(epsi_i_arr) +
                 (self.r * (self.mu + bc + mu_i_arr - np.log(epsi_i_arr + exp))) +
                 (epsi_i_arr * np.log(epsi_i_arr / (epsi_i_arr + exp)))).sum()
@@ -271,7 +291,7 @@ class AllelicCluster:
     
     #TODO make this into a binary search
     def ll_gridsearch(self, ind):
-        eps = np.r_[-10:10:0.1]
+        eps = np.r_[-5:15:0.1]
         res = np.zeros(eps.shape)
         r_ind = self.r[ind[0]:ind[1]]
         C_ind = self.C[ind[0]:ind[1]]
@@ -347,7 +367,8 @@ class AllelicCluster:
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-H1) * np.linalg.det(-H2))) / 2
 
     def _log_ML_join(self, ind, ret_opt_params=False):
-        mu_share, lepsi_share, H_share = self.NR_segment(ind, True)
+        #mu_share, lepsi_share, H_share = self.NR_segment(ind, True)
+        mu_share, lepsi_share, H_share = self.stats_optimizer(ind, True)
         tmp_mui = self.mu_i_arr
         tmp_mui[ind[0]:ind[1]] = mu_share
         tmp_lepsi = self.lepsi_i_arr
@@ -371,14 +392,14 @@ class AllelicCluster:
         # pick a random segment
         seg = np.random.choice(self.segments)
         
-        print('attempting split on segment: ', seg)
+        #print('attempting split on segment: ', seg)
         #if segment is a singleton then skip
         ## if segment is less than 4 bins then skip
         if self.segment_lens[seg] < 4:
             return -1
 
         ind = self.get_seg_ind(seg)
-        print('ind: ', ind)
+        #print('ind: ', ind)
         if debug:
             lls, break_pick, ll_split, pk, mus, lepsis, Hs = self.calc_pk(ind, debug=debug)
             ll_trace[ind[0] + 2: ind[1] -1] = lls - LSE(lls)
@@ -396,8 +417,8 @@ class AllelicCluster:
         split_log_ML = ll_split + self._get_log_ML_split(Hs[0], Hs[1])
         _, _, join_log_ML = self._log_ML_join(ind)
         
-        print('split log ml ratio: ', split_log_ML - join_log_ML)
-        print('split log mh ratio: ', split_log_ML - join_log_ML + self._log_q_join() - self._log_q_split(pk))
+        #print('split log ml ratio: ', split_log_ML - join_log_ML)
+        #print('split log mh ratio: ', split_log_ML - join_log_ML + self._log_q_join() - self._log_q_split(pk))
         if np.log(np.random.rand()) < np.minimum(0, split_log_ML - join_log_ML +
                                                     self._log_q_join() - self._log_q_split(pk)):
             print('split!')
@@ -436,8 +457,8 @@ class AllelicCluster:
         seg_l = self.segments[seg_l_ind]
         seg_r = self.segments[seg_l_ind + 1]
         ind = self.get_join_seg_ind(seg_l, seg_r)
-        print('attempting join on segs:', seg_l, seg_r) 
-        print('join ind: ', ind)
+        #print('attempting join on segs:', seg_l, seg_r) 
+        #print('join ind: ', ind)
         ll_split, pk, mus, lepsis, Hs = self.calc_pk(ind, break_pick=seg_r)
         split_log_ML = ll_split + self._get_log_ML_split(Hs[0], Hs[1])
         mu_share, lepsi_share, join_log_ML = self._log_ML_join(ind)
@@ -448,6 +469,7 @@ class AllelicCluster:
             # update segment assignments for new segment
             self.segment_ID[ind[0]:ind[1]] = seg_l
             self.segments.discard(seg_r)
+            del self.segment_lens[seg_r]
             self.segment_lens[seg_l] = ind[1] - ind[0]
             print('joining!')
             # update mu_i and lepsi_i values
@@ -457,7 +479,7 @@ class AllelicCluster:
             self.F.discard(seg_r)
             self.F.discard(seg_r)
             #self.phase_history.append(self.F.copy())
-            print(self.F)
+         #   print(self.F)
             return seg_r
 
         return 0
@@ -500,13 +522,12 @@ class NB_MCMC:
             #cluster_pick = self.pick_cluster()
             #print("using cluster 18 only for testing")
             cluster_pick = 1
-            print(self.clusters[cluster_pick].segment_lens)
-            #self.ll_iter.append(self.clusters[cluster_pick].get_ll())
+            self.ll_iter.append(self.clusters[cluster_pick].get_ll())
             if np.random.rand() > 0.5:
                 # split
-                print("trying to split cluster {}".format(cluster_pick))
+                #print("trying to split cluster {}".format(cluster_pick))
                 self.clusters[cluster_pick].split(debug)
             else:
                 # join
-                print("trying to join cluster {}".format(cluster_pick))
+                #print("trying to join cluster {}".format(cluster_pick))
                 self.clusters[cluster_pick].join(debug)
