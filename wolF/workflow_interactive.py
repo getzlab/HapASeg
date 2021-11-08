@@ -227,10 +227,37 @@ tumor_bam_localization_task = wolf.localization.BatchLocalDisk(
 
 tumor_bam_localization = tumor_bam_localization_task.run()
 
+# split target list
+
 split_intervals_task = split_intervals.split_intervals(
   bam = tumor_bam_localization["bam"],
   bai = tumor_bam_localization["bai"],
-  target_list = "/mnt/j/proj/cnv/20201018_hapseg2/exome/broad_custom_exome_v1.Homo_sapiens_assembly19.targets.interval_list"
+  target_list = "/mnt/j/proj/cnv/20201018_hapseg2/exome/broad_custom_exome_v1.Homo_sapiens_assembly19.targets.interval_list.noheader",
+  interval_type = "bed",
 )
 
 split_intervals_results = split_intervals_task.run()
+
+# shim task to transform split_intervals files into subset parameters for covcollect task
+
+# TODO
+
+# get coverage
+
+cov_collect = wolf.ImportTask(
+  task_path = "/mnt/j/proj/cnv/20210326_coverage_collector", # TODO: make remote
+  task_name = "covcollect"
+)
+
+cov_collect_task = cov_collect.Covcollect(
+  inputs = dict(
+    bam = tumor_bam_localization["bam"],
+    bai = tumor_bam_localization["bai"],
+    intervals = "/mnt/j/proj/cnv/20201018_hapseg2/exome/broad_custom_exome_v1.Homo_sapiens_assembly19.targets.interval_list.noheader",
+    subset_chr = 0,
+    subset_start = 0,
+    subset_end = 1000000,
+  )
+)
+
+cov_collect_results = cov_collect_task.run()
