@@ -5,9 +5,11 @@ import tqdm
 import scipy
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
+
 def LSE(x):
     lmax = np.max(x)
     return lmax + np.log(np.exp(x - lmax).sum())
+
 
 class PoissonRegression:
     def __init__(self, r, C, Pi):
@@ -91,9 +93,9 @@ class AllelicCluster:
         self.phase_history = []
         self.F = sc.SortedList()
         self.F.update([0, len(self.r)])
-        
+
         self.ll_traces = []
-        
+
         self.opt_views = []
         self.mui_views = []
         self.lepsi_views = []
@@ -108,8 +110,8 @@ class AllelicCluster:
 
     # fit initial mu_k and epsilon_k for the cluster
     def NR_init(self):
-        self.lepsi = np.log((((np.log(self.r) - self.mu)**2 / self.mu - 1)).sum() / (len(self.r)))
-        
+        self.lepsi = np.log((((np.log(self.r) - self.mu) ** 2 / self.mu - 1)).sum() / (len(self.r)))
+
         for _ in range(100):
             self.exp = np.exp(self.mu + self.C @ self.beta).flatten()
             self.epsi = np.exp(self.lepsi)
@@ -127,6 +129,7 @@ class AllelicCluster:
             self.lepsi -= delta[1]
             if np.linalg.norm(grad) < 1e-5:
                 break
+
     # helper init derivative functions
 
     def gradmu(self):
@@ -149,21 +152,23 @@ class AllelicCluster:
 
     def hessmuepsi(self):
         return ((self.exp * (self.r - self.exp)) / (self.exp + self.epsi) ** 2).sum(0)
-    #TODO something wrong here
+
+    # TODO something wrong here
     # optimizes mu_i and epsi_i values for either a split segment or a join segment
     def NR_segment(self, ind, ret_hess=False):
         # start by setting mu_i to the average of the residuals
-        mui_init = np.log(np.exp(np.log(self.r[ind[0]:ind[1]]) - (self.mu) - 
-            (self.C[ind[0]:ind[1],:]@self.beta).flatten()).mean())
-        #lepsi_init = np.log((((np.log(self.r[ind[0]:ind[1]]) - self.mu)**2 / self.mu - 1)).sum() / (ind[1]-ind[0]))
+        mui_init = np.log(np.exp(np.log(self.r[ind[0]:ind[1]]) - (self.mu) -
+                                 (self.C[ind[0]:ind[1], :] @ self.beta).flatten()).mean())
+        # lepsi_init = np.log((((np.log(self.r[ind[0]:ind[1]]) - self.mu)**2 / self.mu - 1)).sum() / (ind[1]-ind[0]))
         self.mu_i = mui_init
         self.lepsi_i = self.lepsi_i_arr[ind[0]]
         cur_iter = 0
         max_iter = 75
         self.mu_i, self.lepsi_i = self.stats_optimizer(ind)
-        stats_ll = self.ll_nbinom(self.r[ind[0]:ind[1]], self.mu, self.C[ind[0]:ind[1]], self.beta, np.ones(self.r[ind[0]:ind[1]].shape)*self.mu_i, self.lepsi_i)
+        stats_ll = self.ll_nbinom(self.r[ind[0]:ind[1]], self.mu, self.C[ind[0]:ind[1]], self.beta,
+                                  np.ones(self.r[ind[0]:ind[1]].shape) * self.mu_i, self.lepsi_i)
         stats_mui, stats_lepsi = self.mu_i, self.lepsi_i
-        while(cur_iter < max_iter):
+        while (cur_iter < max_iter):
             self.epsi_i = np.exp(self.lepsi_i)
             self.exp = np.exp(self.mu + (self.C[ind[0]:ind[1]] @ self.beta).flatten() + self.mu_i)
 
@@ -175,7 +180,7 @@ class AllelicCluster:
 
             grad = np.r_[gmu_i, gepsi_i * self.epsi_i]
             H = np.r_[np.c_[hmu_i, hmuepsi_i], np.c_[hmuepsi_i, hepsi_i]]
-            
+
             try:
                 inv_H = np.linalg.inv(H)
             except:
@@ -195,12 +200,12 @@ class AllelicCluster:
                 continue
 
             if np.linalg.norm(grad) < 1e-5:
-                #print('opt reached')
-                #print(np.linalg.det)
+                # print('opt reached')
+                # print(np.linalg.det)
                 break
-            
+
             if cur_iter == 25:
-                #if its taking this long we should reset with a grid search
+                # if its taking this long we should reset with a grid search
                 print('failing to converge. Trying grid search')
                 self.mu_i = mui_init
                 self.lepsi_i = self.ll_gridsearch(ind)
@@ -213,24 +218,28 @@ class AllelicCluster:
                 print('failed to optimize: ', ind)
 
             cur_iter += 1
-        #print(ind, self.mu_i, self.lepsi_i)
+        # print(ind, self.mu_i, self.lepsi_i)
         # need to theshold due to overflow
         self.lepsi_i = min(self.lepsi_i, 40)
 
-        NR_ll = self.ll_nbinom(self.r[ind[0]:ind[1]], self.mu, self.C[ind[0]:ind[1]], self.beta, np.ones(self.r[ind[0]:ind[1]].shape)*self.mu_i, self.lepsi_i)
+        NR_ll = self.ll_nbinom(self.r[ind[0]:ind[1]], self.mu, self.C[ind[0]:ind[1]], self.beta,
+                               np.ones(self.r[ind[0]:ind[1]].shape) * self.mu_i, self.lepsi_i)
         self.opt_views.append((ind, stats_ll, stats_mui, stats_lepsi, NR_ll, self.mu_i, self.lepsi_i))
         if ret_hess:
             return self.mu_i, self.lepsi_i, H
         else:
             return self.mu_i, self.lepsi_i
-    
+
     # helper segment derivative function ** make sure to set epsi_i, mu_i and exp before use
     def gradmu_i(self, ind):
         return ((self.epsi_i * (self.r[ind[0]:ind[1]] - self.exp)) / (self.epsi_i + self.exp)).sum(0)
 
     def gradepsi_i(self, ind):
-        return (ss.digamma(self.r[ind[0]: ind[1]] + self.epsi_i) - ss.digamma(self.epsi_i) + (self.exp - self.r[ind[0]: ind[1]] + self.exp * np.log(self.epsi_i / (self.exp + self.epsi_i)) + self.epsi_i * np.log(self.epsi_i / (self.exp + self.epsi_i))) /(self.exp + self.epsi_i)).sum(0)
-    
+        return (ss.digamma(self.r[ind[0]: ind[1]] + self.epsi_i) - ss.digamma(self.epsi_i) + (
+                self.exp - self.r[ind[0]: ind[1]] + self.exp * np.log(
+            self.epsi_i / (self.exp + self.epsi_i)) + self.epsi_i * np.log(
+            self.epsi_i / (self.exp + self.epsi_i))) / (self.exp + self.epsi_i)).sum(0)
+
     def hessmu_i(self, ind):
         return (-(self.exp * self.epsi_i * (self.r[ind[0]: ind[1]] + self.epsi_i)) /
                 ((self.exp + self.epsi_i) ** 2)).sum(0)
@@ -248,15 +257,15 @@ class AllelicCluster:
 
     def get_join_seg_ind(self, seg_l, seg_r):
         return seg_l, seg_r + self.segment_lens[seg_r]
-    
+
     def get_ll(self):
         return self.ll_cluster(self.mu_i_arr, self.lepsi_i_arr, True)
-    
+
     # off the shelf optimizer for testing
     def stats_optimizer(self, ind, ret_hess=False):
-        endog = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) -  (self.C[ind[0]:ind[1]] @self.beta).flatten())
+        endog = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) - (self.C[ind[0]:ind[1]] @ self.beta).flatten())
         exog = np.ones(self.r[ind[0]:ind[1]].shape[0])
-        exposure = np.ones(self.r[ind[0]:ind[1]].shape[0]) * np.exp(self.mu)                
+        exposure = np.ones(self.r[ind[0]:ind[1]].shape[0]) * np.exp(self.mu)
         sNB = statsNB(endog, exog, exposure=exposure)
         res = sNB.fit(disp=0)
 
@@ -265,20 +274,19 @@ class AllelicCluster:
         else:
             return res.params[0], -np.log(res.params[1])
 
-    def ll_cluster(self, mu_i_arr, lepsi_i_arr, take_sum = True):
+    def ll_cluster(self, mu_i_arr, lepsi_i_arr, take_sum=True):
         mu_i_arr = mu_i_arr.flatten()
         epsi_i_arr = np.exp(lepsi_i_arr).flatten()
         bc = (self.C @ self.beta).flatten()
         exp = np.exp(self.mu + bc + mu_i_arr).flatten()
+
+        lls = (ss.gammaln(self.r + epsi_i_arr) - ss.gammaln(self.r + 1) - ss.gammaln(epsi_i_arr) +
+               (self.r * (self.mu + bc + mu_i_arr - np.log(epsi_i_arr + exp))) +
+               (epsi_i_arr * np.log(epsi_i_arr / (epsi_i_arr + exp))))
         if not take_sum:
-            return (ss.gammaln(self.r + epsi_i_arr) - ss.gammaln(self.r + 1) - ss.gammaln(epsi_i_arr) +
-                    (self.r * (self.mu + bc + mu_i_arr - np.log(epsi_i_arr + exp))) +
-                    (epsi_i_arr * np.log(epsi_i_arr / (epsi_i_arr + exp))))
-        
-        return (ss.gammaln(self.r + epsi_i_arr) - ss.gammaln(self.r + 1) - ss.gammaln(epsi_i_arr) +
-                (self.r * (self.mu + bc + mu_i_arr - np.log(epsi_i_arr + exp))) +
-                (epsi_i_arr * np.log(epsi_i_arr / (epsi_i_arr + exp)))).sum()
-    
+            return lls
+        return lls.sum()
+
     @staticmethod
     def ll_nbinom(r, mu, C, beta, mu_i, lepsi):
         r = r.flatten()
@@ -286,20 +294,20 @@ class AllelicCluster:
         bc = (C @ beta).flatten()
         exp = np.exp(mu + bc + mu_i).flatten()
         return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
-               (r * (mu + bc + mu_i - np.log(epsi + exp))) +
-               (epsi * np.log(epsi / (epsi + exp)))).sum()
-    
-    #TODO make this into a binary search
+                (r * (mu + bc + mu_i - np.log(epsi + exp))) +
+                (epsi * np.log(epsi / (epsi + exp)))).sum()
+
+    # TODO make this into a binary search
     def ll_gridsearch(self, ind):
         eps = np.r_[-5:15:0.1]
         res = np.zeros(eps.shape)
         r_ind = self.r[ind[0]:ind[1]]
         C_ind = self.C[ind[0]:ind[1]]
         for i, ep in enumerate(eps):
-            res[i] = self. ll_nbinom(r_ind, self.mu, C_ind, self.beta, self.mu_i, ep)
+            res[i] = self.ll_nbinom(r_ind, self.mu, C_ind, self.beta, self.mu_i, ep)
         return eps[np.argmax(res)]
 
-# #use this as a stand in for now
+    # #use this as a stand in for now
     #
     # def ll_cluster(self, mu_i_arr, lepsi_i_arr):
     #     mu_i_arr = mu_i_arr.flatten()
@@ -317,15 +325,15 @@ class AllelicCluster:
         Hs = []
         # swtiching to disallow singletons from split
         if ind[1] - ind[0] < 4 and not debug:
-            raise Exception('segment was too small to split: length: ', ind[1]-ind[0])
-        ks = np.r_[ind[0] + 2: ind[1]-1]
+            raise Exception('segment was too small to split: length: ', ind[1] - ind[0])
+        ks = np.r_[ind[0] + 2: ind[1] - 1]
         for k in ks:
-            #mu_l, lepsi_l, H_l = self.NR_segment((ind[0], k), True)
-            #mu_r, lepsi_r, H_r = self.NR_segment((k, ind[1]), True)
+            # mu_l, lepsi_l, H_l = self.NR_segment((ind[0], k), True)
+            # mu_r, lepsi_r, H_r = self.NR_segment((k, ind[1]), True)
 
             mu_l, lepsi_l, H_l = self.stats_optimizer((ind[0], k), True)
             mu_r, lepsi_r, H_r = self.stats_optimizer((k, ind[1]), True)
-            
+
             mus.append((mu_l, mu_r))
             lepsis.append((lepsi_l, lepsi_r))
             Hs.append((H_l, H_r))
@@ -338,26 +346,26 @@ class AllelicCluster:
             tmp_lepsi[k: ind[1]] = lepsi_r
 
             ll = self.ll_cluster(tmp_mui, tmp_lepsi)
-            #print('ll: ', ll)
+            # print('ll: ', ll)
             lls.append(ll)
         lls = np.array(lls)
-        #print(lls)
+        # print(lls)
         k_probs = (lls - LSE(lls)).flatten()
-        #print('all_mus: ', mus)
+        # print('all_mus: ', mus)
         if break_pick:
             i = break_pick - ind[0] - 2
             # return the probability of proposing a split here along with the optimal parameter values
             return lls[i], np.exp(k_probs[i]), mus[i], lepsis[i], Hs[i]
-        
+
         else:
             # pick a breakpoint based on relative likelihood
-            break_pick = np.random.choice(np.r_[ind[0] + 2: ind[1]-1], p=np.exp(k_probs))
-            #print('break_pick: ', break_pick)
+            break_pick = np.random.choice(np.r_[ind[0] + 2: ind[1] - 1], p=np.exp(k_probs))
+            # print('break_pick: ', break_pick)
             i = break_pick - ind[0] - 2
-            #print(np.linalg.det(-Hs[i][0]), np.linalg.det(-Hs[i][1]))
+            # print(np.linalg.det(-Hs[i][0]), np.linalg.det(-Hs[i][1]))
             if debug:
                 return lls, break_pick, lls[i], np.exp(k_probs[i]), mus[i], lepsis[i], Hs[i]
-            
+
             return break_pick, lls[i], np.exp(k_probs[i]), mus[i], lepsis[i], Hs[i]
 
     def _get_log_ML_approx_join(self, Hess):
@@ -367,7 +375,7 @@ class AllelicCluster:
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-H1) * np.linalg.det(-H2))) / 2
 
     def _log_ML_join(self, ind, ret_opt_params=False):
-        #mu_share, lepsi_share, H_share = self.NR_segment(ind, True)
+        # mu_share, lepsi_share, H_share = self.NR_segment(ind, True)
         mu_share, lepsi_share, H_share = self.stats_optimizer(ind, True)
         tmp_mui = self.mu_i_arr
         tmp_mui[ind[0]:ind[1]] = mu_share
@@ -384,25 +392,25 @@ class AllelicCluster:
     def _log_q_join(self):
         return - np.log(len(self.segments))
 
-#TODO: check if marginal liklihoods are correct
+    # TODO: check if marginal liklihoods are correct
     def split(self, debug):
-        
+
         if debug:
             ll_trace = np.zeros(self.segment_ID.shape[0])
         # pick a random segment
         seg = np.random.choice(self.segments)
-        
-        #print('attempting split on segment: ', seg)
-        #if segment is a singleton then skip
+
+        # print('attempting split on segment: ', seg)
+        # if segment is a singleton then skip
         ## if segment is less than 4 bins then skip
         if self.segment_lens[seg] < 4:
             return -1
 
         ind = self.get_seg_ind(seg)
-        #print('ind: ', ind)
+        # print('ind: ', ind)
         if debug:
             lls, break_pick, ll_split, pk, mus, lepsis, Hs = self.calc_pk(ind, debug=debug)
-            ll_trace[ind[0] + 2: ind[1] -1] = lls - LSE(lls)
+            ll_trace[ind[0] + 2: ind[1] - 1] = lls - LSE(lls)
 
             for s in self.segments.difference(set([seg])):
                 s_ind = self.get_seg_ind(s)
@@ -416,9 +424,9 @@ class AllelicCluster:
             break_pick, ll_split, pk, mus, lepsis, Hs = self.calc_pk(ind, debug=debug)
         split_log_ML = ll_split + self._get_log_ML_split(Hs[0], Hs[1])
         _, _, join_log_ML = self._log_ML_join(ind)
-        
-        #print('split log ml ratio: ', split_log_ML - join_log_ML)
-        #print('split log mh ratio: ', split_log_ML - join_log_ML + self._log_q_join() - self._log_q_split(pk))
+
+        # print('split log ml ratio: ', split_log_ML - join_log_ML)
+        # print('split log mh ratio: ', split_log_ML - join_log_ML + self._log_q_join() - self._log_q_split(pk))
         if np.log(np.random.rand()) < np.minimum(0, split_log_ML - join_log_ML +
                                                     self._log_q_join() - self._log_q_split(pk)):
             print('split!')
@@ -429,7 +437,7 @@ class AllelicCluster:
             self.segment_ID[break_pick:ind[1]] = break_pick
             self.segments.add(break_pick)
             self.segment_lens[break_pick] = ind[1] - break_pick
-            
+
             # update old seglen
             self.segment_lens[ind[0]] = break_pick - ind[0]
 
@@ -440,7 +448,7 @@ class AllelicCluster:
             self.lepsi_i_arr[break_pick:ind[1]] = lepsis[1]
 
             self.F.update([break_pick, break_pick])
-            print(self.F)
+            # print(self.F)
             self.phase_history.append(self.F.copy())
             return break_pick
 
@@ -457,13 +465,13 @@ class AllelicCluster:
         seg_l = self.segments[seg_l_ind]
         seg_r = self.segments[seg_l_ind + 1]
         ind = self.get_join_seg_ind(seg_l, seg_r)
-        #print('attempting join on segs:', seg_l, seg_r) 
-        #print('join ind: ', ind)
+        # print('attempting join on segs:', seg_l, seg_r)
+        # print('join ind: ', ind)
         ll_split, pk, mus, lepsis, Hs = self.calc_pk(ind, break_pick=seg_r)
         split_log_ML = ll_split + self._get_log_ML_split(Hs[0], Hs[1])
         mu_share, lepsi_share, join_log_ML = self._log_ML_join(ind)
-        
-        if np.log(np.random.rand()) < np.minimum(0, join_log_ML  - split_log_ML +
+
+        if np.log(np.random.rand()) < np.minimum(0, join_log_ML - split_log_ML +
                                                     self._log_q_split(pk) - self._log_q_join()):
             # join the segments
             # update segment assignments for new segment
@@ -478,11 +486,12 @@ class AllelicCluster:
 
             self.F.discard(seg_r)
             self.F.discard(seg_r)
-            #self.phase_history.append(self.F.copy())
-         #   print(self.F)
+            # self.phase_history.append(self.F.copy())
+            #   print(self.F)
             return seg_r
 
         return 0
+
 
 class NB_MCMC:
 
@@ -499,6 +508,9 @@ class NB_MCMC:
         self.cluster_sizes = np.array([np.sum(self.c_assignments == i) for i in range(self.n_clusters)])
         self.cluster_probs = self.cluster_sizes / self.cluster_sizes.sum()
 
+        self.burnt_in = False
+
+        self.ll_clusters = np.zeros(self.n_clusters)
         self.ll_iter = []
         self._init_clusters()
 
@@ -512,22 +524,42 @@ class NB_MCMC:
             new_acluster = AllelicCluster(self.r[cluster_mask], self.C[cluster_mask, :], mu_0[k], self.beta)
             self.clusters[k] = new_acluster
 
+            # set initial ll
+            self.ll_clusters[k] = new_acluster.get_ll()
+
     def pick_cluster(self):
         return np.random.choice(range(self.n_clusters), p=self.cluster_probs)
 
-    def run(self, n_iter=1000, debug=False):
+    def run(self,
+            n_iter=10000,
+            debug=False,
+            stop_after_burnin=False):
         print("starting MCMC coverage segmentation...")
-        for it in tqdm.tqdm(range(n_iter)):
+        for n_it in tqdm.tqdm(range(n_iter)):
+
+            # check if we have burnt in
+            if n_it > 1000 and not self.burnt_in and not n_it % 100:
+                if np.diff(np.array(self.ll_iter[-500:])).mean() < 0:
+                    print('burnt in!')
+                    self.burnt_in = True
+                    if stop_after_burnin:
+                        print('Burn-in complete: ll: {} n_it: {}'.format(self.ll_clusters.sum(), n_it))
+                        break
+
             # decide whether to split or join on this iteration
-            #cluster_pick = self.pick_cluster()
-            #print("using cluster 18 only for testing")
+            # cluster_pick = self.pick_cluster()
             cluster_pick = 1
-            self.ll_iter.append(self.clusters[cluster_pick].get_ll())
             if np.random.rand() > 0.5:
                 # split
-                #print("trying to split cluster {}".format(cluster_pick))
-                self.clusters[cluster_pick].split(debug)
+                res = self.clusters[cluster_pick].split(debug)
+                # if we made a change, update ll of cluster
+                if res > 0:
+                    self.ll_clusters[cluster_pick] = self.clusters[cluster_pick].get_ll()
             else:
                 # join
-                #print("trying to join cluster {}".format(cluster_pick))
-                self.clusters[cluster_pick].join(debug)
+                res = self.clusters[cluster_pick].join(debug)
+                # if we made a change, update ll of cluster
+                if res > 0:
+                    self.ll_clusters[cluster_pick] = self.clusters[cluster_pick].get_ll()
+
+            self.ll_iter.append(self.ll_clusters.sum())
