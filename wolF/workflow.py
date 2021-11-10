@@ -3,6 +3,7 @@ import os
 import pandas as pd
 import pickle
 import prefect
+import subprocess
 import tempfile
 import wolf
 
@@ -50,7 +51,7 @@ def workflow(
 ):
     #
     # localize reference files to RODISK
-    ref_panel = pd.DataFrame({ "path" : glob.glob("/mnt/j/db/hg38/1kg/*.bcf*") })
+    ref_panel = pd.DataFrame({ "path" : subprocess.check_output("gsutil ls gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/*.bcf*", shell = True).decode().rstrip().split("\n") })
     ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
     ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
 
