@@ -232,7 +232,6 @@ tumor_bam_localization = tumor_bam_localization_task.run()
 split_intervals_task = split_intervals.split_intervals(
   bam = tumor_bam_localization["bam"],
   bai = tumor_bam_localization["bai"],
-  target_list = "/mnt/j/proj/cnv/20201018_hapseg2/exome/broad_custom_exome_v1.Homo_sapiens_assembly19.targets.interval_list.noheader",
   interval_type = "bed",
 )
 
@@ -240,7 +239,15 @@ split_intervals_results = split_intervals_task.run()
 
 # shim task to transform split_intervals files into subset parameters for covcollect task
 
-# TODO
+#@prefect.task
+def interval_gather(interval_files):
+    ints = []
+    for f in interval_files:
+        ints.append(pd.read_csv(f, sep = "\t", header = None, names = ["chr", "start", "end"]))
+    return pd.concat(ints).sort_values(["chr", "start", "end"])
+
+subset_intervals = interval_gather(split_intervals_results["interval_files"])
+
 
 # get coverage
 
@@ -254,9 +261,9 @@ cov_collect_task = cov_collect.Covcollect(
     bam = tumor_bam_localization["bam"],
     bai = tumor_bam_localization["bai"],
     intervals = "/mnt/j/proj/cnv/20201018_hapseg2/exome/broad_custom_exome_v1.Homo_sapiens_assembly19.targets.interval_list.noheader",
-    subset_chr = 0,
-    subset_start = 0,
-    subset_end = 1000000,
+    subset_chr = subset_intervals["chr"],
+    subset_start = subset_intervals["start"],
+    subset_end = subset_intervals["end"],
   )
 )
 
