@@ -49,18 +49,18 @@ class Cov_DP:
         self._init_segments()
 
         # initialize all but first segment to be unassigned
-        self.cluster_assignments = np.ones(self.num_segments) * -1
+        self.cluster_assignments = np.ones(self.num_segments, dtype = int) * -1
         self.cluster_assignments[0] = 1
         self.cluster_counts = sc.SortedDict({1: 1})
-        self.unassigned_segs = sc.Sorted_list(self.cluster_assignments[self.cluster_assignments == -1])
+        self.unassigned_segs = sc.SortedList(np.r_[1:self.num_segments])
         self.cluster_dict = sc.SortedDict({1: sc.SortedSet([0])})
-        self.cluster_MLs = sc.SortedDict({1, self._ML_cluster([0])})
+        self.cluster_MLs = sc.SortedDict({1: self._ML_cluster([0])})
 
         # containers for saving the MCMC trace
         self.clusters_to_segs = []
         self.segs_to_clusters = []
 
-        self.alpha = 0.1
+        self.alpha = 0.4
 
     # initialize each segment object with its data
     def _init_segments(self):
@@ -85,7 +85,8 @@ class Cov_DP:
         C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
         mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, C, ret_hess=True)
         ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt)
-
+        
+        #print('clust set: ', cluster_set, 'll: ', ll_opt, 'lap approx: ', self._get_laplacian_approx(H_opt))
         return ll_opt + self._get_laplacian_approx(H_opt)
 
     @staticmethod
@@ -93,7 +94,7 @@ class Cov_DP:
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-H))) / 2
 
     def stats_optimizer(self, r, C, ret_hess=False):
-        endog = np.exp(np.log(r - (C @ self.beta).flatten()))
+        endog = np.exp(np.log(r) - (C @ self.beta).flatten())
         exog = np.ones(r.shape[0])
         sNB = statsNB(endog, exog)
         res = sNB.fit(disp=0)
@@ -103,27 +104,32 @@ class Cov_DP:
         else:
             return res.params[0], -np.log(res.params[1])
 
-    def run(self, n_iter=50):
+    def run(self, n_iter=300):
 
         self.burned_in = False
 
         n_it = 0
         n_it_last = 0
 
-        while len(self.segs_to_clusters) < n_iter:
+        while n_it < n_iter:
+        #while len(self.segs_to_clusters) < n_iter:
 
             # status update
-            if not n_it % 100:
+            if not n_it % 25:
                 print("n unassigned: {}".format(len(self.unassigned_segs)))
 
             # pick either a segment or a cluster at random
 
             # pick segment
             if np.random.rand() < 1:
-                segID = np.random.choice(range(self.num_segments))
+                if len(self.unassigned_segs) > 0 and len(self.unassigned_segs)/self.num_segments < 0.1 and np.random.rand() < 0.5:
+                    segID = np.random.choice(self.unassigned_segs)
+                else:
+                    segID = np.random.choice(range(self.num_segments))
+                
                 # get cluster assignment of S
                 clustID = self.cluster_assignments[segID]
-
+                #print(segID, clustID)
                 # compute ML of AB = Cs (cached)
                 if clustID == -1:
                     ML_AB = 0
@@ -137,51 +143,61 @@ class Cov_DP:
                 elif self.cluster_counts[clustID] == 1:
                     ML_A = 0
                 else:
-                    ML_A = self._ML_cluster(self.cluster_dict[clustID].difference(clustID))
+            #        print(clustID, segID)
+             #       print(self.cluster_dict[clustID].difference([segID]))
+                    ML_A = self._ML_cluster(self.cluster_dict[clustID].difference([segID]))
 
                 # compute ML of S on its own
-                ML_S = self._ML_cluster([clustID])
+                ML_S = self._ML_cluster([segID])
 
                 # compute ML of every other cluster C = Ck, k != s (cached)
                 # for now were also allowing it to chose to stay in current cluster
                 #ML_C = np.array([ML for (ID, ML) in self.cluster_MLs.items() if ID != clustID])
-                ML_C = np.array([ML if ID in self.cluster_MLs for (ID, ML) in self.cluster_MLs.items()])
-
+                #ML_C = np.array([ML if ID in self.cluster_MLs for (ID, ML) in self.cluster_MLs.items()])
+                ML_C = np.array([ML for (ID, ML) in self.cluster_MLs.items()])
+                
                 # compute ML of every cluster if S joins
-                ML_BC = np.array([self._ML_cluster(self.cluster_dict[k].union(clustID))
+                ML_BC = np.array([self._ML_cluster(self.cluster_dict[k].union([segID]))
                                   for k in self.cluster_counts.keys()])
-
+                #print('ml_A: ', ML_A)
+                #print('ml_AB: ', ML_AB)
+                #print('ml_BC: ', ML_BC)
+                #print('ml_C: ', ML_C)
+                #print('ml_s: ', ML_S)
                 # likelihood ratios of S joining each other cluster S -> Ck
                 ML_rat_BC = ML_A + ML_BC - (ML_AB + ML_C)
 
                 # if cluster is unassigned we set the ML ratio to 1 for staying in its own cluster
+                #print(ML_rat_BC)
                 if clustID > -1:
-                    ML_rat_BC[clustID] = 1
-
+                    ML_rat_BC[clustID -1] = 1
+                
                 # compute ML of S starting a new cluster
                 ML_new = ML_A + ML_S - ML_AB
 
                 ML_rat = np.r_[ML_rat_BC, ML_new]
+                #print('ml_rat: ', ML_rat)
 
                 # compute prior distribution
-                c_counts = [v for k, v in self.cluster_counts.items() if k != clustID]
-                c_s = self.cluster_counts[clustID]
-                p_ct = c_counts / (self.alpha + c_counts.sum() + c_s)
-                pct_new = self.alpha / (self.alpha + c_counts.sum() + c_s)
+                c_counts = np.array([v for k, v in self.cluster_counts.items()])
+                p_ct = c_counts / (self.alpha + c_counts.sum())
+                pct_new = self.alpha / (self.alpha + c_counts.sum())
                 p_ct = np.r_[p_ct, pct_new]
-
+                
+                #print(p_ct)
                 # construct transition probability distribution and draw from it
                 MLs_max = ML_rat.max()
                 choice_p = np.exp(ML_rat - MLs_max + np.log(p_ct)) / np.exp(
                     ML_rat - MLs_max + np.log(p_ct)).sum()
+                #print('choice_p: ', choice_p)
                 choice_idx = np.random.choice(
-                    np.r_[1:len(ML_rat)],
+                    np.r_[1:len(ML_rat) + 1],
                     p=choice_p
                 )
-
+                
                 # idx num_clusters + 1 is equivalent to starting a new cluster
                 if choice_idx == len(self.cluster_dict.keys()) + 1:
-                    print('starting new cluster')
+                    print('{} starting new cluster {}'.format(segID, choice_idx))
                     # check if cluster was previously assigned
                     if clustID > -1:
                         # if the segment used to occupy a cluster by itself, do nothing
@@ -190,7 +206,6 @@ class Cov_DP:
 
                         # if seg was previously assigned remove it from previous cluster
                         self.cluster_counts[clustID] -= 1
-                        self.unassigned_segs.discard(segID)
                         self.cluster_dict[clustID].discard(segID)
 
                         self.cluster_MLs[choice_idx] = ML_A
@@ -204,24 +219,33 @@ class Cov_DP:
                     self.cluster_MLs[choice_idx] = ML_S
 
                 else:
+                    # if remaining in same cluster, skip
+                    if clustID == choice_idx:
+                        print('{} staying in current cluster'.format(clustID))
+                        n_it += 1
+                        continue
                     # joining existing cluster
-                    print('joining cluster {}'.format(choice_idx))
+                    print('{} joining cluster {}'.format(segID, choice_idx))
+                    
+                    #update new cluster with additional segment
                     self.cluster_assignments[segID] = choice_idx
                     self.cluster_counts[choice_idx] += 1
                     self.cluster_dict[choice_idx].add(segID)
-                    self.cluster_MLs[choice_idx] = ML_BC[choice_idx]
+                    self.cluster_MLs[choice_idx] = ML_BC[choice_idx - 1]
 
-                    # if seg was previously assigned remove it from previous cluster
+                    # if seg was previously assigned we need to update its previous cluster
                     if clustID > -1:
                         # if segment was previously alone in cluster, that cluster will be destroyed and index
                         # will be taken by the last cluster idx
                         if self.cluster_counts[clustID] == 1:
                             last_clust = max(self.cluster_counts.keys())
+                            print('moving {} to {}'.format(last_clust, clustID))
                             if last_clust != clustID:
                                 # move last cluster to empty cluster idx
                                 self.cluster_counts[clustID] = self.cluster_counts[last_clust]
                                 self.cluster_dict[clustID] = self.cluster_dict[last_clust].copy()
                                 self.cluster_MLs[clustID] = self.cluster_MLs[last_clust]
+                                self.cluster_assignments[self.cluster_assignments == last_clust] = clustID
 
                             del self.cluster_counts[last_clust]
                             del self.cluster_dict[last_clust]
