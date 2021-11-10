@@ -268,3 +268,13 @@ cov_collect_task = cov_collect.Covcollect(
 )
 
 cov_collect_results = cov_collect_task.run()
+
+# gather coverage
+cov_gather = wolf.Task(
+  name = "gather_coverage",
+  inputs = { "coverage_beds" : [cov_collect_results["coverage"]] },
+  script = """cat $(cat ${coverage_beds}) > coverage_cat.bed""",
+  outputs = { "coverage" : "coverage_cat.bed" }
+)
+
+cov_gather_results = cov_gather.run()
