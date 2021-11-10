@@ -35,6 +35,11 @@ split_intervals = wolf.ImportTask(
   task_name = "split_intervals"
 )
 
+cov_collect = wolf.ImportTask(
+  task_path = "/mnt/j/proj/cnv/20210326_coverage_collector", # TODO: make remote
+  task_name = "covcollect"
+)
+
 def workflow(
   callstats_file = None,
 
@@ -61,20 +66,21 @@ def workflow(
         ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
         ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
 
-        genetic_map_file = "/home/jhess/Downloads/Eagle_v2.4.1/tables/genetic_map_hg38_withX.txt.gz",
+        genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
 
         # reference panel
         **ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
-      ),
-      run_locally = True
+      )
     )
 
     #
     # localize BAMs to RODISK
     if tumor_bam is not None and tumor_bai is not None:
         tumor_bam_localization_task = wolf.localization.BatchLocalDisk(
-          "bam" : tumor_bam,
-          "bai" : tumor_bai,
+          files = {
+            "bam" : tumor_bam,
+            "bai" : tumor_bai,
+          }
         )
         collect_tumor_coverage = True
     elif tumor_coverage_bed is not None:
@@ -85,8 +91,10 @@ def workflow(
     use_normal_coverage = True
     if normal_bam is not None and normal_bai is not None:
         normal_bam_localization_task = wolf.localization.BatchLocalDisk(
-          "bam" : normal_bam,
-          "bai" : normal_bai,
+          files = {
+            "bam" : normal_bam,
+            "bai" : normal_bai
+          }
         )
         collect_normal_coverage = True
     elif normal_coverage_bed is not None:
