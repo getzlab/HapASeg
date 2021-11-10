@@ -105,5 +105,5 @@ class Hapaseg_allelic_DP(wolf.Task):
       "seg_plot" : "figures/allelic_imbalance_preDP.png",
       "clust_plot" : "figures/allelic_imbalance_postDP.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v471"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v481"
     resources = { "mem" : "5G" }
