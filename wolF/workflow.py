@@ -108,19 +108,46 @@ def workflow(
 
     # tumor
     if collect_tumor_coverage:
-        pass
         # create scatter intervals
+        split_intervals_task = split_intervals.split_intervals(
+          bam = tumor_bam_localization_task["bam"],
+          bai = tumor_bam_localization_task["bai"],
+          interval_type = "bed",
+        )
+
+        # shim task to transform split_intervals files into subset parameters for covcollect task
+        @prefect.task
+        def interval_gather(interval_files):
+            ints = []
+            for f in interval_files:
+                ints.append(pd.read_csv(f, sep = "\t", header = None, names = ["chr", "start", "end"]))
+            return pd.concat(ints).sort_values(["chr", "start", "end"])
+
+        subset_intervals = interval_gather(split_intervals_task["interval_files"])
 
         # dispatch coverage scatter
-        #tumor_coverage_scatter_task = ...
+        tumor_cov_collect_task = cov_collect.Covcollect(
+          inputs = dict(
+            bam = tumor_bam_localization_task["bam"],
+            bai = tumor_bam_localization_task["bai"],
+            intervals = target_list,
+            subset_chr = subset_intervals["chr"],
+            subset_start = subset_intervals["start"],
+            subset_end = subset_intervals["end"],
+          )
+        )
 
         # gather tumor coverage
-        #tumor_coverage_gather_task = ...
+        tumor_cov_gather_task = wolf.Task(
+          name = "gather_coverage",
+          inputs = { "coverage_beds" : [tumor_cov_collect_task["coverage"]] },
+          script = """cat $(cat ${coverage_beds}) > coverage_cat.bed""",
+          outputs = { "coverage" : "coverage_cat.bed" }
+        )
 
     # load from supplied BED file
     else:
-        # tumor_coverage_gather_task = { "coverage_bed" : tumor_coverage_bed }
-        pass
+        tumor_cov_gather_task = { "coverage" : tumor_coverage_bed }
 
     # normal
     #if collect_normal_coverage:
