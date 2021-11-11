@@ -227,7 +227,7 @@ class Cov_DP:
                     # joining existing cluster
                     print('{} joining cluster {}'.format(segID, choice_idx))
                     
-                    #update new cluster with additional segment
+                    # update new cluster with additional segment
                     self.cluster_assignments[segID] = choice_idx
                     self.cluster_counts[choice_idx] += 1
                     self.cluster_dict[choice_idx].add(segID)
@@ -258,5 +258,60 @@ class Cov_DP:
                             self.cluster_MLs[choice_idx] = ML_A
                     else:
                         self.unassigned_segs.discard(segID)
+
+            # pick cluster to merge
+            else:
+                clust_pick = np.random.choice(self.cluster_dict.keys())
+
+                # get ML of this cluster merged with each of the other existing clusters
+                ML_join = [self._ML_cluster(self.cluster_dict[i]).union(self.cluster_dict[clust_pick])
+                           if i != clust_pick else self.cluster_MLs[i] for i in self.cluster_dict.keys()]
+                ML_ratio = np.array(ML_join) - np.array(self.cluster_MLs.values())
+                p_ct = np.array(self.cluster_counts.values())
+                p_ct = p_ct / (self.alpha + p_ct.sum())
+
+                MLs_max = ML_ratio.max()
+                choice_p = np.exp(ML_ratio - MLs_max + np.log(p_ct)) / np.exp(
+                    ML_ratio - MLs_max + np.log(p_ct)).sum()
+                choice_idx = np.random.choice(
+                    np.r_[1:len(ML_ratio) + 1],
+                    p=choice_p
+                )
+
+                if choice_idx == clust_pick:
+                    # we've chosen to stay in the same cluster
+                    print('cluster {} decided not to merge'.format(clust_pick))
+
+                else:
+                    print('cluster {} merging with {}'.format(clust_pick, choice_idx))
+                    
+                    # we need to merge clust_pick and choice_idx which we do by merging to smaller cluster idx
+                    # and then swapping the last cluster into the empty index (unless it was already last)
+                    new_clustID = min(clust_pick, choice_idx)
+                    vacatingID = max(clust_pick, choice_idx)
+
+                    # move vacatingID to newclustID
+                    # update new cluster with additional segments
+                    vacating_segs = self.cluster_dict[vacatingID]
+                    self.cluster_assignments[vacating_segs] = new_clustID
+                    self.cluster_counts[new_clustID] += len(vacating_segs)
+                    self.cluster_dict[new_clustID] = self.cluster_dict[new_clustID].union(vacating_segs)
+                    self.cluster_MLs[new_clustID] = ML_join[choice_idx - 1]
+
+                    # now we need to deal with the vacated cluster
+                    last_clust = max(self.cluster_counts.keys())
+                    if vacatingID != last_clust:
+                        # if its not the last cluster we need to swap the last cluster with the vacated one
+
+                        # move last cluster to empty cluster idx
+                        self.cluster_counts[vacatingID] = self.cluster_counts[last_clust]
+                        self.cluster_dict[vacatingID] = self.cluster_dict[last_clust].copy()
+                        self.cluster_MLs[vacatingID] = self.cluster_MLs[last_clust]
+                        self.cluster_assignments[self.cluster_assignments == last_clust] = vacatingID
+
+                    # either way we delete last cluster
+                    del self.cluster_counts[last_clust]
+                    del self.cluster_dict[last_clust]
+                    del self.cluster_MLs[last_clust]
 
             n_it += 1
