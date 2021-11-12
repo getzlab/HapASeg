@@ -208,7 +208,7 @@ class Cov_DP:
                         self.cluster_counts[clustID] -= 1
                         self.cluster_dict[clustID].discard(segID)
 
-                        self.cluster_MLs[choice_idx] = ML_A
+                        self.cluster_MLs[clustID] = ML_A
                     else:
                         self.unassigned_segs.discard(segID)
 
