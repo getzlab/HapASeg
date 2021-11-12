@@ -60,7 +60,7 @@ class Cov_DP:
         self.clusters_to_segs = []
         self.segs_to_clusters = []
 
-        self.alpha = 0.4
+        self.alpha = 0.1
 
     # initialize each segment object with its data
     def _init_segments(self):
@@ -115,13 +115,13 @@ class Cov_DP:
         #while len(self.segs_to_clusters) < n_iter:
 
             # status update
-            if not n_it % 25:
+            if not n_it % 100:
                 print("n unassigned: {}".format(len(self.unassigned_segs)))
 
             # pick either a segment or a cluster at random
 
             # pick segment
-            if np.random.rand() < 1:
+            if np.random.rand() < 0.5:
                 if len(self.unassigned_segs) > 0 and len(self.unassigned_segs)/self.num_segments < 0.1 and np.random.rand() < 0.5:
                     segID = np.random.choice(self.unassigned_segs)
                 else:
@@ -170,7 +170,7 @@ class Cov_DP:
                 # if cluster is unassigned we set the ML ratio to 1 for staying in its own cluster
                 #print(ML_rat_BC)
                 if clustID > -1:
-                    ML_rat_BC[clustID -1] = 1
+                    ML_rat_BC[clustID -1] = 0
                 
                 # compute ML of S starting a new cluster
                 ML_new = ML_A + ML_S - ML_AB
@@ -197,7 +197,7 @@ class Cov_DP:
                 
                 # idx num_clusters + 1 is equivalent to starting a new cluster
                 if choice_idx == len(self.cluster_dict.keys()) + 1:
-                    print('{} starting new cluster {}'.format(segID, choice_idx))
+                    #print('{} starting new cluster {}'.format(segID, choice_idx))
                     # check if cluster was previously assigned
                     if clustID > -1:
                         # if the segment used to occupy a cluster by itself, do nothing
@@ -221,11 +221,11 @@ class Cov_DP:
                 else:
                     # if remaining in same cluster, skip
                     if clustID == choice_idx:
-                        print('{} staying in current cluster'.format(clustID))
+                       # print('{} staying in current cluster'.format(clustID))
                         n_it += 1
                         continue
                     # joining existing cluster
-                    print('{} joining cluster {}'.format(segID, choice_idx))
+                    #print('{} joining cluster {}'.format(segID, choice_idx))
                     
                     # update new cluster with additional segment
                     self.cluster_assignments[segID] = choice_idx
@@ -239,7 +239,7 @@ class Cov_DP:
                         # will be taken by the last cluster idx
                         if self.cluster_counts[clustID] == 1:
                             last_clust = max(self.cluster_counts.keys())
-                            print('moving {} to {}'.format(last_clust, clustID))
+                            #print('moving {} to {}'.format(last_clust, clustID))
                             if last_clust != clustID:
                                 # move last cluster to empty cluster idx
                                 self.cluster_counts[clustID] = self.cluster_counts[last_clust]
@@ -264,7 +264,7 @@ class Cov_DP:
                 clust_pick = np.random.choice(self.cluster_dict.keys())
 
                 # get ML of this cluster merged with each of the other existing clusters
-                ML_join = [self._ML_cluster(self.cluster_dict[i]).union(self.cluster_dict[clust_pick])
+                ML_join = [self._ML_cluster(self.cluster_dict[i].union(self.cluster_dict[clust_pick]))
                            if i != clust_pick else self.cluster_MLs[i] for i in self.cluster_dict.keys()]
                 ML_ratio = np.array(ML_join) - np.array(self.cluster_MLs.values())
                 p_ct = np.array(self.cluster_counts.values())
@@ -278,12 +278,9 @@ class Cov_DP:
                     p=choice_p
                 )
 
-                if choice_idx == clust_pick:
-                    # we've chosen to stay in the same cluster
-                    print('cluster {} decided not to merge'.format(clust_pick))
-
-                else:
-                    print('cluster {} merging with {}'.format(clust_pick, choice_idx))
+                if choice_idx != clust_pick:
+                    
+                   # print('cluster {} merging with {}'.format(clust_pick, choice_idx))
                     
                     # we need to merge clust_pick and choice_idx which we do by merging to smaller cluster idx
                     # and then swapping the last cluster into the empty index (unless it was already last)
@@ -314,4 +311,8 @@ class Cov_DP:
                     del self.cluster_dict[last_clust]
                     del self.cluster_MLs[last_clust]
 
+                #else:
+                    # we've chosen to stay in the same cluster
+                    #print('cluster {} decided not to merge'.format(clust_pick))
+            
             n_it += 1
