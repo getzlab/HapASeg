@@ -609,3 +609,42 @@ class NB_MCMC:
                     self.num_segments[cluster_pick] -= 1
 
             self.ll_iter.append(self.ll_clusters.sum())
+        
+    def update_beta(self, total_exposure):
+        endog = np.exp(np.log(self.r.flatten()) - total_exposure)
+        exog = np.c_[np.ones(self.r.shape[0]), self.C]
+        start_params = np.r_[self.beta.flatten(), 1]
+        sNB = statsNB(endog, exog, start_params=start_params)
+        res = sNB.fit(start_params=start_params, disp=0)
+        return res.params[:-1]
+    
+    def save_results(self):
+        #convert saved Cov_MCMC cluster results into global result arrays
+        seg_samples = np.zeros((self.Pi.shape[0], len(self.F_samples)))
+        mu_i_samples = np.zeros((self.Pi.shape[0], len(self.F_samples)))
+        mu_global = np.zeros(self.Pi.shape[0])
+
+        pi_argmax = self.Pi.argmax(1)
+        for it in range(len(self.F_samples)):
+            global_seg_counter = 0
+            for c in range(len(self.F_samples[it])):
+                og_positions = np.where(pi_argmax == c)[0]
+                if it == 0:
+                    mu_global[og_positions] = self.clusters[c].mu
+                seg_intervals = np.array(self.F_samples[it][c]).reshape(-1,2)
+                mu_i_samples[og_positions, it] = self.mu_i_samples[it][c]
+                for st, en in seg_intervals:
+                    seg_ind = og_positions[st:en]
+                    seg_samples[seg_ind, it] = global_seg_counter
+                    global_seg_counter += 1
+        
+        overall_exposure = mu_global + mu_i_samples[:,-1]
+        global_beta = update_beta(overall_exposure)
+        
+        save_path = './coverage_results.h5'
+        print('saving results to {}'.format(save_path))
+        f_out = h5py.File(save_path, 'a')
+        f_out.create_dataset('segment_IDs', data = seg_samples)
+        f_out.create_dataset('mu_i_samples', data = mu_i_samples)
+        f.out.create_dataset('beta', data=global_beta)
+
