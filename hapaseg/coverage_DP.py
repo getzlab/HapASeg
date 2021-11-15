@@ -119,7 +119,7 @@ class Cov_DP:
                 print("n unassigned: {}".format(len(self.unassigned_segs)))
 
             # pick either a segment or a cluster at random
-
+            
             # pick segment
             if np.random.rand() < 0.5:
                 if len(self.unassigned_segs) > 0 and len(self.unassigned_segs)/self.num_segments < 0.1 and np.random.rand() < 0.5:
@@ -221,7 +221,7 @@ class Cov_DP:
                 else:
                     # if remaining in same cluster, skip
                     if clustID == choice_idx:
-                       # print('{} staying in current cluster'.format(clustID))
+                     #   print('{} staying in current cluster'.format(clustID))
                         n_it += 1
                         continue
                     # joining existing cluster
@@ -232,14 +232,12 @@ class Cov_DP:
                     self.cluster_counts[choice_idx] += 1
                     self.cluster_dict[choice_idx].add(segID)
                     self.cluster_MLs[choice_idx] = ML_BC[choice_idx - 1]
-
                     # if seg was previously assigned we need to update its previous cluster
                     if clustID > -1:
                         # if segment was previously alone in cluster, that cluster will be destroyed and index
                         # will be taken by the last cluster idx
                         if self.cluster_counts[clustID] == 1:
                             last_clust = max(self.cluster_counts.keys())
-                            #print('moving {} to {}'.format(last_clust, clustID))
                             if last_clust != clustID:
                                 # move last cluster to empty cluster idx
                                 self.cluster_counts[clustID] = self.cluster_counts[last_clust]
@@ -255,7 +253,7 @@ class Cov_DP:
                             # otherwise update former cluster
                             self.cluster_counts[clustID] -= 1
                             self.cluster_dict[clustID].discard(segID)
-                            self.cluster_MLs[choice_idx] = ML_A
+                            self.cluster_MLs[clustID] = ML_A
                     else:
                         self.unassigned_segs.discard(segID)
 
@@ -280,7 +278,7 @@ class Cov_DP:
 
                 if choice_idx != clust_pick:
                     
-                   # print('cluster {} merging with {}'.format(clust_pick, choice_idx))
+                    #print('cluster {} merging with {}'.format(clust_pick, choice_idx))
                     
                     # we need to merge clust_pick and choice_idx which we do by merging to smaller cluster idx
                     # and then swapping the last cluster into the empty index (unless it was already last)
