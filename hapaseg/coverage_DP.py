@@ -36,7 +36,7 @@ def LSE(x):
 #         self.C = np.r_[self.C, seg.C]
 
 # for now input will be coverage_df with global segment id column
-class Cov_DP:
+class Run_Cov_DP:
     def __init__(self, cov_df, beta):
         self.cov_df = cov_df
         self.seg_id_col = self.cov_df.columns.get_loc('segment_ID')
@@ -202,6 +202,7 @@ class Cov_DP:
                     if clustID > -1:
                         # if the segment used to occupy a cluster by itself, do nothing
                         if self.cluster_counts[clustID] == 1:
+                            n_it += 1
                             continue
 
                         # if seg was previously assigned remove it from previous cluster
@@ -259,6 +260,11 @@ class Cov_DP:
 
             # pick cluster to merge
             else:
+                # it only makes sense to try joining two clusters if there are at least two of them!
+                if len(self.clust_counts) < 2:
+                    n_it += 1
+                    continue
+
                 clust_pick = np.random.choice(self.cluster_dict.keys())
 
                 # get ML of this cluster merged with each of the other existing clusters
@@ -280,18 +286,20 @@ class Cov_DP:
                     
                     #print('cluster {} merging with {}'.format(clust_pick, choice_idx))
                     
-                    # we need to merge clust_pick and choice_idx which we do by merging to smaller cluster idx
-                    # and then swapping the last cluster into the empty index (unless it was already last)
-                    new_clustID = min(clust_pick, choice_idx)
-                    vacatingID = max(clust_pick, choice_idx)
+                    # we need to merge clust_pick and choice_idx which we do by merging to the cluster with more
+                    # segments and then swapping the last cluster into the empty index (unless it was already last)
+                    tup = (clust_pick, choice_idx)
+                    larger_cluster = np.argmax([self.cluster_counts[clust_pick], self.cluster_counts[choice_idx]])
+                    merged_ID = tup[larger_cluster]
+                    vacatingID = tup[int(not larger_cluster)]
 
                     # move vacatingID to newclustID
                     # update new cluster with additional segments
                     vacating_segs = self.cluster_dict[vacatingID]
-                    self.cluster_assignments[vacating_segs] = new_clustID
-                    self.cluster_counts[new_clustID] += len(vacating_segs)
-                    self.cluster_dict[new_clustID] = self.cluster_dict[new_clustID].union(vacating_segs)
-                    self.cluster_MLs[new_clustID] = ML_join[choice_idx - 1]
+                    self.cluster_assignments[vacating_segs] = merged_ID
+                    self.cluster_counts[merged_ID] += len(vacating_segs)
+                    self.cluster_dict[merged_ID] = self.cluster_dict[merged_ID].union(vacating_segs)
+                    self.cluster_MLs[merged_ID] = ML_join[choice_idx - 1]
 
                     # now we need to deal with the vacated cluster
                     last_clust = max(self.cluster_counts.keys())
