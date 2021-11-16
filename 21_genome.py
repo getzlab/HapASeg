@@ -47,3 +47,14 @@ with wolf.Workflow(workflow = workflow.workflow, conf = { "clust_frac" : 0.5 }, 
       tumor_bai = "gs://fc-secure-66f5eeb9-27c4-4e5c-b9d6-0519aca5889d/3f2e4ec2-5eac-4ee2-9180-6896f354b423/gdc_api_file_download/f41de056-a7a2-4280-8ee6-6fa78f538711/call-download_file/3ed03341-56bc-4192-a638-ca03de4778e7_wgs_gdc_realn.bai",
       target_list = 200
     )
+
+# alchemist test
+with wolf.Workflow(workflow = workflow.workflow, conf = { "clust_frac" : 0.5 }, common_task_opts = { "retry" : 2 } ) as w:
+    w.run(
+      RUN_NAME = "ALCH_000b5e0e",
+      tumor_bam = "gs://fc-secure-e2772064-386d-4911-b242-d6ade82bf172/a07b3704-7a4f-440b-8a70-205c72719674/gdc_api_file_download/89fcac22-33aa-4fe4-ad8f-1bcf35b1d301/call-download_file/554038ea-f80d-495a-b3e3-5e8869cad2ec_wgs_gdc_realn.bam",
+      tumor_bai = "gs://fc-secure-e2772064-386d-4911-b242-d6ade82bf172/9048149b-3da3-44e5-974c-3ecf4759777b/gdc_api_file_download/f6184583-3c35-4910-89a6-a721c1185442/call-download_file/554038ea-f80d-495a-b3e3-5e8869cad2ec_wgs_gdc_realn.bai",
+      normal_bam = "gs://fc-secure-e2772064-386d-4911-b242-d6ade82bf172/3536bc08-4783-4827-8763-9e65a87e1508/gdc_api_file_download/ecf26baf-01f2-4907-bef2-3bcab6304345/call-download_file/98e061cd-0586-4e56-85fb-c6cc6688dbff_wgs_gdc_realn.bam",
+      normal_bai = "gs://fc-secure-e2772064-386d-4911-b242-d6ade82bf172/360c5959-3827-4b24-92e3-d57dbc5de2f6/gdc_api_file_download/15788922-9cf8-4c83-8040-47fa60b7d374/call-download_file/98e061cd-0586-4e56-85fb-c6cc6688dbff_wgs_gdc_realn.bai",
+      target_list = 200
+    )
