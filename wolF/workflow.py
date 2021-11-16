@@ -17,6 +17,12 @@ het_pulldown = wolf.ImportTask(
   task_name = "het_pulldown"
 )
 
+mutect1 = wolf.ImportTask(
+  #task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
+  task_path = "/home/jhess/j/proj/mut/MuTect1/MuTect1_TOOL",
+  task_name = "mutect1"
+)
+
 # for phasing
 phasing = wolf.ImportTask(
   task_path = "/home/jhess/j/proj/cnv/20210901_phasing_TOOL", # TODO: make remote
@@ -154,14 +160,51 @@ def workflow(
 
     #
     # get het site coverage/genotypes from callstats
-    hp_task = het_pulldown.get_het_coverage_from_callstats(
-      callstats_file = callstats_file,
-      common_snp_list = common_snp_list,
-      ref_fasta = localization_task["ref_fasta"],
-      ref_fasta_idx = localization_task["ref_fasta_idx"],
-      ref_fasta_dict = localization_task["ref_fasta_dict"],
-      dens_cutoff = 0.58 # TODO: set dynamically
-    )
+    if callstats_file is not None:
+        hp_task = het_pulldown.get_het_coverage_from_callstats(
+          callstats_file = callstats_file,
+          common_snp_list = common_snp_list,
+          ref_fasta = localization_task["ref_fasta"],
+          ref_fasta_idx = localization_task["ref_fasta_idx"],
+          ref_fasta_dict = localization_task["ref_fasta_dict"],
+          dens_cutoff = 0.58 # TODO: set dynamically
+        )
+
+    # otherwise, run M1 and get it from the BAM
+    elif callstats_file is None and tumor_bam is not None and normal_bam is not None:
+        m1_task = mutect1.mutect1(inputs = dict(
+          pairName = "het_coverage",
+          caseName = "tumor",
+          ctrlName = "normal",
+
+          t_bam = tumor_bam_localization_task["bam"],
+          t_bai = tumor_bam_localization_task["bai"],
+          n_bam = normal_bam_localization_task["bam"],
+          n_bai = normal_bam_localization_task["bai"],
+
+          fracContam = 0,
+
+          refFasta = localization_task["ref_fasta"],
+          refFastaIdx = localization_task["ref_fasta_idx"],
+          refFastaDict = localization_task["ref_fasta_dict"],
+
+          intervals = split_intervals_task["interval_files"]
+        ))
+
+        hp_task = het_pulldown.get_het_coverage_from_callstats(
+          callstats_file = m1_task["mutect1_cs"],
+          common_snp_list = common_snp_list,
+          ref_fasta = localization_task["ref_fasta"],
+          ref_fasta_idx = localization_task["ref_fasta_idx"],
+          ref_fasta_dict = localization_task["ref_fasta_dict"],
+          dens_cutoff = 0.58 # TODO: set dynamically
+        )
+
+        # TODO: gather het pulldown
+        return
+
+    else:
+        raise ValueError("You must either provide a callstats file or tumor+normal BAMs to collect SNP coverage")
 
     #
     # shim task to convert output of het pulldown to VCF
