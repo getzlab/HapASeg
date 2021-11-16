@@ -4,7 +4,12 @@ import sortedcontainers as sc
 import tqdm
 import scipy
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
+import warnings
+from statsmodels.tools.sm_exceptions import ConvergenceWarning, HessianInversionWarning
 
+warnings.simplefilter('ignore', ConvergenceWarning)
+warnings.simplefilter('ignore', HessianInversionWarning)
+np.seterr(divide = 'ignore') 
 
 def LSE(x):
     lmax = np.max(x)
@@ -429,7 +434,7 @@ class AllelicCluster:
         # print('split log mh ratio: ', split_log_ML - join_log_ML + self._log_q_join() - self._log_q_split(pk))
         if np.log(np.random.rand()) < np.minimum(0, split_log_ML - join_log_ML +
                                                     self._log_q_join() - self._log_q_split(pk)):
-            print('split!')
+            #print('split!')
             if debug:
                 self.ll_traces.append(ll_trace)
             # split the segments
@@ -479,7 +484,7 @@ class AllelicCluster:
             self.segments.discard(seg_r)
             del self.segment_lens[seg_r]
             self.segment_lens[seg_l] = ind[1] - ind[0]
-            print('joining!')
+            #print('joining!')
             # update mu_i and lepsi_i values
             self.mu_i_arr[ind[0]:ind[1]] = mu_share
             self.lepsi_i_arr[ind[0]:ind[1]] = lepsi_share
@@ -506,9 +511,15 @@ class NB_MCMC:
         self.n_clusters = Pi.shape[1]
         self.clusters = [None] * self.n_clusters
         self.cluster_sizes = np.array([np.sum(self.c_assignments == i) for i in range(self.n_clusters)])
-        self.cluster_probs = self.cluster_sizes / self.cluster_sizes.sum()
+        self.cluster_probs = np.ones(self.n_clusters) / self.n_clusters
 
         self.burnt_in = False
+        
+        self.num_segments = np.ones(self.n_clusters)
+        
+        self.mu_i_samples = []
+        self.lepsi_i_samples = []
+        self.F_samples = []
 
         self.ll_clusters = np.zeros(self.n_clusters)
         self.ll_iter = []
@@ -526,8 +537,25 @@ class NB_MCMC:
 
             # set initial ll
             self.ll_clusters[k] = new_acluster.get_ll()
+    
+    def save_sample(self):
+        mu_i_save = []
+        lepsi_i_save = []
+        F_save = []
+
+        for clust in self.clusters:
+            mu_i_save.append(clust.mu_i_arr.copy())
+            lepsi_i_save.append(clust.lepsi_i_arr.copy())
+            F_save.append(clust.F.copy())
+        self.mu_i_samples.append(mu_i_save)
+        self.lepsi_i_samples.append(lepsi_i_save)
+        self.F_samples.append(F_save)
 
     def pick_cluster(self):
+        # randomly select clusters with equal probabilites for the first 1k iterations then select based on size
+        # TODO: tweak this to dynamically decide when to switch selection probabilites
+        if self.n_it < 1000:
+            return np.random.choice(range(self.n_clusters))
         return np.random.choice(range(self.n_clusters), p=self.cluster_probs)
 
     def run(self,
@@ -535,31 +563,49 @@ class NB_MCMC:
             debug=False,
             stop_after_burnin=False):
         print("starting MCMC coverage segmentation...")
+        
+        past_it = 0
+
         for n_it in tqdm.tqdm(range(n_iter)):
+            
+            self.n_it = n_it
 
             # check if we have burnt in
-            if n_it > 1000 and not self.burnt_in and not n_it % 100:
+            if n_it > 2000 and not self.burnt_in and not n_it % 100:
                 if np.diff(np.array(self.ll_iter[-500:])).mean() < 0:
                     print('burnt in!')
                     self.burnt_in = True
+                    past_it = n_it
                     if stop_after_burnin:
                         print('Burn-in complete: ll: {} n_it: {}'.format(self.ll_clusters.sum(), n_it))
-                        break
+                        return
 
+           #update cluster probs to reflect number of segments in each cluster
+            if n_it > 1000 and not n_it % 100:
+               self.cluster_probs = self.num_segments / self.num_segments.sum()
+
+            # save dynamicaly thinned chain samples
+            if not n_it % 50 and self.burnt_in and \
+                    n_it - past_it > self.num_segments.sum():
+                self.save_sample()
+                past_it = n_it
+            
             # decide whether to split or join on this iteration
-            # cluster_pick = self.pick_cluster()
-            cluster_pick = 1
+            cluster_pick = self.pick_cluster()
+            #cluster_pick = 1
             if np.random.rand() > 0.5:
                 # split
                 res = self.clusters[cluster_pick].split(debug)
                 # if we made a change, update ll of cluster
                 if res > 0:
                     self.ll_clusters[cluster_pick] = self.clusters[cluster_pick].get_ll()
+                    self.num_segments[cluster_pick] += 1
             else:
                 # join
                 res = self.clusters[cluster_pick].join(debug)
                 # if we made a change, update ll of cluster
                 if res > 0:
                     self.ll_clusters[cluster_pick] = self.clusters[cluster_pick].get_ll()
+                    self.num_segments[cluster_pick] -= 1
 
             self.ll_iter.append(self.ll_clusters.sum())
