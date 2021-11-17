@@ -134,12 +134,17 @@ class Run_Cov_DP:
         #print('clust set: ', cluster_set, 'll: ', ll_opt, 'lap approx: ', self._get_laplacian_approx(H_opt))
         return ll_opt + self._get_laplacian_approx(H_opt)
 
-    def _ML_cluster_prior(self, cluster_set, r_list_old, C_list_old, r_new, C_new):
+    def _ML_cluster_prior(self, cluster_set, r_list_old, C_list_old, r_new=None, C_new=None):
         # aggregate r and C arrays
-        r = np.hstack([r_list_old[i] for i in cluster_set])
-        C = np.concatenate([C_list_old[i] for i in cluster_set])
+        if r_new is not None
+            r = np.r_[np.hstack([r_list_old[i] for i in cluster_set]), r_new]
+            C = np.r_[np.concatenate([C_list_old[i] for i in cluster_set]), C_new]
+        else:
+            r = np.hstack([r_list_old[i] for i in cluster_set])
+            C = np.concatenate([C_list_old[i] for i in cluster_set])
         mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, C, ret_hess=True)
         ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt)
+        return ll_opt + self._get_laplacian_approx(H_opt)
         
     @staticmethod
     def _get_laplacian_approx(H):
@@ -164,8 +169,10 @@ class Run_Cov_DP:
 
             # compute MLs of segment joining each prior cluster with the current r and C for the segID and old r and C
             # lists for the previous segmentation.
-            BC = np.r_[[self._ML_cluster(self.prior_clusters[c].union([segID], self.prior_r_list, self.prior_C_list))
-                        for c in self.prior_clusters.keys()]]
+            BC = np.r_[
+                [self._ML_cluster_prior(self.prior_clusters[c], self.prior_r_list, self.prior_C_list,
+                                        self.segment_r_list[segID], self.segment_C_list[segID])
+                 for c in self.prior_clusters.keys()]]
             S = self._ML_cluster([segID])
             C = np.r_[self.clust_prior_ML.values()]
 
@@ -207,7 +214,8 @@ class Run_Cov_DP:
 
         if self.prior_clusters:
             count_prior = np.r_[self.count_prior_sum.values()] / sample_num
-            self.clust_prior_ML = sc.SortedDict({k: self._ML_cluster(self.prior_clusters[k], self.prior_r_list, self.prior_C_list)
+            self.clust_prior_ML = sc.SortedDict({
+                k: self._ML_cluster_prior(self.prior_clusters[k], self.prior_r_list, self.prior_C_list)
                                                  for k in self.prior_clusters.keys()})
             self.initial_prior_assignment(count_prior)
 
