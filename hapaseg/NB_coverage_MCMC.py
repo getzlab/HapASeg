@@ -507,7 +507,6 @@ class NB_MCMC:
         self.C = C
         self.Pi = Pi
         self.beta = None
-        self.save_dir = save_dir
 
         # for now assume that the Pi vector assigns each bin to exactly one cluster
         self.c_assignments = np.argmax(self.Pi, axis=1)

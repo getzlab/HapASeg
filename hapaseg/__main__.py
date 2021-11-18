@@ -117,7 +117,7 @@ def parse_args():
 
     coverage_dp = subparsers.add_parser("coverage_dp", help="Run DP clustering on coverage segmentations")
     coverage_dp.add_argument("--f_cov_df", help="path to saved filtered coverage dataframe")
-    coverage_dp.add_argument("--cov_mcmc_data", help="path to numpy savez file containing bins to segments array and global beta"))
+    coverage_dp.add_argument("--cov_mcmc_data", help="path to numpy savez file containing bins to segments array and global beta")
     coverage_dp.add_argument("--num_segmentation_samples", type=int, help="number of segmentation samples to use")
     coverage_dp.add_argument("--num_draws", type=int,
                              help="number of thinned draws from the coverage dp to take after burn in")
