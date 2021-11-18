@@ -22,7 +22,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Call somatic copynumber alterations taking advantage of SNP phasing")
 
     parser.add_argument("--output_dir", default=".")
-
+    parser.add_argument("--capy_ref_path", default="/home/opriebe/data/ref/hg19/Homo_sapiens_assembly19.fasta")
     subparsers = parser.add_subparsers(dest="command")
 
     ## run
@@ -138,6 +138,8 @@ def main():
     if not os.path.isdir(args.output_dir):
         os.mkdir(args.output_dir)
     output_dir = os.path.realpath(args.output_dir)
+
+    os.environ["CAPY_REF_FA"] = args.capy_ref_path
 
     if args.command == "run":
         dask_client = dd.Client(n_workers=int(args.n_workers))
