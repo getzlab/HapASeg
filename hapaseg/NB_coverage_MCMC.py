@@ -6,6 +6,7 @@ import scipy
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 import warnings
 from statsmodels.tools.sm_exceptions import ConvergenceWarning, HessianInversionWarning
+import h5py
 
 warnings.simplefilter('ignore', ConvergenceWarning)
 warnings.simplefilter('ignore', HessianInversionWarning)
@@ -609,10 +610,11 @@ class NB_MCMC:
                     self.num_segments[cluster_pick] -= 1
 
             self.ll_iter.append(self.ll_clusters.sum())
-        
+        self.save_results()
+
     def update_beta(self, total_exposure):
         endog = np.exp(np.log(self.r.flatten()) - total_exposure)
-        exog = np.c_[np.ones(self.r.shape[0]), self.C]
+        exog = self.C
         start_params = np.r_[self.beta.flatten(), 1]
         sNB = statsNB(endog, exog, start_params=start_params)
         res = sNB.fit(start_params=start_params, disp=0)
@@ -639,12 +641,13 @@ class NB_MCMC:
                     global_seg_counter += 1
         
         overall_exposure = mu_global + mu_i_samples[:,-1]
-        global_beta = update_beta(overall_exposure)
+        global_beta = self.update_beta(overall_exposure)
         
         save_path = './coverage_results.h5'
         print('saving results to {}'.format(save_path))
         f_out = h5py.File(save_path, 'a')
         f_out.create_dataset('segment_IDs', data = seg_samples)
         f_out.create_dataset('mu_i_samples', data = mu_i_samples)
-        f.out.create_dataset('beta', data=global_beta)
-
+        f_out.create_dataset('beta', data=global_beta)
+        self.cov_df.to_hdf(save_path, key='cov_df')
+        f_out.close()
