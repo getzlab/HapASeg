@@ -455,13 +455,13 @@ class Run_Cov_DP:
                     continue
 
                 clust_pick = np.random.choice(self.cluster_dict.keys())
-                clust_pick_segs = self.cluster_dict[clust_pick]
+                clust_pick_segs = np.r_[self.cluster_dict[clust_pick]].astype(int)
 
                 # get ML of this cluster merged with each of the other existing clusters
                 ML_join = [
                     self._ML_cluster(self.cluster_dict[i].union(clust_pick_segs)) if i != clust_pick else
                     self.cluster_MLs[i] for i in self.cluster_dict.keys()]
-                ML_ratio = np.array(ML_join) - np.array(self.cluster_MLs.values())
+                ML_rat = np.array(ML_join) - np.array(self.cluster_MLs.values())
 
                 prior_diff = []
                 clust_prior_p = 1
@@ -479,7 +479,7 @@ class Run_Cov_DP:
                                (prior_com | prior_null)]]
                     ].astype(int)
 
-                    prior_MLs = np.r_[[self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]], [clust_pick_segs]) if idx != -1 else 0 for idx in prior_idx]] - (self.cluster_MLs[clust_pick] + np.r_[
+                    prior_MLs = np.r_[[self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]], clust_pick_segs) if idx != -1 else 0 for idx in prior_idx]] - (self.cluster_MLs[clust_pick] + np.r_[
                                     [self.clust_prior_ML[self.prior_clusters.keys()[idx]] if idx != -1 else -self.cluster_MLs[clust_pick] for idx in prior_idx]])
 
                     # print('prior_MLs', prior_MLs)
