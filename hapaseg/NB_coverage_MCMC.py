@@ -1,8 +1,7 @@
 import numpy as np
 import scipy.special as ss
 import sortedcontainers as sc
-import tqdm
-import scipy
+import os
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 import warnings
 from statsmodels.tools.sm_exceptions import ConvergenceWarning, HessianInversionWarning
@@ -10,7 +9,8 @@ import h5py
 
 warnings.simplefilter('ignore', ConvergenceWarning)
 warnings.simplefilter('ignore', HessianInversionWarning)
-np.seterr(divide = 'ignore') 
+np.seterr(divide='ignore')
+
 
 def LSE(x):
     lmax = np.max(x)
@@ -435,7 +435,7 @@ class AllelicCluster:
         # print('split log mh ratio: ', split_log_ML - join_log_ML + self._log_q_join() - self._log_q_split(pk))
         if np.log(np.random.rand()) < np.minimum(0, split_log_ML - join_log_ML +
                                                     self._log_q_join() - self._log_q_split(pk)):
-            #print('split!')
+            # print('split!')
             if debug:
                 self.ll_traces.append(ll_trace)
             # split the segments
@@ -485,7 +485,7 @@ class AllelicCluster:
             self.segments.discard(seg_r)
             del self.segment_lens[seg_r]
             self.segment_lens[seg_l] = ind[1] - ind[0]
-            #print('joining!')
+            # print('joining!')
             # update mu_i and lepsi_i values
             self.mu_i_arr[ind[0]:ind[1]] = mu_share
             self.lepsi_i_arr[ind[0]:ind[1]] = lepsi_share
@@ -501,11 +501,13 @@ class AllelicCluster:
 
 class NB_MCMC:
 
-    def __init__(self, r, C, Pi):
+    def __init__(self, n_iter, r, C, Pi, save_dir):
+        self.n_iter = n_iter
         self.r = r
         self.C = C
         self.Pi = Pi
         self.beta = None
+        self.save_dir = save_dir
 
         # for now assume that the Pi vector assigns each bin to exactly one cluster
         self.c_assignments = np.argmax(self.Pi, axis=1)
@@ -515,9 +517,9 @@ class NB_MCMC:
         self.cluster_probs = np.ones(self.n_clusters) / self.n_clusters
 
         self.burnt_in = False
-        
+
         self.num_segments = np.ones(self.n_clusters)
-        
+
         self.mu_i_samples = []
         self.lepsi_i_samples = []
         self.F_samples = []
@@ -538,7 +540,7 @@ class NB_MCMC:
 
             # set initial ll
             self.ll_clusters[k] = new_acluster.get_ll()
-    
+
     def save_sample(self):
         mu_i_save = []
         lepsi_i_save = []
@@ -552,24 +554,23 @@ class NB_MCMC:
         self.lepsi_i_samples.append(lepsi_i_save)
         self.F_samples.append(F_save)
 
-    def pick_cluster(self):
+    def pick_cluster(self, n_it):
         # randomly select clusters with equal probabilites for the first 1k iterations then select based on size
         # TODO: tweak this to dynamically decide when to switch selection probabilites
-        if self.n_it < 1000:
+        if n_it < 1000:
             return np.random.choice(range(self.n_clusters))
         return np.random.choice(range(self.n_clusters), p=self.cluster_probs)
 
     def run(self,
-            n_iter=10000,
             debug=False,
             stop_after_burnin=False):
         print("starting MCMC coverage segmentation...")
-        
+
         past_it = 0
 
-        for n_it in tqdm.tqdm(range(n_iter)):
-            
-            self.n_it = n_it
+        # for n_it in tqdm.tqdm(range(n_iter)):
+        n_it = 0
+        while self.n_iter < len(self.F_samples):
 
             # check if we have burnt in
             if n_it > 2000 and not self.burnt_in and not n_it % 100:
@@ -581,19 +582,19 @@ class NB_MCMC:
                         print('Burn-in complete: ll: {} n_it: {}'.format(self.ll_clusters.sum(), n_it))
                         return
 
-           #update cluster probs to reflect number of segments in each cluster
+            # update cluster probs to reflect number of segments in each cluster
             if n_it > 1000 and not n_it % 100:
-               self.cluster_probs = self.num_segments / self.num_segments.sum()
+                self.cluster_probs = self.num_segments / self.num_segments.sum()
 
             # save dynamicaly thinned chain samples
             if not n_it % 50 and self.burnt_in and \
                     n_it - past_it > self.num_segments.sum():
                 self.save_sample()
                 past_it = n_it
-            
+
             # decide whether to split or join on this iteration
-            cluster_pick = self.pick_cluster()
-            #cluster_pick = 1
+            cluster_pick = self.pick_cluster(n_it)
+            # cluster_pick = 1
             if np.random.rand() > 0.5:
                 # split
                 res = self.clusters[cluster_pick].split(debug)
@@ -619,9 +620,9 @@ class NB_MCMC:
         sNB = statsNB(endog, exog, start_params=start_params)
         res = sNB.fit(start_params=start_params, disp=0)
         return res.params[:-1]
-    
+
     def save_results(self):
-        #convert saved Cov_MCMC cluster results into global result arrays
+        # convert saved Cov_MCMC cluster results into global result arrays
         seg_samples = np.zeros((self.Pi.shape[0], len(self.F_samples)))
         mu_i_samples = np.zeros((self.Pi.shape[0], len(self.F_samples)))
         mu_global = np.zeros(self.Pi.shape[0])
@@ -633,21 +634,22 @@ class NB_MCMC:
                 og_positions = np.where(pi_argmax == c)[0]
                 if it == 0:
                     mu_global[og_positions] = self.clusters[c].mu
-                seg_intervals = np.array(self.F_samples[it][c]).reshape(-1,2)
+                seg_intervals = np.array(self.F_samples[it][c]).reshape(-1, 2)
                 mu_i_samples[og_positions, it] = self.mu_i_samples[it][c]
                 for st, en in seg_intervals:
                     seg_ind = og_positions[st:en]
                     seg_samples[seg_ind, it] = global_seg_counter
                     global_seg_counter += 1
-        
-        overall_exposure = mu_global + mu_i_samples[:,-1]
+
+        overall_exposure = mu_global + mu_i_samples[:, -1]
         global_beta = self.update_beta(overall_exposure)
-        
-        save_path = './coverage_results.h5'
+
+        save_path = os.path.join(self.save_dir, 'coverage_results.h5')
         print('saving results to {}'.format(save_path))
         f_out = h5py.File(save_path, 'a')
-        f_out.create_dataset('segment_IDs', data = seg_samples)
-        f_out.create_dataset('mu_i_samples', data = mu_i_samples)
+        f_out.create_dataset('segment_IDs', data=seg_samples)
+        f_out.create_dataset('mu_i_samples', data=mu_i_samples)
         f_out.create_dataset('beta', data=global_beta)
-        self.cov_df.to_hdf(save_path, key='cov_df')
         f_out.close()
+
+        # TODO: add visualization script
