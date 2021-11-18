@@ -501,7 +501,7 @@ class AllelicCluster:
 
 class NB_MCMC:
 
-    def __init__(self, n_iter, r, C, Pi, save_dir):
+    def __init__(self, n_iter, r, C, Pi):
         self.n_iter = n_iter
         self.r = r
         self.C = C
@@ -570,7 +570,7 @@ class NB_MCMC:
 
         # for n_it in tqdm.tqdm(range(n_iter)):
         n_it = 0
-        while self.n_iter < len(self.F_samples):
+        while self.n_iter > len(self.F_samples):
 
             # check if we have burnt in
             if n_it > 2000 and not self.burnt_in and not n_it % 100:
@@ -609,9 +609,8 @@ class NB_MCMC:
                 if res > 0:
                     self.ll_clusters[cluster_pick] = self.clusters[cluster_pick].get_ll()
                     self.num_segments[cluster_pick] -= 1
-
+            n_it += 1
             self.ll_iter.append(self.ll_clusters.sum())
-        self.save_results()
 
     def update_beta(self, total_exposure):
         endog = np.exp(np.log(self.r.flatten()) - total_exposure)
@@ -621,7 +620,7 @@ class NB_MCMC:
         res = sNB.fit(start_params=start_params, disp=0)
         return res.params[:-1]
 
-    def save_results(self):
+    def prepare_results(self):
         # convert saved Cov_MCMC cluster results into global result arrays
         seg_samples = np.zeros((self.Pi.shape[0], len(self.F_samples)))
         mu_i_samples = np.zeros((self.Pi.shape[0], len(self.F_samples)))
@@ -643,13 +642,6 @@ class NB_MCMC:
 
         overall_exposure = mu_global + mu_i_samples[:, -1]
         global_beta = self.update_beta(overall_exposure)
-
-        save_path = os.path.join(self.save_dir, 'coverage_results.h5')
-        print('saving results to {}'.format(save_path))
-        f_out = h5py.File(save_path, 'a')
-        f_out.create_dataset('segment_IDs', data=seg_samples)
-        f_out.create_dataset('mu_i_samples', data=mu_i_samples)
-        f_out.create_dataset('beta', data=global_beta)
-        f_out.close()
-
+        return seg_samples, global_beta, mu_i_samples
+        
         # TODO: add visualization script

@@ -109,15 +109,17 @@ def parse_args():
     coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs")
     coverage_mcmc.add_argument("--covariate_dir",
                                help="path to covariate directory with covariates all in pickled files")
-    coverage_mcmc.add_argument("--num_draws",
+    coverage_mcmc.add_argument("--num_draws", type=int,
                                help="number of draws to take from coverage segmentation MCMC", default=50)
-    coverage_mcmc.add_argument("--allelic_sample",
+    coverage_mcmc.add_argument("--allelic_sample", type=int,
                                help="index of sample clustering from allelic DP to use as seed for segmentation",
                                default=None)
 
     coverage_dp = subparsers.add_parser("coverage_dp", help="Run DP clustering on coverage segmentations")
-    coverage_dp.add_argument("--num_segmentation_samples", help="number of segmentation samples to use")
-    coverage_dp.add_argument("--num_draws",
+    coverage_dp.add_argument("--f_cov_df", help="path to saved filtered coverage dataframe")
+    coverage_dp.add_argument("--cov_mcmc_data", help="path to numpy savez file containing bins to segments array and global beta"))
+    coverage_dp.add_argument("--num_segmentation_samples", type=int, help="number of segmentation samples to use")
+    coverage_dp.add_argument("--num_draws", type=int,
                              help="number of thinned draws from the coverage dp to take after burn in")
     coverage_dp.add_argument("segmentation_h5_path", help="segmentation mcmc output file path")
 
@@ -310,17 +312,31 @@ def main():
         cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
                                              args.allelic_clusters_object,
                                              args.SNPs_pickle,
+                                             None, # no dask client for now
                                              args.covariate_dir,
                                              args.num_draws,
                                              args.allelic_sample)
-        cov_mcmc_runner.run()
 
+        seg_samples, beta, mu_i_samples, filtered_cov_df = cov_mcmc_runner.run()
+        
+        #save_results
+        with open(os.path.join(args.output_dir, 'cov_mcmc_model.pickle'), 'rb') as f:
+            pickle.dump(cov_mcmc_runner, f)
+
+        np.savez(os.path.join(args.output_dir, 'cov_mcmc_data'), seg_samples=seg_samples, beta=global_beta, mu_i_samples=mu_i_samples)
+        filtered_cov_df.to_pickle(os.path.join(args.output_dir, 'cov_df.pickle')) 
+    
     elif args.command == "coverage_dp":
-        cov_dp_runner = Coverage_DP(args.segmentation_h5_path)
-        cov_dp_runner.run_dp(args.num_segmentation_samples, args.num_draws)
-        with open(output_dir + f"/Cov_DP_object.pickle", "wb") as f:
-            pickle.dump(cov_dp_runner, f)
+        cov_df = pd.load_pickle(args.f_cov_df)
+        mcmc_data = np.load(args.cov_mcmc_data)
+        segmentation_samples = mcmc_data['seg_samples']
+        beta = mcmc_data['beta']
 
+        cov_dp_runner = Coverage_DP(segmentation_samples, beta, cov_df)
+
+        cov_dp_runner.run_dp(args.num_segmentation_samples, args.num_draws)
+        with open(args.output_dir + f"/Cov_DP_model.pickle", "wb") as f:
+            pickle.dump(cov_dp_runner, f)
 
 if __name__ == "__main__":
     main()

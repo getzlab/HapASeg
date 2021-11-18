@@ -23,11 +23,13 @@ def LSE(x):
 
 
 class Coverage_DP:
-    def __init__(self, f_seg):
-        segmentation_h5 = h5py.File(f_seg, 'r')
-        self.segmentation_draws = segmentation_h5['segment_IDs']
-        self.beta = segmentation_h5['beta']
-        self.cov_df = pd.read_hdf(f_seg, 'cov_df')
+    def __init__(self,
+            segmentation_draws,
+            beta,
+            cov_df):
+        self.segmentation_draws = segmentation_draws
+        self.beta = beta
+        self.cov_df = cov_df
 
         # number of seg samples to use and draws from each DP to take
         self.num_samples = None
