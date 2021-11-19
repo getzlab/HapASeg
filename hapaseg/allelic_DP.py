@@ -329,7 +329,8 @@ class DPinstance:
         self.alpha = alpha
 
         self.mm_mat = self.S.loc[:, ["min", "maj"]].values.reshape(-1, order = "F") # numpy for speed
-        self.ar_mat = self.S.loc[:, ["A_alt", "A_ref", "B_alt", "B_ref"]].values.reshape(-1, order = "F")
+        self.ref_mat = self.S.loc[:, ["A_ref", "B_ref"]].values.reshape(-1, order = "F")
+        self.alt_mat = self.S.loc[:, ["A_alt", "B_alt"]].values.reshape(-1, order = "F")
 
         #
         # define column indices
@@ -373,10 +374,13 @@ class DPinstance:
 
     def rephase(self, seg_idx, force = False):
         if not force:
-            A_a = self.S.iloc[seg_idx, self.aalt_col].sum() + 1
-            A_b = self.S.iloc[seg_idx, self.aref_col].sum() + 1
-            B_a = self.S.iloc[seg_idx, self.balt_col].sum() + 1
-            B_b = self.S.iloc[seg_idx, self.bref_col].sum() + 1
+            flip = self.S.iloc[seg_idx, self.flip_col]
+            flip_n = ~flip
+
+            A_a = self.alt_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum() + 1
+            A_b = self.ref_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum() + 1
+            B_a = self.alt_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum() + 1
+            B_b = self.ref_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum() + 1
 
             # use normal approximation to beta if conditions are right
             if A_a > 20 and A_b > 20 and B_a > 20 and B_b > 20:
@@ -396,8 +400,8 @@ class DPinstance:
 
         if force or do_rephase:
             #self.S.iloc[seg_idx, [self.min_col, self.maj_col]] = self.S.iloc[seg_idx, [self.min_col, self.maj_col]].values[:, ::-1]
-            self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]] = self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]].values[:, ::-1]
-            self.S.iloc[seg_idx, [self.aref_col, self.bref_col]] = self.S.iloc[seg_idx, [self.aref_col, self.bref_col]].values[:, ::-1]
+            #self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]] = self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]].values[:, ::-1]
+            #self.S.iloc[seg_idx, [self.aref_col, self.bref_col]] = self.S.iloc[seg_idx, [self.aref_col, self.bref_col]].values[:, ::-1]
             self.S.iloc[seg_idx, self.flip_col] = ~self.S.iloc[seg_idx, self.flip_col]
 
     def SJliks(self, targ_clust, upstream_clust, downstream_clust, J_a, J_b, U_a, U_b, D_a, D_b):
