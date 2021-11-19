@@ -321,9 +321,9 @@ def main():
         
         #save_results
         with open(os.path.join(args.output_dir, 'cov_mcmc_model.pickle'), 'wb') as f:
-            pickle.dump(cov_mcmc_runner, f)
+            pickle.dump(cov_mcmc_runner.model, f)
 
-        np.savez(os.path.join(args.output_dir, 'cov_mcmc_data'), seg_samples=seg_samples, beta=global_beta, mu_i_samples=mu_i_samples)
+        np.savez(os.path.join(args.output_dir, 'cov_mcmc_data'), seg_samples=seg_samples, beta=beta, mu_i_samples=mu_i_samples)
         filtered_cov_df.to_pickle(os.path.join(args.output_dir, 'cov_df.pickle')) 
     
     elif args.command == "coverage_dp":
