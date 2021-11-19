@@ -310,10 +310,12 @@ def main():
         A = A_DP(args.seg_dataframe, ref_fasta = args.ref_fasta)
 
         # run DP
+        # TODO: when we have better type checking, drop the int coersion here
+        N_seg_samps = A.n_samp - 1 if int(args.n_seg_samps) == 0 else int(args.n_seg_samps)
+        N_clust_samps = int(args.n_dp_iter)
         snps_to_clusters, snps_to_phases = A.run(
-          # TODO: when we have better type checking, drop the int coersion here
-          N_seg_samps = A.n_samp - 1 if int(args.n_seg_samps) == 0 else int(args.n_seg_samps),
-          N_clust_samps = int(args.n_dp_iter)
+          N_seg_samps = N_seg_samps,
+          N_clust_samps = N_clust_samps
         )
 
         # save DP results
