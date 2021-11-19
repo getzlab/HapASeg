@@ -14,7 +14,7 @@ from capy import mut
 from .load import HapasegReference
 from .run_allelic_MCMC import AllelicMCMCRunner
 from .allelic_MCMC import A_MCMC
-from .run_coverage_MCMC import CoverageMCMCRunner
+from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters
 from .coverage_DP import Coverage_DP
 
 
@@ -117,6 +117,9 @@ def parse_args():
     coverage_mcmc.add_argument("--allelic_sample", type=int,
                                help="index of sample clustering from allelic DP to use as seed for segmentation",
                                default=None)
+    
+    collect_cov_mcmc = subparsers.add_parser("collect_cov_mcmc", help="collect sharded cov mcmc results")
+    collect_cov_mcmc.add_argument("--coverage_dir", help="path to the directory containing the coverage mcmc results")
 
     coverage_dp = subparsers.add_parser("coverage_dp", help="Run DP clustering on coverage segmentations")
     coverage_dp.add_argument("--f_cov_df", help="path to saved filtered coverage dataframe")
@@ -124,8 +127,7 @@ def parse_args():
     coverage_dp.add_argument("--num_segmentation_samples", type=int, help="number of segmentation samples to use")
     coverage_dp.add_argument("--num_draws", type=int,
                              help="number of thinned draws from the coverage dp to take after burn in")
-    coverage_dp.add_argument("segmentation_h5_path", help="segmentation mcmc output file path")
-
+    
     args = parser.parse_args()
 
     # validate arguments
@@ -328,8 +330,13 @@ def main():
         if args.cluster_num is not None and seg_samples is not None:
             # if its a single cluster that was not skipped, save the results to a new coverage dir
             coverage_dir = os.path.join(output_dir, 'coverage_mcmc_clusters')
+            figure_dir = os.path.join(coverage_dir, 'figures')
+
             if not os.path.isdir(coverage_dir):
                 os.mkdir(coverage_dir)
+            
+            if not os.path.isdir(figure_dir):
+                os.mkdir(figure_dir)
 
             with open(os.path.join(coverage_dir,
                                    'cov_mcmc_model_cluster_{}.pickle'.format(args.cluster_num)), 'wb') as f:
@@ -340,7 +347,9 @@ def main():
             if args.cluster_num == 0:
                 # only need one copy of this
                 filtered_cov_df.to_pickle(os.path.join(coverage_dir, 'cov_df.pickle'))
-
+            
+            # save visualization
+            cov_mcmc_runner.model.visualize_cluster_samples(os.path.join(figure_dir, 'cov_mcmc_cluster_{}_visual'.format(args.cluster_num)))
         else:
             with open(os.path.join(output_dir, 'cov_mcmc_model.pickle'), 'wb') as f:
                 pickle.dump(cov_mcmc_runner.model, f)
@@ -349,6 +358,16 @@ def main():
                      seg_samples=seg_samples, beta=beta, mu_i_samples=mu_i_samples)
             filtered_cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
     
+    elif args.command == "collect_cov_mcmc":
+        full_segmentation = aggregate_clusters(args.coverage_dir)
+        
+        #load beta from one of the clusters
+        cov_data = np.load(os.path.join(args.coverage_dir, 'cov_mcmc_data_cluster_0.npz'))
+        beta = cov_data['beta']
+
+        ## save these results to new aggregated file
+        np.savez(os.path.join(args.coverage_dir, 'cov_mcmc_collected_data'), seg_samples=full_segmentation, beta=beta)
+
     elif args.command == "coverage_dp":
         cov_df = pd.read_pickle(args.f_cov_df)
         mcmc_data = np.load(args.cov_mcmc_data)
@@ -360,6 +379,14 @@ def main():
         cov_dp_runner.run_dp(args.num_segmentation_samples, args.num_draws)
         with open(args.output_dir + f"/Cov_DP_model.pickle", "wb") as f:
             pickle.dump(cov_dp_runner, f)
+   
+        #save visualization
+        # first make sure the directory exists
+        figure_dir = os.path.join(output_dir, 'coverage_figures')
+        if not os.path.isdir(figure_dir):
+            os.mkdir(figure_dir)
+
+        cov_dp_runner.visualize_DP_run(args.num_draws - 1, os.path.join(figure_dir, 'coverage_draw_{}'.format(args.num_draws -1)))
 
 if __name__ == "__main__":
     main()

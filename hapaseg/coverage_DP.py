@@ -16,6 +16,7 @@ from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
 from capy import seq
 
+colors = mpl.cm.get_cmap("tab10").colors
 
 def LSE(x):
     lmax = np.max(x)
@@ -66,6 +67,21 @@ class Coverage_DP:
             self.bins_to_clusters.append(draws)
             prior_run = DP_runner
 
+    def visualize_DP_run(self, run_idx, save_path):
+        if run_idx > len(self.DP_runs):
+            raise ValueError('DP run index out of range')
+        
+        cov_dp = self.DP_runs[run_idx]
+        cur = 0
+        f, axs = plt.subplots(1, figsize = (25,10))
+        for c in cov_dp.cluster_dict.keys():
+            clust_start = cur
+            for seg in cov_dp.cluster_dict[c]:
+                len_seg = len(cov_dp.segment_r_list[seg])
+                axs.scatter(np.r_[cur:len_seg+cur], np.exp(np.log(cov_dp.segment_r_list[seg]) - (cov_dp.segment_C_list[seg] @ cov_dp.beta).flatten()))
+                cur += len_seg
+                axs.add_patch(mpl.patches.Rectangle((clust_start,0), cur-clust_start, 500, fill=True, alpha=0.15, color = colors[c % 10]))
+        plt.savefig(save_path)
 
 # for now input will be coverage_df with global segment id column
 class Run_Cov_DP:
