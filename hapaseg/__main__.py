@@ -320,7 +320,7 @@ def main():
         seg_samples, beta, mu_i_samples, filtered_cov_df = cov_mcmc_runner.run()
         
         #save_results
-        with open(os.path.join(args.output_dir, 'cov_mcmc_model.pickle'), 'rb') as f:
+        with open(os.path.join(args.output_dir, 'cov_mcmc_model.pickle'), 'wb') as f:
             pickle.dump(cov_mcmc_runner, f)
 
         np.savez(os.path.join(args.output_dir, 'cov_mcmc_data'), seg_samples=seg_samples, beta=global_beta, mu_i_samples=mu_i_samples)
