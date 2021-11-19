@@ -353,12 +353,28 @@ class DPinstance:
 
     def rephase(self, seg_idx, force = False):
         if not force:
-            n_move = len(seg_idx)
+            A_a = self.S.iloc[seg_idx, self.aalt_col].sum() + 1
+            A_b = self.S.iloc[seg_idx, self.aref_col].sum() + 1
+            B_a = self.S.iloc[seg_idx, self.balt_col].sum() + 1
+            B_b = self.S.iloc[seg_idx, self.bref_col].sum() + 1
 
-            x = s.beta.rvs(self.S.iloc[seg_idx, self.aalt_col].sum() + 1, self.S.iloc[seg_idx, self.aref_col].sum() + 1, size = [n_move, 30])
-            y = s.beta.rvs(self.S.iloc[seg_idx, self.balt_col].sum() + 1, self.S.iloc[seg_idx, self.bref_col].sum() + 1, size = [n_move, 30])
+            # use normal approximation to beta if conditions are right
+            if A_a > 20 and A_b > 20 and B_a > 20 and B_b > 20:
+                m_x = A_a/(A_a + A_b)
+                s_x = A_a*A_b/((A_a + A_b)**2*(A_a + A_b + 1))
+                m_y = B_a/(B_a + B_b)
+                s_y = B_a*B_b/((B_a + B_b)**2*(B_a + B_b + 1))
 
-        if force or np.random.rand() < (x > y).mean():
+                do_rephase = np.random.rand() < s.norm.cdf(0, m_y - m_x, np.sqrt(s_x + s_y))
+
+            # Monte Carlo simulate difference of betas
+            else:
+                x = s.beta.rvs(A_a, A_b, size = 1000)
+                y = s.beta.rvs(B_a, B_b, size = 1000)
+
+                do_rephase = np.random.rand() < (x > y).mean()
+
+        if force or do_rephase:
             self.S.iloc[seg_idx, [self.min_col, self.maj_col]] = self.S.iloc[seg_idx, [self.min_col, self.maj_col]].values[:, ::-1]
             self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]] = self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]].values[:, ::-1]
             self.S.iloc[seg_idx, [self.aref_col, self.bref_col]] = self.S.iloc[seg_idx, [self.aref_col, self.bref_col]].values[:, ::-1]
