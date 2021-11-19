@@ -499,7 +499,7 @@ class AllelicCluster:
         return 0
 
 
-class NB_MCMC:
+class NB_MCMC_AllClusters:
 
     def __init__(self, n_iter, r, C, Pi):
         self.n_iter = n_iter
@@ -643,4 +643,99 @@ class NB_MCMC:
         global_beta = self.update_beta(overall_exposure)
         return seg_samples, global_beta, mu_i_samples
         
+        # TODO: add visualization script
+
+class NB_MCMC_SingleCluster:
+
+    def __init__(self, n_iter, r, C, cluster_num):
+        self.n_iter = n_iter
+        self.r = r
+        self.C = C
+        self.beta = None
+        self.mu = None
+        self.cluser_num = cluster_num
+        # for now assume that the Pi vector assigns each bin to exactly one cluster
+
+        self.burnt_in = False
+
+        self.cluster = None
+        self.num_segments = len(r)
+
+        self.mu_i_samples = []
+        self.lepsi_i_samples = []
+        self.F_samples = []
+
+        self.ll_cluster = 0
+        self.ll_iter = []
+        self._init_cluster()
+
+    def _init_cluster(self):
+        # first we find good starting values for mu and beta for each cluster by fitting a poisson model
+        pois_regr = PoissonRegression(self.r, self.C, np.ones(self.r.shape))
+        self.mu, self.beta = pois_regr.fit()
+
+        self.cluster = AllelicCluster(self.r, self.C, self.mu, self.beta)
+
+        # set initial ll
+        self.ll_cluster = self.cluster.get_ll()
+
+    def save_sample(self):
+        self.mu_i_samples.append(self.cluster.mu_i_arr.copy())
+        self.lepsi_i_samples.append(self.cluster.lepsi_i_arr.copy())
+        self.F_samples.append(self.cluster.F.copy())
+
+    def run(self,
+            debug=False,
+            stop_after_burnin=False):
+        print("starting MCMC coverage segmentation for cluster {}...".format(self.cluser_num))
+
+        past_it = 0
+
+        n_it = 0
+        while self.n_iter > len(self.F_samples):
+
+            # check if we have burnt in
+            if n_it > 2000 and not self.burnt_in and not n_it % 100:
+                if np.diff(np.array(self.ll_iter[-500:])).mean() < 0:
+                    print('burnt in!')
+                    self.burnt_in = True
+                    past_it = n_it
+                    if stop_after_burnin:
+                        print('Burn-in complete: ll: {} n_it: {}'.format(self.ll_cluster, n_it))
+                        return
+
+            # save dynamicaly thinned chain samples
+            if not n_it % 50 and self.burnt_in and n_it - past_it > self.num_segments:
+                self.save_sample()
+                past_it = n_it
+
+            if np.random.rand() > 0.5:
+                # split
+                res = self.cluster.split(debug)
+                # if we made a change, update ll of cluster
+                if res > 0:
+                    self.ll_cluster = self.cluster.get_ll()
+                    self.num_segments += 1
+            else:
+                # join
+                res = self.cluster.join(debug)
+                # if we made a change, update ll of cluster
+                if res > 0:
+                    self.ll_cluster = self.cluster.get_ll()
+                    self.num_segments -= 1
+            n_it += 1
+            self.ll_iter.append(self.ll_cluster)
+
+    def update_beta(self, total_exposure):
+        endog = np.exp(np.log(self.r.flatten()) - total_exposure)
+        exog = self.C
+        start_params = np.r_[self.beta.flatten(), 1]
+        sNB = statsNB(endog, exog, start_params=start_params)
+        res = sNB.fit(start_params=start_params, disp=0)
+        return res.params[:-1]
+
+    def get_results(self):
+        overall_exposure = self.mu + self.mu_i_samples[:, -1]
+        return self.F_samples, self.update_beta(overall_exposure), self.mu_i_samples
+
         # TODO: add visualization script

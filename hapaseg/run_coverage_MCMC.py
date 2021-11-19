@@ -5,7 +5,8 @@ import os
 
 from capy import mut, seq
 
-from .NB_coverage_MCMC import NB_MCMC
+from .NB_coverage_MCMC import NB_MCMC_AllClusters, NB_MCMC_SingleCluster
+
 
 class CoverageMCMCRunner:
     def __init__(self,
@@ -15,14 +16,14 @@ class CoverageMCMCRunner:
                  c,
                  covariate_dir,
                  num_draws=50,
-                 allelic_sample=None,
-                 save_dir=None):
-        # TODO: parallelize across allelic clusters
+                 cluster_num=None,
+                 allelic_sample=None
+                 ):
         # TODO: type check sample is int within range
         self.client = c
         self.covariate_dir = covariate_dir
         self.num_draws = num_draws
-        self.save_dir = save_dir
+        self.cluster_num = cluster_num
 
         self.allelic_clusters = np.load(f_allelic_clusters)
         if allelic_sample:
@@ -36,13 +37,27 @@ class CoverageMCMCRunner:
         self.full_cov_df = self.load_coverage(coverage_csv)
         self.load_covariates()
         self.SNPs = self.load_SNPs(f_SNPs)
+        self.model = None
 
     def run(self):
-        # assign coverage bins to allelic clusters from the specified allelic sample (if specified; o.w. random choice)
         Pi, r, C, filtered_cov_df = self.assign_clusters()
 
-        cov_mcmc = NB_MCMC(self.num_draws, r, C, Pi)
+        if self.cluser_num is None:
+            # run coverage mcmc on all clusters
+            # assign coverage bins to allelic clusters from the specified allelic sample (if specified; o.w. random choice)
+            cov_mcmc = NB_MCMC_AllClusters(self.num_draws, r, C, Pi)
+        else:
+            # run mcmc on single cluster
+            if self.cluster_num > self.Pi.shape[1]:
+                # in this case our assigned cluster was trimmed for being garbage so we abort
+                return None, None, None, None
+            c_assignments = np.argmax(self.Pi, axis=1)
+            cluster_mask = (self.c_assignments == self.cluster_num)
+            cov_mcmc = NB_MCMC_SingleCluster(self.num_draws, r[cluster_mask], C[cluster_mask], self.cluster_num)
+
+        # either way we run and save results
         cov_mcmc.run()
+        self.model = cov_mcmc
         segment_samples, global_beta, mu_i_samples = cov_mcmc.prepare_results()
         return segment_samples, global_beta, mu_i_samples, filtered_cov_df
 
@@ -78,13 +93,15 @@ class CoverageMCMCRunner:
         self.full_cov_df.loc[tidx.index, "C_RT"] = F.iloc[tidx, 3:].mean(1).values
 
         # z-transform
-        self.full_cov_df["C_RT_z"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(np.log(self.full_cov_df["C_RT"] + 1e-20))
+        self.full_cov_df["C_RT_z"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(
+            np.log(self.full_cov_df["C_RT"] + 1e-20))
 
         # load GC content
         B = pd.read_pickle(os.path.join(self.covariate_dir, "GC.pickle"))
         self.full_cov_df = self.full_cov_df.merge(B.rename(columns={"gc": "C_GC"}), left_on=["chr", "start", "end"],
-                                right_on=["chr", "start", "end"], how="left")
-        self.full_cov_df["C_GC_z"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(np.log(self.full_cov_df["C_GC"] + 1e-20))
+                                                  right_on=["chr", "start", "end"], how="left")
+        self.full_cov_df["C_GC_z"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(
+            np.log(self.full_cov_df["C_GC"] + 1e-20))
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
     # clusters with snps from different clusters are probabliztically assigned
@@ -115,7 +132,7 @@ class CoverageMCMCRunner:
         num_pruned_clusters = Cov_clust_probs_overlap.shape[1]
         # subsetting to only targets that overlap SNPs
         Cov_overlap = self.full_cov_df.loc[overlap_idx, :]
-        
+
         # probabilistically assign each ambiguous coverage bin to a cluster
         amb_mask = np.max(Cov_clust_probs_overlap, 1) != 1
         amb_assgn_probs = Cov_clust_probs_overlap[amb_mask, :]
@@ -128,7 +145,7 @@ class CoverageMCMCRunner:
         Pi[amb_mask, :] = new_onehot
 
         r = np.c_[Cov_overlap["covcorr"]]
-        
+
         # making covariate matrix
         C = np.c_[np.log(Cov_overlap["C_len"]), Cov_overlap["C_RT_z"], Cov_overlap["C_GC_z"]]
 
@@ -142,5 +159,3 @@ class CoverageMCMCRunner:
         Cov_overlap['cluster_assgn'] = np.argmax(Pi, axis=1)
 
         return Pi, r, C, Cov_overlap
-
-        

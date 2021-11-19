@@ -111,6 +111,9 @@ def parse_args():
                                help="path to covariate directory with covariates all in pickled files")
     coverage_mcmc.add_argument("--num_draws", type=int,
                                help="number of draws to take from coverage segmentation MCMC", default=50)
+    coverage_mcmc.add_argument("--cluster_num", type=int,
+                               help="cluster index for this worker to run on. If unspecified method will simulate "
+                                    "all clusters on the same machine", default=None)
     coverage_mcmc.add_argument("--allelic_sample", type=int,
                                help="index of sample clustering from allelic DP to use as seed for segmentation",
                                default=None)
@@ -315,16 +318,35 @@ def main():
                                              None, # no dask client for now
                                              args.covariate_dir,
                                              args.num_draws,
+                                             args.cluster_num,
                                              args.allelic_sample)
 
         seg_samples, beta, mu_i_samples, filtered_cov_df = cov_mcmc_runner.run()
-        
-        #save_results
-        with open(os.path.join(args.output_dir, 'cov_mcmc_model.pickle'), 'wb') as f:
-            pickle.dump(cov_mcmc_runner.model, f)
 
-        np.savez(os.path.join(args.output_dir, 'cov_mcmc_data'), seg_samples=seg_samples, beta=beta, mu_i_samples=mu_i_samples)
-        filtered_cov_df.to_pickle(os.path.join(args.output_dir, 'cov_df.pickle')) 
+        #TODO make method for concatenating results from each cluster
+        #save_results
+        if args.cluster_num is not None:
+            coverage_dir = os.path.join(output_dir, 'coverage_mcmc_clusters')
+            if not os.path.isdir(coverage_dir):
+                os.mkdir(coverage_dir)
+
+            with open(os.path.join(coverage_dir,
+                                   'cov_mcmc_model_cluster_{}.pickle'.format(args.cluster_num)), 'wb') as f:
+                pickle.dump(cov_mcmc_runner.model, f)
+
+            np.savez(os.path.join(coverage_dir, 'cov_mcmc_data_cluster_{}'.format(args.cluster_num)),
+                     seg_samples=seg_samples, beta=beta, mu_i_samples=mu_i_samples)
+            if args.cluster_num == 0:
+                # only need one copy of this
+                filtered_cov_df.to_pickle(os.path.join(coverage_dir, 'cov_df.pickle'))
+
+        else:
+            with open(os.path.join(output_dir, 'cov_mcmc_model.pickle'), 'wb') as f:
+                pickle.dump(cov_mcmc_runner.model, f)
+
+            np.savez(os.path.join(output_dir, 'cov_mcmc_data'),
+                     seg_samples=seg_samples, beta=beta, mu_i_samples=mu_i_samples)
+            filtered_cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
     
     elif args.command == "coverage_dp":
         cov_df = pd.load_pickle(args.f_cov_df)
