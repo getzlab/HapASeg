@@ -1,6 +1,9 @@
 import glob
 import os
 import pandas as pd
+import pickle
+import prefect
+import tempfile
 import wolf
 
 #
@@ -25,182 +28,181 @@ hapaseg = wolf.ImportTask(
   task_name = "hapaseg"
 )
 
-# workflow scrap
-
-#
-# localize reference files to RODISK
-
-ref_panel = pd.DataFrame({ "path" : glob.glob("/mnt/j/db/hg38/1kg/*.bcf*") })
-ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
-ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
-
-localization_task = wolf.localization.BatchLocalDisk(
-  files = dict(
-    ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
-    ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
-    ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
-
-    genetic_map_file = "/home/jhess/Downloads/Eagle_v2.4.1/tables/genetic_map_hg38_withX.txt.gz",
-
-    # reference panel
-    **ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
-  ),
-  run_locally = True
-)
-
-localization = localization_task.run()
-
-#
-# get het site coverage/genotypes from callstats
-hp = het_pulldown.get_het_coverage_from_callstats(
-  callstats_file = "gs://fc-secure-66f5eeb9-27c4-4e5c-b9d6-0519aca5889d/pair/05bd347a/05bd347a-3da7-4d1f-9bc6-4375226a0cb4_de3962db-0bd7-4126-85d9-da9ffe131088.MuTect1.call_stats.txt",
+def workflow(
+  callstats_file = None,
   common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
- ref_fasta = localization["ref_fasta"],
- ref_fasta_idx = localization["ref_fasta_idx"],
- ref_fasta_dict = localization["ref_fasta_dict"],
- dens_cutoff = 0.58
-)
+):
+    #
+    # localize reference files to RODISK
 
-hp_results = hp.run()
+    ref_panel = pd.DataFrame({ "path" : glob.glob("/mnt/j/db/hg38/1kg/*.bcf*") })
+    ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
+    ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
 
-#
-# shim task to convert output of het pulldown to VCF
-convert = wolf.Task(
-  name = "convert_het_pulldown",
-  inputs = {
-    "genotype_file" : hp_results["normal_genotype"],
-    "sample_name" : "test",
-    "ref_fasta" : localization["ref_fasta"],
-    "ref_fasta_idx" : localization["ref_fasta_idx"],
-    "ref_fasta_dict" : localization["ref_fasta_dict"],
-  }, 
-  script = r"""
-set -x
-bcftools convert --tsv2vcf ${genotype_file} -c CHROM,POS,AA -s ${sample_name} \
-  -f ${ref_fasta} -Ou -o all_chrs.bcf && bcftools index all_chrs.bcf
-for chr in $(bcftools view -h all_chrs.bcf | ssed -nR '/^##contig/s/.*ID=(.*),.*/\1/p' | head -n24); do
-  bcftools view -Ou -r ${chr} -o ${chr}.chrsplit.bcf all_chrs.bcf && bcftools index ${chr}.chrsplit.bcf
-done
-""",
-  outputs = {
-    "bcf" : "*.chrsplit.bcf",
-    "bcf_idx" : "*.chrsplit.bcf.csi"
-  },
-  docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.5"
-)
+    localization_task = wolf.localization.BatchLocalDisk(
+      files = dict(
+        ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
+        ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
+        ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
 
-convert_results = convert.run()
+        genetic_map_file = "/home/jhess/Downloads/Eagle_v2.4.1/tables/genetic_map_hg38_withX.txt.gz",
 
-# convert.debug(**convert.conf["inputs"])
+        # reference panel
+        **ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
+      ),
+      run_locally = True
+    )
 
-#
-# ensure that BCFs/indices/reference BCFs are in the same order
+    #
+    # get het site coverage/genotypes from callstats
+    hp_task = het_pulldown.get_het_coverage_from_callstats(
+      callstats_file = callstats_file,
+      common_snp_list = common_snp_list,
+      ref_fasta = localization_task["ref_fasta"],
+      ref_fasta_idx = localization_task["ref_fasta_idx"],
+      ref_fasta_dict = localization_task["ref_fasta_dict"],
+      dens_cutoff = 0.58 # TODO: set dynamically
+    )
 
-# BCFs
-F = pd.DataFrame(dict(bcf_path = convert_results["bcf"]))
-F = F.set_index(F["bcf_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
+    #
+    # shim task to convert output of het pulldown to VCF
+    convert_task = wolf.Task(
+      name = "convert_het_pulldown",
+      inputs = {
+        "genotype_file" : hp_task["normal_genotype"],
+        "sample_name" : "test", # TODO: allow to be specified
+        "ref_fasta" : localization_task["ref_fasta"],
+        "ref_fasta_idx" : localization_task["ref_fasta_idx"],
+        "ref_fasta_dict" : localization_task["ref_fasta_dict"],
+      }, 
+      script = r"""
+    set -x
+    bcftools convert --tsv2vcf ${genotype_file} -c CHROM,POS,AA -s ${sample_name} \
+      -f ${ref_fasta} -Ou -o all_chrs.bcf && bcftools index all_chrs.bcf
+    for chr in $(bcftools view -h all_chrs.bcf | ssed -nR '/^##contig/s/.*ID=(.*),.*/\1/p' | head -n24); do
+      bcftools view -Ou -r ${chr} -o ${chr}.chrsplit.bcf all_chrs.bcf && bcftools index ${chr}.chrsplit.bcf
+    done
+    """,
+      outputs = {
+        "bcf" : "*.chrsplit.bcf",
+        "bcf_idx" : "*.chrsplit.bcf.csi"
+      },
+      docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.5"
+    )
 
-# indices
-F2 = pd.DataFrame(dict(bcf_idx_path = convert_results["bcf_idx"]))
-F2 = F2.set_index(F2["bcf_idx_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
+    #
+    # ensure that BCFs/indices/reference BCFs are in the same order
+    @prefect.task
+    def order_indices(bcf_path, bcf_idx_path, localization_task):
+        # BCFs
+        F = pd.DataFrame(dict(bcf_path = bcf_path))
+        F = F.set_index(F["bcf_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
 
-F = F.join(F2)
+        # indices
+        F2 = pd.DataFrame(dict(bcf_idx_path = bcf_idx_path))
+        F2 = F2.set_index(F2["bcf_idx_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
 
-# reference panel BCFs
-R = pd.DataFrame({ "path" : localization } ).reset_index()
-F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*_bcf$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf" }), how = "inner")
-F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*csi$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf_idx" }), how = "inner")
+        F = F.join(F2)
 
-#
-# run Eagle, per chromosome
-eagle = phasing.eagle(
-  inputs = dict(
-    genetic_map_file = localization["genetic_map_file"],
-    vcf_in = F["bcf_path"],
-    vcf_idx_in = F["bcf_idx_path"],
-    vcf_ref = F["ref_bcf"],
-    vcf_ref_idx = F["ref_bcf_idx"],
-    output_file_prefix = "foo"
-  )
-)
+        # reference panel BCFs
+        R = pd.DataFrame({ "path" : localization_task } ).reset_index()
+        F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*_bcf$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf" }), how = "inner")
+        F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*csi$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf_idx" }), how = "inner")
 
-eagle_results = eagle.run()
+        return F
 
-# TODO: run whatshap
+    F = order_indices(convert_task["bcf"], convert_task["bcf_idx"], localization_task)
 
-#
-# combine VCFs
-combine = wolf.Task(
-  name = "combine_vcfs",
-  inputs = { "vcf_array" },
-  script = "bcftools concat -O u $(cat ${vcf_array} | tr '\n' ' ') | bcftools sort -O v -o combined.vcf",
-  outputs = { "combined_vcf" : "combined.vcf" },
-  docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.5"
-)
+    #
+    # run Eagle, per chromosome
+    eagle_task = phasing.eagle(
+      inputs = dict(
+        genetic_map_file = localization_task["genetic_map_file"],
+        vcf_in = F["bcf_path"],
+        vcf_idx_in = F["bcf_idx_path"],
+        vcf_ref = F["ref_bcf"],
+        vcf_ref_idx = F["ref_bcf_idx"],
+        output_file_prefix = "foo"
+      )
+    )
 
-combined_results = combine.run(vcf_array = [eagle_results["phased_vcf"]])
+    # TODO: run whatshap
+    # when we include this, define combine_task without inputs and call it twice,
+    # once for eagle, once for whatshap
 
-#
-# run HapASeg
+    #
+    # combine VCFs
+    combine_task = wolf.Task(
+      name = "combine_vcfs",
+      inputs = { "vcf_array" : [eagle_task["phased_vcf"]] },
+      script = "bcftools concat -O u $(cat ${vcf_array} | tr '\n' ' ') | bcftools sort -O v -o combined.vcf",
+      outputs = { "combined_vcf" : "combined.vcf" },
+      docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.5"
+    )
 
-# load
-hapaseg_load = hapaseg.Hapaseg_load(
-  inputs = {
-    "phased_VCF" : combined_results["combined_vcf"],
-    "tumor_allele_counts" : hp_results["tumor_hets"],
-    "normal_allele_counts" : hp_results["normal_hets"],
-    "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt"
-  }
-)
+    #
+    # run HapASeg
 
-hapaseg_load_results = hapaseg_load.run()
+    # load
+    hapaseg_load_task = hapaseg.Hapaseg_load(
+      inputs = {
+        "phased_VCF" : combine_task["combined_vcf"],
+        "tumor_allele_counts" : hp_task["tumor_hets"],
+        "normal_allele_counts" : hp_task["normal_hets"],
+        "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt" # TODO: allow to be specified
+      }
+    )
 
-# get intervals for burnin
-chunks = pd.read_csv(hapaseg_load_results["scatter_chunks"], sep = "\t")
+    # get intervals for burnin
+    @prefect.task
+    def get_chunks(scatter_chunks):
+        return pd.read_csv(scatter_chunks, sep = "\t")
 
-# burnin chunks
-hapaseg_burnin = hapaseg.Hapaseg_burnin(
- inputs = {
-   "allele_counts" : hapaseg_load_results["allele_counts"],
-   "start" : chunks["start"],
-   "end" : chunks["end"]
- }
-)
+    chunks = get_chunks(hapaseg_load_task["scatter_chunks"])
 
-hapaseg_burnin_results = hapaseg_burnin.run()
+    # burnin chunks
+    hapaseg_burnin_task = hapaseg.Hapaseg_burnin(
+     inputs = {
+       "allele_counts" : hapaseg_load_task["allele_counts"],
+       "start" : chunks["start"],
+       "end" : chunks["end"]
+     }
+    )
 
-# concat burned in chunks, infer reference bias
-hapaseg_concat = hapaseg.Hapaseg_concat(
- inputs = {
-   "chunks" : [hapaseg_burnin_results["burnin_MCMC"]],
-   "scatter_intervals" : hapaseg_load_results["scatter_chunks"]
- }
-)
+    # concat burned in chunks, infer reference bias
+    hapaseg_concat_task = hapaseg.Hapaseg_concat(
+     inputs = {
+       "chunks" : [hapaseg_burnin_task["burnin_MCMC"]],
+       "scatter_intervals" : hapaseg_load_task["scatter_chunks"]
+     }
+    )
 
-hapaseg_concat_results = hapaseg_concat.run()
+    # run on arms
+    hapaseg_arm_AMCMC_task = hapaseg.Hapaseg_amcmc(
+     inputs = {
+       "amcmc_object" : hapaseg_concat_task["arms"],
+       "ref_bias" : hapaseg_concat_task["ref_bias"]
+     }
+    )
 
-# run on arms
-hapaseg_arm_AMCMC = hapaseg.Hapaseg_amcmc(
- inputs = {
-   "amcmc_object" : hapaseg_concat_results["arms"],
-   "ref_bias" : hapaseg_concat_results["ref_bias"]
- }
-)
+    # concat arm level results
+    @prefect.task
+    def concat_arm_level_results(arm_results):
+        A = []
+        for arm_file in arm_results:
+            with open(arm_file, "rb") as f:
+                H = pickle.load(f)
+                A.append(pd.Series({ "chr" : H.P["chr"].iloc[0], "start" : H.P["pos"].iloc[0], "end" : H.P["pos"].iloc[-1], "results" : H }))
 
-hapaseg_arm_AMCMC_results = hapaseg_arm_AMCMC.run()
+        # get into order
+        A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(drop = True)
 
-# concat arm level results
-A = []
-for arm_file in hapaseg_arm_AMCMC_results["arm_level_MCMC"]:
-    with open(arm_file, "rb") as f:
-        H = pickle.load(f)
-        A.append(pd.Series({ "chr" : H.P["chr"].iloc[0], "start" : H.P["pos"].iloc[0], "end" : H.P["pos"].iloc[-1], "results" : H }))
+        # save
+        _, tmpfile = tempfile.mkstemp(  )
+        A.to_pickle(tmpfile) 
 
-# get into order
-A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(drop = True)
+        return tmpfile
 
-# save
-# TODO: make temp file
-A.to_pickle("arms.pickle")
+    arm_concat = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
 
-# run DP
+    # run DP
