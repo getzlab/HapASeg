@@ -350,7 +350,7 @@ def main():
             filtered_cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
     
     elif args.command == "coverage_dp":
-        cov_df = pd.load_pickle(args.f_cov_df)
+        cov_df = pd.read_pickle(args.f_cov_df)
         mcmc_data = np.load(args.cov_mcmc_data)
         segmentation_samples = mcmc_data['seg_samples']
         beta = mcmc_data['beta']

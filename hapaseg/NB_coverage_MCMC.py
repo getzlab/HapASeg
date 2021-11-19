@@ -6,11 +6,14 @@ from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 import warnings
 from statsmodels.tools.sm_exceptions import ConvergenceWarning, HessianInversionWarning
 import h5py
+import matplotlib as mpl
+import matplotlib.pyplot as plt
 
 warnings.simplefilter('ignore', ConvergenceWarning)
 warnings.simplefilter('ignore', HessianInversionWarning)
 np.seterr(divide='ignore')
 
+colors = mpl.cm.get_cmap("tab10").colors
 
 def LSE(x):
     lmax = np.max(x)
@@ -647,19 +650,20 @@ class NB_MCMC_AllClusters:
 
 class NB_MCMC_SingleCluster:
 
-    def __init__(self, n_iter, r, C, cluster_num):
+    def __init__(self, n_iter, r, C, Pi, cluster_num):
         self.n_iter = n_iter
         self.r = r
         self.C = C
+        self.Pi = Pi
         self.beta = None
         self.mu = None
-        self.cluser_num = cluster_num
+        self.cluster_num = cluster_num
         # for now assume that the Pi vector assigns each bin to exactly one cluster
 
         self.burnt_in = False
 
         self.cluster = None
-        self.num_segments = len(r)
+        self.num_segments = 1
 
         self.mu_i_samples = []
         self.lepsi_i_samples = []
@@ -671,10 +675,13 @@ class NB_MCMC_SingleCluster:
 
     def _init_cluster(self):
         # first we find good starting values for mu and beta for each cluster by fitting a poisson model
-        pois_regr = PoissonRegression(self.r, self.C, np.ones(self.r.shape))
-        self.mu, self.beta = pois_regr.fit()
+        pois_regr = PoissonRegression(self.r, self.C, self.Pi)
+        all_mu, self.beta = pois_regr.fit()
+        self.mu = all_mu[self.cluster_num]
 
-        self.cluster = AllelicCluster(self.r, self.C, self.mu, self.beta)
+        c_assignments = np.argmax(self.Pi, axis=1)
+        cluster_mask = (c_assignments == self.cluster_num)
+        self.cluster = AllelicCluster(self.r[cluster_mask], self.C[cluster_mask], self.mu, self.beta)
 
         # set initial ll
         self.ll_cluster = self.cluster.get_ll()
@@ -687,25 +694,26 @@ class NB_MCMC_SingleCluster:
     def run(self,
             debug=False,
             stop_after_burnin=False):
-        print("starting MCMC coverage segmentation for cluster {}...".format(self.cluser_num))
-
+        print("starting MCMC coverage segmentation for cluster {}...".format(self.cluster_num))
         past_it = 0
 
         n_it = 0
         while self.n_iter > len(self.F_samples):
 
             # check if we have burnt in
-            if n_it > 2000 and not self.burnt_in and not n_it % 100:
-                if np.diff(np.array(self.ll_iter[-500:])).mean() < 0:
+            if n_it > self.cluster.r.shape[0] / 2  and not self.burnt_in and not n_it % 50:
+                if np.diff(np.array(self.ll_iter[-50:])).mean() < 0:
                     print('burnt in!')
                     self.burnt_in = True
                     past_it = n_it
                     if stop_after_burnin:
                         print('Burn-in complete: ll: {} n_it: {}'.format(self.ll_cluster, n_it))
                         return
-
+            #status update
+            if not n_it % 50:
+                print('n_it: {}'.format(n_it))
             # save dynamicaly thinned chain samples
-            if not n_it % 50 and self.burnt_in and n_it - past_it > self.num_segments:
+            if not n_it % 25 and self.burnt_in and n_it - past_it > self.num_segments:
                 self.save_sample()
                 past_it = n_it
 
@@ -734,8 +742,36 @@ class NB_MCMC_SingleCluster:
         res = sNB.fit(start_params=start_params, disp=0)
         return res.params[:-1]
 
-    def get_results(self):
-        overall_exposure = self.mu + self.mu_i_samples[:, -1]
-        return self.F_samples, self.update_beta(overall_exposure), self.mu_i_samples
+    # return just the preliminary beta in this case since we cant do global calculation until we see all of the clusters
+    def prepare_results(self):
+        num_draws = len(self.F_samples)
+        num_bins = len(self.cluster.r)
+
+        segmentation_samples = np.zeros((num_bins, num_draws))
+        mu_i_full = np.zeros((num_bins, num_draws))
+
+        for d in range(num_draws):
+            seg_counter = 0
+            seg_intervals = np.array(self.F_samples[d]).reshape(-1, 2)
+            mu_i_full[:, d] = self.mu_i_samples[d]
+
+            for st, en in seg_intervals:
+                segmentation_samples[st:en, d] = seg_counter
+                seg_counter += 1
+
+        return segmentation_samples, self.beta, mu_i_full
 
         # TODO: add visualization script
+
+    def visualize_cluster_samples(self, savepath):
+        residuals = np.exp(np.log(self.cluster.r.flatten()) - (self.cluster.mu.flatten()) - (self.cluster.C@self.cluster.beta).flatten())
+        num_draws = len(self.F_samples)
+        num_rows = int(np.ceil(num_draws / 4))
+        fig, axs = plt.subplots(num_rows, 4, figsize = (25,num_rows*3), sharey=True)
+        ax_lst = axs.flatten()
+        for d in range(num_draws):
+            ax_lst[d].scatter(np.r_[:len(residuals)], residuals)
+            hist = np.array(self.F_samples[d]).reshape(-1,2)
+            for j, r in enumerate(hist):
+                ax_lst[d].add_patch(mpl.patches.Rectangle((r[0],0), r[1]-r[0], 2.3, fill=True, alpha=0.3, color = colors[j % 10]))
+        plt.savefig(savepath)

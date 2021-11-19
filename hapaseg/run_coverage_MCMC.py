@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import glob
 
 import os
 
@@ -26,13 +27,12 @@ class CoverageMCMCRunner:
         self.cluster_num = cluster_num
 
         self.allelic_clusters = np.load(f_allelic_clusters)
-        if allelic_sample:
+        if allelic_sample is not None:
             self.allelic_sample = allelic_sample
         else:
             # randomly chose sample
             num_samples = self.allelic_clusters["snps_to_clusters"].shape[0]
             self.allelic_sample = np.random.choice(num_samples)
-
         # for now coverage input is expected to be a csv file with columns: ["chr", "start", "end", "covcorr", "covraw"]
         self.full_cov_df = self.load_coverage(coverage_csv)
         self.load_covariates()
@@ -48,12 +48,13 @@ class CoverageMCMCRunner:
             cov_mcmc = NB_MCMC_AllClusters(self.num_draws, r, C, Pi)
         else:
             # run mcmc on single cluster
-            if self.cluster_num > self.Pi.shape[1]:
+            if self.cluster_num > Pi.shape[1]:
                 # in this case our assigned cluster was trimmed for being garbage so we abort
                 return None, None, None, None
-            c_assignments = np.argmax(self.Pi, axis=1)
-            cluster_mask = (self.c_assignments == self.cluster_num)
-            cov_mcmc = NB_MCMC_SingleCluster(self.num_draws, r[cluster_mask], C[cluster_mask], self.cluster_num)
+            #c_assignments = np.argmax(Pi, axis=1)
+            #cluster_mask = (c_assignments == self.cluster_num)
+            #cov_mcmc = NB_MCMC_SingleCluster(self.num_draws, r[cluster_mask], C[cluster_mask], self.cluster_num)
+            cov_mcmc = NB_MCMC_SingleCluster(self.num_draws, r, C, Pi, self.cluster_num)
 
         # either way we run and save results
         cov_mcmc.run()
@@ -134,10 +135,13 @@ class CoverageMCMCRunner:
         Cov_overlap = self.full_cov_df.loc[overlap_idx, :]
 
         # probabilistically assign each ambiguous coverage bin to a cluster
+        # for now we will take maximum instead
+        #TODO refactor preprocessing to a seperate task to allow for this
         amb_mask = np.max(Cov_clust_probs_overlap, 1) != 1
         amb_assgn_probs = Cov_clust_probs_overlap[amb_mask, :]
-        new_assgn = np.array([np.random.choice(np.r_[:num_pruned_clusters],
-                                               p=amb_assgn_probs[i]) for i in range(len(amb_assgn_probs))])
+        #new_assgn = np.array([np.random.choice(np.r_[:num_pruned_clusters],
+        #                                       p=amb_assgn_probs[i]) for i in range(len(amb_assgn_probs))])
+        new_assgn = np.array([np.argmax(amb_assgn_probs[i]) for i in range(len(amb_assgn_probs))])
         new_onehot = np.zeros((new_assgn.size, num_pruned_clusters))
         new_onehot[np.arange(new_assgn.size), new_assgn] = 1
 
@@ -156,6 +160,38 @@ class CoverageMCMCRunner:
         Pi = Pi[~naidx]
 
         Cov_overlap = Cov_overlap.iloc[~naidx]
-        Cov_overlap['cluster_assgn'] = np.argmax(Pi, axis=1)
+        Cov_overlap['allelic_cluster'] = np.argmax(Pi, axis=1)
 
         return Pi, r, C, Cov_overlap
+
+#TODO inputs are actually F_Sample lists which need to be converted to global seg numbers
+def aggregate_clusters(coverage_dir):
+    # assume that all files of the form cov_mcmc*_cluster* in the supplied are from the correct run
+    coverage_dir = '/home/opriebe/dev/HapASeg/coverage_mcmc_clusters/'
+    cluster_files = sorted(glob.glob(os.path.join(coverage_dir, 'cov_mcmc_data_cluster_*')))
+    seg_results = []
+    mu_i_results = []
+    for data_path in cluster_files:
+        cluster_data= np.load(data_path)
+        seg_results.append(cluster_data['seg_samples'])
+        mu_i_results.append(cluster_data['mu_i_samples'])
+        cov_df = pd.read_pickle(os.path.join(coverage_dir, 'cov_df.pickle'))
+        clust_assignments = cov_df['allelic_cluster'].values
+        num_draws = seg_results[0].shape[1]
+        num_clusters = len(seg_results)
+
+        coverage_segmentation = np.zeros((len(cov_df), num_draws))
+        mu_i_values = np.zeros((len(cov_df), num_draws))
+
+        for d in range(num_draws):
+            global_counter = 0
+            for c in range(num_clusters):
+                cluster_mask = (clust_assignments == c)
+                coverage_segmentation[cluster_mask, d] = seg_results[c][:,d] + global_counter
+                mu_i_values[cluster_mask, d] = mu_i_results[c][:, d]
+                global_counter += len(np.unique(seg_results[c][:,d]))
+        #TODO decide wheter we need global beta and make this generalizable
+        #r = np.c_[cov_df["covcorr"]]
+        #C = np.c_[np.log(cov_df["C_len"]), cov_df["C_RT_z"], cov_df["C_GC_z"]]
+    return coverage_segmentation
+
