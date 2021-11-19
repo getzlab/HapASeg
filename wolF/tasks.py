@@ -33,7 +33,7 @@ class Hapaseg_load_snps(wolf.Task):
       "allele_counts" : "allele_counts.pickle",
       "scatter_chunks" : "scatter_chunks.tsv"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v471"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v488"
 
 class Hapaseg_burnin(wolf.Task):
     inputs = {
