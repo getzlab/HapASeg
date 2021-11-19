@@ -162,8 +162,23 @@ def main():
         chromosome_intervals = hs_utils.parse_cytoband(args.cytoband_file)
 
         t = mut.map_mutations_to_targets(snps.allele_counts, chromosome_intervals, inplace = False)
+        # ranges of SNPs spanned by each arm
         groups = t.groupby(t).apply(lambda x : [x.index.min(), x.index.max()]).to_frame(name = "bdy")
+        # remove arms with too few SNPs (e.g. acrocentric chromosomes)
+        groups = groups.loc[groups["bdy"].apply(np.diff) > 5] # XXX: is 5 SNPs too small?
+
+        # chunk arms
         groups["ranges"] = groups["bdy"].apply(lambda x : np.r_[x[0]:x[1]:args.chunk_size, x[1]])
+
+        # for arms with > 1 chunk, merge the last chunk with penultimate chunk if last chunk is short
+        short_last_chunks = groups.loc[
+          (groups["ranges"].apply(len) > 2) & \
+          (groups["ranges"].apply(lambda x : x[-1] - x[-2]) < args.chunk_size*0.05),
+          "ranges"
+        ]
+        groups.loc[short_last_chunks.index, "ranges"] = short_last_chunks.apply(lambda x : np.r_[x[:-2], x[-1]])
+
+        # create chunk scatter dataframe
         chunks = pd.DataFrame(
           np.vstack([
             np.hstack(np.broadcast_arrays(k, np.c_[y[0:-1], y[1:]]))
