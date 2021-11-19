@@ -84,3 +84,53 @@ class Hapaseg_amcmc(wolf.Task):
       "arm_level_MCMC" : "amcmc_results.pickle"
     }
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+
+class Hapaseg_coverage_mcmc(wolf.Task):
+    inputs = {
+        "coverage_csv" : None,
+        "allelic_clusters_object" : None,
+        "SNPs_pickle" : None,
+        "covariate_dir" : None,
+        "num_draws" : 50,
+        "cluster_num" : None,
+        "allelic_sample" : None
+    }
+    script = """
+    hapaseg coverage_mcmc --coverage_csv ${coverage_csv} \
+    --allelic_clusters_object ${allelic_clusters_object} \
+    --SNPs_pickle ${SNPs_pickle} \
+    --covariate_dir ${covariate_dir} \
+    --num_draws ${num_draws} \
+    --cluster_num ${cluster_num} \
+    --allelic_sample ${allelic_sample}
+    """
+
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+
+class Hapaseg_collect_coverage_mcmc(wolf.Task):
+    inputs = {
+        "coverage_dir":None
+    }
+
+    script = """
+    hapaseg collect_cov_mcmc --coverage_dir ${coverage_dir}
+    """
+
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+
+class Hapaseg_coverage_dp(wolf.Task):
+    inputs = {
+        "f_cov_df": None,
+        "cov_mcmc_data": None,
+        "num_segmentation_samples": 50,
+        "num_draws": 10
+    }
+
+    script = """
+    hapaseg coverage_dp --f_cov_df ${f_cov_df} \
+    --cov_mcmc_data ${cov_mcmc_data} \
+    --num_segmentation_samples ${num_segmentation_samples}
+    --num_draws ${num_draws}
+    """
+
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"

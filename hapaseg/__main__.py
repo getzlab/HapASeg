@@ -101,6 +101,7 @@ def parse_args():
     ## DP (TODO: will include gather step)
     dp = subparsers.add_parser("dp", help="Run DP clustering on allelic imbalance segments")
 
+    ## coverage MCMC
     coverage_mcmc = subparsers.add_parser("coverage_mcmc", help="Run TCR segmentation on allelic imbalance clusters")
     coverage_mcmc.add_argument("--coverage_csv",
                                help="csv file containing '['chr', 'start', 'end', 'covcorr', 'covraw'] data")
@@ -117,10 +118,12 @@ def parse_args():
     coverage_mcmc.add_argument("--allelic_sample", type=int,
                                help="index of sample clustering from allelic DP to use as seed for segmentation",
                                default=None)
-    
+
+    ## collect coverage MCMC shards
     collect_cov_mcmc = subparsers.add_parser("collect_cov_mcmc", help="collect sharded cov mcmc results")
     collect_cov_mcmc.add_argument("--coverage_dir", help="path to the directory containing the coverage mcmc results")
 
+    ## Coverage DP
     coverage_dp = subparsers.add_parser("coverage_dp", help="Run DP clustering on coverage segmentations")
     coverage_dp.add_argument("--f_cov_df", help="path to saved filtered coverage dataframe")
     coverage_dp.add_argument("--cov_mcmc_data", help="path to numpy savez file containing bins to segments array and global beta")
