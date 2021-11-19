@@ -325,7 +325,8 @@ def main():
 
         #TODO make method for concatenating results from each cluster
         #save_results
-        if args.cluster_num is not None:
+        if args.cluster_num is not None and seg_samples is not None:
+            # if its a single cluster that was not skipped, save the results to a new coverage dir
             coverage_dir = os.path.join(output_dir, 'coverage_mcmc_clusters')
             if not os.path.isdir(coverage_dir):
                 os.mkdir(coverage_dir)

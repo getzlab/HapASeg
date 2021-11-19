@@ -42,7 +42,7 @@ class CoverageMCMCRunner:
     def run(self):
         Pi, r, C, filtered_cov_df = self.assign_clusters()
 
-        if self.cluser_num is None:
+        if self.cluster_num is None:
             # run coverage mcmc on all clusters
             # assign coverage bins to allelic clusters from the specified allelic sample (if specified; o.w. random choice)
             cov_mcmc = NB_MCMC_AllClusters(self.num_draws, r, C, Pi)
