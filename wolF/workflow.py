@@ -191,7 +191,7 @@ def workflow(
           intervals = split_intervals_task["interval_files"]
         ))
 
-        hp_task = het_pulldown.get_het_coverage_from_callstats(
+        hp_scatter = het_pulldown.get_het_coverage_from_callstats(
           callstats_file = m1_task["mutect1_cs"],
           common_snp_list = common_snp_list,
           ref_fasta = localization_task["ref_fasta"],
@@ -200,8 +200,28 @@ def workflow(
           dens_cutoff = 0.58 # TODO: set dynamically
         )
 
-        # TODO: gather het pulldown
-        return
+        # gather het pulldown
+        hp_task = wolf.Task(
+          name = "hp_gather",
+          inputs = {
+            "tumor_hets" : [hp_scatter["tumor_hets"]],
+            "normal_hets" : [hp_scatter["normal_hets"]],
+            "normal_genotype" : [hp_scatter["normal_genotype"]],
+          },
+          script = """
+          cat <(cat $(head -n1 ${normal_genotype}) | head -n1) \
+            <(for f in $(cat ${normal_genotype}); do sed 1d $f; done | sort -k1,1V -k2,2n) > normal_genotype.txt
+          cat <(cat $(head -n1 ${normal_hets}) | head -n1) \
+            <(for f in $(cat ${normal_hets}); do sed 1d $f; done | sort -k1,1V -k2,2n) > normal_hets.txt
+          cat <(cat $(head -n1 ${tumor_hets}) | head -n1) \
+            <(for f in $(cat ${tumor_hets}); do sed 1d $f; done | sort -k1,1V -k2,2n) > tumor_hets.txt
+          """,
+          outputs = {
+            "tumor_hets" : "tumor_hets.txt",
+            "normal_hets" : "normal_hets.txt",
+            "normal_genotype" : "normal_genotype.txt",
+          }
+        )
 
     else:
         raise ValueError("You must either provide a callstats file or tumor+normal BAMs to collect SNP coverage")
