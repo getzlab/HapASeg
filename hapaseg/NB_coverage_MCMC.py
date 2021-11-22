@@ -696,13 +696,12 @@ class NB_MCMC_SingleCluster:
             stop_after_burnin=False):
         print("starting MCMC coverage segmentation for cluster {}...".format(self.cluster_num))
         past_it = 0
-
         n_it = 0
         while self.n_iter > len(self.F_samples):
 
             # check if we have burnt in
             if n_it > self.cluster.r.shape[0] / 2  and not self.burnt_in and not n_it % 50:
-                if np.diff(np.array(self.ll_iter[-50:])).mean() < 0:
+                if np.diff(np.array(self.ll_iter[-50:])).mean() <= 0:
                     print('burnt in!')
                     self.burnt_in = True
                     past_it = n_it
