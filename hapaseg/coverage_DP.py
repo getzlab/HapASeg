@@ -80,7 +80,7 @@ class Coverage_DP:
                 len_seg = len(cov_dp.segment_r_list[seg])
                 axs.scatter(np.r_[cur:len_seg+cur], np.exp(np.log(cov_dp.segment_r_list[seg]) - (cov_dp.segment_C_list[seg] @ cov_dp.beta).flatten()))
                 cur += len_seg
-                axs.add_patch(mpl.patches.Rectangle((clust_start,0), cur-clust_start, 500, fill=True, alpha=0.15, color = colors[c % 10]))
+            axs.add_patch(mpl.patches.Rectangle((clust_start,0), cur-clust_start, 500, fill=True, alpha=0.15, color = colors[c % 10]))
         plt.savefig(save_path)
 
 # for now input will be coverage_df with global segment id column
@@ -205,6 +205,7 @@ class Run_Cov_DP:
 
             # posterior numerator
             num = P_l + np.log(ccp)
+            num = np.nan_to_num(num)
             num -= num.max()
 
             # probabilitically choose a cluster
@@ -374,6 +375,10 @@ class Run_Cov_DP:
                 MLs_max = ML_rat.max()
                 choice_p = np.exp(ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)) / np.exp(
                     ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
+                if np.isnan(choice_p.sum()):
+                    print('skipping iteration {} due to nan'.format(n_it))
+                    n_it += 1
+                    continue
                 choice_idx = np.random.choice(
                     np.r_[0:len(ML_rat)],
                     p=choice_p
