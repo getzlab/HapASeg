@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import glob
-
+import re
 import os
 
 from capy import mut, seq
@@ -164,11 +164,16 @@ class CoverageMCMCRunner:
 
         return Pi, r, C, Cov_overlap
 
+# function for sorting file strings by the cluster number rather than alphanumeric
+def nat_sort(lst): 
+        convert = lambda text: int(text) if text.isdigit() else text.lower()
+        alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+        return sorted(lst, key=alphanum_key)
+
 #TODO inputs are actually F_Sample lists which need to be converted to global seg numbers
 def aggregate_clusters(coverage_dir):
     # assume that all files of the form cov_mcmc*_cluster* in the supplied are from the correct run
-    coverage_dir = '/home/opriebe/dev/HapASeg/coverage_mcmc_clusters/'
-    cluster_files = sorted(glob.glob(os.path.join(coverage_dir, 'cov_mcmc_data_cluster_*')))
+    cluster_files = nat_sort(glob.glob(os.path.join(coverage_dir, 'cov_mcmc_data_cluster_*')))
     seg_results = []
     mu_i_results = []
     for data_path in cluster_files:

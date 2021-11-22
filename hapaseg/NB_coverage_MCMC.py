@@ -695,6 +695,7 @@ class NB_MCMC_SingleCluster:
             debug=False,
             stop_after_burnin=False):
         print("starting MCMC coverage segmentation for cluster {}...".format(self.cluster_num))
+        
         past_it = 0
         n_it = 0
         while self.n_iter > len(self.F_samples):
