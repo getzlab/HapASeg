@@ -1,4 +1,5 @@
 import glob
+import numpy as np
 import os
 import pandas as pd
 import pickle
@@ -348,7 +349,7 @@ def workflow(
     )
 
     # concat arm level results
-    @prefect.task
+    @prefect.task(nout = 2)
     def concat_arm_level_results(arm_results):
         A = []
         for arm_file in arm_results:
@@ -361,18 +362,23 @@ def workflow(
 
         # save
         _, tmpfile = tempfile.mkstemp(  )
-        A.to_pickle(tmpfile) 
+        A.to_pickle(tmpfile)
 
-        return tmpfile
+        # get number of MCMC samples
+        n_samps = int(np.minimum(np.inf, A.loc[~A["results"].isna(), "results"].apply(lambda x : len(x.breakpoint_list))).min())
 
-    arm_concat = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
+        return tmpfile, list(range(0, n_samps))
 
-    # run DP
+    arm_concat, n_samps_range = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
+
+    ## run DP
+
+    # scatter DP
     hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
      inputs = {
        "seg_dataframe" : arm_concat,
-       #"n_dp_iter" : 10,   # TODO: allow to be specified?
-       #"n_seg_samps" : 10,
+       "n_dp_iter" : 10,   # TODO: allow to be specified?
+       "seg_samp_idx" : n_samps_range,
        "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt", # TODO: allow to be specified
        "ref_fasta" : localization_task["ref_fasta"],
        "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink

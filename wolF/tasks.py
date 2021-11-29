@@ -87,14 +87,14 @@ class Hapaseg_allelic_DP(wolf.Task):
     inputs = {
       "seg_dataframe" : None,
       "n_dp_iter" : 10,
-      "n_seg_samps" : 0,
+      "seg_samp_idx" : 0,
       "ref_fasta" : None,
       "cytoband_file" : None
     }
     script = """
     hapaseg dp --seg_dataframe ${seg_dataframe} \
             --n_dp_iter ${n_dp_iter} \
-            --n_seg_samps ${n_seg_samps} \
+            --seg_samp_idx ${seg_samp_idx} \
             --ref_fasta ${ref_fasta} \
             --cytoband_file ${cytoband_file}
     """
@@ -105,5 +105,5 @@ class Hapaseg_allelic_DP(wolf.Task):
       "seg_plot" : "figures/allelic_imbalance_preDP.png",
       "clust_plot" : "figures/allelic_imbalance_postDP.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v490"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v493"
     resources = { "mem" : "5G" }
