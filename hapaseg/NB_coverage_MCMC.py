@@ -98,6 +98,9 @@ class AllelicCluster:
         self.segment_ID = np.zeros(r.shape)
         self.segments = sc.SortedSet([0])
         self.segment_lens = sc.SortedDict([(0, len(self.r))])
+        
+        #keep cache of previously computed breakpoints
+        self.breakpoint_cache = {}
 
         self.phase_history = []
         self.F = sc.SortedList()
@@ -275,7 +278,11 @@ class AllelicCluster:
         endog = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) - (self.C[ind[0]:ind[1]] @ self.beta).flatten())
         exog = np.ones(self.r[ind[0]:ind[1]].shape[0])
         exposure = np.ones(self.r[ind[0]:ind[1]].shape[0]) * np.exp(self.mu)
-        sNB = statsNB(endog, exog, exposure=exposure)
+        try:
+            sNB = statsNB(endog, exog, exposure=exposure)
+        except ValueError:
+            print("got a zero size array")
+            print("ind:", ind)
         res = sNB.fit(disp=0)
 
         if ret_hess:
@@ -332,14 +339,13 @@ class AllelicCluster:
 
         # add on first and last windows
         difs_idxs = np.r_[np.r_[ind[0] + 2: ind[0] + window], difs_idxs, np.r_[ind[1] - window:ind[1] - 1]]
-        return difs_idxs
+        return list(difs_idxs)
 
     def _calculate_splits(self, ind, split_indices):
         lls = []
         mus = []
         lepsis = []
         Hs = []
-
         for ix in split_indices:
             mu_l, lepsi_l, H_l = self.stats_optimizer((ind[0], ix), True)
             mu_r, lepsi_r, H_r = self.stats_optimizer((ix, ind[1]), True)
@@ -366,8 +372,13 @@ class AllelicCluster:
         # swtiching to disallow singletons from split
         if ind_len < 4 and not debug:
             raise Exception('segment was too small to split: length: ', ind[1] - ind[0])
-
-        if ind_len:
+        
+        if break_pick:
+            #check to see if we have this query cached
+            if (ind[0], ind[1], break_pick) in self.breakpoint_cache:
+                res = self.breakpoint_cache[(ind[0], ind[1], break_pick)]
+                return res[0], res[1], res[2], res[3], res[4]
+        if ind_len < 150:
             split_indices = np.r_[ind[0] + 2: ind[1] - 1]
             lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
         else:
@@ -386,7 +397,7 @@ class AllelicCluster:
             # increase sampling of significantly likely regions
             extra_samples = sc.SortedSet({})
             for s in significant:
-                for i in np.r_[max(2, s - 5):min(len(ind_len) - 1, s + 5)]:
+                for i in np.r_[max(ind[0] + 2, s - 5):min(ind[1] - 1, s + 5)]:
                     extra_samples.add(i)
             extra_samples = list(extra_samples - set(significant))
             lls_add, mus_add, lepsis_add, Hs_add = self._calculate_splits(ind, extra_samples)
@@ -400,7 +411,7 @@ class AllelicCluster:
         log_k_probs = (lls - LSE(lls)).flatten()
         if break_pick:
             #i = break_pick - ind[0] - 2
-            i = split_indices.index(break_pick)
+            i = list(split_indices).index(break_pick)
             # return the probability of proposing a split here along with the optimal parameter values
             return lls[i], np.exp(log_k_probs[i]), mus[i], lepsis[i], Hs[i]
 
@@ -410,7 +421,9 @@ class AllelicCluster:
             break_pick = split_indices[b_idx]
             if debug:
                 return lls, break_pick, lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx]
-
+            
+            #cache this breakpoint for future joins
+            self.breakpoint_cache[(ind[0],ind[1],break_pick)] = (lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx])
             return break_pick, lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx]
 
     def _get_log_ML_approx_join(self, Hess):
