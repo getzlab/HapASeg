@@ -146,11 +146,11 @@ class A_DP:
 
         return snps_to_phase
 
-    def run(self, N_seg_samps = 50, N_clust_samps = 5):
-        self.N_seg_samps = N_seg_samps
+    def run(self, N_seg_samps = 50, N_clust_samps = 5, seg_sample_idx = None):
+        self.N_seg_samps = N_seg_samps if seg_sample_idx is None else 1
         self.N_clust_samps = N_clust_samps
 
-        seg_sample_idx = np.random.choice(self.n_samp - 1, self.N_seg_samps, replace = False)
+        seg_sample_idx = np.random.choice(self.n_samp - 1, self.N_seg_samps, replace = False) if seg_sample_idx is None else [seg_sample_idx]
         S, SNPs = self.load_seg_samp(seg_sample_idx[0])
         N_SNPs = len(SNPs)
         
