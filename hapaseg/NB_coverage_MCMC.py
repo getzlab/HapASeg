@@ -316,66 +316,102 @@ class AllelicCluster:
             res[i] = self.ll_nbinom(r_ind, self.mu, C_ind, self.beta, self.mu_i, ep)
         return eps[np.argmax(res)]
 
-    # #use this as a stand in for now
-    #
-    # def ll_cluster(self, mu_i_arr, lepsi_i_arr):
-    #     mu_i_arr = mu_i_arr.flatten()
-    #     epsi_i_arr = np.exp(lepsi_i_arr).flatten()
-    #     bc = (self.C @ self.beta).flatten()
-    #     exp = np.exp(self.mu + bc + mu_i_arr).flatten()
-    #
-    #     print('in fun:', epsi_i_arr)
-    #     return scipy.stats.nbinom.logpmf(self.r, epsi_i_arr, (1 - (exp / (exp + epsi_i_arr)))).sum(0)
+    # finds the indices of the top ~3% (2 stds above mean) of the difference kernel values in addition to the first and last window bins
+    def _find_difs(self, ind, window=10):
+        residuals = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) - (self.mu.flatten()) - (
+                    self.C[ind[0]:ind[1]] @ self.beta).flatten())
+        difs = []
+        for i in np.r_[window:len(residuals) - window]:
+            difs.append(np.abs(residuals[i - window:i].mean() - residuals[i:i + window].mean()))
+        difs = np.r_[difs]
+        cutoff = difs.mean() + 2 * np.sqrt(difs.var())
 
-    def calc_pk(self, ind, break_pick=None, debug=False):
+        full_idxs = np.r_[ind[0] + 2:ind[1] - 1]
+        difs_full = np.r_[np.zeros(window - 2), difs, np.zeros(window - 1)]
+        difs_idxs = full_idxs[difs_full > cutoff]
+
+        # add on first and last windows
+        difs_idxs = np.r_[np.r_[ind[0] + 2: ind[0] + window], difs_idxs, np.r_[ind[1] - window:ind[1] - 1]]
+        return difs_idxs
+
+    def _calculate_splits(self, ind, split_indices):
         lls = []
         mus = []
         lepsis = []
         Hs = []
-        # swtiching to disallow singletons from split
-        if ind[1] - ind[0] < 4 and not debug:
-            raise Exception('segment was too small to split: length: ', ind[1] - ind[0])
-        ks = np.r_[ind[0] + 2: ind[1] - 1]
-        for k in ks:
-            # mu_l, lepsi_l, H_l = self.NR_segment((ind[0], k), True)
-            # mu_r, lepsi_r, H_r = self.NR_segment((k, ind[1]), True)
 
-            mu_l, lepsi_l, H_l = self.stats_optimizer((ind[0], k), True)
-            mu_r, lepsi_r, H_r = self.stats_optimizer((k, ind[1]), True)
+        for ix in split_indices:
+            mu_l, lepsi_l, H_l = self.stats_optimizer((ind[0], ix), True)
+            mu_r, lepsi_r, H_r = self.stats_optimizer((ix, ind[1]), True)
 
             mus.append((mu_l, mu_r))
             lepsis.append((lepsi_l, lepsi_r))
             Hs.append((H_l, H_r))
 
             tmp_mui = self.mu_i_arr.copy()
-            tmp_mui[ind[0]:k] = mu_l
-            tmp_mui[k: ind[1]] = mu_r
+            tmp_mui[ind[0]:ix] = mu_l
+            tmp_mui[ix: ind[1]] = mu_r
             tmp_lepsi = self.lepsi_i_arr.copy()
-            tmp_lepsi[ind[0]:k] = lepsi_l
-            tmp_lepsi[k: ind[1]] = lepsi_r
+            tmp_lepsi[ind[0]:ix] = lepsi_l
+            tmp_lepsi[ix: ind[1]] = lepsi_r
 
             ll = self.ll_cluster(tmp_mui, tmp_lepsi)
-            # print('ll: ', ll)
             lls.append(ll)
+
+        return lls, mus, lepsis, Hs
+
+    def calc_pk(self, ind, break_pick=None, debug=False):
+
+        ind_len = ind[1] - ind[0]
+        # swtiching to disallow singletons from split
+        if ind_len < 4 and not debug:
+            raise Exception('segment was too small to split: length: ', ind[1] - ind[0])
+
+        if ind_len:
+            split_indices = np.r_[ind[0] + 2: ind[1] - 1]
+            lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
+        else:
+            split_indices = self._find_difs(ind)
+            if break_pick:
+                split_indices.append(break_pick)
+            # get lls from the difference kernel guesses
+            lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
+
+            # find the most likely index and those indices within a significant range
+            # (rn 7 -> at least 1/1000th as likely)
+            top_lik = max(lls)
+            within_range = np.r_[lls] > (top_lik - 7)
+            significant = np.r_[split_indices][within_range]
+
+            # increase sampling of significantly likely regions
+            extra_samples = sc.SortedSet({})
+            for s in significant:
+                for i in np.r_[max(2, s - 5):min(len(ind_len) - 1, s + 5)]:
+                    extra_samples.add(i)
+            extra_samples = list(extra_samples - set(significant))
+            lls_add, mus_add, lepsis_add, Hs_add = self._calculate_splits(ind, extra_samples)
+            lls.extend(lls_add)
+            mus.extend(mus_add)
+            lepsis.extend(lepsis_add)
+            Hs.extend(Hs_add)
+            split_indices.extend(extra_samples)
+
         lls = np.array(lls)
-        # print(lls)
-        k_probs = (lls - LSE(lls)).flatten()
-        # print('all_mus: ', mus)
+        log_k_probs = (lls - LSE(lls)).flatten()
         if break_pick:
-            i = break_pick - ind[0] - 2
+            #i = break_pick - ind[0] - 2
+            i = split_indices.index(break_pick)
             # return the probability of proposing a split here along with the optimal parameter values
-            return lls[i], np.exp(k_probs[i]), mus[i], lepsis[i], Hs[i]
+            return lls[i], np.exp(log_k_probs[i]), mus[i], lepsis[i], Hs[i]
 
         else:
             # pick a breakpoint based on relative likelihood
-            break_pick = np.random.choice(np.r_[ind[0] + 2: ind[1] - 1], p=np.exp(k_probs))
-            # print('break_pick: ', break_pick)
-            i = break_pick - ind[0] - 2
-            # print(np.linalg.det(-Hs[i][0]), np.linalg.det(-Hs[i][1]))
+            b_idx = np.random.choice(np.r_[:len(split_indices)], p=np.exp(log_k_probs))
+            break_pick = split_indices[b_idx]
             if debug:
-                return lls, break_pick, lls[i], np.exp(k_probs[i]), mus[i], lepsis[i], Hs[i]
+                return lls, break_pick, lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx]
 
-            return break_pick, lls[i], np.exp(k_probs[i]), mus[i], lepsis[i], Hs[i]
+            return break_pick, lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx]
 
     def _get_log_ML_approx_join(self, Hess):
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-Hess))) / 2
