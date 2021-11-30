@@ -36,7 +36,7 @@ class PoissonRegression:
 
     # mu Hessian
     def hessmu(self):
-        return -self.Pi.T @ np.diag(self.e_s.ravel()) @ self.Pi
+        return (-self.Pi.T *self.e_s.T)  @ self.Pi
 
     # beta gradient
     def gradbeta(self):
@@ -44,11 +44,11 @@ class PoissonRegression:
 
     # beta Hessian
     def hessbeta(self):
-        return -self.C.T @ np.diag(self.e_s.ravel()) @ self.C
+        return (-self.C.T *self.e_s.T) @ self.C
 
     # mu,beta Hessian
     def hessmubeta(self):
-        return -self.C.T @ np.diag(self.e_s.ravel()) @ self.Pi
+        return (-self.C.T *self.e_s.T) @ self.Pi
 
     def NR_poisson(self):
         for i in range(100):
@@ -122,26 +122,9 @@ class AllelicCluster:
 
     # fit initial mu_k and epsilon_k for the cluster
     def NR_init(self):
-        self.lepsi = np.log((((np.log(self.r) - self.mu) ** 2 / self.mu - 1)).sum() / (len(self.r)))
-
-        for _ in range(100):
-            self.exp = np.exp(self.mu + self.C @ self.beta).flatten()
-            self.epsi = np.exp(self.lepsi)
-            gmu = self.gradmu()
-            gepsi = self.gradepsi()
-            hmu = self.hessmu()
-            hepsi = self.hessepsi() * self.epsi ** 2 + self.epsi * gepsi
-            hmuepsi = self.hessmuepsi()
-
-            grad = np.r_[gmu, gepsi * self.epsi + 1]
-            H = np.r_[np.c_[hmu, hmuepsi], np.c_[hmuepsi, hepsi]]
-            delta = np.linalg.inv(H) @ grad
-
-            self.mu -= delta[0]
-            self.lepsi -= delta[1]
-            if np.linalg.norm(grad) < 1e-5:
-                break
-
+        ind_len = len(self.r)
+        self.mu, self.lepsi = self.stats_init()
+    
     # helper init derivative functions
 
     def gradmu(self):
@@ -272,17 +255,21 @@ class AllelicCluster:
 
     def get_ll(self):
         return self.ll_cluster(self.mu_i_arr, self.lepsi_i_arr, True)
+    
+    # use stats optimizer to set cluster mu and lepsi
+    def stats_init(self):
+        endog = np.exp(np.log(self.r.flatten()) - (self.C @ self.beta).flatten())
+        exog = np.ones(self.r.shape[0])
+        sNB = statsNB(endog, exog)
+        res = sNB.fit(disp=0)
+        return res.params[0], -np.log(res.params[1])
 
     # off the shelf optimizer for testing
     def stats_optimizer(self, ind, ret_hess=False):
         endog = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) - (self.C[ind[0]:ind[1]] @ self.beta).flatten())
         exog = np.ones(self.r[ind[0]:ind[1]].shape[0])
         exposure = np.ones(self.r[ind[0]:ind[1]].shape[0]) * np.exp(self.mu)
-        try:
-            sNB = statsNB(endog, exog, exposure=exposure)
-        except ValueError:
-            print("got a zero size array")
-            print("ind:", ind)
+        sNB = statsNB(endog, exog, exposure=exposure)
         res = sNB.fit(disp=0)
 
         if ret_hess:
@@ -324,21 +311,32 @@ class AllelicCluster:
         return eps[np.argmax(res)]
 
     # finds the indices of the top ~3% (2 stds above mean) of the difference kernel values in addition to the first and last window bins
-    def _find_difs(self, ind, window=10):
+    def _find_difs(self, ind, window=10, zscore=2):
         residuals = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) - (self.mu.flatten()) - (
                     self.C[ind[0]:ind[1]] @ self.beta).flatten())
         difs = []
         for i in np.r_[window:len(residuals) - window]:
             difs.append(np.abs(residuals[i - window:i].mean() - residuals[i:i + window].mean()))
         difs = np.r_[difs]
-        cutoff = difs.mean() + 2 * np.sqrt(difs.var())
+        if zscore==5:
+            # we add a prior for breakpoints near the ends of the window
+            x = np.r_[:len(difs)]
+            prior = np.exp(2 * np.abs(x - len(difs) / 2) / len(difs))
+            difs = prior * difs
+        cutoff = difs.mean() + zscore * np.sqrt(difs.var())
 
         full_idxs = np.r_[ind[0] + 2:ind[1] - 1]
         difs_full = np.r_[np.zeros(window - 2), difs, np.zeros(window - 1)]
         difs_idxs = full_idxs[difs_full > cutoff]
+        
+        # if there are no that pass the threshold return them all
+        if len(difs_idxs) ==0:
+            print('no significant bins')
+            return list(full_idxs)
 
         # add on first and last windows
         difs_idxs = np.r_[np.r_[ind[0] + 2: ind[0] + window], difs_idxs, np.r_[ind[1] - window:ind[1] - 1]]
+        print('len ind: {}, len search region: {}'.format(ind[1] - ind[0], len(difs_idxs)))
         return list(difs_idxs)
 
     def _calculate_splits(self, ind, split_indices):
@@ -369,7 +367,7 @@ class AllelicCluster:
     def calc_pk(self, ind, break_pick=None, debug=False):
 
         ind_len = ind[1] - ind[0]
-        # swtiching to disallow singletons from split
+        # do not allow segments to be split into segments of size less than 2
         if ind_len < 4 and not debug:
             raise Exception('segment was too small to split: length: ', ind[1] - ind[0])
         
@@ -378,13 +376,27 @@ class AllelicCluster:
             if (ind[0], ind[1], break_pick) in self.breakpoint_cache:
                 res = self.breakpoint_cache[(ind[0], ind[1], break_pick)]
                 return res[0], res[1], res[2], res[3], res[4]
+        
+        # if the cluster is sufficiently small we interrogate the whole space of splits    
         if ind_len < 150:
             split_indices = np.r_[ind[0] + 2: ind[1] - 1]
             lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
+        # otherwise we deploy our change kernel to limit our search space
+        # these parameters essentially differentiate between wgs and exome samples
         else:
-            split_indices = self._find_difs(ind)
+            if ind_len > 2000:
+                window_len = 50
+                zscore = 5
+            else:
+                window_len = 10
+                zscore = 2
+
+            split_indices = self._find_difs(ind, window_len, zscore)
+            
+            # if we are inerested in the liklihood of a particular split we add that to the list of indices to sample
             if break_pick:
                 split_indices.append(break_pick)
+
             # get lls from the difference kernel guesses
             lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
 
@@ -399,6 +411,7 @@ class AllelicCluster:
             for s in significant:
                 for i in np.r_[max(ind[0] + 2, s - 5):min(ind[1] - 1, s + 5)]:
                     extra_samples.add(i)
+            # no need to resample things we already calculated
             extra_samples = list(extra_samples - set(significant))
             lls_add, mus_add, lepsis_add, Hs_add = self._calculate_splits(ind, extra_samples)
             lls.extend(lls_add)
@@ -458,7 +471,7 @@ class AllelicCluster:
         # pick a random segment
         seg = np.random.choice(self.segments)
 
-        # print('attempting split on segment: ', seg)
+        print('attempting split on segment: ', seg)
         # if segment is a singleton then skip
         ## if segment is less than 4 bins then skip
         if self.segment_lens[seg] < 4:
@@ -747,10 +760,12 @@ class NB_MCMC_SingleCluster:
         
         past_it = 0
         n_it = 0
+        min_it = min(self.cluster.r.shape[0], 100)
+
         while self.n_iter > len(self.F_samples):
 
             # check if we have burnt in
-            if n_it > self.cluster.r.shape[0] / 2  and not self.burnt_in and not n_it % 50:
+            if n_it >= min_it  and not self.burnt_in and not n_it % 50:
                 if np.diff(np.array(self.ll_iter[-50:])).mean() <= 0:
                     print('burnt in!')
                     self.burnt_in = True
