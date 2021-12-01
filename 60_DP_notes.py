@@ -1034,19 +1034,19 @@ F = R.loc[:, ("outputs", "cluster_and_phase_assignments")]
 
 S = pd.read_pickle(R.loc["0", ("outputs", "all_SNPs")])
 
-plt.figure(7); plt.clf()
-mj = S.loc[ph[0, :], "maj"]
-mn = S.loc[ph[0, :], "min"]
-plt.scatter(S.loc[ph[0, :], "gpos"], mj/(mj + mn), s = 0.1, color = 'k', alpha = 0.1)
-mj = S.loc[~ph[0, :], "min"]
-mn = S.loc[~ph[0, :], "maj"]
-plt.scatter(S.loc[~ph[0, :], "gpos"], mj/(mj + mn), s = 0.1, color = 'k', alpha = 0.1)
-
 for _, f in F.iteritems(): 
     clust = np.load(f)
     clu, cl_idx = np.unique(clust["snps_to_clusters"], return_inverse = True)
     cl_idx = cl_idx.reshape(10, -1)
     ph = clust["snps_to_phases"]
+
+    plt.figure(7); plt.clf()
+    mj = S.loc[ph[0, :], "maj"]
+    mn = S.loc[ph[0, :], "min"]
+    plt.scatter(S.loc[ph[0, :], "gpos"], mj/(mj + mn), s = 0.1, color = 'k', alpha = 0.1)
+    mj = S.loc[~ph[0, :], "min"]
+    mn = S.loc[~ph[0, :], "maj"]
+    plt.scatter(S.loc[~ph[0, :], "gpos"], mj/(mj + mn), s = 0.1, color = 'k', alpha = 0.1)
 
     liks = []
 
