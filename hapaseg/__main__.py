@@ -313,7 +313,7 @@ def main():
         # TODO: when we have better type checking, drop the int coersion here
         #N_seg_samps = A.n_samp - 1 if int(args.n_seg_samps) == 0 else int(args.n_seg_samps)
         # TODO: if we decide to drop support for chained sampling altogether, remove N_seg_samps logic altogether
-        snps_to_clusters, snps_to_phases = A.run(
+        snps_to_clusters, snps_to_phases, likelihoods = A.run(
           seg_sample_idx = int(args.seg_samp_idx),
           #N_seg_samps = N_seg_samps,
           N_clust_samps = int(args.n_dp_iter)
@@ -322,7 +322,8 @@ def main():
         # save DP results
         np.savez(output_dir + "/allelic_DP_SNP_clusts_and_phase_assignments.npz",
           snps_to_clusters = snps_to_clusters,
-          snps_to_phases = snps_to_phases
+          snps_to_phases = snps_to_phases,
+          likelihoods = likelihoods
         )
 
         A.SNPs.to_pickle(output_dir + "/all_SNPs.pickle")

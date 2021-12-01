@@ -156,6 +156,7 @@ class A_DP:
         
         self.snps_to_clusters = -1*np.ones((self.N_clust_samps*self.N_seg_samps, N_SNPs), dtype = np.int16)
         self.snps_to_phases = np.zeros((self.N_clust_samps*self.N_seg_samps, N_SNPs), dtype = bool)
+        self.DP_likelihoods = np.zeros((self.N_clust_samps*self.N_seg_samps, 2))
 
         self.DP_runs = [None]*self.N_seg_samps
 
@@ -171,6 +172,9 @@ class A_DP:
             # run clustering
             self.DP_runs[n_it] = DPinstance(S, clust_prior = clust_prior, clust_count_prior = clust_count_prior)
             segs_to_clusters, segs_to_phases = self.DP_runs[n_it].run(n_iter = self.N_clust_samps)
+
+            # compute likelihoods for each clustering
+            self.DP_likelihoods[self.N_clust_samps*n_it:self.N_clust_samps*(n_it + 1), :] = self.DP_runs[n_it].compute_overall_lik()
 
             # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
             self.snps_to_clusters[self.N_clust_samps*n_it:self.N_clust_samps*(n_it + 1), :] = self.map_seg_clust_assignments_to_SNPs(segs_to_clusters, S)
@@ -231,7 +235,7 @@ class A_DP:
             #del clust_prior[0]
             #del clust_count_prior[0]
 
-        return self.snps_to_clusters, self.snps_to_phases
+        return self.snps_to_clusters, self.snps_to_phases, self.DP_likelihoods
 
     def visualize_segs(self, snps_to_clusters = None, f = None, n_vis_samp = None):
         f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
@@ -545,55 +549,60 @@ class DPinstance:
 
         return adj_AB, adj_BC
 
-    def compute_overall_lik(self):
-        #
-        # 1: overall clustering likelihood
-        cl_lik = 0
-        for k, v in self.clust_sums.items():
-            if k < 1:
-                continue
-            cl_lik += ss.betaln(v[0] + 1, v[1] + 1)
+    def compute_overall_lik(self, segs_to_clusters = None, phase_orientations = None):
+        if segs_to_clusters is None:
+            _, segs_to_clusters = self.get_unique_clust_idxs()
+        else:
+            _, segs_to_clusters = self.get_unique_clust_idxs(segs_to_clusters)
+        if phase_orientations is None:
+            phase_orientations = np.r_[self.phase_orientations]
 
-        # this does not include unassigned/zero segments; these will be added later
+        max_clust_idx = segs_to_clusters.max() + 1
 
-        #
-        # 2: adjacency likelihood
-        # contiguous sets of segments belonging to the same cluster
-        bdy = np.flatnonzero(np.r_[1, np.diff(self.clusts) != 0, 1])
-        bdy = np.c_[bdy[:-1], bdy[1:]]
+        liks = np.full([segs_to_clusters.shape[0], 2], np.nan)
 
-        # remove zeros by setting each run of zeros to cluster index preceding it
-        clusts_nz = self.clusts.copy()
-        zidx = np.flatnonzero(self.clusts[bdy[:, 0]] == 0)
-        for z in zidx:
-            clusts_nz[bdy[z, 0]:bdy[z, 1]] = clusts_nz[bdy[z - 1, 0]]
-        bdy_nz = np.flatnonzero(np.r_[1, np.diff(clusts_nz) != 0, 1])
-        bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
+        for i, (cl_samp, ph_samp) in enumerate(zip(segs_to_clusters, phase_orientations)):
+            # reset phases
+            # TODO: when we switch to faster phasing correction model that doesn't involve modifying self.S, this won't be necessary
+            S_ph = self.S.copy()
+            flip_idx = np.flatnonzero(ph_samp != S_ph["flipped"])
+            S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
 
-        # remove runs of unassigned segments
-        bdy_nz = bdy_nz[self.clusts[bdy_nz[:, 0]] != -1]
+            ## overall clustering likelihood
+            A = npg.aggregate(cl_samp, S_ph["min"], size = max_clust_idx)
+            B = npg.aggregate(cl_samp, S_ph["maj"], size = max_clust_idx)
 
-        # contiguous sets of segments belonging to same cluster, skipping over garbage segments
-        adj_lik = 0
-        for st, en in bdy_nz:
-            nzidx = self.clusts[st:en] != 0
-            adj_lik += ss.betaln(
-              self.S.iloc[st:en, self.min_col].values[nzidx].sum() + 1,
-              self.S.iloc[st:en, self.maj_col].values[nzidx].sum() + 1,
-            )
+# for when self.S is not modified
+#            A = npg.aggregate(cl_samp[ph_samp], self.S.loc[ph_samp, "maj"], size = max_clust_idx) + \
+#              npg.aggregate(cl_samp[~ph_samp], self.S.loc[~ph_samp, "min"], size = max_clust_idx)
+#
+#            B = npg.aggregate(cl_samp[ph_samp], self.S.loc[ph_samp, "min"], size = max_clust_idx) + \
+#              npg.aggregate(cl_samp[~ph_samp], self.S.loc[~ph_samp, "maj"], size = max_clust_idx)
 
-        #
-        # add unassigned/zero segments
-        # each segment contributes a term to the likelihood
-        z_liks = ss.betaln(
-          self.S.iloc[self.clusts < 1, self.min_col] + 1,
-          self.S.iloc[self.clusts < 1, self.maj_col] + 1
-        ).sum()
+            clust_lik = ss.betaln(A + 1, B + 1).sum()
 
-        cl_lik += z_liks
-        adj_lik += z_liks
+            ## segmentation likelihood
 
-        return cl_lik, adj_lik
+            # get segment boundaries
+            bdy = np.flatnonzero(np.r_[1, np.diff(cl_samp) != 0, 1])
+            bdy = np.c_[bdy[:-1], bdy[1:]]
+
+            # sum log-likelihoods of each segment
+            seg_lik = 0
+            for st, en in bdy:
+                A, B = S_ph.iloc[st:en, [self.min_col, self.maj_col]].sum()
+
+# for when self.S is not modified
+#               A = self.S["min"].iloc[st:en].loc[~ph_samp[st:en]].sum() + \
+#                   self.S["maj"].iloc[st:en].loc[ph_samp[st:en]].sum()
+#               B = self.S["maj"].iloc[st:en].loc[~ph_samp[st:en]].sum() + \
+#                   self.S["min"].iloc[st:en].loc[ph_samp[st:en]].sum()
+
+                seg_lik += ss.betaln(A + 1, B + 1)
+
+            liks[i, :] = np.r_[clust_lik, seg_lik]
+
+        return liks
 
     def run(self, n_iter = 50):
         #
@@ -958,9 +967,11 @@ class DPinstance:
 #   np.c_[0, 23, 204],
 #   np.c_[75, 172, 227]]/255
 
-    def get_unique_clust_idxs(self):
-        s2cu, s2cu_j = np.unique(np.r_[self.segs_to_clusters], return_inverse = True)
-        return s2cu, s2cu_j.reshape(np.r_[self.segs_to_clusters].shape)
+    def get_unique_clust_idxs(self, segs_to_clusters = None):
+        if segs_to_clusters is None:
+            segs_to_clusters = np.r_[self.segs_to_clusters]
+        s2cu, s2cu_j = np.unique(segs_to_clusters, return_inverse = True)
+        return s2cu, s2cu_j.reshape(segs_to_clusters.shape)
 
     def get_colors(self):
         s2cu, s2cu_j = self.get_unique_clust_idxs()
