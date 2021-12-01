@@ -760,13 +760,12 @@ class NB_MCMC_SingleCluster:
         
         past_it = 0
         n_it = 0
-        min_it = min(self.cluster.r.shape[0], 100)
-
+        min_it = min(200, max(50, self.r.shape[0]))
         while self.n_iter > len(self.F_samples):
 
             # check if we have burnt in
             if n_it >= min_it  and not self.burnt_in and not n_it % 50:
-                if np.diff(np.array(self.ll_iter[-50:])).mean() <= 0:
+                if np.diff(np.array(self.ll_iter[-min_it:])).mean() <= 0:
                     print('burnt in!')
                     self.burnt_in = True
                     past_it = n_it
