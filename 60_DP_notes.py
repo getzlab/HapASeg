@@ -1025,3 +1025,58 @@ for n_it in range(0, 5*len(S)):
             clusts[old_idx][2] -= maj_c
             if clusts[old_idx][0] == 0:
                 del clusts[old_idx]
+
+#
+# 20211130: aggregate DP run
+
+R = pd.read_hdf("/mnt/nfs/workspace/ALCH_000b5e0e/Hapaseg_allelic_DP__2021-11-29--17-00-15_m5my33a_nwvtpeq_w3lyfmxv4dk0a/results.k9df.hdf5")
+F = R.loc[:, ("outputs", "cluster_and_phase_assignments")]
+
+S = pd.read_pickle(R.loc["0", ("outputs", "all_SNPs")])
+
+clocs = [S_ph.columns.get_loc(x) for x in ["min", "maj"]]
+
+plt.figure(7); plt.clf()
+mj = S.loc[ph[0, :], "maj"]
+mn = S.loc[ph[0, :], "min"]
+plt.scatter(S.loc[ph[0, :], "gpos"], mj/(mj + mn), s = 0.1, color = 'k', alpha = 0.1)
+mj = S.loc[~ph[0, :], "min"]
+mn = S.loc[~ph[0, :], "maj"]
+plt.scatter(S.loc[~ph[0, :], "gpos"], mj/(mj + mn), s = 0.1, color = 'k', alpha = 0.1)
+
+for _, f in F.iteritems(): 
+    clust = np.load(f)
+    clu, cl_idx = np.unique(clust["snps_to_clusters"], return_inverse = True)
+    cl_idx = cl_idx.reshape(10, -1)
+    ph = clust["snps_to_phases"]
+
+    liks = []
+
+    for cl_samp, ph_samp in zip(cl_idx, ph):
+        S_ph = S.copy()
+        S_ph.iloc[ph_samp, clocs] = S_ph.iloc[ph_samp, clocs[::-1]]
+
+        A = npg.aggregate(cl_samp, S_ph["min"], size = len(clu))
+        B = npg.aggregate(cl_samp, S_ph["maj"], size = len(clu))
+
+        ## clustering likelihood
+        clust_lik = ss.betaln(A + 1, B + 1).sum()
+
+        ## segmentation likelihood 
+
+        # get segment boundaries
+        bdy = np.flatnonzero(np.r_[1, np.diff(cl_samp) != 0, 1])
+        bdy = np.c_[bdy[:-1], bdy[1:]]
+
+        # sum log-likelihoods of each segment
+        seg_lik = 0
+        for st, en in bdy:
+            A, B = S_ph.iloc[st:en, clocs].sum()
+            seg_lik += ss.betaln(A + 1, B + 1)
+
+        liks.append([clust_lik, seg_lik])
+        print(*liks[-1])
+
+        for i in range(0, len(clu) - 1):
+            idx = cl_samp == i
+            plt.scatter(S.loc[idx, "gpos"], np.full(idx.sum(),  A[i]/(A[i] + B[i])), color = 'r', s = 0.11, alpha = 0.01)
