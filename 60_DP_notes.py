@@ -1034,8 +1034,6 @@ F = R.loc[:, ("outputs", "cluster_and_phase_assignments")]
 
 S = pd.read_pickle(R.loc["0", ("outputs", "all_SNPs")])
 
-clocs = [S_ph.columns.get_loc(x) for x in ["min", "maj"]]
-
 plt.figure(7); plt.clf()
 mj = S.loc[ph[0, :], "maj"]
 mn = S.loc[ph[0, :], "min"]
@@ -1053,11 +1051,11 @@ for _, f in F.iteritems():
     liks = []
 
     for cl_samp, ph_samp in zip(cl_idx, ph):
-        S_ph = S.copy()
-        S_ph.iloc[ph_samp, clocs] = S_ph.iloc[ph_samp, clocs[::-1]]
+        A = npg.aggregate(cl_samp[ph_samp], S.loc[ph_samp, "maj"], size = len(clu)) + \
+          npg.aggregate(cl_samp[~ph_samp], S.loc[~ph_samp, "min"], size = len(clu))
 
-        A = npg.aggregate(cl_samp, S_ph["min"], size = len(clu))
-        B = npg.aggregate(cl_samp, S_ph["maj"], size = len(clu))
+        B = npg.aggregate(cl_samp[ph_samp], S.loc[ph_samp, "min"], size = len(clu)) + \
+          npg.aggregate(cl_samp[~ph_samp], S.loc[~ph_samp, "maj"], size = len(clu))
 
         ## clustering likelihood
         clust_lik = ss.betaln(A + 1, B + 1).sum()
@@ -1071,7 +1069,11 @@ for _, f in F.iteritems():
         # sum log-likelihoods of each segment
         seg_lik = 0
         for st, en in bdy:
-            A, B = S_ph.iloc[st:en, clocs].sum()
+            A = S["min"].iloc[st:en].loc[~ph_samp[st:en]].sum() + \
+                S["maj"].iloc[st:en].loc[ph_samp[st:en]].sum()
+            B = S["maj"].iloc[st:en].loc[~ph_samp[st:en]].sum() + \
+                S["min"].iloc[st:en].loc[ph_samp[st:en]].sum()
+
             seg_lik += ss.betaln(A + 1, B + 1)
 
         liks.append([clust_lik, seg_lik])
