@@ -113,6 +113,35 @@ def run_DP(S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict()
     clust_count_prior[-1] = 0.1 # DP alpha factor, i.e. relative probability of opening new cluster (TODO: make specifiable)
 
     #
+    # assign segments to likeliest prior component
+
+    #if len(clust_prior) > 1:
+    if False:
+        for seg_idx in range(len(S)):
+            seg_idx = np.r_[seg_idx]
+            # rephase segment
+            x = s.beta.rvs(S.iloc[seg_idx, aalt_col].sum() + 1, S.iloc[seg_idx, aref_col].sum() + 1, size = [len(seg_idx), 30])
+            y = s.beta.rvs(S.iloc[seg_idx, balt_col].sum() + 1, S.iloc[seg_idx, bref_col].sum() + 1, size = [len(seg_idx), 30])
+            if np.random.rand() < (x > y).mean():
+                S.iloc[seg_idx, [min_col, maj_col]] = S.iloc[seg_idx, [min_col, maj_col]].values[:, ::-1]
+                S.iloc[seg_idx, [aalt_col, balt_col]] = S.iloc[seg_idx, [aalt_col, balt_col]].values[:, ::-1]
+                S.iloc[seg_idx, [aref_col, bref_col]] = S.iloc[seg_idx, [aref_col, bref_col]].values[:, ::-1]
+                S.iloc[seg_idx, flip_col] = ~S.iloc[seg_idx, flip_col]
+
+            # compute probability that segment belongs to each cluster prior element
+            S_a = S.iloc[seg_idx[0], min_col]
+            S_b = S.iloc[seg_idx[0], maj_col]
+            P_a = clust_prior_mat[1:, 0]
+            P_b = clust_prior_mat[1:, 1]
+            P_l = ss.betaln(S_a + P_a + 1, S_b + P_b + 1) - (ss.betaln(S_a + 1, S_b + 1) + ss.betaln(P_a + 1, P_b + 1))
+
+            # probabilistically assign
+            S.iloc[seg_idx, clust_col] = np.random.choice(
+              np.r_[clust_prior.keys()][1:], 
+              p = np.exp(P_l)/np.exp(P_l).sum()
+            )
+
+    #
     # initialize cluster tracking hash tables
     clust_counts = sc.SortedDict(S["clust"].value_counts().drop(-1, errors = "ignore"))
     # for the first round of clustering, this is { 0 : 1 }
@@ -124,11 +153,6 @@ def run_DP(S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict()
     clust_members = sc.SortedDict({ k : set(v) for k, v in S.groupby("clust").groups.items() if k != -1 })
     # for the first round, this is { 0 : {0} }
     unassigned_segs = sc.SortedList(S.index[S["clust"] == -1])
-
-    # store likelihoods for each cluster in the prior (from previous iterations)
-    clust_prior[-1] = np.r_[0, 0]
-    clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1, v[1] + 1) for k, v in clust_prior.items()})
-    clust_prior_mat = np.r_[clust_prior.values()]
 
     max_clust_idx = np.max(clust_members.keys() | clust_prior.keys() if clust_prior is not None else {})
 
@@ -227,6 +251,7 @@ def run_DP(S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict()
         B_a = S.iloc[seg_idx, min_col].sum() # TODO: slow if seg_idx contains many SNPs
         B_b = S.iloc[seg_idx, maj_col].sum()
         C_ab = np.r_[clust_sums.values()] # first term (-1) = make new cluster
+        #C_ab = np.r_[[v for k, v in clust_sums.items() if k != cur_clust or cur_clust == -1]] # if we don't want to explicitly propose letting B rejoin cur_clust
 
         # A+B,C -> A,B+C
 
@@ -287,6 +312,7 @@ def run_DP(S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict()
             MLs = np.r_[np.full(len(prior_diff), MLs[0]), MLs[1:]]
             
         # DP prior based on clusters sizes
+        # count_prior = np.r_[np.full(len(prior_diff), 0.01/len(prior_diff)), clust_counts.values()]
         count_prior = np.r_[[clust_count_prior[x] for x in prior_diff], clust_counts.values()]
         count_prior /= count_prior.sum()
 
@@ -300,6 +326,8 @@ def run_DP(S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict()
         #choice = np.r_[-1, clust_counts.keys()][choice_idx]
         # -1 = brand new, -2, -3, ... = -(prior clust index) - 2
         choice = np.r_[-np.r_[prior_diff] - 2, clust_counts.keys()][choice_idx]
+
+        #breakpoint()
 
         # create new cluster
         if choice < 0:
@@ -380,7 +408,7 @@ snp_counts = -1*np.ones((N_seg_samps, N_SNPs, 2))
 Segs = []
 
 seg_sample_idx = np.random.choice(100, N_seg_samps, replace = False) # FIXME: need to determine total number of segmentation samples (it's not necessarily 100!)
-seg_sample_idx = np.r_[47, 17, 27, 39, 23, 37,  3, 18, 42,  1]
+#seg_sample_idx = np.r_[47, 17, 27, 39, 23, 37,  3, 18, 42,  1]
 
 clust_prior = sc.SortedDict()
 clust_count_prior = sc.SortedDict()
@@ -411,7 +439,7 @@ for n_it in range(N_seg_samps):
 
     # run clustering
     #s2c = run_DP(S, seg_clust_prior)
-    s2c, ph = run_DP(S, seg_clust_prior = None, clust_prior = clust_prior, clust_count_prior = clust_count_prior, n_iter = N_clust_samps)
+    s2c, ph = run_DP(S, clust_prior = clust_prior, clust_count_prior = clust_count_prior, n_iter = N_clust_samps)
 
     # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
     snps_to_clusters[N_clust_samps*n_it:N_clust_samps*(n_it + 1), :] = map_seg_clust_assignments_to_SNPs(s2c, S)
@@ -487,11 +515,23 @@ for n_it in range(N_seg_samps):
     # save overall segmentation for this sample
     Segs.append(S)
 
+np.savez("exome/6_C1D1_META.DP_clusts.auto_ref_correct.overdispersion92.no_phase_correct.npz", snps_to_clusters = snps_to_clusters, snps_to_phases = snps_to_phases)
+SNPs.to_pickle("exome/6_C1D1_META.SNPs.pickle")
+
 # quick visualization of prior
 plt.figure(1234); plt.clf()
 r = np.linspace(0, 1, 1000)
 for x in clust_prior.values():
     plt.plot(r, s.beta.pdf(r, x[0] + 1, x[1] + 1))
+
+# show counts of clust_prior
+plt.figure(1236); plt.clf()
+prior_fracs = np.r_[clust_prior.values()]
+plt.stem(prior_fracs[:, 0]/prior_fracs.sum(1), np.r_[clust_count_prior.values()])
+alpha = 2*(0.879) - 1 # plug into (...) allelic imbalance corresponding to LoH eyeballed from plot
+phis = np.r_[1, 1/2, 2/3, 3/4, 3/5, 4/5]#, 4/7, 5/6, 5/7, 5/8, 5/9]
+for phi in phis:
+    plt.axvline(alpha*phi + (1 - alpha)/2, color = 'k', linestyle = ':')
 
 # quick visualization of SNP cluster assignments
 plt.figure(1235); plt.clf()
@@ -528,12 +568,13 @@ for a in axs:
     a.set_yticks([])
 
 for i, clust_idx in enumerate(S["clust"].value_counts().index[0:20]):
+for i, clust_idx in enumerate(S["clust"].unique()):
     if clust_idx == -1:
         continue
     for _, r in S.loc[S["clust"] == clust_idx].iterrows():
         ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], r["min"] + 1, r["maj"] + 1)
         axs[i].add_patch(mpl.patches.Rectangle((r["start_gp"], ci_lo), r["end_gp"] - r["start_gp"], ci_hi - ci_lo, facecolor = colors[i % len(colors)], fill = True, alpha = 0.9, zorder = 1000))
-        ax.add_patch(mpl.patches.Rectangle((r["start_gp"], ci_lo), r["end_gp"] - r["start_gp"], ci_hi - ci_lo, facecolor = colors[i % len(colors)], fill = True, alpha = 0.1, zorder = 1000))
+        ax.add_patch(mpl.patches.Rectangle((r["start_gp"], ci_lo), r["end_gp"] - r["start_gp"], ci_hi - ci_lo, facecolor = colors[i % len(colors)], fill = True, alpha = 1, zorder = 1000))
 
 # plot beta dists. for clusters
 
@@ -599,15 +640,19 @@ for seg_assignments, seg_phases in zip(s2c, ph):
     # match phases to current sample
     S2.loc[seg_phases, ["min", "maj"]] = S2.loc[seg_phases, ["min", "maj"]].values[:, ::-1]
 
-    S_a = npg.aggregate(seg_assignments, S2["min"])
-    S_b = npg.aggregate(seg_assignments, S2["maj"])
+    # cut out garbage segments
+    ngarb_idx = S2["clust"] != 0
+    S2 = S2.loc[ngarb_idx]
+
+    S_a = npg.aggregate(seg_assignments[ngarb_idx], S2["min"])
+    S_b = npg.aggregate(seg_assignments[ngarb_idx], S2["maj"])
 
     print(ss.betaln(S_a + 1, S_b + 1).sum())
 
     CIs = s.beta.ppf([0.025, 0.5, 0.975], S_a[:, None] + 1, S_b[:, None] + 1)
 
     for su in np.unique(seg_assignments):
-        idx = seg_assignments == su
+        idx = seg_assignments[ngarb_idx] == su
 
         plt.plot(
           np.c_[S2.loc[idx, "start_gp"], S2.loc[idx, "end_gp"], np.full(idx.sum(), np.nan)].ravel(),
@@ -622,7 +667,7 @@ for seg_assignments, seg_phases in zip(s2c, ph):
     SNPs2 = SNPs.copy()
     for _, st, en in S2.loc[seg_phases, ["SNP_st", "SNP_en"]].itertuples():
         SNPs2.iloc[st:en, [0, 1]] = SNPs2.iloc[st:en, [1, 0]]
-    plt.scatter(SNPs2["gpos"], SNPs2["min"]/(SNPs2[["min", "maj"]].sum(1)), s = 0.01, color = 'k', zorder = 0, alpha = 0.05)
+    plt.scatter(SNPs2["gpos"].iloc[0:10000], (SNPs2["min"]/(SNPs2[["min", "maj"]].sum(1))).iloc[0:10000], s = 0.01, color = 'k', zorder = 0, alpha = 0.05)
 
 # chromosome boundaries
 chrbdy = allelic_segs.dropna().loc[:, ["start", "end"]]
@@ -704,7 +749,7 @@ ax.set_ylim([0, 1])
 
 h_points = 72*ax.bbox.height/f1.dpi
 
-for i, (snp_assignments, phase_assignments) in zip(np.r_[0:500:10], zip(snps_to_clusters[np.r_[0:500:10]], snps_to_phases[np.r_[0:500:10]])):
+for i, (snp_assignments, phase_assignments) in enumerate(zip(snps_to_clusters, snps_to_phases)):
     Seg = Segs[i//N_clust_samps].copy()
     seg_assignments = snp_assignments[Seg["SNP_st"]]
     seg_phases = phase_assignments[Seg["SNP_st"]]
@@ -725,11 +770,16 @@ for i, (snp_assignments, phase_assignments) in zip(np.r_[0:500:10], zip(snps_to_
           (CIs[su, 1]*np.ones([idx.sum(), 3])).ravel(),
           color = np.array(colors)[color_idx[su] % len(colors)],
           linewidth = h_points*(CIs[su, 2] - CIs[su, 0]),
-          alpha = 1/50,
+          alpha = 1/25,
           zorder = 1000
         )
 
-    # overlay SNPs
+# overlay SNPs
+for i, phase_assignments in zip(np.r_[0:500:10], np.unique(snps_to_phases[np.r_[0:500:10]], axis = 0)):
+    Seg = Segs[i//N_clust_samps].copy()
+    seg_assignments = snp_assignments[Seg["SNP_st"]]
+    seg_phases = phase_assignments[Seg["SNP_st"]]
+
     SNPs2 = SNPs.copy()
     for _, st, en in Seg.loc[seg_phases, ["SNP_st", "SNP_en"]].itertuples():
         SNPs2.iloc[st:en, [0, 1]] = SNPs2.iloc[st:en, [1, 0]]
@@ -799,6 +849,27 @@ for seg_samp, ph_samp in zip(snps_to_clusters_u, snps_to_phases.reshape([N_seg_s
 
             # plot segments
             ax.add_patch(mpl.patches.Rectangle((coords[i, 0], ci_lo), coords[i, 1] - coords[i, 0], ci_hi - ci_lo, facecolor = colors[clust_idx[i] % len(colors)], fill = True, alpha = 0.01, zorder = 1000))
+    
+
+# scrap code for determining log-odds cutoff for flipping segments
+
+ph_score = np.maximum(-300,
+  s.beta.logcdf(0.5, Seg["min"] + 1, Seg["maj"] + 1) - 
+  s.beta.logsf(0.5, Seg["min"] + 1, Seg["maj"] + 1)
+)
+plt.figure(1338); plt.clf()
+Seg = Segs[0]
+CIs = s.beta.ppf([0.025, 0.5, 0.975], Seg["min"][:, None] + 1, Seg["maj"][:, None] + 1)
+plt.scatter(Seg["start"], CIs[:, 1], c = ph_score, cmap = "Spectral", vmin = -5, vmax = 5)
+plt.scatter(Seg["start"], CIs[:, 1], c = s.beta.logcdf(0.5, Seg["min"] + 1, Seg["maj"] + 1), cmap = "Spectral", vmin = -50, vmax = 0)
+plt.axhline(0.5, linestyle = ":", color = 'k')
+#plt.errorbar(Seg["start"], CIs[:, 1], yerr = np.abs(CIs[:, 1] - CIs[:, np.r_[0, -1]].T), linestyle = "none")
+plt.colorbar()
+
+plt.figure(31337); plt.clf()
+for ct in snp_counts:
+    plt.scatter(np.r_[0:11768], ct[:, 1]/ct.sum(1), alpha = 0.01, color = 'k')
+    
 
 # }}}
 
