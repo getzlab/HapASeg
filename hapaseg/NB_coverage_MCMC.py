@@ -377,7 +377,7 @@ class AllelicCluster:
 
         return lls, mus, lepsis, Hs
     
-    def _finalize_sampling(self, ind, lls, split_indices, mus, lepsis, Hs):
+    def _neighborhood_sampling(self, ind, lls, split_indices, mus, lepsis, Hs):
 
         # find the most likely index and those indices within a significant range
         # (rn 7 -> at least 1/1000th as likely)
@@ -402,6 +402,48 @@ class AllelicCluster:
         
         return lls, split_indices, mus, lepsis, Hs
 
+    def _detailed_sampling(self, ind, lls, split_indices, mus, lepsis, Hs):
+
+        # find the most likely index and those indices within a significant range
+        # (rn 7 -> at least 1/1000th as likely)
+        top_lik = max(lls)
+        sig_threshold = top_lik - 7
+        within_range = np.r_[lls] > sig_threshold
+        sig_idx = np.r_[split_indices][within_range]
+
+        for ix in sig_idx:
+            #sample to the left of the position until were out of the significant range
+            ix_l = ix - 1
+            while True:
+                if ix_l < ind[0] + 2:
+                    break
+                ll_add, mu_add, lepsi_add, Hs_add = self._calculate_splits(ind, [ix_l])
+                if ll_ad > sig_threshold:
+                    split_indices.extend(ix_l)
+                    lls.extend(ll_add)
+                    mus.extend(mu_add)
+                    lepsis.extend(lepsi_add)
+                    Hs.extend(Hs_add)
+                    ix_l -= 1
+                else:
+                    break
+            #now do the same for the right side
+            ix_r = ix + 1
+            while True:
+                if ix_r > ind[1] -1:
+                    break
+                ll_add, mu_add, lepsi_add, Hs_add = self._calculate_splits(ind, [ix_r])
+                if ll_ad > sig_threshold:
+                    split_indices.extend(ix_r)
+                    lls.extend(ll_add)
+                    mus.extend(mu_add)
+                    lepsis.extend(lepsi_add)
+                    Hs.extend(Hs_add)
+                    ix_r += 1
+                else:
+                    break
+        return lls, split_indices, mus, lepsis, Hs
+        
     def calc_pk(self, ind, break_pick=None, debug=False):
         ind_len = ind[1] - ind[0]
         # do not allow segments to be split into segments of size less than 2
@@ -429,7 +471,7 @@ class AllelicCluster:
 
             # get lls from the difference kernel guesses
             lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
-            lls, split_indices, mus, lepsis, Hs = self._finalize_sampling(ind, lls, split_indices, mus, lepsis, Hs)
+            lls, split_indices, mus, lepsis, Hs = self._neighborhood_sampling(ind, lls, split_indices, mus, lepsis, Hs)
 
         lls = np.array(lls)
         log_k_probs = (lls - LSE(lls)).flatten()
@@ -459,9 +501,9 @@ class AllelicCluster:
     def _log_ML_join(self, ind, ret_opt_params=False):
         # mu_share, lepsi_share, H_share = self.NR_segment(ind, True)
         mu_share, lepsi_share, H_share = self.stats_optimizer(ind, True)
-        tmp_mui = self.mu_i_arr
+        tmp_mui = self.mu_i_arr.copy()
         tmp_mui[ind[0]:ind[1]] = mu_share
-        tmp_lepsi = self.lepsi_i_arr
+        tmp_lepsi = self.lepsi_i_arr.copy()
         tmp_lepsi[ind[0]:ind[1]] = lepsi_share
         ll_join = self.ll_cluster(tmp_mui, tmp_lepsi)
         if ret_opt_params:
