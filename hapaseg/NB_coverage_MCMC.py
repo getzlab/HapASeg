@@ -349,7 +349,7 @@ class AllelicCluster:
 
         # add on first and last windows
         difs_idxs = np.r_[np.r_[ind[0] + 2: ind[0] + 10], difs_idxs, np.r_[ind[1] - 10:ind[1] - 1]]
-        print('len ind: {}, len search region: {}'.format(ind[1] - ind[0], len(difs_idxs)))
+        #print('len ind: {}, len search region: {}'.format(ind[1] - ind[0], len(difs_idxs)))
         return list(difs_idxs)
 
     def _calculate_splits(self, ind, split_indices):
@@ -403,45 +403,58 @@ class AllelicCluster:
         return lls, split_indices, mus, lepsis, Hs
 
     def _detailed_sampling(self, ind, lls, split_indices, mus, lepsis, Hs):
-
+        max_samples = 25
         # find the most likely index and those indices within a significant range
         # (rn 7 -> at least 1/1000th as likely)
         top_lik = max(lls)
-        sig_threshold = top_lik - 7
+        sig_threshold = top_lik - 5
         within_range = np.r_[lls] > sig_threshold
         sig_idx = np.r_[split_indices][within_range]
-
+        sig_set = set(sig_idx)
+        num_samps = 0
         for ix in sig_idx:
             #sample to the left of the position until were out of the significant range
             ix_l = ix - 1
-            while True:
+            r_samples = 0
+            while r_samples < max_samples:
                 if ix_l < ind[0] + 2:
                     break
                 ll_add, mu_add, lepsi_add, Hs_add = self._calculate_splits(ind, [ix_l])
-                if ll_ad > sig_threshold:
-                    split_indices.extend(ix_l)
+                if ll_add[0] > sig_threshold and ix_l not in sig_set:
+                    split_indices.append(ix_l)
                     lls.extend(ll_add)
                     mus.extend(mu_add)
                     lepsis.extend(lepsi_add)
                     Hs.extend(Hs_add)
+                    
+                    sig_set.add(ix_l)
                     ix_l -= 1
+                    num_samps+=1
+                    r_samples += 1
                 else:
                     break
+            
             #now do the same for the right side
             ix_r = ix + 1
-            while True:
+            l_samples = 0
+            while l_samples < max_samples:
                 if ix_r > ind[1] -1:
                     break
                 ll_add, mu_add, lepsi_add, Hs_add = self._calculate_splits(ind, [ix_r])
-                if ll_ad > sig_threshold:
-                    split_indices.extend(ix_r)
+                if ll_add[0] > sig_threshold and ix_r not in sig_set:
+                    split_indices.append(ix_r)
                     lls.extend(ll_add)
                     mus.extend(mu_add)
                     lepsis.extend(lepsi_add)
                     Hs.extend(Hs_add)
+
+                    sig_set.add(ix_r)
                     ix_r += 1
+                    num_samps+=1
+                    l_samples +=1
                 else:
                     break
+        #print('num_extra samps', num_samps)
         return lls, split_indices, mus, lepsis, Hs
         
     def calc_pk(self, ind, break_pick=None, debug=False):
@@ -471,7 +484,7 @@ class AllelicCluster:
 
             # get lls from the difference kernel guesses
             lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
-            lls, split_indices, mus, lepsis, Hs = self._neighborhood_sampling(ind, lls, split_indices, mus, lepsis, Hs)
+            lls, split_indices, mus, lepsis, Hs = self._detailed_sampling(ind, lls, split_indices, mus, lepsis, Hs)
 
         lls = np.array(lls)
         log_k_probs = (lls - LSE(lls)).flatten()
