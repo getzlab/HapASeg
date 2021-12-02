@@ -8,6 +8,7 @@ from statsmodels.tools.sm_exceptions import ConvergenceWarning, HessianInversion
 import h5py
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from scipy.signal import find_peaks
 
 warnings.simplefilter('ignore', ConvergenceWarning)
 warnings.simplefilter('ignore', HessianInversionWarning)
@@ -309,33 +310,45 @@ class AllelicCluster:
         for i, ep in enumerate(eps):
             res[i] = self.ll_nbinom(r_ind, self.mu, C_ind, self.beta, self.mu_i, ep)
         return eps[np.argmax(res)]
-
-    # finds the indices of the top ~3% (2 stds above mean) of the difference kernel values in addition to the first and last window bins
-    def _find_difs(self, ind, window=10, zscore=2):
-        residuals = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) - (self.mu.flatten()) - (
-                    self.C[ind[0]:ind[1]] @ self.beta).flatten())
+    
+    def _change_kernel(self, ind, residuals, window):
+        
         difs = []
         for i in np.r_[window:len(residuals) - window]:
             difs.append(np.abs(residuals[i - window:i].mean() - residuals[i:i + window].mean()))
         difs = np.r_[difs]
-        if zscore==5:
-            # we add a prior for breakpoints near the ends of the window
+        if window > 10:
             x = np.r_[:len(difs)]
             prior = np.exp(2 * np.abs(x - len(difs) / 2) / len(difs))
             difs = prior * difs
-        cutoff = difs.mean() + zscore * np.sqrt(difs.var())
-
-        full_idxs = np.r_[ind[0] + 2:ind[1] - 1]
-        difs_full = np.r_[np.zeros(window - 2), difs, np.zeros(window - 1)]
-        difs_idxs = full_idxs[difs_full > cutoff]
         
+        cutoff = difs.mean() + 2 * np.sqrt(difs.var())
+        
+        peaks, _ = find_peaks(difs, height=cutoff, distance= max(25, window/2))
+        peaks = peaks + ind[0] + window
+        return list(peaks)
+
+    # finds the indices of the top ~3% (2 stds above mean) of the difference kernel values in addition to the first and last window bins
+    def _find_difs(self, ind):
+        residuals = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) - (self.mu.flatten()) - (
+                    self.C[ind[0]:ind[1]] @ self.beta).flatten())
+       
+        len_ind = ind[1]-ind[0]
+        windows = np.array([10, 50, 100, 250])
+        windows = windows[2*windows < len_ind]
+        difs = []
+        for window in windows:
+            difs.append(self._change_kernel(ind, residuals, window))
+        difs_idxs = set().union(*difs)
+        difs_idxs = np.r_[list(difs_idxs)]
+       # print(difs_idxs)
         # if there are no that pass the threshold return them all
         if len(difs_idxs) ==0:
             print('no significant bins')
-            return list(full_idxs)
+            return list(np.r_[ind[0] + 2:ind[1] - 1])
 
         # add on first and last windows
-        difs_idxs = np.r_[np.r_[ind[0] + 2: ind[0] + window], difs_idxs, np.r_[ind[1] - window:ind[1] - 1]]
+        difs_idxs = np.r_[np.r_[ind[0] + 2: ind[0] + 10], difs_idxs, np.r_[ind[1] - 10:ind[1] - 1]]
         print('len ind: {}, len search region: {}'.format(ind[1] - ind[0], len(difs_idxs)))
         return list(difs_idxs)
 
@@ -363,9 +376,33 @@ class AllelicCluster:
             lls.append(ll)
 
         return lls, mus, lepsis, Hs
+    
+    def _finalize_sampling(self, ind, lls, split_indices, mus, lepsis, Hs):
+
+        # find the most likely index and those indices within a significant range
+        # (rn 7 -> at least 1/1000th as likely)
+        top_lik = max(lls)
+        within_range = np.r_[lls] > (top_lik - 7)
+        significant = np.r_[split_indices][within_range]
+
+            # increase sampling of significantly likely regions
+        extra_samples = sc.SortedSet({})
+        for s in significant:
+            for i in np.r_[max(ind[0] + 2, s - 5):min(ind[1] - 1, s + 5)]:
+                extra_samples.add(i)
+        
+        # no need to resample things we already calculated
+        extra_samples = list(extra_samples - set(significant))
+        lls_add, mus_add, lepsis_add, Hs_add = self._calculate_splits(ind, extra_samples)
+        lls.extend(lls_add)
+        mus.extend(mus_add)
+        lepsis.extend(lepsis_add)
+        Hs.extend(Hs_add)
+        split_indices.extend(extra_samples)
+        
+        return lls, split_indices, mus, lepsis, Hs
 
     def calc_pk(self, ind, break_pick=None, debug=False):
-
         ind_len = ind[1] - ind[0]
         # do not allow segments to be split into segments of size less than 2
         if ind_len < 4 and not debug:
@@ -384,14 +421,7 @@ class AllelicCluster:
         # otherwise we deploy our change kernel to limit our search space
         # these parameters essentially differentiate between wgs and exome samples
         else:
-            if ind_len > 2000:
-                window_len = 50
-                zscore = 5
-            else:
-                window_len = 10
-                zscore = 2
-
-            split_indices = self._find_difs(ind, window_len, zscore)
+            split_indices = self._find_difs(ind)
             
             # if we are inerested in the liklihood of a particular split we add that to the list of indices to sample
             if break_pick:
@@ -399,26 +429,7 @@ class AllelicCluster:
 
             # get lls from the difference kernel guesses
             lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
-
-            # find the most likely index and those indices within a significant range
-            # (rn 7 -> at least 1/1000th as likely)
-            top_lik = max(lls)
-            within_range = np.r_[lls] > (top_lik - 7)
-            significant = np.r_[split_indices][within_range]
-
-            # increase sampling of significantly likely regions
-            extra_samples = sc.SortedSet({})
-            for s in significant:
-                for i in np.r_[max(ind[0] + 2, s - 5):min(ind[1] - 1, s + 5)]:
-                    extra_samples.add(i)
-            # no need to resample things we already calculated
-            extra_samples = list(extra_samples - set(significant))
-            lls_add, mus_add, lepsis_add, Hs_add = self._calculate_splits(ind, extra_samples)
-            lls.extend(lls_add)
-            mus.extend(mus_add)
-            lepsis.extend(lepsis_add)
-            Hs.extend(Hs_add)
-            split_indices.extend(extra_samples)
+            lls, split_indices, mus, lepsis, Hs = self._finalize_sampling(ind, lls, split_indices, mus, lepsis, Hs)
 
         lls = np.array(lls)
         log_k_probs = (lls - LSE(lls)).flatten()
