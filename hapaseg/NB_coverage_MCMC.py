@@ -358,22 +358,30 @@ class AllelicCluster:
         lepsis = []
         Hs = []
         for ix in split_indices:
-            mu_l, lepsi_l, H_l = self.stats_optimizer((ind[0], ix), True)
-            mu_r, lepsi_r, H_r = self.stats_optimizer((ix, ind[1]), True)
+            if ix < 0:
+                # no split proposal
+                ll_join = self.ll_cluster(self.mu_i_arr, self.lepsi_i_arr)
+                lls.append(ll_join)
+                mus.append(None)
+                lepsis.append(None)
+                Hs.append(None)
+            else:
+                mu_l, lepsi_l, H_l = self.stats_optimizer((ind[0], ix), True)
+                mu_r, lepsi_r, H_r = self.stats_optimizer((ix, ind[1]), True)
 
-            mus.append((mu_l, mu_r))
-            lepsis.append((lepsi_l, lepsi_r))
-            Hs.append((H_l, H_r))
+                mus.append((mu_l, mu_r))
+                lepsis.append((lepsi_l, lepsi_r))
+                Hs.append((H_l, H_r))
 
-            tmp_mui = self.mu_i_arr.copy()
-            tmp_mui[ind[0]:ix] = mu_l
-            tmp_mui[ix: ind[1]] = mu_r
-            tmp_lepsi = self.lepsi_i_arr.copy()
-            tmp_lepsi[ind[0]:ix] = lepsi_l
-            tmp_lepsi[ix: ind[1]] = lepsi_r
+                tmp_mui = self.mu_i_arr.copy()
+                tmp_mui[ind[0]:ix] = mu_l
+                tmp_mui[ix: ind[1]] = mu_r
+                tmp_lepsi = self.lepsi_i_arr.copy()
+                tmp_lepsi[ind[0]:ix] = lepsi_l
+                tmp_lepsi[ix: ind[1]] = lepsi_r
 
-            ll = self.ll_cluster(tmp_mui, tmp_lepsi)
-            lls.append(ll)
+                ll = self.ll_cluster(tmp_mui, tmp_lepsi)
+                lls.append(ll)
 
         return lls, mus, lepsis, Hs
     
@@ -388,6 +396,9 @@ class AllelicCluster:
             # increase sampling of significantly likely regions
         extra_samples = sc.SortedSet({})
         for s in significant:
+            #dont sample around no split index
+            if s < 0:
+                continue
             for i in np.r_[max(ind[0] + 2, s - 5):min(ind[1] - 1, s + 5)]:
                 extra_samples.add(i)
         
@@ -413,6 +424,9 @@ class AllelicCluster:
         sig_set = set(sig_idx)
         num_samps = 0
         for ix in sig_idx:
+            #dont sample areound the split index
+            if ix < 0:
+                continue
             #sample to the left of the position until were out of the significant range
             ix_l = ix - 1
             r_samples = 0
@@ -471,7 +485,7 @@ class AllelicCluster:
         
         # if the cluster is sufficiently small we interrogate the whole space of splits    
         if ind_len < 150:
-            split_indices = np.r_[ind[0] + 2: ind[1] - 1]
+            split_indices = np.r_[ind[0] + 2: ind[1] - 1, -1]
             lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
         # otherwise we deploy our change kernel to limit our search space
         # these parameters essentially differentiate between wgs and exome samples
@@ -481,6 +495,9 @@ class AllelicCluster:
             # if we are inerested in the liklihood of a particular split we add that to the list of indices to sample
             if break_pick:
                 split_indices.append(break_pick)
+            
+            #option of no split is index -1
+            split_indices.append(-1)
 
             # get lls from the difference kernel guesses
             lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
@@ -498,8 +515,15 @@ class AllelicCluster:
             # pick a breakpoint based on relative likelihood
             b_idx = np.random.choice(np.r_[:len(split_indices)], p=np.exp(log_k_probs))
             break_pick = split_indices[b_idx]
+            
+            if break_pick < 0:
+                #we picked no split so we end this iteration
+                if debug:
+                    return lls, split_indices, break_pick, None, None, None, None, None
+                return -1, None, None, None, None, None
+
             if debug:
-                return lls, break_pick, lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx]
+                return lls, split_indices, break_pick, lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx]
             
             #cache this breakpoint for future joins
             self.breakpoint_cache[(ind[0],ind[1],break_pick)] = (lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx])
@@ -559,6 +583,12 @@ class AllelicCluster:
 
         else:
             break_pick, ll_split, pk, mus, lepsis, Hs = self.calc_pk(ind, debug=debug)
+        
+        if break_pick < 0:
+            #we have chosen the proposal of not splitting
+            print('proposal splits rejected')
+            return 0
+
         split_log_ML = ll_split + self._get_log_ML_split(Hs[0], Hs[1])
         _, _, join_log_ML = self._log_ML_join(ind)
 
