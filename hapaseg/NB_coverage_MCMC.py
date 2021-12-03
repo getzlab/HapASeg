@@ -529,6 +529,33 @@ class AllelicCluster:
             self.breakpoint_cache[(ind[0],ind[1],break_pick)] = (lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx])
             return break_pick, lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx]
 
+    def _lls_to_MLs(self, lls, Hs):
+        MLs = np.zeros(len(lls))
+        for i, (ll, Hs) in enumerate(zip(lls, Hs)):
+            MLs[i] = ll + self._get_log_ML_split(Hs[0], Hs[1])
+        return MLs
+
+    def _get_split_liks(self, ind, debug=False):
+        ind_len = ind[1] - ind[0]
+        # do not allow segments to be split into segments of size less than 2
+        if ind_len < 4 and not debug:
+            raise Exception('segment was too small to split: length: ', ind[1] - ind[0])
+
+        # if the cluster is sufficiently small we interrogate the whole space of splits
+        if ind_len < 150:
+            split_indices = np.r_[ind[0] + 2: ind[1] - 1]
+            lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
+        # otherwise we deploy our change kernel to limit our search space
+        else:
+            split_indices = self._find_difs(ind)
+
+            # get lls from the difference kernel guesses
+            lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
+            lls, split_indices, mus, lepsis, Hs = self._detailed_sampling(ind, lls, split_indices, mus, lepsis, Hs)
+        MLs = self._lls_to_MLs(lls, Hs)
+
+        return split_indices, MLs, mus, lepsis
+
     def _get_log_ML_approx_join(self, Hess):
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-Hess))) / 2
 
@@ -556,8 +583,6 @@ class AllelicCluster:
     # TODO: check if marginal liklihoods are correct
     def split(self, debug):
 
-        if debug:
-            ll_trace = np.zeros(self.segment_ID.shape[0])
         # pick a random segment
         seg = np.random.choice(self.segments)
 
@@ -568,57 +593,37 @@ class AllelicCluster:
             return -1
 
         ind = self.get_seg_ind(seg)
-        # print('ind: ', ind)
-        if debug:
-            lls, break_pick, ll_split, pk, mus, lepsis, Hs = self.calc_pk(ind, debug=debug)
-            ll_trace[ind[0] + 2: ind[1] - 1] = lls - LSE(lls)
 
-            for s in self.segments.difference(set([seg])):
-                s_ind = self.get_seg_ind(s)
-                if (s_ind[1] - s_ind[0] < 4):
-                    continue
-                print('s_ind:', seg, s_ind)
-                lls, _, _, _, _, _, _ = self.calc_pk(s_ind, debug=debug)
-                ll_trace[s_ind[0] + 2: s_ind[1] - 1] = lls - LSE(lls)
+        split_indices, log_split_MLs, mus, lepsis = self.calc_pk(ind, debug=debug)
+        _, _, log_join_ML = self._log_ML_join(ind)
 
-        else:
-            break_pick, ll_split, pk, mus, lepsis, Hs = self.calc_pk(ind, debug=debug)
-        
-        if break_pick < 0:
-            #we have chosen the proposal of not splitting
-            print('proposal splits rejected')
-            return 0
+        log_MLs = np.r_[log_split_MLs, log_join_ML]
+        split_indices.append(-1)
+        max_ML = max(log_MLs)
+        k_probs = np.exp(log_MLs - max_ML) / np.exp(log_MLs - max_ML).sum()
+        break_idx = np.random.choice(split_indices, p=k_probs)
 
-        split_log_ML = ll_split + self._get_log_ML_split(Hs[0], Hs[1])
-        _, _, join_log_ML = self._log_ML_join(ind)
-
-        # print('split log ml ratio: ', split_log_ML - join_log_ML)
-        # print('split log mh ratio: ', split_log_ML - join_log_ML + self._log_q_join() - self._log_q_split(pk))
-        if np.log(np.random.rand()) < np.minimum(0, split_log_ML - join_log_ML +
-                                                    self._log_q_join() - self._log_q_split(pk)):
-            # print('split!')
-            if debug:
-                self.ll_traces.append(ll_trace)
+        if break_idx > 0:
             # split the segments
             # update segment assignments for new segment
-            self.segment_ID[break_pick:ind[1]] = break_pick
-            self.segments.add(break_pick)
-            self.segment_lens[break_pick] = ind[1] - break_pick
+            self.segment_ID[break_idx:ind[1]] = break_idx
+            self.segments.add(break_idx)
+            self.segment_lens[break_idx] = ind[1] - break_idx
 
             # update old seglen
-            self.segment_lens[ind[0]] = break_pick - ind[0]
+            self.segment_lens[ind[0]] = break_idx - ind[0]
 
             # update mu_i and lepsi_i values
-            self.mu_i_arr[ind[0]:break_pick] = mus[0]
-            self.mu_i_arr[break_pick:ind[1]] = mus[1]
-            self.lepsi_i_arr[ind[0]:break_pick] = lepsis[0]
-            self.lepsi_i_arr[break_pick:ind[1]] = lepsis[1]
+            self.mu_i_arr[ind[0]:break_idx] = mus[0]
+            self.mu_i_arr[break_idx:ind[1]] = mus[1]
+            self.lepsi_i_arr[ind[0]:break_idx] = lepsis[0]
+            self.lepsi_i_arr[break_idx:ind[1]] = lepsis[1]
 
-            self.F.update([break_pick, break_pick])
+            self.F.update([break_idx, break_idx])
             # print(self.F)
             self.phase_history.append(self.F.copy())
-            return break_pick
-
+            return break_idx
+        # otherwise we have chosen to join and we do nothing
         return 0
 
     def join(self, debug):
@@ -632,14 +637,18 @@ class AllelicCluster:
         seg_l = self.segments[seg_l_ind]
         seg_r = self.segments[seg_l_ind + 1]
         ind = self.get_join_seg_ind(seg_l, seg_r)
-        # print('attempting join on segs:', seg_l, seg_r)
-        # print('join ind: ', ind)
-        ll_split, pk, mus, lepsis, Hs = self.calc_pk(ind, break_pick=seg_r)
-        split_log_ML = ll_split + self._get_log_ML_split(Hs[0], Hs[1])
-        mu_share, lepsi_share, join_log_ML = self._log_ML_join(ind)
 
-        if np.log(np.random.rand()) < np.minimum(0, join_log_ML - split_log_ML +
-                                                    self._log_q_split(pk) - self._log_q_join()):
+        lls_split, _, _, Hs = self._calculate_splits(ind, [seg_r])
+        log_split_ML = lls_split[0] + self._get_log_ML_split(Hs[0][0], Hs[0][1])
+        mu_share, lepsi_share, log_join_ML = self._log_ML_join(ind)
+
+        log_MLs = np.r_[log_split_ML, log_join_ML]
+        max_ML = max(log_MLs)
+        k_probs = np.exp(log_MLs - max_ML)/np.exp(log_MLs - max_ML).sum()
+
+        join_choice = np.random.choice([0, 1], p=k_probs)
+
+        if join_choice:
             # join the segments
             # update segment assignments for new segment
             self.segment_ID[ind[0]:ind[1]] = seg_l
