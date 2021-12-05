@@ -532,7 +532,10 @@ class AllelicCluster:
     def _lls_to_MLs(self, lls, Hs):
         MLs = np.zeros(len(lls))
         for i, (ll, Hs) in enumerate(zip(lls, Hs)):
-            MLs[i] = ll + self._get_log_ML_split(Hs[0], Hs[1])
+            laplacian = self._get_log_ML_split(Hs[0], Hs[1])
+            if np.isnan(laplacian):
+                laplacian = -1e50
+            MLs[i] = ll + laplacian
         return MLs
 
     def _get_split_liks(self, ind, debug=False):
@@ -543,7 +546,7 @@ class AllelicCluster:
 
         # if the cluster is sufficiently small we interrogate the whole space of splits
         if ind_len < 150:
-            split_indices = np.r_[ind[0] + 2: ind[1] - 1]
+            split_indices = list(np.r_[ind[0] + 2: ind[1] - 1])
             lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
         # otherwise we deploy our change kernel to limit our search space
         else:
@@ -594,17 +597,20 @@ class AllelicCluster:
 
         ind = self.get_seg_ind(seg)
 
-        split_indices, log_split_MLs, mus, lepsis = self.calc_pk(ind, debug=debug)
+        split_indices, log_split_MLs, all_mus, all_lepsis = self._get_split_liks(ind, debug=debug)
         _, _, log_join_ML = self._log_ML_join(ind)
 
         log_MLs = np.r_[log_split_MLs, log_join_ML]
         split_indices.append(-1)
+
         max_ML = max(log_MLs)
         k_probs = np.exp(log_MLs - max_ML) / np.exp(log_MLs - max_ML).sum()
-        break_idx = np.random.choice(split_indices, p=k_probs)
-
+        choice_idx = np.random.choice(len(split_indices), p=k_probs)
+        break_idx = split_indices[choice_idx]
         if break_idx > 0:
             # split the segments
+            mus = all_mus[choice_idx]
+            lepsis = all_lepsis[choice_idx]
             # update segment assignments for new segment
             self.segment_ID[break_idx:ind[1]] = break_idx
             self.segments.add(break_idx)
