@@ -608,6 +608,7 @@ class DPinstance:
         if len(self.clust_prior) > 1:
             for seg_idx in range(len(self.S)):
                 seg_idx = np.r_[seg_idx] 
+                #self.rephase(seg_idx)
 
                 # compute probability that segment belongs to each cluster prior element
                 S_a = self.S.iloc[seg_idx[0], self.min_col]
@@ -786,7 +787,7 @@ class DPinstance:
             #
             # perform phase correction on segment/cluster
             # flip min/maj with probability that alleles are oriented the "wrong" way
-            self.rephase(seg_idx)
+            rephase_prob = self.compute_rephase_prob(seg_idx)
 
             #
             # choose to join a cluster or make a new one
@@ -821,18 +822,22 @@ class DPinstance:
             C = ss.betaln(C_ab[:, 0] + 1, C_ab[:, 1] + 1)
             # A is likelihood cluster B is part of, minus B
             #A = ss.betaln(A_a + 1, A_b + 1)
-            # B+C is likelihood of target cluster post-join
-            BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
+            # B+C is likelihood of target cluster post-join, with both phase orientations
+            BC = ss.betaln(C_ab[:, [0]] + np.c_[B_a, B_b] + 1, C_ab[:, [1]] + np.c_[B_b, B_a] + 1)
+
+            MLs = BC - C[:, None] + np.log(np.r_[1 - rephase_prob, rephase_prob])
+            # TODO: get adj_BC working again
 
             #     L(join)           L(split)
             #MLs = A + BC + adj_BC - (AB + C + adj_AB)
             # TODO: remove extraneous calculations (e.g. adj_AB, AB, A);
             #       likelihood simplifies to this in the prior:
-            MLs = adj_BC + BC - C
+            #MLs = adj_BC + BC - C
 
             # if we are moving multiple contiguous segments assigned to the same
             # cluster, do not allow them to create a new cluster. this helps keep
             # cluster indices consistent
+            # TODO: if we don't care about keeping indices consistent, then we can probably remove this line
             if n_move > 1 and not move_clust:
                 MLs[self.clust_sums.index(-1)] = -np.inf
 
