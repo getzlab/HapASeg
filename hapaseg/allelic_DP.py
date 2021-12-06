@@ -872,16 +872,17 @@ class DPinstance:
                   np.r_[[self.clust_prior.index(x) if x in self.clust_prior else 0 for x in (prior_com | prior_null | {0})]]
                 ]
 
+                # prior marginal likelihoods for both phase orientations
                 prior_MLs = ss.betaln( # prior clusters + segment
-                  np.r_[self.clust_prior_mat[prior_idx, 0]] + B_a + 1,
-                  np.r_[self.clust_prior_mat[prior_idx, 1]] + B_b + 1
+                  np.c_[self.clust_prior_mat[prior_idx, 0]] + np.c_[B_a, B_b] + 1,
+                  np.c_[self.clust_prior_mat[prior_idx, 1]] + np.c_[B_b, B_a] + 1
                 ) \
-                - (ss.betaln(B_a + 1, B_b + 1) + np.r_[np.r_[self.clust_prior_liks.values()][prior_idx]]) # prior clusters, segment
+                - np.c_[ss.betaln(B_a + 1, B_b + 1) + np.r_[np.r_[self.clust_prior_liks.values()][prior_idx]]] # prior clusters, segment
 
                 clust_prior_p = np.maximum(np.exp(prior_MLs - prior_MLs.max())/np.exp(prior_MLs - prior_MLs.max()).sum(), 1e-300)
 
                 # expand MLs to account for multiple new clusters
-                MLs = np.r_[np.full(len(prior_diff), MLs[0]), MLs[1:]]
+                MLs = np.r_[np.full([len(prior_diff), 2], MLs[0]), MLs[1:, :]]
                 
             # DP prior based on clusters sizes
             # DP alpha factor is split proportionally between prior_diff and -1 (brand new cluster)
@@ -890,7 +891,7 @@ class DPinstance:
             count_prior /= count_prior.sum()
 
             # choose to join a cluster or make a new one (choice_idx = 0)
-            num = MLs + np.log(count_prior) + np.log(clust_prior_p)
+            num = MLs + np.log(count_prior[:, None]) + np.log(clust_prior_p)
             choice_p = np.exp(num - num.max())/np.exp(num - num.max()).sum()
             choice_idx = np.random.choice(
               np.r_[0:len(MLs)],
