@@ -651,7 +651,7 @@ class DPinstance:
 
                 # rephase
                 if choice < 0:
-                    self.rephase(seg_idx, force = True)
+                    self.S.iloc[seg_idx, self.flip_col] = ~self.S.iloc[seg_idx, self.flip_col]
                     choice = -choice
 
                 self.S.iloc[seg_idx, self.clust_col] = choice
