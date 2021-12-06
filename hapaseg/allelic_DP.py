@@ -354,29 +354,32 @@ class DPinstance:
         self.clust_count_prior[-1] = self.alpha # DP alpha factor, i.e. relative probability of opening new cluster
         self.clust_count_prior[0] = self.alpha # relative probability of sending a cluster to the garbage
 
+    def compute_rephase_prob(self, seg_idx):
+        A_a = self.S.iloc[seg_idx, self.aalt_col].sum() + 1
+        A_b = self.S.iloc[seg_idx, self.aref_col].sum() + 1
+        B_a = self.S.iloc[seg_idx, self.balt_col].sum() + 1
+        B_b = self.S.iloc[seg_idx, self.bref_col].sum() + 1
+
+        # use normal approximation to beta if conditions are right
+        if A_a > 20 and A_b > 20 and B_a > 20 and B_b > 20:
+            m_x = A_a/(A_a + A_b)
+            s_x = A_a*A_b/((A_a + A_b)**2*(A_a + A_b + 1))
+            m_y = B_a/(B_a + B_b)
+            s_y = B_a*B_b/((B_a + B_b)**2*(B_a + B_b + 1))
+
+            return s.norm.cdf(0, m_y - m_x, np.sqrt(s_x + s_y))
+
+        # Monte Carlo simulate difference of betas
+        else:
+            x = s.beta.rvs(A_a, A_b, size = 1000)
+            y = s.beta.rvs(B_a, B_b, size = 1000)
+
+            return (x > y).mean()
 
     def rephase(self, seg_idx, force = False):
+        do_rephase = False
         if not force:
-            A_a = self.S.iloc[seg_idx, self.aalt_col].sum() + 1
-            A_b = self.S.iloc[seg_idx, self.aref_col].sum() + 1
-            B_a = self.S.iloc[seg_idx, self.balt_col].sum() + 1
-            B_b = self.S.iloc[seg_idx, self.bref_col].sum() + 1
-
-            # use normal approximation to beta if conditions are right
-            if A_a > 20 and A_b > 20 and B_a > 20 and B_b > 20:
-                m_x = A_a/(A_a + A_b)
-                s_x = A_a*A_b/((A_a + A_b)**2*(A_a + A_b + 1))
-                m_y = B_a/(B_a + B_b)
-                s_y = B_a*B_b/((B_a + B_b)**2*(B_a + B_b + 1))
-
-                do_rephase = np.random.rand() < s.norm.cdf(0, m_y - m_x, np.sqrt(s_x + s_y))
-
-            # Monte Carlo simulate difference of betas
-            else:
-                x = s.beta.rvs(A_a, A_b, size = 1000)
-                y = s.beta.rvs(B_a, B_b, size = 1000)
-
-                do_rephase = np.random.rand() < (x > y).mean()
+            do_rephase = np.random.rand() < self.compute_rephase_prob(seg_idx)
 
         if force or do_rephase:
             self.S.iloc[seg_idx, [self.min_col, self.maj_col]] = self.S.iloc[seg_idx, [self.min_col, self.maj_col]].values[:, ::-1]
