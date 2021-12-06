@@ -905,6 +905,7 @@ class DPinstance:
             # choose to join a cluster or make a new one (choice_idx = 0)
             num = MLs + np.log(count_prior[:, None]) + np.log(clust_prior_p)
             choice_p = np.exp(num - num.max())/np.exp(num - num.max()).sum()
+            # row major indexing: choice_idx//2 = cluster index, choice_idx & 1 = rephase true
             choice_idx = np.random.choice(
               np.r_[0:np.prod(choice_p.shape)],
               p = choice_p.ravel()
