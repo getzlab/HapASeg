@@ -358,11 +358,31 @@ class DPinstance:
         self.clust_count_prior[-1] = self.alpha # DP alpha factor, i.e. relative probability of opening new cluster
         self.clust_count_prior[0] = self.alpha # relative probability of sending a cluster to the garbage
 
+    def _Siat_ph(self, ridx, min = True):
+        # min, flip => maj
+        # ~min, ~flip => maj
+        # min, ~flip => min
+        # ~min, flip => min
+        col = self.min_col if self.S.iat[ridx, self.flip_col] ^ min else self.maj_col
+        return self.S.iat[ridx, col]
+
+    def _Ssum_ph(self, seg_idx, min = True):
+        #flip = self.flip_mat[seg_idx]
+        flip = self.S.iloc[seg_idx, self.flip_col]
+        flip_n = ~flip
+        if min:
+            return self.mm_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum()
+        else:
+            return self.mm_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum()
+
     def compute_rephase_prob(self, seg_idx):
-        A_a = self.S.iloc[seg_idx, self.aalt_col].sum() + 1
-        A_b = self.S.iloc[seg_idx, self.aref_col].sum() + 1
-        B_a = self.S.iloc[seg_idx, self.balt_col].sum() + 1
-        B_b = self.S.iloc[seg_idx, self.bref_col].sum() + 1
+        flip = self.S.iloc[seg_idx, self.flip_col]
+        flip_n = ~flip
+
+        A_a = self.alt_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum() + 1
+        A_b = self.ref_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum() + 1
+        B_a = self.alt_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum() + 1
+        B_b = self.ref_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum() + 1
 
         # use normal approximation to beta if conditions are right
         if A_a > 20 and A_b > 20 and B_a > 20 and B_b > 20:
@@ -379,17 +399,6 @@ class DPinstance:
             y = s.beta.rvs(B_a, B_b, size = 1000)
 
             return (x > y).mean()
-
-    def rephase(self, seg_idx, force = False):
-        do_rephase = False
-        if not force:
-            do_rephase = np.random.rand() < self.compute_rephase_prob(seg_idx)
-
-        if force or do_rephase:
-            self.S.iloc[seg_idx, [self.min_col, self.maj_col]] = self.S.iloc[seg_idx, [self.min_col, self.maj_col]].values[:, ::-1]
-            self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]] = self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]].values[:, ::-1]
-            self.S.iloc[seg_idx, [self.aref_col, self.bref_col]] = self.S.iloc[seg_idx, [self.aref_col, self.bref_col]].values[:, ::-1]
-            self.S.iloc[seg_idx, self.flip_col] = ~self.S.iloc[seg_idx, self.flip_col]
 
     def SJliks(self, targ_clust, upstream_clust, downstream_clust, J_a, J_b, U_a, U_b, D_a, D_b):
 #            if st == en:
