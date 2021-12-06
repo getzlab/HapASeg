@@ -894,12 +894,16 @@ class DPinstance:
             num = MLs + np.log(count_prior[:, None]) + np.log(clust_prior_p)
             choice_p = np.exp(num - num.max())/np.exp(num - num.max()).sum()
             choice_idx = np.random.choice(
-              np.r_[0:len(MLs)],
-              p = choice_p
+              np.r_[0:np.prod(choice_p.shape)],
+              p = choice_p.ravel()
             )
             # -1 = brand new, -2, -3, ... = -(prior clust index) - 2
             # 0 = garbage
-            choice = np.r_[-np.r_[prior_diff] - 2, 0, self.clust_counts.keys()][choice_idx]
+            choice = np.r_[-np.r_[prior_diff] - 2, 0, self.clust_counts.keys()][choice_idx//2]
+
+            # save rephasing status
+            if choice_idx & 1:
+                self.S.iloc[seg_idx, self.flip_col] = ~self.S.iloc[seg_idx, self.flip_col]
 
             # create new cluster
             if choice < 0:
