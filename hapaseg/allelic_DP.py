@@ -332,6 +332,10 @@ class DPinstance:
         self.clust_count_prior = clust_count_prior.copy()
         self.alpha = alpha
 
+        self.mm_mat = self.S.loc[:, ["min", "maj"]].values.reshape(-1, order = "F") # numpy for speed
+        self.ref_mat = self.S.loc[:, ["A_ref", "B_ref"]].values.reshape(-1, order = "F")
+        self.alt_mat = self.S.loc[:, ["A_alt", "B_alt"]].values.reshape(-1, order = "F")
+
         #
         # define column indices
         self.clust_col = self.S.columns.get_loc("clust")
@@ -447,8 +451,8 @@ class DPinstance:
                   (self.clusts[st - j] == U_cl or self.clusts[st - j] == 0):
                     # again, skip over segments in the garbage
                     if self.clusts[st - j] != 0:
-                        UD_counts[o, 0] += self.S.iloc[st - j, self.min_col]
-                        UD_counts[o, 1] += self.S.iloc[st - j, self.maj_col]
+                        UD_counts[o, 0] += self._Siat_ph(st - j, min = True)
+                        UD_counts[o, 1] += self._Siat_ph(st - j, min = False)
 
                     j += 1
 
@@ -464,8 +468,8 @@ class DPinstance:
                 while en + j < len(self.S) - 1 and self.clusts[en + j] != -1 and \
                   (self.clusts[en + j] == D_cl or self.clusts[en + j] == 0):
                     if self.clusts[en + j] != 0:
-                        UD_counts[o, 2] += self.S.iloc[en + j, self.min_col]
-                        UD_counts[o, 3] += self.S.iloc[en + j, self.maj_col]
+                        UD_counts[o, 2] += self._Siat_ph(en + j, min = True)
+                        UD_counts[o, 3] += self._Siat_ph(en + j, min = False)
 
                     j += 1
 
@@ -497,8 +501,8 @@ class DPinstance:
                 # min/maj counts of the segment(s) being moved
                 st = ordpairs[j, 0]
                 en = ordpairs[j, 1]
-                S_a = self.S.iloc[:, self.min_col].values[st:(en + 1)].sum()
-                S_b = self.S.iloc[:, self.maj_col].values[st:(en + 1)].sum()
+                S_a = self._Ssum_ph(np.r_[st:(en + 1)], min = True) # XXX: why en + 1?
+                S_b = self._Ssum_ph(np.r_[st:(en + 1)], min = False) # XXX: why en + 1?
 
                 # adjacency likelihood of this segment remaining where it is
 #                adj_AB += self.SJliks(
@@ -608,11 +612,10 @@ class DPinstance:
         if len(self.clust_prior) > 1:
             for seg_idx in range(len(self.S)):
                 seg_idx = np.r_[seg_idx] 
-                #self.rephase(seg_idx)
 
                 # compute probability that segment belongs to each cluster prior element
-                S_a = self.S.iloc[seg_idx[0], self.min_col]
-                S_b = self.S.iloc[seg_idx[0], self.maj_col]
+                S_a = self._Siat_ph(seg_idx[0], min = True)
+                S_b = self._Siat_ph(seg_idx[0], min = False)
                 P_a = self.clust_prior_mat[1:, 0]
                 P_b = self.clust_prior_mat[1:, 1]
 
@@ -751,7 +754,7 @@ class DPinstance:
                         del self.clust_sums[cur_clust]
                         del self.clust_members[cur_clust]
                     else:
-                        self.clust_sums[cur_clust] -= np.r_[self.S.iloc[seg_idx, self.min_col].sum(), self.S.iloc[seg_idx, self.maj_col].sum()]
+                        self.clust_sums[cur_clust] -= np.r_[self._Ssum_ph(seg_idx, min = True), self._Ssum_ph(seg_idx, min = False)]
                         self.clust_members[cur_clust] -= set(seg_idx)
 
                     unassigned_segs.update(seg_idx)
@@ -798,8 +801,8 @@ class DPinstance:
             # C is all possible clusters to move to
             A_a = self.clust_sums[cur_clust][0] if cur_clust in self.clust_sums else 0
             A_b = self.clust_sums[cur_clust][1] if cur_clust in self.clust_sums else 0
-            B_a = self.S.iloc[seg_idx, self.min_col].sum() # TODO: slow if seg_idx contains many SNPs
-            B_b = self.S.iloc[seg_idx, self.maj_col].sum()
+            B_a = self._Ssum_ph(seg_idx, min = True)
+            B_b = self._Ssum_ph(seg_idx, min = False)
             C_ab = np.r_[self.clust_sums.values()] # first terms: (-1) = make new cluster, (0) = garbage cluster
             #C_ab = np.r_[[v for k, v in clust_sums.items() if k != cur_clust or cur_clust == -1]] # if we don't want to explicitly propose letting B rejoin cur_clust
 
