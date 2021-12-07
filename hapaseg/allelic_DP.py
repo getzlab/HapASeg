@@ -627,7 +627,7 @@ class DPinstance:
 
         #
         # initialize cluster tracking hash tables
-        self.clust_counts = sc.SortedDict(self.S["clust"].value_counts().drop([-1, 0], errors = "ignore"))
+        self.clust_counts = sc.SortedDict(self.S["clust"].value_counts().drop(-1, errors = "ignore"))
         # for the first round of clustering, this is { 1 : 1 }
         self.clust_sums = sc.SortedDict({
           **{ k : np.r_[v["min"], v["maj"]] for k, v in self.S.groupby("clust")[["min", "maj"]].sum().to_dict(orient = "index").items() },
