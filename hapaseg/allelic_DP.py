@@ -801,7 +801,7 @@ class DPinstance:
             # B+C is likelihood of target cluster post-join, with both phase orientations
             BC = ss.betaln(C_ab[:, [0]] + np.c_[B_a, B_b] + 1, C_ab[:, [1]] + np.c_[B_b, B_a] + 1)
 
-            MLs = BC - C[:, None] + np.log(np.r_[1 - rephase_prob, rephase_prob])
+            MLs = BC - C[:, None] + np.log(np.maximum(1e-300, np.r_[1 - rephase_prob, rephase_prob]))
             # TODO: get adj_BC working again
 
             #     L(join)           L(split)
