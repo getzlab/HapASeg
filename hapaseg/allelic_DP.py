@@ -897,7 +897,7 @@ class DPinstance:
                 self.S.iloc[seg_idx, self.clust_col] = new_clust_idx
                 self.clusts[seg_idx] = new_clust_idx
 
-                self.clust_sums[new_clust_idx] = np.r_[B_a, B_b]
+                self.clust_sums[new_clust_idx] = np.r_[B_a, B_b] if not choice_idx & 1 else np.r_[B_b, B_a]
                 self.clust_members[new_clust_idx] = set(seg_idx)
 
             # join existing cluster
@@ -915,7 +915,7 @@ class DPinstance:
                     choice = cl_idx
 
                 self.clust_counts[choice] += n_move 
-                self.clust_sums[choice] += np.r_[B_a, B_b]
+                self.clust_sums[choice] += np.r_[B_a, B_b] if not choice_idx & 1 else np.r_[B_b, B_a]
                 self.S.iloc[seg_idx, self.clust_col] = choice
                 self.clusts[seg_idx] = choice
 
