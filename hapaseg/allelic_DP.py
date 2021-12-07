@@ -534,11 +534,14 @@ class DPinstance:
 
     def compute_overall_lik(self, segs_to_clusters = None, phase_orientations = None):
         if segs_to_clusters is None:
-            _, segs_to_clusters = self.get_unique_clust_idxs()
+            su, segs_to_clusters = self.get_unique_clust_idxs()
         else:
-            _, segs_to_clusters = self.get_unique_clust_idxs(segs_to_clusters)
+            su, segs_to_clusters = self.get_unique_clust_idxs(segs_to_clusters)
         if phase_orientations is None:
             phase_orientations = np.r_[self.phase_orientations]
+
+        # account for unassigned clusters
+        min_clust_idx = 1 if (su == -1).any() else 0
 
         max_clust_idx = segs_to_clusters.max() + 1
 
@@ -556,7 +559,10 @@ class DPinstance:
             count_prior = np.bincount(cl_samp, minlength = max_clust_idx).astype(np.double)
             count_prior /= count_prior.sum()
 
-            clust_lik = (ss.betaln(A1 + 1, B1 + 1) + ss.betaln(A2 + 1, B2 + 1) + np.log(count_prior)[count_prior > 0]).sum()
+            clust_lik = (ss.betaln(A1 + 1, B1 + 1) + ss.betaln(A2 + 1, B2 + 1))[min_clust_idx:].sum()
+            # account for unassigned clusters, if present
+            if min_clust_idx == 1:
+                clust_lik += ss.betaln(self.S.loc[cl_samp == 0, "maj"] + 1, self.S.loc[cl_samp == 0, "min"] + 1).sum()
 
 #            ## segmentation likelihood
 #
