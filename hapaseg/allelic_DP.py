@@ -421,9 +421,10 @@ class DPinstance:
 
     def compute_adj_liks(self, seg_idx, cur_clust):
         adj_AB = 0
-        adj_BC = np.zeros(len(self.clust_sums))
+        adj_BC = np.zeros([len(self.clust_sums), 2])
 
         # start/end coordinates of consecutive runs of segments being moved
+        # NOTE: ordpairs represents closed intervals!
         ordpairs = np.c_[
           [np.r_[list(x)][[0, -1]] for x in more_itertools.consecutive_groups(
             np.sort(seg_idx))
@@ -483,8 +484,8 @@ class DPinstance:
                 # min/maj counts of the segment(s) being moved
                 st = ordpairs[j, 0]
                 en = ordpairs[j, 1]
-                S_a = self._Ssum_ph(np.r_[st:(en + 1)], min = True) # XXX: why en + 1?
-                S_b = self._Ssum_ph(np.r_[st:(en + 1)], min = False) # XXX: why en + 1?
+                S_a = self._Ssum_ph(np.r_[st:(en + 1)], min = True) # en + 1 because ordpairs is closed
+                S_b = self._Ssum_ph(np.r_[st:(en + 1)], min = False) 
 
                 # adjacency likelihood of this segment remaining where it is
 #                adj_AB += self.SJliks(
@@ -503,7 +504,7 @@ class DPinstance:
                 # 1. those it is actually adjacent to (+ new cluster)
                 for cl in {-1, cl_u, cl_d}:
                     idx = self.clust_sums.index(cl)
-                    adj_BC[idx] += self.SJliks(
+                    adj_BC[idx, 0] += self.SJliks(
                       targ_clust = cl, 
                       upstream_clust = cl_u, 
                       downstream_clust = cl_d, 
@@ -514,16 +515,38 @@ class DPinstance:
                       D_a = D_a,
                       D_b = D_b
                     )
+                    adj_BC[idx, 1] += self.SJliks(
+                      targ_clust = cl, 
+                      upstream_clust = cl_u, 
+                      downstream_clust = cl_d, 
+                      J_a = S_b, 
+                      J_b = S_a,
+                      U_a = U_a,
+                      U_b = U_b,
+                      D_a = D_a,
+                      D_b = D_b
+                    )
 
                 # 2. clusters it is not adjacent to (use default split value)
                 for cl in self.clust_sums.keys() - ({-1} | set(adj_clusters[adj_idx].ravel())):
                     idx = self.clust_sums.index(cl)
-                    adj_BC[idx] += self.SJliks(
+                    adj_BC[idx, 0] += self.SJliks(
                       targ_clust = -1, 
                       upstream_clust = -1, 
                       downstream_clust = -1, 
                       J_a = S_a, 
                       J_b = S_b,
+                      U_a = U_a,
+                      U_b = U_b,
+                      D_a = D_a,
+                      D_b = D_b
+                    )
+                    adj_BC[idx, 1] += self.SJliks(
+                      targ_clust = -1, 
+                      upstream_clust = -1, 
+                      downstream_clust = -1, 
+                      J_a = S_b, 
+                      J_b = S_a,
                       U_a = U_a,
                       U_b = U_b,
                       D_a = D_a,
@@ -789,12 +812,10 @@ class DPinstance:
             # adjacent segment likelihoods
 
             adj_AB = 0
-            adj_BC = np.zeros(len(self.clust_sums))
+            adj_BC = np.zeros([len(self.clust_sums), 2])
 
-            if not move_clust or (all_assigned and move_clust and np.random.rand() < 0.01):
+            if not move_clust: # or (all_assigned and move_clust and np.random.rand() < 0.01):
                 adj_AB, adj_BC = self.compute_adj_liks(seg_idx, cur_clust)
-            else:
-                adj_BC[self.clust_sums.index(0)] = -np.inf
 
             # A+B,C -> A,B+C
 
@@ -808,7 +829,6 @@ class DPinstance:
             BC = ss.betaln(C_ab[:, [0]] + np.c_[B_a, B_b] + 1, C_ab[:, [1]] + np.c_[B_b, B_a] + 1)
 
             MLs = BC - C[:, None] + np.log(np.maximum(1e-300, np.r_[1 - rephase_prob, rephase_prob]))
-            # TODO: get adj_BC working again
 
             #     L(join)           L(split)
             #MLs = A + BC + adj_BC - (AB + C + adj_AB)
@@ -873,7 +893,7 @@ class DPinstance:
             count_prior /= count_prior.sum()
 
             # choose to join a cluster or make a new one (choice_idx = 0)
-            num = MLs + np.log(count_prior[:, None]) + np.log(clust_prior_p)
+            num = MLs + adj_BC + np.log(count_prior[:, None]) + np.log(clust_prior_p)
             choice_p = np.exp(num - num.max())/np.exp(num - num.max()).sum()
             # row major indexing: choice_idx//2 = cluster index, choice_idx & 1 = rephase true
             choice_idx = np.random.choice(
