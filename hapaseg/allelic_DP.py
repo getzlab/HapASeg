@@ -322,7 +322,7 @@ class A_DP:
         scerrorbar(idx, rev = True, alpha = ph_prob[idx]*default_alpha, show_CI = color)
 
 class DPinstance:
-    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 0.1):
+    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 1):
         self.S = S
         self.clust_prior = clust_prior.copy()
         self.clust_count_prior = clust_count_prior.copy()
