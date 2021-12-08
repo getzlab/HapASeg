@@ -98,7 +98,8 @@ class Run_Cov_DP:
         self.segment_r_list = [None] * self.num_segments
         self.segment_C_list = [None] * self.num_segments
         self.segment_counts_list = [None] * self.num_segments
-        self.segment_allele = [g['allele'].values[0] for i, g in self.cov_df.groupby('a_cov_segID')]
+        if a_imbalances is not None:
+            self.segment_allele = [g['allele'].values[0] for i, g in self.cov_df.groupby('a_cov_segID')]
         self.cluster_assignments = np.ones(self.num_segments, dtype=int) * -1
 
         self.cluster_counts = sc.SortedDict({})
@@ -128,7 +129,10 @@ class Run_Cov_DP:
         if self.a_imbalances is None:
             for ID, seg_df in self.cov_df.groupby('segment_ID'):
                 self.segment_r_list[ID] = seg_df['covcorr'].values
-                self.segment_C_list[ID] = np.c_[np.log(seg_df["C_len"]), seg_df["C_RT_z"], seg_df["C_GC_z"]]
+                if 'C_len' in self.cov_df.columns:
+                    self.segment_C_list[ID] = np.c_[np.log(seg_df["C_len"]), seg_df["C_RT_z"], seg_df["C_GC_z"]]
+                else:
+                    self.segment_C_list[ID] = np.c_[seg_df["C_RT_z"], seg_df["C_GC_z"]]
         else:
             for ID, grouped in self.cov_df.groupby('a_cov_segID'):
                 segment_r = grouped['cov_DP_mu'].values
@@ -255,19 +259,16 @@ class Run_Cov_DP:
             endog = r
         else:
             endog = np.exp(np.log(r) - (C @ self.beta).flatten())
-        exog = np.ones(r.shape[0])
-        sNB = statsNB(endog, exog)
-        res = sNB.fit(disp=0)
         
-        H = sNB.hessian(res.params)
-        if np.linalg.det(-H) < 0:
+        exog = np.ones(r.shape[0])
+        if endog.mean() > endog.var():
             it=0
             while endog.mean() > endog.var():
                 it+=1
                 endog = endog*(np.random.rand(len(endog))/5 + 1)
             print('increased endog: its:', it)
-            sNB = statsNB(endog, exog)
-            res = sNB.fit(disp=0)
+        sNB = statsNB(endog, exog)
+        res = sNB.fit(disp=0)
             #print(endog.mean(), endog.var())
         if ret_hess:
             return res.params[0], -np.log(res.params[1]), sNB.hessian(res.params)
