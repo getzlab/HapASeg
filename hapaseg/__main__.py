@@ -149,7 +149,8 @@ def main():
         os.mkdir(args.output_dir)
     output_dir = os.path.realpath(args.output_dir)
 
-    os.environ["CAPY_REF_FA"] = args.capy_ref_path
+    if args.capy_ref_path is not None:
+        os.environ["CAPY_REF_FA"] = args.capy_ref_path
 
     if args.command == "run":
         dask_client = dd.Client(n_workers=int(args.n_workers))
@@ -389,7 +390,7 @@ def main():
         if not os.path.isdir(figure_dir):
             os.mkdir(figure_dir)
 
-        cov_dp_runner.visualize_DP_run(args.num_draws - 1, os.path.join(figure_dir, 'coverage_draw_{}'.format(args.num_draws -1)))
+        cov_dp_runner.visualize_DP_run(args.num_segmentation_samples - 1, os.path.join(figure_dir, 'coverage_draw_{}'.format(args.num_draws -1)))
 
 if __name__ == "__main__":
     main()
