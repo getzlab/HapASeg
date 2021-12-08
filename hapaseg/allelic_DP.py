@@ -680,9 +680,9 @@ class DPinstance:
         all_assigned = False
         seg_touch_idx = np.zeros(len(self.S), dtype = np.uint16)
 
-#        # containers for saving debugging information (overall likelihoods/cluster assignments pre-burnin)
-#        self.lik_tmp = []
-#        self.vc_tmp = []
+        # likelihood trace
+        self.lik_tmp = []
+        self.post = 0
 
         n_it = 0
         n_it_last = 0
@@ -902,6 +902,11 @@ class DPinstance:
             )
             # -1 = brand new, -2, -3, ... = -(prior clust index) - 2
             choice = np.r_[-np.r_[prior_diff] - 2, self.clust_counts.keys()][choice_idx//2]
+
+            # compute posterior delta between previous and current state
+            post_delta = num.ravel()[choice_idx] - \
+              num[self.clust_sums.index(cur_clust if cur_clust in self.clust_sums else -1), 0]
+            self.post += post_delta
 
             # save rephasing status
             if choice_idx & 1:
