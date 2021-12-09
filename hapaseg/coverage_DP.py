@@ -436,7 +436,7 @@ class Run_Cov_DP:
                                (prior_com | prior_null | {self.next_cluster_index})]]
                     ].astype(int)
                     # print('prior_diff', prior_diff)
-                    # print('prior_idx', prior_idx)
+                    # print('prior_idx', prior_id
                     # print('prior BC', [self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]], [segID]) for idx in prior_idx])
                     # print('prior C', [self.clust_prior_ML[self.prior_clusters.keys()[idx]]for idx in prior_idx] )
                     prior_MLs = np.r_[[self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]],
