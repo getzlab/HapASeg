@@ -658,13 +658,19 @@ class DPinstance:
         # initialize cluster tracking hash tables
         self.clust_counts = sc.SortedDict(self.S["clust"].value_counts().drop(-1, errors = "ignore"))
         # for the first round of clustering, this is { 1 : 1 }
+
+        x = self.S.groupby(["clust", "flipped"])[["min", "maj"]].sum()
+        if (x.droplevel(0).index == True).any():
+            x.loc[(slice(None), True), ["min", "maj"]] = x.loc[(slice(None), True), ["maj", "min"]].values
         self.clust_sums = sc.SortedDict({
-          **{ k : np.r_[v["min"], v["maj"]] for k, v in self.S.groupby("clust")[["min", "maj"]].sum().to_dict(orient = "index").items() },
+          **{ k : np.r_[v["min"], v["maj"]] for k, v in x.groupby(level = "clust").sum().to_dict(orient = "index").items() },
           **{-1 : np.r_[0, 0]}
         })
         # for the first round, this is { -1 : np.r_[0, 0], 0 : np.r_[S[0, "min"], S[0, "maj"]] }
+
         self.clust_members = sc.SortedDict({ k : set(v) for k, v in self.S.groupby("clust").groups.items() if k != -1 })
         # for the first round, this is { 1 : {0} }
+
         unassigned_segs = sc.SortedList(self.S.index[self.S["clust"] == -1])
 
         # store this as numpy for speed
