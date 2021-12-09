@@ -101,6 +101,7 @@ class Run_Cov_DP:
         self.num_segments = self.cov_df.iloc[:, self.seg_id_col].max() + 1
         self.segment_r_list = [None] * self.num_segments
         self.segment_C_list = [None] * self.num_segments
+        self.segment_sigma_list = [None] * self.num_segments
         self.segment_counts_list = [None] * self.num_segments
         if a_imbalances is not None:
             self.segment_allele = [g['allele'].values[0] for i, g in self.cov_df.groupby('a_cov_segID')]
@@ -140,7 +141,8 @@ class Run_Cov_DP:
         else:
             for ID, grouped in self.cov_df.groupby('a_cov_segID'):
                 segment_r = grouped['cov_DP_mu'].values
-                self.segment_r_list[ID] = np.exp(segment_r)
+                self.segment_r_list[ID] = segment_r
+                self.segment_sigma_list[ID] = grouped['cov_DP_sigma'].values
                 if len(segment_r) < 3:
                     self.greylist_segments.add(ID)
                 self.segment_counts_list[ID] = (grouped['seg_maj_count'].values[0], grouped['seg_min_count'].values[0])
@@ -189,19 +191,21 @@ class Run_Cov_DP:
             self.next_cluster_index = clusterID
             self.unassigned_segs.clear()
 
-    def _ML_a_cov_cluster(self, cluster_set):
+    def _ML_cluster(self, cluster_set):
         r_lst = []
         for s in cluster_set:
             major, minor = self.segment_counts_list[s]
+            r_seg = self.segment_r_list[s]
+            r_sigma = self.segment_sigma_list[s]
             if self.segment_allele[s] == -1:
-                r_lst.append(self.segment_r_list[s] * np.random.beta(minor + 1, major + 1))
+                r_lst.append(np.exp(np.random.normal(r_seg, r_sigma)) *
+                             np.random.beta(minor + 1, major + 1, len(r_seg)))
             else:
-                r_lst.append(self.segment_r_list[s] * np.random.beta(major + 1, minor + 1))
+                r_lst.append(np.exp(np.random.normal(r_seg, r_sigma)) *
+                             np.random.beta(major + 1, minor + 1, len(r_seg)))
         r = np.hstack(r_lst)
-        mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, None, ret_hess=True)
-        ll_opt = self.ll_nbinom_a_cov(r, mu_opt, lepsi_opt)
-        return ll_opt + self._get_laplacian_approx(H_opt)
 
+        return self.optimize_gaussian(r)
 
     def _ML_cluster_prior(self, cluster_set, new_segIDs=None):
         # aggregate r and C arrays
