@@ -1,10 +1,20 @@
+import colorama
+import copy
+import itertools
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
+import numpy_groupies as npg
+import pandas as pd
+import scipy.stats as s
+import scipy.sparse as sp
 import scipy.special as ss
 import sortedcontainers as sc
+import h5py
 
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
+
+from capy import seq
 
 colors = mpl.cm.get_cmap("tab10").colors
 
@@ -91,7 +101,9 @@ class Run_Cov_DP:
         self.num_segments = self.cov_df.iloc[:, self.seg_id_col].max() + 1
         self.segment_r_list = [None] * self.num_segments
         self.segment_C_list = [None] * self.num_segments
-
+        self.segment_counts_list = [None] * self.num_segments
+        if a_imbalances is not None:
+            self.segment_allele = [g['allele'].values[0] for i, g in self.cov_df.groupby('a_cov_segID')]
         self.cluster_assignments = np.ones(self.num_segments, dtype=int) * -1
 
         self.cluster_counts = sc.SortedDict({})
@@ -121,13 +133,18 @@ class Run_Cov_DP:
         if self.a_imbalances is None:
             for ID, seg_df in self.cov_df.groupby('segment_ID'):
                 self.segment_r_list[ID] = seg_df['covcorr'].values
-                self.segment_C_list[ID] = np.c_[np.log(seg_df["C_len"]), seg_df["C_RT_z"], seg_df["C_GC_z"]]
+                if 'C_len' in self.cov_df.columns:
+                    self.segment_C_list[ID] = np.c_[np.log(seg_df["C_len"]), seg_df["C_RT_z"], seg_df["C_GC_z"]]
+                else:
+                    self.segment_C_list[ID] = np.c_[seg_df["C_RT_z"], seg_df["C_GC_z"]]
         else:
             for ID, grouped in self.cov_df.groupby('a_cov_segID'):
-                segment_r = grouped['allelic_cov'].values
-                self.segment_r_list[ID] = segment_r
-                if len(segment_r) == 1:
+                segment_r = grouped['cov_DP_mu'].values
+                self.segment_r_list[ID] = np.exp(segment_r)
+                if len(segment_r) < 3:
                     self.greylist_segments.add(ID)
+                self.segment_counts_list[ID] = (grouped['seg_maj_count'].values[0], grouped['seg_min_count'].values[0])
+            print(self.segment_r_list)
 
     def _init_clusters(self, prior_run, count_prior_sum):
         if self.a_imbalances is not None:
@@ -151,64 +168,40 @@ class Run_Cov_DP:
                 # print('prior clust', self.prior_clusters)
         else:
             # for now only support single iteration
-            first = (set(range(self.num_segments)) - self.greylist_segments)[0]
-            clusterID = 0
-            self.cluster_counts[0] = 1
-            self.unassigned_segs.discard(0)
-            self.cluster_dict[0] = sc.SortedSet([first])
-            self.cluster_MLs[0] = self._ML_cluster([first])
+            # first = (set(range(self.num_segments)) - self.greylist_segments)[0]
+            # clusterID = 0
+            # self.cluster_counts[0] = 1
+            # self.unassigned_segs.discard(0)
+            # self.cluster_dict[0] = sc.SortedSet([first])
+            # self.cluster_MLs[0] = self._ML_cluster([first])
             # next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
-            self.next_cluster_index = 1
-            # for name, grouped in self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele']):
-            #   segIDs = sc.SortedSet(grouped['a_cov_segID'].values) - self.greylist_segments
-            #
-            #   if len(segIDs) ==0:
-            # continue
-            # self.cluster_dict[clusterID] = segIDs
-            # self.cluster_assignments[segIDs] = clusterID
-            # self.cluster_counts[clusterID] = len(segIDs)
-            # self.cluster_MLs[clusterID] = self._ML_cluster(segIDs)
-            # clusterID += 1
-            # self.next_cluster_index = clusterID
-            # self.unassigned_segs.clear()
-
-    @staticmethod
-    def ll_nbinom(r, mu, C, beta, lepsi):
-        r = r.flatten()
-        epsi = np.exp(lepsi)
-        bc = (C @ beta).flatten()
-        exp = np.exp(mu + bc).flatten()
-        return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
-                (r * (mu + bc - np.log(epsi + exp))) +
-                (epsi * np.log(epsi / (epsi + exp)))).sum()
-
-    @staticmethod
-    def ll_nbinom_a_cov(r, mu, lepsi):
-        r = r.flatten()
-        epsi = np.exp(lepsi)
-        exp = np.exp(mu).flatten()
-        return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
-                (r * (mu - np.log(epsi + exp))) +
-                (epsi * np.log(epsi / (epsi + exp)))).sum()
+            # self.next_cluster_index = 1
+            clusterID = 0
+            for name, grouped in self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele']):
+                segIDs = sc.SortedSet(grouped['a_cov_segID'].values) - self.greylist_segments
+                if len(segIDs) == 0:
+                    continue
+                self.cluster_dict[clusterID] = segIDs
+                self.cluster_assignments[segIDs] = clusterID
+                self.cluster_counts[clusterID] = len(segIDs)
+                self.cluster_MLs[clusterID] = self._ML_cluster(segIDs)
+                clusterID += 1
+            self.next_cluster_index = clusterID
+            self.unassigned_segs.clear()
 
     def _ML_a_cov_cluster(self, cluster_set):
-        r = np.hstack([self.segment_r_list[i] for i in cluster_set])
+        r_lst = []
+        for s in cluster_set:
+            major, minor = self.segment_counts_list[s]
+            if self.segment_allele[s] == -1:
+                r_lst.append(self.segment_r_list[s] * np.random.beta(minor + 1, major + 1))
+            else:
+                r_lst.append(self.segment_r_list[s] * np.random.beta(major + 1, minor + 1))
+        r = np.hstack(r_lst)
         mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, None, ret_hess=True)
         ll_opt = self.ll_nbinom_a_cov(r, mu_opt, lepsi_opt)
         return ll_opt + self._get_laplacian_approx(H_opt)
 
-    # main worker function for computing marginal likelihoods of clusters
-    def _ML_cluster(self, cluster_set):
-        if self.a_imbalances:
-            return self._ML_a_cov_cluster(cluster_set)
-        # aggregate r and C arrays
-        r = np.hstack([self.segment_r_list[i] for i in cluster_set])
-        C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
-        mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, C, ret_hess=True)
-        ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt)
-
-        # print('clust set: ', cluster_set, 'll: ', ll_opt, 'lap approx: ', self._get_laplacian_approx(H_opt))
-        return ll_opt + self._get_laplacian_approx(H_opt)
 
     def _ML_cluster_prior(self, cluster_set, new_segIDs=None):
         # aggregate r and C arrays
@@ -229,28 +222,23 @@ class Run_Cov_DP:
     def _get_laplacian_approx(H):
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-H))) / 2
 
-    def stats_optimizer(self, r, C, ret_hess=False):
-        if C is None:
-            endog = r
-        else:
-            endog = np.exp(np.log(r) - (C @ self.beta).flatten())
-        exog = np.ones(r.shape[0])
-        sNB = statsNB(endog, exog)
-        res = sNB.fit(disp=0)
+    def optimize_gaussian(self, r):
+        mu = r.mean()
+        sigma2 = r.var()
+        N = len(r)
 
-        H = sNB.hessian(res.params)
-        if np.linalg.det(-H) < 0:
-            it = 0
-            while endog.mean() > endog.var():
-                it += 1
-                endog = endog * (np.random.rand(len(endog)) + 0.5)
-            sNB = statsNB(endog, exog)
-            res = sNB.fit(disp=0)
-            # print(endog.mean(), endog.var())
-        if ret_hess:
-            return res.params[0], -np.log(res.params[1]), sNB.hessian(res.params)
-        else:
-            return res.params[0], -np.log(res.params[1])
+        sq_difs_sum = ((r - mu) ** 2).sum()
+
+        # hess computations
+        mu_mu = - N / sigma2
+        mu_sigma2 = - 1 / N * (r - mu).sum()
+        sigma2_sigma2 = N / (2 * sigma2 ** 2) - sq_difs_sum / (sigma2 ** 3)
+
+        ll = -(N / 2) * (np.log(2 * np.pi * sigma2)) - sq_difs_sum / (2 * sigma2)
+        H = np.r_[np.c_[mu_mu, mu_sigma2], np.c_[mu_sigma2, sigma2_sigma2]]
+
+        laplacian = self._get_laplacian_approx(H)
+        return ll + laplacian
 
     # if we have prior assignments from the last iteration we can use those clusters to probalistically assign
     # each segment into a old cluster
@@ -337,7 +325,7 @@ class Run_Cov_DP:
 
                 # get cluster assignment of S
                 clustID = self.cluster_assignments[segID]
-                # print(segID, clustID)
+                # print('seg_pick:', segID, clustID)
                 # compute ML of AB = Cs (cached)
                 if clustID == -1:
                     ML_AB = 0
@@ -413,7 +401,7 @@ class Run_Cov_DP:
                                (prior_com | prior_null | {self.next_cluster_index})]]
                     ].astype(int)
                     # print('prior_diff', prior_diff)
-                    # print('prior_idx', prior_idx)
+                    # print('prior_idx', prior_id
                     # print('prior BC', [self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]], [segID]) for idx in prior_idx])
                     # print('prior C', [self.clust_prior_ML[self.prior_clusters.keys()[idx]]for idx in prior_idx] )
                     prior_MLs = np.r_[[self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]],
@@ -547,7 +535,7 @@ class Run_Cov_DP:
 
                 clust_pick = np.random.choice(self.cluster_dict.keys())
                 clust_pick_segs = np.r_[self.cluster_dict[clust_pick]].astype(int)
-
+                # print('clust_pick:', clust_pick)
                 # get ML of this cluster merged with each of the other existing clusters
                 ML_join = [
                     self._ML_cluster(self.cluster_dict[i].union(clust_pick_segs)) if i != clust_pick else
@@ -583,7 +571,7 @@ class Run_Cov_DP:
                     # expand MLs to account for multiple new merge clusters--which have liklihood = cluster staying as is = 0
                     ML_rat = np.r_[np.full(len(prior_diff), 0), ML_rat]
                     # DP prior based on clusters sizes now with no alpha
-
+                # print('cluster ML_rat', ML_rat)
                 count_prior = np.r_[
                     [count_prior[self.prior_clusters.index(x)] for x in prior_diff], self.cluster_counts.values()]
                 count_prior /= (count_prior.sum() + self.alpha)
@@ -593,6 +581,11 @@ class Run_Cov_DP:
                 choice_p = np.exp(ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)) / np.exp(
                     ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
                 # print('clust_choice_p', choice_p)
+                if np.isnan(choice_p.sum()):
+                    print("skipping iteration {} due to nan".format(n_it))
+                    n_it += 1
+                    continue
+
                 choice_idx = np.random.choice(
                     np.r_[0:len(ML_rat)],
                     p=choice_p
