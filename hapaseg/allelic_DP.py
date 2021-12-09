@@ -663,7 +663,7 @@ class DPinstance:
           **{-1 : np.r_[0, 0]}
         })
         # for the first round, this is { -1 : np.r_[0, 0], 0 : np.r_[S[0, "min"], S[0, "maj"]] }
-        self.clust_members = sc.SortedDict({ k : set(v) for k, v in self.S.groupby("clust").groups.items() if k != -1 and k != 0 })
+        self.clust_members = sc.SortedDict({ k : set(v) for k, v in self.S.groupby("clust").groups.items() if k != -1 })
         # for the first round, this is { 1 : {0} }
         unassigned_segs = sc.SortedList(self.S.index[self.S["clust"] == -1])
 
@@ -727,13 +727,11 @@ class DPinstance:
                     si = seg_idx[0]
 
                     j = 1
-                    while si - j > 0 and \
-                      (self.clusts[si - j] == cur_clust or self.clusts[si - j] == 0):
+                    while si - j > 0 and self.clusts[si - j] == cur_clust:
                         seg_idx.add(si - j)
                         j += 1
                     j = 1
-                    while si + j < len(self.S) and \
-                      (self.clusts[si + j] == cur_clust or self.clusts[si + j] == 0):
+                    while si + j < len(self.S) and self.clusts[si + j] == cur_clust:
                         seg_idx.add(si + j)
                         j += 1
 
