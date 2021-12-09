@@ -370,6 +370,16 @@ class DPinstance:
         else:
             return self.mm_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum()
 
+    def _Scumsum_ph(self, seg_idx, min = True):
+        flip = self.S.iloc[seg_idx, self.flip_col]
+        flip_n = ~flip
+        if min:
+            si = np.argsort(np.r_[seg_idx[flip_n], seg_idx[flip]])
+            return self.mm_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]][si].cumsum()
+        else:
+            si = np.argsort(np.r_[seg_idx[flip], seg_idx[flip_n]])
+            return self.mm_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]][si].cumsum()
+
     def compute_rephase_prob(self, seg_idx):
         flip = self.S.iloc[seg_idx, self.flip_col]
         flip_n = ~flip
@@ -554,6 +564,63 @@ class DPinstance:
                     )
 
         return adj_AB, adj_BC
+
+    def compute_cluster_splitpoints(self, seg_idx):
+        spl = []
+
+        # left bias
+        end = len(seg_idx)
+        i = 0
+        while True:
+            seg_idx_sp = seg_idx[0:end]
+            if len(seg_idx_sp) < 2:
+                break
+
+            min_cs = self._Scumsum_ph(seg_idx_sp, min = True)
+            min_csr = self._Ssum_ph(seg_idx_sp, min = True) - min_cs
+            maj_cs = self._Scumsum_ph(seg_idx_sp, min = False)
+            maj_csr = self._Ssum_ph(seg_idx_sp, min = False) - maj_cs
+
+            split_lik = ss.betaln(min_cs[:-1] + 1, maj_cs[:-1] + 1) + ss.betaln(min_csr[1:] + 1, maj_csr[1:] + 1)
+            # split_lprob = split_lik - split_lik.max() - np.log(np.exp(split_lik - split_lik.max()).sum())
+            # NOTE: instead of argmax, probabilistically choose? will this make a difference?
+
+            end = split_lik.argmax()
+            spl.append(end)
+
+            if end <= 1 or end == len(split_lik) - 1:
+                break
+
+            i += 1
+
+        # right bias
+        start = 0
+        i = 0
+        while True:
+            seg_idx_sp = seg_idx[start:]
+            if len(seg_idx_sp) < 2:
+                break
+
+            min_cs = self._Scumsum_ph(seg_idx_sp, min = True)
+            min_csr = self._Ssum_ph(seg_idx_sp, min = True) - min_cs
+            maj_cs = self._Scumsum_ph(seg_idx_sp, min = False)
+            maj_csr = self._Ssum_ph(seg_idx_sp, min = False) - maj_cs
+
+            split_lik = ss.betaln(min_cs[:-1] + 1, maj_cs[:-1] + 1) + ss.betaln(min_csr[1:] + 1, maj_csr[1:] + 1)
+            # split_lprob = split_lik - split_lik.max() - np.log(np.exp(split_lik - split_lik.max()).sum())
+
+            start += split_lik.argmax() + 1
+            spl.append(start - 1)
+
+            if start > len(seg_idx) - 1 or split_lik.argmax() == 0:
+                break
+
+            i += 1
+
+        bdy = np.unique(np.r_[0, spl, len(seg_idx)])
+        bdy = np.c_[bdy[:-1], bdy[1:]]
+
+        return bdy
 
     def compute_overall_lik(self, segs_to_clusters = None, phase_orientations = None):
         if segs_to_clusters is None:
@@ -744,9 +811,47 @@ class DPinstance:
                     # if we've expanded to include a large fraction (>10%) of segments 
                     # in this cluster, cluster indexing might become inconsistent.
                     # skip this iteration
-                    if len(seg_idx) >= 0.1*self.clust_counts[cur_clust]:
+#                    if len(seg_idx) >= 0.1*self.clust_counts[cur_clust]:
+#                        breakpoint()
+#                        n_it += 1
+#                        continue
+
+                # propose splitting out a contiguous interval of segments within the current cluster
+                split_clust = False
+                if all_assigned and np.random.rand() < 0.1:
+                    # TODO: if we use cur_clust, this will be biased towards larger clusters. is this desireable?
+                    clust_segs = np.sort(np.r_[list(self.clust_members[cur_clust])])
+                    split_bdy = self.compute_cluster_splitpoints(clust_segs)
+
+                    A_tot, B_tot = self.clust_sums[cur_clust]
+
+                    lik0 = ss.betaln(A_tot + 1, B_tot + 1)
+
+                    liks = np.zeros(len(split_bdy) + 1)
+                    liks[-1] = lik0 # don't split at all
+
+                    # likelihood ratios for splitting each region into a new cluster
+                    for i, (st, en) in enumerate(split_bdy):
+                        A = self._Ssum_ph(clust_segs[st:en], min = True)
+                        B = self._Ssum_ph(clust_segs[st:en], min = False)
+
+                        liks[i] = ss.betaln(A_tot - A + 1, B_tot - B + 1) + ss.betaln(A + 1, B + 1)
+
+                    # pick a region to split
+                    split_idx = np.random.choice(
+                      len(split_bdy) + 1,
+                      p = np.exp(liks - liks.max())/np.exp(liks - liks.max()).sum()
+                    )
+
+                    # don't split at all
+                    if split_idx == len(split_bdy):
                         n_it += 1
                         continue
+
+                    # seg_idx == segments to propose to split off
+                    seg_idx = clust_segs[slice(*split_bdy[split_idx])]
+
+                    split_clust = True
 
                 seg_idx = np.r_[list(seg_idx)]
 
@@ -819,6 +924,7 @@ class DPinstance:
             adj_BC = np.zeros([len(self.clust_sums), 2])
 
             if not move_clust: # or (all_assigned and move_clust and np.random.rand() < 0.01):
+            if not move_clust and not split_clust: # or (all_assigned and move_clust and np.random.rand() < 0.01):
                 adj_AB, adj_BC = self.compute_adj_liks(seg_idx, cur_clust)
 
             # A+B,C -> A,B+C
