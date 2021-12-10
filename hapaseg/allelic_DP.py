@@ -751,7 +751,8 @@ class DPinstance:
 
         burned_in = False
         all_assigned = False
-        seg_touch_idx = np.zeros(len(self.S), dtype = np.uint16)
+        all_touched = False
+        seg_touch_idx = np.zeros(len(self.S), dtype = bool)
 
         # likelihood trace
         self.lik_tmp = []
@@ -764,20 +765,23 @@ class DPinstance:
                 print(self.S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
                 print("n unassigned: {}".format((self.S["clust"] == -1).sum()))
 
-            # we are burned in (n_seg/n_clust) iterations after all segments have been touched
+            # poll every 100 iterations for burnin status
             if not n_it % 100:
-                if not all_assigned and (((seg_touch_idx > 0) | (self.clusts == 0)).all() or \
-                  # if there is only one cluster, then consider every segment to have been touched
-                  # otherwise, waiting for every segment to actually be touched will take forever
-                  len(unassigned_segs) == 0 and len(self.clust_counts) == 1):
+                self.lik_tmp.append(self.post)
+                if not all_assigned and len(unassigned_segs) == 0:
                     all_assigned = True
-                    n_it_last = n_it
-                if not burned_in and all_assigned and \
-                  n_it - n_it_last > len(self.S)/len(self.clust_counts):
-                    burned_in = True
-            
-#                self.lik_tmp.append(self.compute_overall_lik())
-#                self.vc_tmp.append(self.S["clust"].value_counts())
+                if not burned_in and all_assigned:
+                    # 1. have >90% of segments been adjacency corrected?
+                    # print(seg_touch_idx.mean())
+                    if seg_touch_idx.mean() > 0.9:
+                        all_touched = True
+
+                    # 2. if >90% of segments have been adjacency corrected, check for burnin
+                    # does the smoothed derivative of the posterior numerator go below zero? this would indicate that we've solidly reached an optimum
+                    # TODO: make this check more efficient?
+                    if all_touched and (np.convolve(np.diff(self.lik_tmp), np.ones(50)/50, mode = "same") < 0).sum() > 2:
+                        burned_in = True
+                        breakpoint()
 
             #
             # pick either a segment or a cluster at random (50:50 prob.)
@@ -923,9 +927,10 @@ class DPinstance:
             adj_AB = 0
             adj_BC = np.zeros([len(self.clust_sums), 2])
 
-            if not move_clust: # or (all_assigned and move_clust and np.random.rand() < 0.01):
             if not move_clust and not split_clust: # or (all_assigned and move_clust and np.random.rand() < 0.01):
                 adj_AB, adj_BC = self.compute_adj_liks(seg_idx, cur_clust)
+                if all_assigned:
+                    seg_touch_idx[seg_idx] = True
 
             # A+B,C -> A,B+C
 
