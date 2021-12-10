@@ -146,7 +146,6 @@ class Run_Cov_DP:
                 if len(segment_r) < 3:
                     self.greylist_segments.add(ID)
                 self.segment_counts_list[ID] = (grouped['seg_maj_count'].values[0], grouped['seg_min_count'].values[0])
-            print(self.segment_r_list)
 
     def _init_clusters(self, prior_run, count_prior_sum):
         if self.a_imbalances is not None:
@@ -375,7 +374,7 @@ class Run_Cov_DP:
                 # print('C now', [self._ML_cluster(self.cluster_dict[c]) for c in self.cluster_dict.keys()])
                 # print('ML_BC', ML_BC)
 
-                # print('ml_rat: ', ML_rat)
+               # print('ml_rat_seg: ', ML_rat)
 
                 prior_diff = []
                 clust_prior_p = 1
@@ -446,7 +445,7 @@ class Run_Cov_DP:
 
                 # if self.prior_clusters:
                 #   print(choice_p)
-                #  print(choice_idx)
+            # print(choice_idx)
                 # last = brand new, -1, -2, -3, ... = -(prior clust index) - 1
                 choice = np.r_[-np.r_[prior_diff] - 1,
                                self.cluster_counts.keys(), self.next_cluster_index][choice_idx]
@@ -575,7 +574,7 @@ class Run_Cov_DP:
                     # expand MLs to account for multiple new merge clusters--which have liklihood = cluster staying as is = 0
                     ML_rat = np.r_[np.full(len(prior_diff), 0), ML_rat]
                     # DP prior based on clusters sizes now with no alpha
-                # print('cluster ML_rat', ML_rat)
+                #print('cluster ML_rat', ML_rat)
                 count_prior = np.r_[
                     [count_prior[self.prior_clusters.index(x)] for x in prior_diff], self.cluster_counts.values()]
                 count_prior /= (count_prior.sum() + self.alpha)
