@@ -61,7 +61,7 @@ class Coverage_DP:
             print('starting sample {}'.format(samp))
             self.cov_df['segment_ID'] = self.segmentation_draws[:, samp].astype(int)
 
-            DP_runner = Run_Cov_DP(self.cov_df, self.beta, prior_run, count_prior_sum)
+            DP_runner = Run_Cov_DP(self.cov_df.copy(), self.beta, prior_run, count_prior_sum)
             self.DP_runs[samp] = DP_runner
             draws, count_prior_sum = DP_runner.run(self.num_draws, samp)
             self.bins_to_clusters.append(draws)
