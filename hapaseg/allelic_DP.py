@@ -1108,7 +1108,11 @@ class DPinstance:
         si = np.argsort(tot_terr)[::-1]
         terr_cs = np.cumsum(tot_terr[si])/tot_terr.sum()
 
-        return [mpl.cm.get_cmap("gist_rainbow")(x) for x in np.linspace(0, 1, (terr_cs < 0.99).sum())]
+        colors_to_use = np.array([mpl.cm.get_cmap("gist_rainbow")(x) for x in np.linspace(0, 1, (terr_cs < 0.99).sum())])
+        colors = np.zeros([len(s2cu), 4])
+        n_distinct = colors_to_use.shape[0] 
+        colors[si[:n_distinct], :] = colors_to_use
+        colors[si[n_distinct:], :] = colors_to_use[:(len(si) - n_distinct), :]
 
     def visualize_segs(self):
         plt.figure()
