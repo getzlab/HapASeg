@@ -92,10 +92,7 @@ class Run_Cov_DP:
     def __init__(self, cov_df, beta, a_imbalances=None, prior_run=None, count_prior_sum=None):
         self.cov_df = cov_df
         self.a_imbalances = a_imbalances
-        if self.a_imbalances is None:
-            self.seg_id_col = self.cov_df.columns.get_loc('segment_ID')
-        else:
-            self.seg_id_col = self.cov_df.columns.get_loc('a_cov_segID')
+        self.seg_id_col = self.cov_df.columns.get_loc('a_cov_segID')
         self.beta = beta
 
         self.num_segments = self.cov_df.iloc[:, self.seg_id_col].max() + 1
@@ -103,8 +100,7 @@ class Run_Cov_DP:
         self.segment_C_list = [None] * self.num_segments
         self.segment_sigma_list = [None] * self.num_segments
         self.segment_counts_list = [None] * self.num_segments
-        if a_imbalances is not None:
-            self.segment_allele = [g['allele'].values[0] for i, g in self.cov_df.groupby('a_cov_segID')]
+        self.segment_allele = [g['allele'].values[0] for i, g in self.cov_df.groupby('a_cov_segID')]
         self.cluster_assignments = np.ones(self.num_segments, dtype=int) * -1
 
         self.cluster_counts = sc.SortedDict({})
@@ -131,43 +127,20 @@ class Run_Cov_DP:
 
     # initialize each segment object with its data
     def _init_segments(self):
-        if self.a_imbalances is None:
-            for ID, seg_df in self.cov_df.groupby('segment_ID'):
-                self.segment_r_list[ID] = seg_df['covcorr'].values
-                if 'C_len' in self.cov_df.columns:
-                    self.segment_C_list[ID] = np.c_[np.log(seg_df["C_len"]), seg_df["C_RT_z"], seg_df["C_GC_z"]]
-                else:
-                    self.segment_C_list[ID] = np.c_[seg_df["C_RT_z"], seg_df["C_GC_z"]]
-        else:
-            for ID, grouped in self.cov_df.groupby('a_cov_segID'):
-                segment_r = grouped['cov_DP_mu'].values
-                self.segment_r_list[ID] = segment_r
-                self.segment_sigma_list[ID] = grouped['cov_DP_sigma'].values
-                if len(segment_r) < 3:
-                    self.greylist_segments.add(ID)
-                self.segment_counts_list[ID] = (grouped['seg_maj_count'].values[0], grouped['seg_min_count'].values[0])
+        for ID, grouped in self.cov_df.groupby('a_cov_segID'):
+            mus = grouped['cov_DP_mu'].values
+            major, minor =  (grouped['seg_maj_count'].values[0], grouped['seg_min_count'].values[0])
+            sigmas  = grouped['cov_DP_sigma'].values
+            if len(mus) < 3:
+                self.greylist_segments.add(ID)
+            if grouped.allele.values[0] == -1:
+                r = np.hstack([np.exp(np.random.normal(mus, sigmas)) * np.random.beta(minor + 1, major + 1, len(mus)) for i in range(10)])
+            else:
+                r = np.hstack([np.exp(np.random.normal(mus, sigmas)) *np.random.beta(major + 1, minor + 1, len(mus)) for i in range(10)])
+            self.segment_r_list[ID] = r 
 
     def _init_clusters(self, prior_run, count_prior_sum):
-        if self.a_imbalances is not None:
-            [self.unassigned_segs.discard(s) for s in self.greylist_segments]
-        if self.a_imbalances is None:
-            # if first iteration then add first segment to first cluster
-            if prior_run is None:
-                self.cluster_counts[0] = 1
-                self.unassigned_segs.discard(0)
-                self.cluster_dict[0] = sc.SortedSet([0])
-                self.cluster_MLs[0] = self._ML_cluster([0])
-                # next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
-                self.next_cluster_index = 1
-            else:
-                self.prior_clusters = prior_run.cluster_dict.copy()
-                self.prior_r_list = prior_run.segment_r_list.copy()
-                self.prior_C_list = prior_run.segment_C_list.copy()
-                self.count_prior_sum = count_prior_sum.copy()
-                self.next_cluster_index = np.r_[self.prior_clusters.keys()].max() + 1
-                self.clust_prior_ML = None
-                # print('prior clust', self.prior_clusters)
-        else:
+        [self.unassigned_segs.discard(s) for s in self.greylist_segments]
             # for now only support single iteration
             # first = (set(range(self.num_segments)) - self.greylist_segments)[0]
             # clusterID = 0
@@ -177,31 +150,24 @@ class Run_Cov_DP:
             # self.cluster_MLs[0] = self._ML_cluster([first])
             # next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
             # self.next_cluster_index = 1
-            clusterID = 0
-            for name, grouped in self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele']):
-                segIDs = sc.SortedSet(grouped['a_cov_segID'].values) - self.greylist_segments
-                if len(segIDs) == 0:
-                    continue
-                self.cluster_dict[clusterID] = segIDs
-                self.cluster_assignments[segIDs] = clusterID
-                self.cluster_counts[clusterID] = len(segIDs)
-                self.cluster_MLs[clusterID] = self._ML_cluster(segIDs)
-                clusterID += 1
-            self.next_cluster_index = clusterID
-            self.unassigned_segs.clear()
+        clusterID = 0
+        for name, grouped in self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele']):
+            segIDs = sc.SortedSet(grouped['a_cov_segID'].values) - self.greylist_segments
+            if len(segIDs) == 0:
+                continue
+            self.cluster_dict[clusterID] = segIDs
+            self.cluster_assignments[segIDs] = clusterID
+            self.cluster_counts[clusterID] = len(segIDs)
+            self.cluster_MLs[clusterID] = self._ML_cluster(segIDs)
+            clusterID += 1
+        self.next_cluster_index = clusterID
+        self.unassigned_segs.clear()
 
     def _ML_cluster(self, cluster_set):
         r_lst = []
         for s in cluster_set:
-            major, minor = self.segment_counts_list[s]
             r_seg = self.segment_r_list[s]
-            r_sigma = self.segment_sigma_list[s]
-            if self.segment_allele[s] == -1:
-                r_lst.append(np.exp(np.random.normal(r_seg, r_sigma)) *
-                             np.random.beta(minor + 1, major + 1, len(r_seg)))
-            else:
-                r_lst.append(np.exp(np.random.normal(r_seg, r_sigma)) *
-                             np.random.beta(major + 1, minor + 1, len(r_seg)))
+            r_lst.append(r_seg)
         r = np.hstack(r_lst)
 
         return self.optimize_gaussian(r)
