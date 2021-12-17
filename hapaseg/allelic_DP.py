@@ -429,6 +429,73 @@ class DPinstance:
 
         return ss.betaln(SU_a + 1, SU_b + 1) + ss.betaln(J_a + 1, J_b + 1) + ss.betaln(SD_a + 1, SD_b + 1)
 
+    def compute_adj_prob(self, seg_idx):
+        ## compute boundaries of adjacent segments
+
+        # maj/min counts of contiguous upstream segments belonging to the same cluster
+        st = seg_idx[0]
+        U_A = 0
+        U_B = 0
+        U_cl = -1
+        if st - 1 > 0:
+            U_cl = self.clusts[st - 1]
+            j = 1
+            while st - j > 0 and self.clusts[st - j] != -1 and \
+              self.clusts[st - j] == U_cl:
+                U_A += self._Siat_ph(st - j, min = True)
+                U_B += self._Siat_ph(st - j, min = False)
+
+                j += 1
+
+        # maj/min counts of contiguous downstream segments belonging to the same cluster
+        en = seg_idx[-1]
+        D_A = 0
+        D_B = 0
+        D_cl = -1
+        if en + 1 < len(self.S):
+            D_cl = self.clusts[en + 1]
+            j = 1
+            while en + j < len(self.S) - 1 and self.clusts[en + j] != -1 and \
+              self.clusts[en + j] == D_cl:
+                D_A += self._Siat_ph(en + j, min = True)
+                D_B += self._Siat_ph(en + j, min = False)
+
+                j += 1 
+
+        # maj/min counts of segment(s) being moved
+        S_A = self._Ssum_ph(seg_idx, min = True)
+        S_B = self._Ssum_ph(seg_idx, min = False)
+
+        ## compute all four possible segmentations relative to neighbor, in
+        ## both phasing orientations
+        MLs = np.c_[
+          # UTD             T  U  D
+          # -^_ or -_- (U != T & T != D) (00)
+          np.r_[self.SJliks(1, 0, 0, S_A, S_B, U_A, U_B, D_A, D_B),
+                self.SJliks(1, 0, 0, S_B, S_A, U_A, U_B, D_A, D_B)],
+          # -__ (U != T & T == D) (01)
+          np.r_[self.SJliks(0, 1, 0, S_A, S_B, U_A, U_B, D_A, D_B),
+                self.SJliks(0, 1, 0, S_B, S_A, U_A, U_B, D_A, D_B)],
+          # --_ (U == T & T != D) (10)
+          np.r_[self.SJliks(1, 1, 0, S_A, S_B, U_A, U_B, D_A, D_B),
+                self.SJliks(1, 1, 0, S_B, S_A, U_A, U_B, D_A, D_B)],
+          # --- (U == T & T == D) (11)
+          np.r_[self.SJliks(0, 0, 0, S_A, S_B, U_A, U_B, D_A, D_B),
+                self.SJliks(0, 0, 0, S_B, S_A, U_A, U_B, D_A, D_B)],
+        ]
+
+        ## match probs to cluster choices (will match MLs matrix in main calculation)
+        probs = np.zeros([len(self.clust_sums), 2])
+        probs_idx = np.zeros([len(self.clust_sums), 2]).astype(np.uint8)
+        for k in self.clust_sums.keys():
+            MLs_idx = np.r_[k == U_cl, k == D_cl]@np.r_[2, 1]
+            probs[self.clust_sums.index(k), :] = MLs[:, MLs_idx]
+            probs_idx[self.clust_sums.index(k), :] = np.r_[0, 4] + MLs_idx
+
+        ## convert to conditional likelihoods, by scaling each likelihood by number of 
+        ## cluster candidates with that segmentation configuration
+        return probs - np.log(np.bincount(probs_idx.ravel())[probs_idx])
+
     def compute_adj_liks(self, seg_idx, cur_clust):
         adj_AB = 0
         adj_BC = np.zeros([len(self.clust_sums), 2])
@@ -921,17 +988,6 @@ class DPinstance:
             C_ab = np.r_[self.clust_sums.values()] # first terms: -1 = make new cluster
             #C_ab = np.r_[[v for k, v in clust_sums.items() if k != cur_clust or cur_clust == -1]] # if we don't want to explicitly propose letting B rejoin cur_clust
 
-            #
-            # adjacent segment likelihoods
-
-            adj_AB = 0
-            adj_BC = np.zeros([len(self.clust_sums), 2])
-
-            if not move_clust and not split_clust: # or (all_assigned and move_clust and np.random.rand() < 0.01):
-                adj_AB, adj_BC = self.compute_adj_liks(seg_idx, cur_clust)
-                if all_assigned:
-                    seg_touch_idx[seg_idx] = True
-
             # A+B,C -> A,B+C
 
             # A+B is likelihood of current cluster B is part of
@@ -961,7 +1017,7 @@ class DPinstance:
             #
             # priors
 
-            # prior on previous cluster fractions
+            ## prior on previous cluster fractions
 
             prior_diff = []
             prior_com = []
@@ -1001,14 +1057,22 @@ class DPinstance:
                 # expand MLs to account for multiple new clusters
                 MLs = np.r_[np.full([len(prior_diff), 2], MLs[0]), MLs[1:, :]]
                 
-            # DP prior based on clusters sizes
+            ## DP prior based on clusters sizes
             # DP alpha factor is split proportionally between prior_diff and -1 (brand new cluster)
             ccp = np.r_[[self.clust_count_prior[x] for x in prior_diff]]
             count_prior = np.r_[self.clust_count_prior[-1]*ccp/ccp.sum(), self.clust_counts.values()]
             count_prior /= count_prior.sum()
 
+            # adjacent segment prior
+
+            log_adj_prior = 0
+            if not move_clust and not split_clust: # or (all_assigned and move_clust and np.random.rand() < 0.01):
+                log_adj_prior = self.compute_adj_prob(seg_idx)
+                if all_assigned:
+                    seg_touch_idx[seg_idx] = True
+
             # choose to join a cluster or make a new one (choice_idx = 0)
-            num = MLs + adj_BC + np.log(count_prior[:, None]) + np.log(clust_prior_p)
+            num = MLs + np.log(count_prior[:, None]) + np.log(clust_prior_p) + log_adj_prior
             choice_p = np.exp(num - num.max())/np.exp(num - num.max()).sum()
             # row major indexing: choice_idx//2 = cluster index, choice_idx & 1 = rephase true
             choice_idx = np.random.choice(
