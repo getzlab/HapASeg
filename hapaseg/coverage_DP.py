@@ -85,21 +85,15 @@ class Coverage_DP:
 
 # for now input will be coverage_df with global segment id column
 class Run_Cov_DP:
-    def __init__(self, cov_df, beta, a_imbalances=None, prior_run=None, count_prior_sum=None):
+    def __init__(self, cov_df, beta, prior_run=None, count_prior_sum=None):
         self.cov_df = cov_df
-        self.a_imbalances = a_imbalances
-        if self.a_imbalances is None:
-            self.seg_id_col = self.cov_df.columns.get_loc('segment_ID')
-        else:
-            self.seg_id_col = self.cov_df.columns.get_loc('a_cov_segID')
+        self.seg_id_col = self.cov_df.columns.get_loc('segment_ID')
         self.beta = beta
 
         self.num_segments = self.cov_df.iloc[:, self.seg_id_col].max() + 1
         self.segment_r_list = [None] * self.num_segments
         self.segment_C_list = [None] * self.num_segments
         self.segment_counts_list = [None] * self.num_segments
-        if a_imbalances is not None:
-            self.segment_allele = [g['allele'].values[0] for i, g in self.cov_df.groupby('a_cov_segID')]
         self.cluster_assignments = np.ones(self.num_segments, dtype=int) * -1
 
         self.cluster_counts = sc.SortedDict({})
@@ -107,6 +101,7 @@ class Run_Cov_DP:
         self.cluster_dict = sc.SortedDict({})
         self.cluster_MLs = sc.SortedDict({})
         self.greylist_segments = sc.SortedSet({})
+        self.cluster_LLs = sc.SortedDict({})
 
         self.prior_clusters = None
         self.prior_r_list = None
@@ -121,74 +116,34 @@ class Run_Cov_DP:
         # containers for saving the MCMC trace
         self.clusters_to_segs = []
         self.bins_to_clusters = []
-
+        self.ll_history = []
         self.alpha = 0.1
 
     # initialize each segment object with its data
     def _init_segments(self):
-        if self.a_imbalances is None:
-            for ID, seg_df in self.cov_df.groupby('segment_ID'):
-                self.segment_r_list[ID] = seg_df['covcorr'].values
-                if 'C_len' in self.cov_df.columns:
-                    self.segment_C_list[ID] = np.c_[np.log(seg_df["C_len"]), seg_df["C_RT_z"], seg_df["C_GC_z"]]
-                else:
-                    self.segment_C_list[ID] = np.c_[seg_df["C_RT_z"], seg_df["C_GC_z"]]
-        else:
-            for ID, grouped in self.cov_df.groupby('a_cov_segID'):
-                segment_r = grouped['cov_DP_mu'].values
-                self.segment_r_list[ID] = np.exp(segment_r)
-                if len(segment_r) < 3:
-                    self.greylist_segments.add(ID)
-                self.segment_counts_list[ID] = (grouped['seg_maj_count'].values[0], grouped['seg_min_count'].values[0])
-            print(self.segment_r_list)
-    def _init_clusters(self, prior_run, count_prior_sum):
-        if self.a_imbalances is not None:
-            [self.unassigned_segs.discard(s) for s in self.greylist_segments]
-        if self.a_imbalances is None:
-            # if first iteration then add first segment to first cluster
-            if prior_run is None:
-                self.cluster_counts[0] = 1
-                self.unassigned_segs.discard(0)
-                self.cluster_dict[0] = sc.SortedSet([0])
-                self.cluster_MLs[0] = self._ML_cluster([0])
-                # next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
-                self.next_cluster_index = 1
+        for ID, seg_df in self.cov_df.groupby('segment_ID'):
+            self.segment_r_list[ID] = seg_df['covcorr'].values
+            if 'C_len' in self.cov_df.columns:
+                self.segment_C_list[ID] = np.c_[np.log(seg_df["C_len"]), seg_df["C_RT_z"], seg_df["C_GC_z"]]
             else:
-                self.prior_clusters = prior_run.cluster_dict.copy()
-                self.prior_r_list = prior_run.segment_r_list.copy()
-                self.prior_C_list = prior_run.segment_C_list.copy()
-                self.count_prior_sum = count_prior_sum.copy()
-                self.next_cluster_index = np.r_[self.prior_clusters.keys()].max() + 1
-                self.clust_prior_ML = None
-                # print('prior clust', self.prior_clusters)
-        else:
-            # for now only support single iteration
-            #first = (set(range(self.num_segments)) - self.greylist_segments)[0]
-            #clusterID = 0
-            #self.cluster_counts[0] = 1
-            #self.unassigned_segs.discard(0)
-            #self.cluster_dict[0] = sc.SortedSet([first])
-            #self.cluster_MLs[0] = self._ML_cluster([first])
+                self.segment_C_list[ID] = np.c_[seg_df["C_RT_z"], seg_df["C_GC_z"]]
+    def _init_clusters(self, prior_run, count_prior_sum):
+        # if first iteration then add first segment to first cluster
+        if prior_run is None:
+            self.cluster_counts[0] = 1
+            self.unassigned_segs.discard(0)
+            self.cluster_dict[0] = sc.SortedSet([0])
+            self.cluster_MLs[0] = self._ML_cluster([0])
             # next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
-            #self.next_cluster_index = 1
-            clusterID=0
-            print(self.cluster_MLs)
-            for name, grouped in self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele']):
-                segIDs = sc.SortedSet(grouped['a_cov_segID'].values) - self.greylist_segments
-                print(clusterID, segIDs) 
-                if len(segIDs) ==0:
-                    continue
-                self.cluster_dict[clusterID] = segIDs
-                self.cluster_assignments[segIDs] = clusterID
-                self.cluster_counts[clusterID] = len(segIDs)
-                self.cluster_MLs[clusterID] = self._ML_cluster(segIDs)
-                print(self._ML_cluster(segIDs))
-                clusterID += 1
-            self.next_cluster_index = clusterID
-            self.unassigned_segs.clear()
-            print(self.cluster_dict)
-            print(self.cluster_MLs)
-            print({c:self._ML_cluster(self.cluster_dict[c]) for c in self.cluster_dict.keys()})
+            self.next_cluster_index = 1
+        else:
+            self.prior_clusters = prior_run.cluster_dict.copy()
+            self.prior_r_list = prior_run.segment_r_list.copy()
+            self.prior_C_list = prior_run.segment_C_list.copy()
+            self.count_prior_sum = count_prior_sum.copy()
+            self.next_cluster_index = np.r_[self.prior_clusters.keys()].max() + 1
+            self.clust_prior_ML = None
+    
     @staticmethod
     def ll_nbinom(r, mu, C, beta, lepsi):
         r = r.flatten()
@@ -224,8 +179,6 @@ class Run_Cov_DP:
 
     # main worker function for computing marginal likelihoods of clusters
     def _ML_cluster(self, cluster_set):
-        if self.a_imbalances:
-            return self._ML_a_cov_cluster(cluster_set)
         # aggregate r and C arrays
         r = np.hstack([self.segment_r_list[i] for i in cluster_set])
         C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
@@ -234,6 +187,15 @@ class Run_Cov_DP:
 
         # print('clust set: ', cluster_set, 'll: ', ll_opt, 'lap approx: ', self._get_laplacian_approx(H_opt))
         return ll_opt + self._get_laplacian_approx(H_opt)
+
+    def _LL_cluster(self, cluster_set):
+        # aggregate r and C arrays
+        r = np.hstack([self.segment_r_list[i] for i in cluster_set])
+        C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
+        mu_opt, lepsi_opt = self.stats_optimizer(r, C, ret_hess=False)
+        ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt)
+
+        return ll_opt
 
     def _ML_cluster_prior(self, cluster_set, new_segIDs=None):
         # aggregate r and C arrays
@@ -261,12 +223,6 @@ class Run_Cov_DP:
             endog = np.exp(np.log(r) - (C @ self.beta).flatten())
         
         exog = np.ones(r.shape[0])
-        if endog.mean() > endog.var():
-            it=0
-            while endog.mean() > endog.var():
-                it+=1
-                endog = endog*(np.random.rand(len(endog))/5 + 1)
-            print('increased endog: its:', it)
         sNB = statsNB(endog, exog)
         res = sNB.fit(disp=0)
             #print(endog.mean(), endog.var())
@@ -332,7 +288,7 @@ class Run_Cov_DP:
         white_segments = set(range(self.num_segments)) - self.greylist_segments
         # while n_it < n_iter:
         while len(self.bins_to_clusters) < n_iter:
-
+    
             # status update
             if not n_it % 250 and self.prior_clusters is None:
                 print("n unassigned: {}".format(len(self.unassigned_segs)))
@@ -342,11 +298,16 @@ class Run_Cov_DP:
                 if not all_assigned and (self.cluster_assignments[white_segments] > -1).all():
                     all_assigned = True
                     n_it_last = n_it
-
-                # burn in after n_seg / n_clust iteration
-                if not burned_in and all_assigned and n_it - n_it_last > self.num_segments / len(self.cluster_counts):
-                    print('burnin')
-                    burned_in = True
+                    #start keeping track of the total likelihood after all have been assigned
+                    for ID in self.cluster_counts.keys():
+                        self.cluster_LLs[ID] = self._LL_cluster(self.cluster_dict[ID])
+                
+                # burn in based on ll changes after all are assigned
+                if not burned_in and all_assigned and n_it - n_it_last > 500:
+                    if np.diff(np.r_[self.ll_history[-500:]]).mean() <= 0:
+                        print('burnin')
+                        burned_in = True
+                        n_it_last = n_it
 
             # pick either a segment or a cluster at random
 
@@ -508,10 +469,15 @@ class Run_Cov_DP:
                                 self.cluster_dict[choice] = self.cluster_dict[clustID].copy()
                                 self.cluster_assignments[segID] = choice
                                 self.cluster_MLs[choice] = self.cluster_MLs[clustID]
+                                
                                 # delete obsolete cluster
                                 del self.cluster_counts[clustID]
                                 del self.cluster_dict[clustID]
                                 del self.cluster_MLs[clustID]
+                                
+                                if all_assigned:
+                                    self.cluster_LLs[choice] = self._LL_cluster[clustID].copy()
+                                    del self.cluster_LLs[clustID]
                             n_it += 1
                             continue
                         else:
@@ -520,6 +486,8 @@ class Run_Cov_DP:
                             self.cluster_dict[clustID].discard(segID)
 
                             self.cluster_MLs[clustID] = ML_A
+                            if all_assigned:
+                                self.cluster_LLs[clustID] = self._LL_cluster(self.cluster_dict[clustID]) 
                     else:
                         self.unassigned_segs.discard(segID)
 
@@ -529,6 +497,8 @@ class Run_Cov_DP:
                     self.cluster_dict[choice] = sc.SortedSet([segID])
                     self.cluster_MLs[choice] = ML_S
                     self.next_cluster_index += 1
+                    if all_assigned:
+                        self.cluster_LLs[choice] = self._LL_cluster(self.cluster_dict[choice])
                 else:
                     # if remaining in same cluster, skip
                     if clustID == choice:
@@ -544,6 +514,8 @@ class Run_Cov_DP:
                     self.cluster_counts[choice] += 1
                     self.cluster_dict[choice].add(segID)
                     self.cluster_MLs[choice] = ML_BC[list(self.cluster_counts.keys()).index(choice)]
+                    if all_assigned:
+                        self.cluster_LLs[choice] = self._LL_cluster(self.cluster_dict[choice])
 
                     # if seg was previously assigned we need to update its previous cluster
                     if clustID > -1:
@@ -552,12 +524,15 @@ class Run_Cov_DP:
                             del self.cluster_counts[clustID]
                             del self.cluster_dict[clustID]
                             del self.cluster_MLs[clustID]
-
+                            if all_assigned:
+                                del self.cluster_LLs[clustID]
                         else:
                             # otherwise update former cluster
                             self.cluster_counts[clustID] -= 1
                             self.cluster_dict[clustID].discard(segID)
                             self.cluster_MLs[clustID] = ML_A
+                            if all_assigned:
+                                self.cluster_LLs[clustID] = self._LL_cluster(self.cluster_dict[clustID])
                     else:
                         self.unassigned_segs.discard(segID)
 
@@ -575,7 +550,10 @@ class Run_Cov_DP:
                 ML_join = [
                     self._ML_cluster(self.cluster_dict[i].union(clust_pick_segs)) if i != clust_pick else
                     self.cluster_MLs[i] for i in self.cluster_dict.keys()]
-                ML_rat = np.array(ML_join) - np.array(self.cluster_MLs.values())
+                # we need to compare this ML with the ML of leaving the target cluster and the picked cluster on their own
+                ML_split = np.array(self.cluster_MLs.values()) + self.cluster_MLs[clust_pick]
+                ML_split[self.cluster_MLs.keys().index(clust_pick)] = self.cluster_MLs[clust_pick]
+                ML_rat = np.array(ML_join) - ML_split
 
                 prior_diff = []
                 clust_prior_p = 1
@@ -637,6 +615,11 @@ class Run_Cov_DP:
                         self.cluster_dict[choice] = self.cluster_dict[clust_pick].copy()
                         self.cluster_assignments[clust_pick_segs] = choice
                         self.cluster_MLs[choice] = self.cluster_MLs[clust_pick]
+                        
+                        if all_assigned:
+                            self.cluster_LLs[choice] = self.cluster_LLs[clust_pick].copy()
+                            del self.cluster_LLs[clust_pick]
+                        
                         # delete obsolete cluster
                         del self.cluster_counts[clust_pick]
                         del self.cluster_dict[clust_pick]
@@ -655,8 +638,11 @@ class Run_Cov_DP:
                         self.cluster_assignments[vacating_segs] = merged_ID
                         self.cluster_counts[merged_ID] += len(vacating_segs)
                         self.cluster_dict[merged_ID] = self.cluster_dict[merged_ID].union(vacating_segs)
-                        self.cluster_MLs[merged_ID] = ML_join[choice_idx]
-
+                        self.cluster_MLs[merged_ID] = ML_join[list(self.cluster_counts.keys()).index(choice)]
+                        
+                        if all_assigned:
+                            self.cluster_LLs[merged_ID] = self._LL_cluster(self.cluster_dict[merged_ID])
+                            del self.cluster_LLs[vacatingID]
                         # delete last cluster
                         del self.cluster_counts[vacatingID]
                         del self.cluster_dict[vacatingID]
@@ -664,14 +650,15 @@ class Run_Cov_DP:
 
 
             # save draw after burn in for every n_seg / (n_clust / 2) iterations
-            # if burned_in and n_it - n_it_last > self.num_segments / (len(self.cluster_counts) * 2):
-            if burned_in and n_it - n_it_last > self.num_segments:
+            if burned_in and n_it - n_it_last > self.num_segments / (len(self.cluster_counts) * 2):
+            # if burned_in and n_it - n_it_last > self.num_segments:
                 self.bins_to_clusters.append(self.cluster_assignments.copy())
                 self.clusters_to_segs.append(self.cluster_dict.copy())
                 n_it_last = n_it
 
             n_it += 1
-
+            if all_assigned:
+                self.ll_history.append(np.r_[self.cluster_LLs.values()].sum())
         # add the cluster counts from the last draw to the running total
         if self.count_prior_sum is None:
             self.count_prior_sum = self.cluster_counts

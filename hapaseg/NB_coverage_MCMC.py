@@ -589,7 +589,6 @@ class AllelicCluster:
         # pick a random segment
         seg = np.random.choice(self.segments)
 
-        print('attempting split on segment: ', seg)
         # if segment is a singleton then skip
         ## if segment is less than 4 bins then skip
         if self.segment_lens[seg] < 4:
