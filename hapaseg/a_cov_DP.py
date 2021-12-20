@@ -91,16 +91,14 @@ class Coverage_DP:
 class Run_Cov_DP:
     def __init__(self, cov_df, beta, seed_clusters=True, prior_run=None, count_prior_sum=None):
         self.cov_df = cov_df
-        self.a_imbalances = a_imbalances
-        self.seg_id_col = self.cov_df.columns.get_loc('a_cov_segID')
         self.beta = beta
 
-        self.num_segments = self.cov_df.iloc[:, self.seg_id_col].max() + 1
+        self.num_segments = len(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
         self.segment_r_list = [None] * self.num_segments
-        self.segment_C_list = [None] * self.num_segments
+        self.segment_V_list = [None] * self.num_segments
         self.segment_sigma_list = [None] * self.num_segments
         self.segment_counts_list = [None] * self.num_segments
-        self.segment_allele = [g['allele'].values[0] for i, g in self.cov_df.groupby('a_cov_segID')]
+        self.segment_allele = np.zeros(self.num_segments)
         self.cluster_assignments = np.ones(self.num_segments, dtype=int) * -1
 
         self.cluster_counts = sc.SortedDict({})
@@ -129,15 +127,27 @@ class Run_Cov_DP:
 
     # initialize each segment object with its data
     def _init_segments(self):
-        for ID, grouped in self.cov_df.groupby('a_cov_segID'):
+        for ID, grouped in self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']):
             mu = grouped['cov_DP_mu'].values[0]
-            major, minor =  (grouped['seg_maj_count'].values[0], grouped['seg_min_count'].values[0])
+            major, minor =  (grouped['maj_count'].sum(), grouped['min_count'].sum())
+            allele = grouped.allele.values[0]
+            self.segment_allele[ID] = allele
             if len(grouped) < 3:
                 self.greylist_segments.add(ID)
-            if grouped.allele.values[0] == -1:
-                r = np.exp(mu)  * minor / (minor + major)
+            
+            if allele== -1:
+                f = minor / (minor + major)
             else:
-                r = np.exp(mu)  * major / (minor + major)
+                f =  major / (minor + major)
+            
+            r = np.exp(mu) * f
+
+            C = np.c_[np.log(grouped["C_len"]), grouped["C_RT_z"], grouped["C_GC_z"]]
+            x = grouped['covcorr']
+
+            V = f * np.exp(np.log(x) - mu - self.beta @ C)
+            
+            self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r 
 
     def _init_clusters(self, prior_run, count_prior_sum, seed_clusters=True):
@@ -152,7 +162,7 @@ class Run_Cov_DP:
             self.cluster_MLs[0] = self._ML_cluster([first])
             #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
             self.next_cluster_index = 1
-        else
+        else:
             clusterID = 0
             for name, grouped in self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele']):
                 segIDs = sc.SortedSet(grouped['a_cov_segID'].values) - self.greylist_segments
@@ -168,12 +178,18 @@ class Run_Cov_DP:
 
     def _ML_cluster(self, cluster_set):
         r_lst = []
+        V_lst = []
         for s in cluster_set:
             r_seg = self.segment_r_list[s]
             r_lst.append(r_seg)
+            V_lst.append(self.segment_V_list[s])
         r = np.hstack(r_lst)
-
-        return self.ML_normalgamma(r, 100, 0.000001, 10, 1)
+        V = np.hstack(V_lst)
+        V_sum = ((V - V.mean())**2).sum()
+        alpha = 10
+        beta = alpha/2 * 100 * V_sum / len(V)
+        
+        return self.ML_normalgamma(r, 100, 0.000001, alpha, beta)
 
     def ML_normalgamma(self, x, mu0, kappa0, alpha0, beta0):
         x_mean = x.mean()
