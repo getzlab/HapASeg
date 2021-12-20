@@ -117,9 +117,9 @@ class Run_Cov_DP:
         self.init_clusters = None
     
         self._init_segments()
-        self._init_clusters(prior_run, count_prior_sum, seed_cluters=seed_clusters)
+        self._init_clusters(prior_run, count_prior_sum)
 
-        # containers for saving the MCMC trace
+        # containers for saving the MCMC trace_cov_dp
         self.clusters_to_segs = []
         self.bins_to_clusters = []
 
@@ -127,7 +127,7 @@ class Run_Cov_DP:
 
     # initialize each segment object with its data
     def _init_segments(self):
-        for ID, grouped in self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']):
+        for ID, (name, grouped) in enumerate(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw'])):
             mu = grouped['cov_DP_mu'].values[0]
             major, minor =  (grouped['maj_count'].sum(), grouped['min_count'].sum())
             allele = grouped.allele.values[0]
@@ -145,36 +145,21 @@ class Run_Cov_DP:
             C = np.c_[np.log(grouped["C_len"]), grouped["C_RT_z"], grouped["C_GC_z"]]
             x = grouped['covcorr']
 
-            V = f * np.exp(np.log(x) - mu - self.beta @ C)
+            V = f * np.exp(np.log(x) - mu - (C @ self.beta).flatten())
             
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r 
 
-    def _init_clusters(self, prior_run, count_prior_sum, seed_clusters=True):
+    def _init_clusters(self, prior_run, count_prior_sum):
         [self.unassigned_segs.discard(s) for s in self.greylist_segments]
-            # for now only support single iteration
-        if not seed_clusters:
-            first = (set(range(self.num_segments)) - self.greylist_segments)[0]
-            clusterID = 0
-            self.cluster_counts[0] = 1
-            self.unassigned_segs.discard(0)
-            self.cluster_dict[0] = sc.SortedSet([first])
-            self.cluster_MLs[0] = self._ML_cluster([first])
-            #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
-            self.next_cluster_index = 1
-        else:
-            clusterID = 0
-            for name, grouped in self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele']):
-                segIDs = sc.SortedSet(grouped['a_cov_segID'].values) - self.greylist_segments
-                if len(segIDs) == 0:
-                    continue
-                self.cluster_dict[clusterID] = segIDs
-                self.cluster_assignments[segIDs] = clusterID
-                self.cluster_counts[clusterID] = len(segIDs)
-                self.cluster_MLs[clusterID] = self._ML_cluster(segIDs)
-                clusterID += 1
-            self.next_cluster_index = clusterID
-            self.unassigned_segs.clear()
+        first = (set(range(self.num_segments)) - self.greylist_segments)[0]
+        clusterID = 0
+        self.cluster_counts[0] = 1
+        self.unassigned_segs.discard(0)
+        self.cluster_dict[0] = sc.SortedSet([first])
+        self.cluster_MLs[0] = self._ML_cluster([first])
+        #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
+        self.next_cluster_index = 1
 
     def _ML_cluster(self, cluster_set):
         r_lst = []
