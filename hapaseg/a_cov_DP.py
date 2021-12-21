@@ -127,12 +127,24 @@ class Run_Cov_DP:
 
     # initialize each segment object with its data
     def _init_segments(self):
+        fallback_counts = sc.SortedDict({})
         for ID, (name, grouped) in enumerate(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw'])):
             mu = grouped['cov_DP_mu'].values[0]
-            major, minor =  (grouped['maj_count'].sum(), grouped['min_count'].sum())
+            group_len = len(grouped)
+            if group_len > 10:
+                major, minor =  (grouped['maj_count'].sum(), grouped['min_count'].sum())
+            else:
+                ADP_clust = grouped['allelic_cluster'].values[0]
+                if ADP_clust in fallback_counts:
+                    major, minor = fallback_counts[ADP_clust]
+                else:
+                    filt = self.cov_df.loc[self.cov_df.allelic_cluster == ADP_clust]
+                    major, minor = filt['maj_count'].sum(), filt['min_count'].sum()
+                    fallback_counts[ADP_clust] = (major, minor)
+                    
             allele = grouped.allele.values[0]
             self.segment_allele[ID] = allele
-            if len(grouped) < 3:
+            if group_len < 3:
                 self.greylist_segments.add(ID)
             
             if allele== -1:
