@@ -322,11 +322,12 @@ class A_DP:
         scerrorbar(idx, rev = True, alpha = ph_prob[idx]*default_alpha, show_CI = color)
 
 class DPinstance:
-    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 1):
+    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 1, temperature = 1):
         self.S = S
         self.clust_prior = clust_prior.copy()
         self.clust_count_prior = clust_count_prior.copy()
         self.alpha = alpha
+        self.temperature = temperature
 
         self.mm_mat = self.S.loc[:, ["min", "maj"]].values.reshape(-1, order = "F") # numpy for speed
         self.ref_mat = self.S.loc[:, ["A_ref", "B_ref"]].values.reshape(-1, order = "F")
@@ -1073,6 +1074,7 @@ class DPinstance:
 
             # choose to join a cluster or make a new one (choice_idx = 0)
             num = MLs + np.log(count_prior[:, None]) + np.log(clust_prior_p) + log_adj_prior
+            num /= self.temperature
             choice_p = np.exp(num - num.max())/np.exp(num - num.max()).sum()
             # row major indexing: choice_idx//2 = cluster index, choice_idx & 1 = rephase true
             choice_idx = np.random.choice(
