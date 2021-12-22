@@ -345,6 +345,12 @@ class DPinstance:
         self.flip_col = self.S.columns.get_loc("flipped")
 
         #
+        # compute rephase probabilities for each segment
+        self.S["rephase_prob"] = np.nan
+        for i in range(0, len(self.S)):
+            self.S.at[i, "rephase_prob"] = self.compute_rephase_prob(np.r_[i])
+
+        #
         # initialize priors
 
         # store likelihoods for each cluster in the prior (from previous iterations)
@@ -690,7 +696,33 @@ class DPinstance:
 
         return bdy
 
-    def compute_overall_lik(self, segs_to_clusters = None, phase_orientations = None):
+    def compute_overall_lik_simple(self):
+        ## overall clustering likelihood
+        clust_lik = np.r_[[ss.betaln(v[0] + 1, v[1] + 1) for k, v in self.clust_sums.items() if k >= 0]].sum()
+
+        ## overall phasing likelihood
+        phase_lik = 1 - self.S["rephase_prob"].copy()
+        phase_lik[self.S["flipped"]] = 1 - phase_lik[self.S["flipped"]]
+        phase_lik = np.log(phase_lik).sum()
+
+        ## count prior
+        count_prior = np.r_[self.clust_counts.values()].astype(float)
+        count_prior /= count_prior.sum()
+
+        ## segmentation likelihood
+        bdy = np.flatnonzero(np.r_[1, np.diff(self.S["clust"]) != 0, 1])
+        bdy = np.c_[bdy[:-1], bdy[1:]]
+
+        seg_lik = 0.0
+        for st, en in bdy:
+            seg_lik += ss.betaln(
+              self._Ssum_ph(np.r_[st:en], min = True) + 1,
+              self._Ssum_ph(np.r_[st:en], min = False) + 1
+            )
+
+        return clust_lik + phase_lik + np.log(count_prior).sum() + seg_lik
+
+    def compute_overall_lik(self, segs_to_clusters = None, phase_orientations = None, debug = False):
         if segs_to_clusters is None:
             su, segs_to_clusters = self.get_unique_clust_idxs()
         else:
