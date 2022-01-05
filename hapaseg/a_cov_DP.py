@@ -151,12 +151,13 @@ class Run_Cov_DP:
             else:
                 f =  major / (minor + major)
             
-            r = mu + np.log(f)
+            r = np.exp(mu) * f
 
             C = np.c_[np.log(grouped["C_len"]), grouped["C_RT_z"], grouped["C_GC_z"]]
             x = grouped['covcorr']
 
-            V =  (np.log(x) - mu - (C @ self.beta).flatten())
+            V =  np.exp(np.log(x) - mu - (C @ self.beta).flatten())
+            #V = np.exp(stats.norm.rvs(mu, sigma, size=10000)) * stats.beta.rvs(a,b, size=10000)).var()
             
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r 
@@ -187,7 +188,7 @@ class Run_Cov_DP:
         V = np.hstack(V_lst)
         V_sum = ((V - V.mean())**2).sum()
         alpha = 10
-        beta = alpha/100 * V_sum / len(V)
+        beta = alpha/2 * 50 * V_sum / len(V)
         
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
     def ML_normalgamma(self, x, mu0, kappa0, alpha0, beta0):
