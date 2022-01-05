@@ -705,9 +705,10 @@ class DPinstance:
         phase_lik[self.S["flipped"]] = 1 - phase_lik[self.S["flipped"]]
         phase_lik = np.log(phase_lik).sum()
 
-        ## count prior
-        count_prior = np.r_[self.clust_counts.values()].astype(float)
-        count_prior /= count_prior.sum()
+        ## Dirichlet count prior (Dirichlet-categorical marginal likelihood)
+        dirvec = np.r_[self.clust_counts.values()].astype(float)
+        k = len(dirvec)
+        count_prior = ss.gammaln(dirvec + self.alpha/k).sum() + ss.gammaln(self.alpha) - ss.gammaln(dirvec.sum() + self.alpha) - k*ss.gammaln(self.alpha/k)
 
         ## segmentation likelihood
         bdy = np.flatnonzero(np.r_[1, np.diff(self.S["clust"]) != 0, 1])
@@ -720,7 +721,7 @@ class DPinstance:
               self._Ssum_ph(np.r_[st:en], min = False) + 1
             )
 
-        return clust_lik + phase_lik + np.log(count_prior).sum() + seg_lik
+        return clust_lik + phase_lik + count_prior + seg_lik
 
     def compute_overall_lik(self, segs_to_clusters = None, phase_orientations = None, debug = False):
         if segs_to_clusters is None:
