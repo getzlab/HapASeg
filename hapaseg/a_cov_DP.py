@@ -96,9 +96,10 @@ class Run_Cov_DP:
         self.segment_V_list = [None] * self.num_segments
         self.segment_sigma_list = [None] * self.num_segments
         self.segment_counts = np.zeros(self.num_segments, dtype=int)
+        self.segment_cov_bins = np.zeros(self.num_segments, dtype=int)
         self.segment_allele = np.zeros(self.num_segments, dtype=int)
         self.cluster_assignments = np.ones(self.num_segments, dtype=int) * -1
-
+        
         self.cluster_counts = sc.SortedDict({})
         self.unassigned_segs = sc.SortedList(np.r_[0:self.num_segments])
         self.cluster_dict = sc.SortedDict({})
@@ -122,13 +123,14 @@ class Run_Cov_DP:
         self.clusters_to_segs = []
         self.bins_to_clusters = []
 
-        self.alpha = 0.5
+        self.alpha = 0.1
 
     # initialize each segment object with its data
     def _init_segments(self):
         fallback_counts = sc.SortedDict({})
         for ID, (name, grouped) in enumerate(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw'])):
             mu = grouped['cov_DP_mu'].values[0]
+            sigma = grouped['cov_DP_sigma'].values[0]
             group_len = len(grouped)
             if group_len > 10:
                 major, minor =  (grouped['maj_count'].sum(), grouped['min_count'].sum())
@@ -148,19 +150,21 @@ class Run_Cov_DP:
             
             if allele== -1:
                 f = minor / (minor + major)
+                a=minor;b=major
             else:
                 f =  major / (minor + major)
-            
+                a=major;b=minor
             r = np.exp(mu) * f
 
             C = np.c_[np.log(grouped["C_len"]), grouped["C_RT_z"], grouped["C_GC_z"]]
             x = grouped['covcorr']
 
-            V =  np.exp(np.log(x) - mu - (C @ self.beta).flatten())
-            #V = np.exp(stats.norm.rvs(mu, sigma, size=10000)) * stats.beta.rvs(a,b, size=10000)).var()
+            #V =  np.exp(np.log(x) - mu - (C @ self.beta).flatten())
+            V = (np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a,b, size=10000)).var()
             
-            self.segment_V_list[ID] = V
+            self.segment_V_list[ID] = min(np.sqrt(V) * 10, 20)
             self.segment_r_list[ID] = r 
+            self.segment_cov_bins[ID] = group_len
             if self.coverage_prior:
                 self.segment_counts[ID] = group_len
             else:
@@ -186,10 +190,9 @@ class Run_Cov_DP:
             V_lst.append(self.segment_V_list[s])
         r = np.hstack(r_lst)
         V = np.hstack(V_lst)
-        V_sum = ((V - V.mean())**2).sum()
-        alpha = 10
-        beta = alpha/2 * 50 * V_sum / len(V)
-        
+        V_scale = (V * self.segment_cov_bins[cluster_set] / self.segment_cov_bins[cluster_set].sum()).sum()
+        alpha = max(10,len(r) / 2)
+        beta = alpha/2 * V_scale
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
     def ML_normalgamma(self, x, mu0, kappa0, alpha0, beta0):
         x_mean = x.mean()
@@ -324,10 +327,12 @@ class Run_Cov_DP:
                     n_it_last = n_it
 
                 # burn in after n_seg / n_clust iteration
-                if not burned_in and all_assigned and n_it - n_it_last > self.num_segments / len(self.cluster_counts):
-                    print('burnin')
-                    burned_in = True
-            
+                if not burned_in and all_assigned and n_it - n_it_last > max(1000, self.num_segments):
+                    if np.diff(np.r_[self.ML_total_history[-1000:]]).mean() <= 0:
+                        print('burnin')
+                        burned_in = True
+                        n_it_last = n_it
+                        
             # pick either a segment or a cluster at random
             # pick segment
             if np.random.rand() < 0.5:
@@ -336,7 +341,6 @@ class Run_Cov_DP:
                     segID = np.random.choice(self.unassigned_segs)
                 else:
                     segID = np.random.choice(white_segments)
-
                 # get cluster assignment of S
                 clustID = self.cluster_assignments[segID]
                 # print('seg_pick:', segID, clustID)
@@ -614,7 +618,7 @@ class Run_Cov_DP:
                 choice = int(choice)
 
                 if choice != clust_pick:
-                    print('cluster {} merging with {}'.format(clust_pick, choice_idx))
+                    #print('cluster {} merging with {}'.format(clust_pick, choice_idx))
                     if choice < 0:
                         # we're merging into an old cluster, which we do by simply reindexing that cluster
                         choice = -(choice + 1)
