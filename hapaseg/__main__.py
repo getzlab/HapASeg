@@ -16,7 +16,7 @@ from .run_allelic_MCMC import AllelicMCMCRunner
 from .allelic_MCMC import A_MCMC
 from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters
 from .coverage_DP import Coverage_DP
-
+from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Call somatic copynumber alterations taking advantage of SNP phasing")
@@ -130,7 +130,17 @@ def parse_args():
     coverage_dp.add_argument("--num_segmentation_samples", type=int, help="number of segmentation samples to use")
     coverage_dp.add_argument("--num_draws", type=int,
                              help="number of thinned draws from the coverage dp to take after burn in")
-    
+
+    ## Allelic Coverage DP
+    ac_dp = subparsers.add_parser("allelic_coverage_dp", help="Run DP clustering on allelic coverage tuples")
+    ac_dp.add_argument("--snp_dataframe", help="path to dataframe containing snps")
+    ac_dp.add_argument("--coverage_dp_object", help="path to coverage DP output object")
+    ac_dp.add_argument("--allelic_clusters_object", help="npy file containing allelic dp segs-to-clusters results")
+    ac_dp.add_argument("--allelic_draw_index", help="index of ADP draw used for coverage MCMC", type=int, default=-1)
+    ac_dp.add_argument("--num_draws", help="number of samples to take")
+    ac_dp.add_argument("--allelic_clusters_object",
+                               help="npy file containing allelic dp segs-to-clusters results")
+
     args = parser.parse_args()
 
     # validate arguments
@@ -391,6 +401,18 @@ def main():
             os.mkdir(figure_dir)
 
         cov_dp_runner.visualize_DP_run(args.num_segmentation_samples - 1, os.path.join(figure_dir, 'coverage_draw_{}'.format(args.num_draws -1)))
+
+    elif args.command == "allelic_coverage_dp":
+        # generate the acdp df from each of the dp draws
+        acdp_df, beta = generate_acdp_df(args.snp_dataframe,
+                               args.coverage_dp_object,
+                               args.allelic_cluster_object,
+                               args.allelic_draw_index)
+
+        acdp = AllelicCoverage_DP(acdp_df, beta, args.allelic_clusters_object)
+        acdp.run(args.num_samples)
+        acdp.visualize_ACDP(os.path.join(output_dir), "acdp_figure")
+
 
 if __name__ == "__main__":
     main()

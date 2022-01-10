@@ -10,11 +10,11 @@ import scipy.stats as s
 import scipy.sparse as sp
 import scipy.special as ss
 import sortedcontainers as sc
-import h5py
+import pickle
+
+from capy import mut
 
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
-
-from capy import seq
 
 colors = mpl.cm.get_cmap("tab20").colors
 
@@ -24,77 +24,100 @@ def LSE(x):
     return lmax + np.log(np.exp(x - lmax).sum())
 
 
-class Coverage_DP:
-    def __init__(self,
-                 segmentation_draws,
-                 beta,
-                 cov_df):
-        self.segmentation_draws = segmentation_draws
-        self.beta = beta
+def generate_acdp_df(SNP_path, # path to SNP df
+                 CDP_path, # path to CDP runner pickle object
+                 ADP_path, # path to npz ADP result
+                 ADP_draw_index=-1): # index of ADP draw used in Coverage MCMC
+
+    SNPs = pd.read_pickle(SNP_path)
+    ADP_clusters = np.load(ADP_path)
+    phases = ADP_clusters["snps_to_phases"][ADP_draw_index]
+    SNPs.iloc[phases, [0, 1]] = SNPs.iloc[phases, [1, 0]]
+
+    with open(CDP_path, 'rb') as f:
+        dp_pickle = pickle.load(f)
+
+    # currently uses the last sample from every DP draw
+    draw_dfs = []
+    for draw_num, dp_run in enumerate(dp_pickle.DP_runs):
+        print('concatenating dp run ', draw_num)
+        a_cov_seg_df = dp_run.cov_df.copy()
+
+        # add minor and major allele counts for each bin to the cov_seg_df here to allow for beta draws on the fly for each segment
+        a_cov_seg_df['min_count'] = 0
+        a_cov_seg_df['maj_count'] = 0
+        min_col_idx = a_cov_seg_df.columns.get_loc('min_count')
+        maj_col_idx = a_cov_seg_df.columns.get_loc('maj_count')
+
+        SNPs["cov_tidx"] = mut.map_mutations_to_targets(SNPs, a_cov_seg_df, inplace=False)
+
+        for idx, group in SNPs.groupby('cov_tidx').indices.items():
+            minor, major = SNPs.iloc[group, [0, 1]].sum()
+            a_cov_seg_df.iloc[int(idx), [min_col_idx, maj_col_idx]] = minor, major
+
+        # add dp cluster annotations
+        a_cov_seg_df['cov_DP_cluster'] = -1
+
+        segs_to_clusts = dp_run.bins_to_clusters[-1]
+        for seg in range(len(segs_to_clusts)):
+            a_cov_seg_df.loc[a_cov_seg_df['segment_ID'] == seg, 'cov_DP_cluster'] = segs_to_clusts[seg]
+
+        # adding cluster mus and sigmas to df for each tuple
+        # falls back to CDP mu and sigma if the tuple is too small (less than 10 coverage bins)
+        a_cov_seg_df['cov_DP_mu'] = 0
+        a_cov_seg_df['cov_DP_sigma'] = 0
+
+        for adp, cdp in a_cov_seg_df.groupby(['allelic_cluster', 'cov_DP_cluster']).indices:
+            acdp_clust = a_cov_seg_df.loc[
+                (a_cov_seg_df.cov_DP_cluster == cdp) & (a_cov_seg_df.allelic_cluster == adp)]
+            if len(acdp_clust) < 5:
+                acdp_clust = a_cov_seg_df.loc[a_cov_seg_df.cov_DP_cluster == cdp]
+            r = acdp_clust.covcorr.values
+            C = np.c_[np.log(acdp_clust['C_len'].values), acdp_clust['C_RT_z'].values, acdp_clust['C_GC_z'].values]
+            endog = np.exp(np.log(r) - (C @ dp_pickle.beta).flatten())
+            exog = np.ones(r.shape)
+            sNB = statsNB(endog, exog)
+            res = sNB.fit(disp=0)
+            mu = res.params[0]
+            a_cov_seg_df.loc[
+                (a_cov_seg_df.cov_DP_cluster == cdp) & (a_cov_seg_df.allelic_cluster == adp), 'cov_DP_mu'] = mu
+            H = sNB.hessian(res.params)
+            mu_sigma = np.linalg.inv(-H)[0, 0]
+            a_cov_seg_df.loc[(a_cov_seg_df.cov_DP_cluster == cdp) & (
+                        a_cov_seg_df.allelic_cluster == adp), 'cov_DP_sigma'] = mu_sigma
+
+        # add next_g for ease of plotting down the line
+        a_cov_seg_df["next_g"] = np.r_[a_cov_seg_df.iloc[1:]["start_g"], 2880794554]
+
+        # duplicate segments to account for second allele
+        num_bins = len(a_cov_seg_df)
+        a_cov_seg_df = a_cov_seg_df.reset_index(drop=True)
+        a_cov_seg_df = a_cov_seg_df.append(a_cov_seg_df)
+        a_cov_seg_df = a_cov_seg_df.reset_index(drop=True)
+        a_cov_seg_df['allele'] = 0
+        allele_col_idx = a_cov_seg_df.columns.get_loc('allele')
+
+        # minor
+        a_cov_seg_df.iloc[:num_bins, allele_col_idx] = -1
+        # major
+        a_cov_seg_df.iloc[num_bins:, allele_col_idx] = 1
+
+        a_cov_seg_df['dp_draw'] = draw_num
+        draw_dfs.append(a_cov_seg_df)
+
+        print('completed ACDP dataframe generation')
+    return pd.concat(draw_dfs), dp_run.beta
+
+class AllelicCoverage_DP:
+    def __init__(self, cov_df, beta, allelic_segs_path):
         self.cov_df = cov_df
-
-        # number of seg samples to use and draws from each DP to take
-        self.num_samples = None
-        self.num_draws = None
-
-        # Coverage DP run object for each seg sample
-        self.DP_runs = None
-
-        self.bins_to_clusters = None
-        self.segs_to_clusters = None
-
-    def run_dp(self, num_samples=-1, num_draws=50):
-
-        if num_samples == -1:
-            self.num_samples = self.segmentation_draws.shape[1]
-        else:
-            self.num_samples = num_samples
-        self.num_draws = num_draws
-
-        self.DP_runs = [None] * self.num_samples
-        prior_run = None
-        count_prior_sum = None
-
-        # TODO: load segmentation samples randomly
-        self.bins_to_clusters = []
-        self.segs_to_clusters = []
-        for samp in range(self.num_samples):
-            print('starting sample {}'.format(samp))
-            self.cov_df['segment_ID'] = self.segmentation_draws[:, samp].astype(int)
-
-            DP_runner = Run_Cov_DP(self.cov_df, self.beta, prior_run, count_prior_sum)
-            self.DP_runs[samp] = DP_runner
-            draws, count_prior_sum = DP_runner.run(self.num_draws, samp)
-            self.bins_to_clusters.append(draws)
-            prior_run = DP_runner
-
-    def visualize_DP_run(self, run_idx, save_path):
-        if run_idx > len(self.DP_runs):
-            raise ValueError('DP run index out of range')
-
-        cov_dp = self.DP_runs[run_idx]
-        cur = 0
-        f, axs = plt.subplots(1, figsize=(25, 10))
-        for c in cov_dp.cluster_dict.keys():
-            clust_start = cur
-            for seg in cov_dp.cluster_dict[c]:
-                len_seg = len(cov_dp.segment_r_list[seg])
-                axs.scatter(np.r_[cur:len_seg + cur], np.exp(
-                    np.log(cov_dp.segment_r_list[seg]) - (cov_dp.segment_C_list[seg] @ cov_dp.beta).flatten()))
-                cur += len_seg
-            axs.add_patch(mpl.patches.Rectangle((clust_start, 0), cur - clust_start, 500, fill=True, alpha=0.15,
-                                                color=colors[c % 10]))
-        plt.savefig(save_path)
-# for now input will be coverage_df with global segment id column
-class Run_Cov_DP:
-    def __init__(self, cov_df, beta, coverage_prior=True, prior_run=None, count_prior_sum=None):
-        self.cov_df = cov_df
         self.beta = beta
+        self.allelic_segs_path = allelic_segs_path
 
         self.num_segments = len(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
-        self.segment_r_list = [None] * self.num_segments
-        self.segment_V_list = [None] * self.num_segments
-        self.segment_sigma_list = [None] * self.num_segments
+        self.segment_r_arr = np.zeros(self.num_segments, dtype=int)
+        self.segment_V_arr = np.zeros(self.num_segments, dtype=int)
+        self.segment_sigma_arr = np.zeros(self.num_segments, dtype=int)
         self.segment_counts = np.zeros(self.num_segments, dtype=int)
         self.segment_cov_bins = np.zeros(self.num_segments, dtype=int)
         self.segment_allele = np.zeros(self.num_segments, dtype=int)
@@ -112,12 +135,11 @@ class Run_Cov_DP:
         self.count_prior_sum = None
         self.ML_total_history = []
 
-        self.coverage_prior = coverage_prior
         # for saving init clusters
         self.init_clusters = None
     
         self._init_segments()
-        self._init_clusters(prior_run, count_prior_sum)
+        self._init_clusters()
 
         # containers for saving the MCMC trace_cov_dp
         self.clusters_to_segs = []
@@ -133,7 +155,7 @@ class Run_Cov_DP:
             sigma = grouped['cov_DP_sigma'].values[0]
             group_len = len(grouped)
             if group_len > 10:
-                major, minor =  (grouped['maj_count'].sum(), grouped['min_count'].sum())
+                major, minor = (grouped['maj_count'].sum(), grouped['min_count'].sum())
             else:
                 ADP_clust = grouped['allelic_cluster'].values[0]
                 if ADP_clust in fallback_counts:
@@ -148,21 +170,20 @@ class Run_Cov_DP:
             if group_len < 3:
                 self.greylist_segments.add(ID)
             
-            if allele== -1:
+            if allele == -1:
                 f = minor / (minor + major)
-                a=minor;b=major
+                a = minor
+                b = major
             else:
-                f =  major / (minor + major)
-                a=major;b=minor
+                f = major / (minor + major)
+                a = major
+                b = minor
             r = np.exp(mu) * f
-
-            C = np.c_[np.log(grouped["C_len"]), grouped["C_RT_z"], grouped["C_GC_z"]]
-            x = grouped['covcorr']
 
             #V =  np.exp(np.log(x) - mu - (C @ self.beta).flatten())
             V = (np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a,b, size=10000)).var()
             
-            self.segment_V_list[ID] = min(np.sqrt(V) * 10, 20)
+            self.segment_V_list[ID] = min(np.sqrt(V) * 8, 20)
             self.segment_r_list[ID] = r 
             self.segment_cov_bins[ID] = group_len
             if self.coverage_prior:
@@ -170,10 +191,9 @@ class Run_Cov_DP:
             else:
                 self.segment_counts[ID] = 1
 
-    def _init_clusters(self, prior_run, count_prior_sum):
-        [self.unassigned_segs.discard(s) for s in self.greylist_segments]
+    def _init_clusters(self):
+        [self.unassigned_segs.discard(seg) for seg in self.greylist_segments]
         first = (set(range(self.num_segments)) - self.greylist_segments)[0]
-        clusterID = 0
         self.cluster_counts[0] = self.segment_counts[0]
         self.unassigned_segs.discard(0)
         self.cluster_dict[0] = sc.SortedSet([first])
@@ -182,18 +202,13 @@ class Run_Cov_DP:
         self.next_cluster_index = 1
 
     def _ML_cluster(self, cluster_set):
-        r_lst = []
-        V_lst = []
-        for s in cluster_set:
-            r_seg = self.segment_r_list[s]
-            r_lst.append(r_seg)
-            V_lst.append(self.segment_V_list[s])
-        r = np.hstack(r_lst)
-        V = np.hstack(V_lst)
+        r = self.segment_r_arr[cluster_set]
+        V = self.segment_V_arr[cluster_set]
         V_scale = (V * self.segment_cov_bins[cluster_set] / self.segment_cov_bins[cluster_set].sum()).sum()
         alpha = max(10,len(r) / 2)
         beta = alpha/2 * V_scale
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
+
     def ML_normalgamma(self, x, mu0, kappa0, alpha0, beta0):
         x_mean = x.mean()
         n = len(x)
@@ -296,7 +311,7 @@ class Run_Cov_DP:
         # print('prior assigned')
         self.init_clusters = sc.SortedDict({k: v.copy() for k, v in self.cluster_dict.items()})
 
-    def run(self, n_iter, sample_num=0):
+    def run(self, n_iter, ):
 
         burned_in = False
         all_assigned = False
@@ -304,15 +319,7 @@ class Run_Cov_DP:
         n_it = 0
         n_it_last = 0
 
-        if self.prior_clusters:
-            self.clust_prior_ML = sc.SortedDict(
-                {k: self._ML_cluster_prior(self.prior_clusters[k]) for k in self.prior_clusters.keys()})
-            count_prior = np.r_[[v for (k, v) in self.count_prior_sum.items() if
-                                 k in self.prior_clusters.keys()]] / sample_num
-            self.initial_prior_assignment(count_prior)
-
         white_segments = set(range(self.num_segments)) - self.greylist_segments
-        # while n_it < n_iter:
         while len(self.bins_to_clusters) < n_iter:
             
             self.save_ML_total()
@@ -343,7 +350,7 @@ class Run_Cov_DP:
                     segID = np.random.choice(white_segments)
                 # get cluster assignment of S
                 clustID = self.cluster_assignments[segID]
-                # print('seg_pick:', segID, clustID)
+
                 # compute ML of AB = Cs (cached)
                 if clustID == -1:
                     ML_AB = 0
@@ -363,8 +370,6 @@ class Run_Cov_DP:
                 ML_S = self._ML_cluster([segID])
 
                 # compute ML of every other cluster C = Ck, k != s (cached)
-                # for now were also allowing it to chose to stay in current cluster
-
                 ML_C = np.array([ML for (ID, ML) in self.cluster_MLs.items()])
 
                 # compute ML of every cluster if S joins
@@ -382,15 +387,7 @@ class Run_Cov_DP:
                 ML_new = ML_A + ML_S - ML_AB
 
                 ML_rat = np.r_[ML_rat_BC, ML_new]
-                # if self.prior_clusters:
-                # print('ML_A', ML_A)
-                # print('ML_AB', ML_AB)
-                # print('ML_C', ML_C)
-                # print('C now', [self._ML_cluster(self.cluster_dict[c]) for c in self.cluster_dict.keys()])
-                # print('ML_BC', ML_BC)
 
-                #print(self.segment_r_list[segID])
-                #print('ml_rat_seg: ', ML_rat)
 
                 prior_diff = []
                 clust_prior_p = 1
@@ -419,37 +416,30 @@ class Run_Cov_DP:
                         np.r_[[self.prior_clusters.index(x) if x in self.prior_clusters else -1 for x in
                                (prior_com | prior_null | {self.next_cluster_index})]]
                     ].astype(int)
-                    # print('prior_diff', prior_diff)
-                    # print('prior_idx', prior_id
-                    # print('prior BC', [self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]], [segID]) for idx in prior_idx])
-                    # print('prior C', [self.clust_prior_ML[self.prior_clusters.keys()[idx]]for idx in prior_idx] )
+
                     prior_MLs = np.r_[[self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]],
                                                               [segID]) if idx != -1 else 0 for idx in prior_idx]] - (
                                         self._ML_cluster([segID]) + np.r_[[self.clust_prior_ML[
                                                                                self.prior_clusters.keys()[
                                                                                    idx]] if idx != -1 else - self._ML_cluster(
                                     [segID]) for idx in prior_idx]])
-                    # print('prior_MLs', prior_MLs)
                     clust_prior_p = np.maximum(
                         np.exp(prior_MLs - prior_MLs.max()) / np.exp(prior_MLs - prior_MLs.max()).sum(), 1e-300)
 
-                    #  print('clust_prior_p: ', clust_prior_p)
                     # expand MLs to account for multiple new clusters
                     ML_rat = np.r_[np.full(len(prior_diff), ML_rat[-1]), ML_rat]
-                #   print('ML_rat:', ML_rat)
+
                 # DP prior based on clusters sizes
                 count_prior = np.r_[
                     [count_prior[self.prior_clusters.index(x)] for x in
                      prior_diff], self.cluster_counts.values(), self.segment_counts[segID] * self.alpha]
                 count_prior /= count_prior.sum()
 
-                # if self.prior_clusters:
-                # print('count prior: ', count_prior)
                 # construct transition probability distribution and draw from it
                 MLs_max = ML_rat.max()
                 choice_p = np.exp(ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)) / np.exp(
                     ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
-                #print(choice_p)
+
                 if np.isnan(choice_p.sum()):
                     print('skipping iteration {} due to nan. picked segment {}'.format(n_it, segID))
                     n_it += 1
@@ -459,16 +449,11 @@ class Run_Cov_DP:
                     p=choice_p
                 )
 
-                # if self.prior_clusters:
-                #   print(choice_p)
-            # print(choice_idx)
                 # last = brand new, -1, -2, -3, ... = -(prior clust index) - 1
                 choice = np.r_[-np.r_[prior_diff] - 1,
                                self.cluster_counts.keys(), self.next_cluster_index][choice_idx]
                 choice = int(choice)
-                # print('choice: ', choice)
-                # print(self.cluster_counts)
-                # print(np.r_[-np.r_[prior_diff] - 1, self.cluster_counts.keys(), self.next_cluster_index])
+
                 # if choice == next_cluster_idx then start a brand new cluster with this new index
                 # if choice < 0 then we create a new cluster with the index of the old cluster
                 if choice == self.next_cluster_index or choice < 0:
@@ -477,11 +462,7 @@ class Run_Cov_DP:
                         # since its an old cluster we correct its index
                         choice = -(choice + 1)
                         old_clust = True
-                        # print('starting new old cluster')
-                    # else:
-                    # print('starting new clust')
 
-                    # print('{} starting new cluster {}'.format(segID, choice_idx))
                     if clustID > -1:
                         # if the segment used to occupy a cluster by itself, do nothing if its a new cluster
                         # need to rename it if its a old cluster
@@ -516,12 +497,8 @@ class Run_Cov_DP:
                 else:
                     # if remaining in same cluster, skip
                     if clustID == choice:
-                        #   print('{} staying in current cluster'.format(clustID))
                         n_it += 1
                         continue
-
-                    # joining existing cluster
-                    # print('{} joining cluster {}'.format(segID, choice_idx))
 
                     # update new cluster with additional segment
                     self.cluster_assignments[segID] = choice
@@ -554,7 +531,6 @@ class Run_Cov_DP:
 
                 clust_pick = np.random.choice(self.cluster_dict.keys())
                 clust_pick_segs = np.r_[self.cluster_dict[clust_pick]].astype(int)
-                # print('clust_pick:', clust_pick)
                 # get ML of this cluster merged with each of the other existing clusters
                 ML_join = [
                     self._ML_cluster(self.cluster_dict[i].union(clust_pick_segs)) if i != clust_pick else
@@ -586,14 +562,13 @@ class Run_Cov_DP:
                         [self.clust_prior_ML[self.prior_clusters.keys()[idx]] if idx != -1 else -self.cluster_MLs[
                             clust_pick] for idx in prior_idx]])
 
-                    # print('prior_MLs', prior_MLs)
                     clust_prior_p = np.maximum(
                         np.exp(prior_MLs - prior_MLs.max()) / np.exp(prior_MLs - prior_MLs.max()).sum(), 1e-300)
 
                     # expand MLs to account for multiple new merge clusters--which have liklihood = cluster staying as is = 0
                     ML_rat = np.r_[np.full(len(prior_diff), 0), ML_rat]
                     # DP prior based on clusters sizes now with no alpha
-                #print('cluster ML_rat', ML_rat)
+
                 #will need to change this when we incorporate muliple smaples
                 count_prior = np.r_[
                     [count_prior[self.prior_clusters.index(x)] for x in prior_diff], self.DP_merge_prior(clust_pick)]
@@ -602,7 +577,7 @@ class Run_Cov_DP:
                 MLs_max = ML_rat.max()
                 choice_p = np.exp(ML_rat - MLs_max + count_prior + np.log(clust_prior_p)) / np.exp(
                     ML_rat - MLs_max + count_prior + np.log(clust_prior_p)).sum()
-                # print('clust_choice_p', choice_p)
+
                 if np.isnan(choice_p.sum()):
                     print("skipping iteration {} due to nan".format(n_it))
                     n_it += 1
@@ -674,3 +649,58 @@ class Run_Cov_DP:
 
         # return the clusters from the last draw and the counts
         return self.bins_to_clusters, self.count_prior_sum
+
+    # by default uses last sample
+    def visualize_ACDP(self, save_path, sample_num=-1):
+
+        # precompute the fallback ACDP numbers
+        ADP_dict = {}
+        for ADP, group in self.cov_df.loc[self.cov_df.dp_draw == 0].groupby('allelic_cluster'):
+            ADP_dict[ADP] = (group['maj_count'].sum(), group['min_count'].sum())
+
+        # compute chr ends for plotting
+        allelic_segs = pd.read_pickle(self.allelic_segs_path)
+        chrbdy = allelic_segs.dropna().loc[:, ["start", "end"]]
+        chr_ends = chrbdy.loc[chrbdy["start"] != 0, "end"].cumsum()
+
+        # helper function for plotting
+        def _scatter_apply(_x, _minor, _major):
+            _f = np.zeros(len(x))
+            _f[x.allele == -1] = _minor / (_minor + _major)
+            _f[x.allele == 1] = _major / (_minor + _major)
+            centers = x.start_g.values + (x.end_g.values - x.start_g.values) / 2
+            return centers, _f
+
+        plt.figure(6, figsize=[19.2, 5.39])
+        plt.clf()
+        full_df = list(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
+        for c in self.cluster_dict.keys():
+            for seg in self.cluster_dict[c]:
+                x = full_df[seg][1].loc[:,
+                    ["start_g", "end_g", 'allelic_cluster', 'cov_DP_mu', 'allele', 'maj_count', 'min_count']]
+                adp = x['allelic_cluster'].values[0]
+                if len(x) > 10:
+                    major, minor = x['maj_count'].sum(), x['min_count'].sum()
+                else:
+                    major, minor = ADP_dict[adp]
+
+                locs, f = _scatter_apply(x, minor, major)
+                y = np.exp(x.cov_DP_mu)
+                plt.scatter(
+                    locs,
+                    f * y,
+                    color=np.array(colors)[c % len(colors)],
+                    marker='.',
+                    alpha=0.03,
+                    s=4
+                )
+        for chrbdy in chr_ends[:-1]:
+            plt.axvline(chrbdy, color='k')
+
+        plt.xlabel("Genomic position")
+        plt.ylabel("Coverage of major/minor alleles")
+
+        plt.xlim((0.0, 2879000000.0));
+        plt.ylim([0, 300]);
+
+        plt.savefig(save_path)
