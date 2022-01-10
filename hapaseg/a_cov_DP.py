@@ -128,47 +128,72 @@ class Run_Cov_DP:
     # initialize each segment object with its data
     def _init_segments(self):
         fallback_counts = sc.SortedDict({})
-        for ID, (name, grouped) in enumerate(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw'])):
-            mu = grouped['cov_DP_mu'].values[0]
-            sigma = grouped['cov_DP_sigma'].values[0]
-            group_len = len(grouped)
-            if group_len > 10:
-                major, minor =  (grouped['maj_count'].sum(), grouped['min_count'].sum())
-            else:
-                ADP_clust = grouped['allelic_cluster'].values[0]
-                if ADP_clust in fallback_counts:
-                    major, minor = fallback_counts[ADP_clust]
+        ID = 0
+        for name, triple  in self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele']):
+            mu_list = []
+            sigma_list = []
+            a_list = []
+            b_list = []
+            r_list = []
+            glen_list = []
+            for draw, tup in triple.groupby('dp_draw'):
+                mu = tup['cov_DP_mu'].values[0]
+                sigma = tup['cov_DP_sigma'].values[0]
+                group_len = len(tup)
+                mu_list.append(mu)
+                sigma_list.append(sigma)
+                glen_list.append(group_len)
+
+                if group_len > 10:
+                    major, minor =  (tup['maj_count'].sum(), tup['min_count'].sum())
                 else:
-                    filt = self.cov_df.loc[self.cov_df.allelic_cluster == ADP_clust]
-                    major, minor = filt['maj_count'].sum(), filt['min_count'].sum()
-                    fallback_counts[ADP_clust] = (major, minor)
+                    ADP_clust = tup['allelic_cluster'].values[0]
+                    if ADP_clust in fallback_counts:
+                        major, minor = fallback_counts[ADP_clust]
+                    else:
+                        filt = self.cov_df.loc[self.cov_df.allelic_cluster == ADP_clust]
+                        major, minor = filt['maj_count'].sum(), filt['min_count'].sum()
+                        fallback_counts[ADP_clust] = (major, minor)
                     
-            allele = grouped.allele.values[0]
-            self.segment_allele[ID] = allele
-            if group_len < 3:
-                self.greylist_segments.add(ID)
+                allele = tup.allele.values[0]
+                self.segment_allele[ID] = allele
+                if group_len < 3:
+                    self.greylist_segments.add(ID)
             
-            if allele== -1:
-                f = minor / (minor + major)
-                a=minor;b=major
-            else:
-                f =  major / (minor + major)
-                a=major;b=minor
-            r = np.exp(mu) * f
+                if allele== -1:
+                    f = minor / (minor + major)
+                    a=minor;b=major
+                else:
+                    f =  major / (minor + major)
+                    a=major;b=minor
+                
+                a_list.append(a)
+                b_list.append(b)
+                r = np.exp(mu) * f
 
-            C = np.c_[np.log(grouped["C_len"]), grouped["C_RT_z"], grouped["C_GC_z"]]
-            x = grouped['covcorr']
+                r_list.append(r)
 
-            #V =  np.exp(np.log(x) - mu - (C @ self.beta).flatten())
-            V = (np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a,b, size=10000)).var()
+            num_draws = len(mu_list)
+            mus = np.array(mu_list)
+            sigmas = np.array(sigma_list)
+            a_arr = np.array(a_list)
+            b_arr = np.array(b_list)
+    
+            draws = np.random.randint(num_draws,size=10000)
+            mu_draws = mus[draws]
+            sigma_draws = sigmas[draws]
+            a_draws = a_arr[draws]
+            b_draws = b_arr[draws]
+            V3 = (np.exp(s.norm.rvs(mu_draws, sigma_draws)) * s.beta.rvs(a_draws,b_draws)).var()
             
-            self.segment_V_list[ID] = min(np.sqrt(V) * 10, 20)
-            self.segment_r_list[ID] = r 
-            self.segment_cov_bins[ID] = group_len
-            if self.coverage_prior:
-                self.segment_counts[ID] = group_len
-            else:
+            #now add the tuples as segments
+            
+            for i in range(num_draws):
+                self.segment_V_list[ID] = V3
+                self.segment_r_list[ID] = r_list[i]
+                self.segment_cov_bins[ID] = glen_list[i]
                 self.segment_counts[ID] = 1
+                ID += 1
 
     def _init_clusters(self, prior_run, count_prior_sum):
         [self.unassigned_segs.discard(s) for s in self.greylist_segments]
