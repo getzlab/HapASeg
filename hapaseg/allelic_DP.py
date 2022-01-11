@@ -492,16 +492,12 @@ class DPinstance:
         ]
 
         ## match probs to cluster choices (will match MLs matrix in main calculation)
-        probs = np.zeros([len(self.clust_sums), 2])
-        probs_idx = np.zeros([len(self.clust_sums), 2]).astype(np.uint8)
+        probs = np.full([len(self.clust_sums), 2], -np.inf)
         for k in self.clust_sums.keys():
             MLs_idx = np.r_[k == U_cl, k == D_cl]@np.r_[2, 1]
             probs[self.clust_sums.index(k), :] = MLs[:, MLs_idx]
-            probs_idx[self.clust_sums.index(k), :] = np.r_[0, 4] + MLs_idx
 
-        ## convert to conditional likelihoods, by scaling each likelihood by number of 
-        ## cluster candidates with that segmentation configuration
-        return probs - np.log(np.bincount(probs_idx.ravel())[probs_idx])
+        return probs
 
     def compute_adj_liks(self, seg_idx, cur_clust):
         adj_AB = 0
