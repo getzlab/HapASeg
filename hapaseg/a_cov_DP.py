@@ -23,7 +23,7 @@ def LSE(x):
     lmax = np.max(x)
     return lmax + np.log(np.exp(x - lmax).sum())
 
-
+# method for concatenating dp draws into a single large df to be used by the acdp
 def generate_acdp_df(SNP_path, # path to SNP df
                  CDP_path, # path to CDP runner pickle object
                  ADP_path, # path to npz ADP result
@@ -83,6 +83,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
             a_cov_seg_df.loc[
                 (a_cov_seg_df.cov_DP_cluster == cdp) & (a_cov_seg_df.allelic_cluster == adp), 'cov_DP_mu'] = mu
             H = sNB.hessian(res.params)
+            # variance of the mu posterior is taken as the inverse of the hessian component for mu
             mu_sigma = np.linalg.inv(-H)[0, 0]
             a_cov_seg_df.loc[(a_cov_seg_df.cov_DP_cluster == cdp) & (
                         a_cov_seg_df.allelic_cluster == adp), 'cov_DP_sigma'] = mu_sigma
@@ -118,7 +119,6 @@ class AllelicCoverage_DP:
         self.num_segments = len(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
         self.segment_r_arr = np.zeros(self.num_segments, dtype=float)
         self.segment_V_arr = np.zeros(self.num_segments, dtype=float)
-        self.segment_sigma_arr = np.zeros(self.num_segments, dtype=int)
         self.segment_counts = np.zeros(self.num_segments, dtype=int)
         self.segment_cov_bins = np.zeros(self.num_segments, dtype=int)
         self.segment_allele = np.zeros(self.num_segments, dtype=int)
@@ -181,15 +181,18 @@ class AllelicCoverage_DP:
                 b = minor
             r = np.exp(mu) * f
 
-            #V =  np.exp(np.log(x) - mu - (C @ self.beta).flatten())
+            # V2 mean uses an empirical estimate of the f * mu posterior variance
             V = (np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a,b, size=10000)).var()
-            
+
+            # we scale and threshold this variance (somewhat aribitrarily) to translate the dynamic range into allelic
+            # coverage space
             self.segment_V_arr[ID] = min(np.sqrt(V) * 8, 20)
             self.segment_r_arr[ID] = r 
             self.segment_cov_bins[ID] = group_len
             self.segment_counts[ID] = 1
 
     def _init_clusters(self):
+        # we currently ommit greylisted segments
         [self.unassigned_segs.discard(seg) for seg in self.greylist_segments]
         first = (set(range(self.num_segments)) - self.greylist_segments)[0]
         self.cluster_counts[0] = self.segment_counts[0]
@@ -202,22 +205,26 @@ class AllelicCoverage_DP:
     def _ML_cluster(self, cluster_set):
         r = self.segment_r_arr[cluster_set]
         V = self.segment_V_arr[cluster_set]
+        # the V_scale parameter is the weighted (by coverage bin size) average of the tuple V2 variances
         V_scale = (V * self.segment_cov_bins[cluster_set] / self.segment_cov_bins[cluster_set].sum()).sum()
+        # we scale the prior importance with the number of tuples with a floor of 10
         alpha = max(10,len(r) / 2)
         beta = alpha/2 * V_scale
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
 
+    #worker function for normal-gamma distribution log Marginal Liklihood
     def ML_normalgamma(self, x, mu0, kappa0, alpha0, beta0):
         x_mean = x.mean()
         n = len(x)
 
-        mu_n = (kappa0*mu0 + n * x_mean) / (kappa0 + n)
+        #mu_n = (kappa0*mu0 + n * x_mean) / (kappa0 + n)
         kappa_n = kappa0 + n
         alpha_n = alpha0 + n/2
         beta_n = beta0 + 0.5 * ((x - x_mean)**2).sum() + kappa0 * n * (x_mean - mu0)**2 / 2*(kappa0 + n)
 
         return ss.loggamma(alpha_n) - ss.loggamma(alpha0) + alpha0 * np.log(beta0) - alpha_n * np.log(beta_n) + np.log(kappa0 / kappa_n) / 2 - n * np.log(2*np.pi) / 2
 
+    # may need to update this if we want to do multiple acdp draws
     def _ML_cluster_prior(self, cluster_set, new_segIDs=None):
         # aggregate r and C arrays
         if new_segIDs is not None:
@@ -237,27 +244,11 @@ class AllelicCoverage_DP:
     def _get_laplacian_approx(H):
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-H))) / 2
 
-    def optimize_gaussian(self, r):
-        mu = r.mean()
-        sigma2 = r.var()
-        N = len(r)
-
-        sq_difs_sum = ((r - mu) ** 2).sum()
-
-        # hess computations
-        mu_mu = - N / sigma2
-        mu_sigma2 = - 1 / N * (r - mu).sum()
-        sigma2_sigma2 = N / (2 * sigma2 ** 2) - sq_difs_sum / (sigma2 ** 3)
-
-        ll = -(N / 2) * (np.log(2 * np.pi * sigma2)) - sq_difs_sum / (2 * sigma2)
-        H = np.r_[np.c_[mu_mu, mu_sigma2], np.c_[mu_sigma2, sigma2_sigma2]]
-
-        laplacian = self._get_laplacian_approx(H)
-        return ll + laplacian
     def save_ML_total(self):
         ML_tot = np.r_[self.cluster_MLs.values()].sum()
         self.ML_total_history.append(ML_tot)
 
+    # function for computing new DP merge prior
     def DP_merge_prior(self, cur_cluster):
         cur_index = self.cluster_counts.index(cur_cluster)
         cluster_vals = np.array(self.cluster_counts.values())
@@ -270,6 +261,7 @@ class AllelicCoverage_DP:
         prior_results[cur_index] = np.log(1-np.exp(LSE(prior_results[prior_results != 0])))
         return prior_results
 
+    # TODO: will need to update this for acdp
     # if we have prior assignments from the last iteration we can use those clusters to probalistically assign
     # each segment into a old cluster
     def initial_prior_assignment(self, count_prior):
@@ -339,7 +331,7 @@ class AllelicCoverage_DP:
                         n_it_last = n_it
                         
             # pick either a segment or a cluster at random
-            # pick segment
+            # here we pick a segment
             if np.random.rand() < 0.5:
                 if len(self.unassigned_segs) > 0 and len(
                         self.unassigned_segs) / self.num_segments < 0.1 and np.random.rand() < 0.5:
@@ -377,7 +369,6 @@ class AllelicCoverage_DP:
                 ML_rat_BC = ML_A + ML_BC - (ML_AB + ML_C)
 
                 # if cluster is unassigned we set the ML ratio to 1 for staying in its own cluster
-                # print(ML_rat_BC)
                 if clustID > -1:
                     ML_rat_BC[list(self.cluster_counts.keys()).index(clustID)] = 0
 
@@ -391,7 +382,6 @@ class AllelicCoverage_DP:
                 clust_prior_p = 1
                 # use prior cluster information if available
                 if self.prior_clusters:
-                    # print('segID: ', segID, 'cur cluster: ', clustID)
                     # divide prior into three sections:
                     # * clusters in prior not currently active (if picked, will open a new cluster with that ID)
                     # * clusters in prior currently active (if picked, will weight that cluster's posterior probability)
@@ -590,7 +580,6 @@ class AllelicCoverage_DP:
                 choice = int(choice)
 
                 if choice != clust_pick:
-                    #print('cluster {} merging with {}'.format(clust_pick, choice_idx))
                     if choice < 0:
                         # we're merging into an old cluster, which we do by simply reindexing that cluster
                         choice = -(choice + 1)
