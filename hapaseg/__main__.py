@@ -132,14 +132,21 @@ def parse_args():
                              help="number of thinned draws from the coverage dp to take after burn in")
 
     ## Allelic Coverage DP
+
+    # generate df
+    gen_acdp_df = subparsers.add_parser("generate_acdp_df", help="generate dataframe for acdp clustering")
+
+    gen_acdp_df.add_argument("--snp_dataframe", help="path to dataframe containing snps")
+    gen_acdp_df.add_argument("--coverage_dp_object", help="path to coverage DP output object")
+    gen_acdp_df.add_argument("--allelic_clusters_object", help="npy file containing allelic dp segs-to-clusters results")
+    gen_acdp_df.add_argument("--allelic_draw_index", help="index of ADP draw used for coverage MCMC", type=int, default=-1)
+    
+    # run acdp clustering 
     ac_dp = subparsers.add_parser("allelic_coverage_dp", help="Run DP clustering on allelic coverage tuples")
-    ac_dp.add_argument("--snp_dataframe", help="path to dataframe containing snps")
     ac_dp.add_argument("--coverage_dp_object", help="path to coverage DP output object")
-    ac_dp.add_argument("--allelic_clusters_object", help="npy file containing allelic dp segs-to-clusters results")
-    ac_dp.add_argument("--allelic_draw_index", help="index of ADP draw used for coverage MCMC", type=int, default=-1)
-    ac_dp.add_argument("--num_draws", help="number of samples to take")
-    ac_dp.add_argument("--allelic_clusters_object",
-                               help="npy file containing allelic dp segs-to-clusters results")
+    ac_dp.add_argument("--acdp_df_path", help="path to acdp dataframe")
+    ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
+    ac_dp.add_argument("--cytoband_dataframe", help="path to dataframe containing cytoband information")
 
     args = parser.parse_args()
 
@@ -158,9 +165,6 @@ def main():
     if not os.path.isdir(args.output_dir):
         os.mkdir(args.output_dir)
     output_dir = os.path.realpath(args.output_dir)
-
-    if args.capy_ref_path is not None:
-        os.environ["CAPY_REF_FA"] = args.capy_ref_path
 
     if args.command == "run":
         dask_client = dd.Client(n_workers=int(args.n_workers))
@@ -401,18 +405,27 @@ def main():
             os.mkdir(figure_dir)
 
         cov_dp_runner.visualize_DP_run(args.num_segmentation_samples - 1, os.path.join(figure_dir, 'coverage_draw_{}'.format(args.num_draws -1)))
-
-    elif args.command == "allelic_coverage_dp":
-        # generate the acdp df from each of the dp draws
+    
+    elif args.command == "generate_acdp_df":
         acdp_df, beta = generate_acdp_df(args.snp_dataframe,
                                args.coverage_dp_object,
-                               args.allelic_cluster_object,
+                               args.allelic_clusters_object,
                                args.allelic_draw_index)
-
-        acdp = AllelicCoverage_DP(acdp_df, beta, args.allelic_clusters_object)
+        acdp_df.to_pickle(os.path.join(output_dir, "acdp_df.pickle"))
+ 
+    elif args.command == "allelic_coverage_dp":
+        acdp_df = pd.read_pickle(args.acdp_df_path)
+        #may want to switch this to a preferred method of beta loading
+        with open(args.coverage_dp_object, "rb") as f:
+            cdp_pickle = pickle.load(f)
+        beta = cdp_pickle.beta
+        acdp = AllelicCoverage_DP(acdp_df, beta, args.cytoband_dataframe)
         acdp.run(args.num_samples)
-        acdp.visualize_ACDP(os.path.join(output_dir), "acdp_figure")
-
+        acdp.visualize_ACDP(os.path.join(output_dir, "acdp_figure"))
+        
+        
+        with open(os.path.join(output_dir, "acdp_model.pickle"), "wb") as f:
+            pickle.dump(acdp, f)
 
 if __name__ == "__main__":
     main()

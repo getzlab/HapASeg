@@ -12,7 +12,7 @@ import scipy.special as ss
 import sortedcontainers as sc
 import pickle
 
-from capy import mut
+from capy import seq, mut
 
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
@@ -30,6 +30,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
                  ADP_draw_index=-1): # index of ADP draw used in Coverage MCMC
 
     SNPs = pd.read_pickle(SNP_path)
+    SNPs["chr"], SNPs["pos"] = seq.gpos2chrpos(SNPs["gpos"])
     ADP_clusters = np.load(ADP_path)
     phases = ADP_clusters["snps_to_phases"][ADP_draw_index]
     SNPs.iloc[phases, [0, 1]] = SNPs.iloc[phases, [1, 0]]
@@ -70,7 +71,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         for adp, cdp in a_cov_seg_df.groupby(['allelic_cluster', 'cov_DP_cluster']).indices:
             acdp_clust = a_cov_seg_df.loc[
                 (a_cov_seg_df.cov_DP_cluster == cdp) & (a_cov_seg_df.allelic_cluster == adp)]
-            if len(acdp_clust) < 5:
+            if len(acdp_clust) < 10:
                 acdp_clust = a_cov_seg_df.loc[a_cov_seg_df.cov_DP_cluster == cdp]
             r = acdp_clust.covcorr.values
             C = np.c_[np.log(acdp_clust['C_len'].values), acdp_clust['C_RT_z'].values, acdp_clust['C_GC_z'].values]
@@ -105,7 +106,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         a_cov_seg_df['dp_draw'] = draw_num
         draw_dfs.append(a_cov_seg_df)
 
-        print('completed ACDP dataframe generation')
+    print('completed ACDP dataframe generation')
     return pd.concat(draw_dfs), dp_run.beta
 
 class AllelicCoverage_DP:
@@ -115,14 +116,14 @@ class AllelicCoverage_DP:
         self.allelic_segs_path = allelic_segs_path
 
         self.num_segments = len(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
-        self.segment_r_arr = np.zeros(self.num_segments, dtype=int)
-        self.segment_V_arr = np.zeros(self.num_segments, dtype=int)
+        self.segment_r_arr = np.zeros(self.num_segments, dtype=float)
+        self.segment_V_arr = np.zeros(self.num_segments, dtype=float)
         self.segment_sigma_arr = np.zeros(self.num_segments, dtype=int)
         self.segment_counts = np.zeros(self.num_segments, dtype=int)
         self.segment_cov_bins = np.zeros(self.num_segments, dtype=int)
         self.segment_allele = np.zeros(self.num_segments, dtype=int)
         self.cluster_assignments = np.ones(self.num_segments, dtype=int) * -1
-        
+         
         self.cluster_counts = sc.SortedDict({})
         self.unassigned_segs = sc.SortedList(np.r_[0:self.num_segments])
         self.cluster_dict = sc.SortedDict({})
@@ -183,13 +184,10 @@ class AllelicCoverage_DP:
             #V =  np.exp(np.log(x) - mu - (C @ self.beta).flatten())
             V = (np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a,b, size=10000)).var()
             
-            self.segment_V_list[ID] = min(np.sqrt(V) * 8, 20)
-            self.segment_r_list[ID] = r 
+            self.segment_V_arr[ID] = min(np.sqrt(V) * 8, 20)
+            self.segment_r_arr[ID] = r 
             self.segment_cov_bins[ID] = group_len
-            if self.coverage_prior:
-                self.segment_counts[ID] = group_len
-            else:
-                self.segment_counts[ID] = 1
+            self.segment_counts[ID] = 1
 
     def _init_clusters(self):
         [self.unassigned_segs.discard(seg) for seg in self.greylist_segments]
@@ -311,7 +309,7 @@ class AllelicCoverage_DP:
         # print('prior assigned')
         self.init_clusters = sc.SortedDict({k: v.copy() for k, v in self.cluster_dict.items()})
 
-    def run(self, n_iter, ):
+    def run(self, n_iter):
 
         burned_in = False
         all_assigned = False
@@ -434,7 +432,6 @@ class AllelicCoverage_DP:
                     [count_prior[self.prior_clusters.index(x)] for x in
                      prior_diff], self.cluster_counts.values(), self.segment_counts[segID] * self.alpha]
                 count_prior /= count_prior.sum()
-
                 # construct transition probability distribution and draw from it
                 MLs_max = ML_rat.max()
                 choice_p = np.exp(ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)) / np.exp(
