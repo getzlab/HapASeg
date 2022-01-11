@@ -1029,8 +1029,9 @@ class DPinstance:
             # B+C is likelihood of target cluster post-join, with both phase orientations
             BC = ss.betaln(C_ab[:, [0]] + np.c_[B_a, B_b] + 1, C_ab[:, [1]] + np.c_[B_b, B_a] + 1)
 
-            MLs = BC - C[:, None] + np.log(np.maximum(1e-300, np.r_[1 - rephase_prob, rephase_prob]))
+            MLs = BC - C[:, None]
 
+            # {{{
             #     L(join)           L(split)
             #MLs = A + BC + adj_BC - (AB + C + adj_AB)
             # TODO: remove extraneous calculations (e.g. adj_AB, AB, A);
@@ -1044,10 +1045,12 @@ class DPinstance:
             if n_move > 1 and not move_clust:
                 MLs[self.clust_sums.index(-1)] = -np.inf
 
+            # }}}
+
             #
             # priors
 
-            ## prior on previous cluster fractions
+            ## prior on previous cluster fractions {{{
 
             prior_diff = []
             prior_com = []
@@ -1086,25 +1089,49 @@ class DPinstance:
 
                 # expand MLs to account for multiple new clusters
                 MLs = np.r_[np.full([len(prior_diff), 2], MLs[0]), MLs[1:, :]]
+
+            # }}}
                 
             ## DP prior based on clusters sizes
-            # DP alpha factor is split proportionally between prior_diff and -1 (brand new cluster)
-            ccp = np.r_[[self.clust_count_prior[x] for x in prior_diff]]
-            count_prior = np.r_[self.clust_count_prior[-1]*ccp/ccp.sum(), self.clust_counts.values()]
-            count_prior /= count_prior.sum()
+            n_c = np.c_[self.clust_counts.values()]
+            N = n_c.sum() + n_move
+            log_count_prior = np.full([len(self.clust_sums), 1], np.nan)
+            log_count_prior[1:] = ss.gammaln(n_move + n_c) + ss.gammaln(N + self.alpha - n_move) \
+              - (ss.gammaln(n_c) + ss.gammaln(N + self.alpha))
+            # probability of opening a new cluster
+            # TODO: accommodate prior clusters here
+            log_count_prior[0] = ss.gammaln(n_move) + np.log(self.alpha) + ss.gammaln(N + self.alpha - n_move) - ss.gammaln(N + self.alpha)
 
-            # adjacent segment prior
+            #
+            # adjacent segment likelihood
 
-            log_adj_prior = 0
+            #adj_AB = 0
+            #adj_BC = np.zeros([len(self.clust_sums), 2])
+
+            log_adj_lik = 0
             if not move_clust and not split_clust: # or (all_assigned and move_clust and np.random.rand() < 0.01):
-                log_adj_prior = self.compute_adj_prob(seg_idx)
+                log_adj_lik = self.compute_adj_prob(seg_idx)
                 if all_assigned:
                     seg_touch_idx[seg_idx] = True
 
-            # choose to join a cluster or make a new one (choice_idx = 0)
-            num = MLs + np.log(count_prior[:, None]) + np.log(clust_prior_p) + log_adj_prior
-            num /= self.temperature
-            choice_p = np.exp(num - num.max())/np.exp(num - num.max()).sum()
+            # p(X|clust,phase)p(X|seg,phase)p(clust)
+            num = (MLs               # p({a_i, b_i}_{i\in B} | {a_i, b_i}_{i\in clust}, phase_{i\in B})
+                  + log_adj_lik      # p({a_i, b_i}_{i\in B} | U, D, phase_{i\in B})
+                  + log_count_prior) # p(clust) (DP prior on clust counts)
+
+            num /= self.temperature # scale by temperature for replica-exchange
+
+            num -= num.max(0) # avoid underflow in sum-exp
+
+            # p(clust|X,phase)
+            log_clust_post = num - np.log(np.exp(num).sum(0))
+
+            # p(phase|X)
+            log_phase_prob = np.log(np.maximum(1e-300, np.r_[1 - rephase_prob, rephase_prob]))
+
+            # p(clust,phase|X) = p(clust|X,phase)p(phase|X)
+            choice_p = np.exp(log_clust_post + log_phase_prob)
+
             # row major indexing: choice_idx//2 = cluster index, choice_idx & 1 = rephase true
             choice_idx = np.random.choice(
               np.r_[0:np.prod(choice_p.shape)],
