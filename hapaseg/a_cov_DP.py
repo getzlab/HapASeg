@@ -182,9 +182,9 @@ class AllelicCoverage_DP:
             r = np.exp(mu) * f
 
             #V =  np.exp(np.log(x) - mu - (C @ self.beta).flatten())
-            V = (np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a,b, size=10000)).var()
+            V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a,b, size=10000)).var()
             
-            self.segment_V_arr[ID] = min(np.sqrt(V) * 8, 20)
+            self.segment_V_arr[ID] = min(V, 30)
             self.segment_r_arr[ID] = r 
             self.segment_cov_bins[ID] = group_len
             self.segment_counts[ID] = 1
