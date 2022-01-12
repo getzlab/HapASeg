@@ -123,7 +123,7 @@ class Run_Cov_DP:
         self.clusters_to_segs = []
         self.bins_to_clusters = []
 
-        self.alpha = 0.1
+        self.alpha = 0.5
 
     # initialize each segment object with its data
     def _init_segments(self):
@@ -154,13 +154,15 @@ class Run_Cov_DP:
             else:
                 f =  major / (minor + major)
                 a=major;b=minor
-            r = list(np.exp(s.norm.rvs(mu, sigma, size=group_len)) * s.beta.rvs(a,b, size=group_len))
+            r = list(np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=group_len)) * s.beta.rvs(a,b, size=group_len))
 
             C = np.c_[np.log(grouped["C_len"]), grouped["C_RT_z"], grouped["C_GC_z"]]
             x = grouped['covcorr']
 
-            V = (np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a,b, size=10000)).var()
+            V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a,b, size=10000)).var()
             
+            if np.sqrt(V) > 4.5:
+                self.greylist_segments.add(ID) 
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r 
             self.segment_cov_bins[ID] = group_len
@@ -171,15 +173,24 @@ class Run_Cov_DP:
 
     def _init_clusters(self, prior_run, count_prior_sum):
         [self.unassigned_segs.discard(s) for s in self.greylist_segments]
-        first = (set(range(self.num_segments)) - self.greylist_segments)[0]
-        clusterID = 0
-        self.cluster_counts[0] = self.segment_counts[0]
-        self.unassigned_segs.discard(0)
-        self.cluster_dict[0] = sc.SortedSet([first])
-        self.cluster_MLs[0] = self._ML_cluster([first])
-        #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
-        self.next_cluster_index = 1
-
+        single_seed=False
+        if single_seed:
+            first = (set(range(self.num_segments)) - self.greylist_segments)[0]
+            clusterID = 0
+            self.cluster_counts[0] = self.segment_counts[0]
+            self.unassigned_segs.discard(0)
+            self.cluster_dict[0] = sc.SortedSet([first])
+            self.cluster_MLs[0] = self._ML_cluster([first])
+            #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
+            self.next_cluster_index = 1
+        else: 
+            for i in set(range(self.num_segments)) - self.greylist_segments:
+                self.cluster_counts[i] = self.segment_counts[i]
+                self.unassigned_segs.discard(i)
+                self.cluster_dict[i] = sc.SortedSet([i])
+                self.cluster_MLs[i] = self._ML_cluster([i])
+            #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
+            self.next_cluster_index = i+1
     def _ML_cluster(self, cluster_set):
         r_lst = []
         V_lst = []
@@ -190,7 +201,7 @@ class Run_Cov_DP:
         r = np.hstack(r_lst)
         V = np.hstack(V_lst)
         V_scale = (V * self.segment_cov_bins[cluster_set] / self.segment_cov_bins[cluster_set].sum()).sum()
-        alpha = 10
+        alpha = 1
         beta = alpha/2 * V_scale
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
     def ML_normalgamma(self, x, mu0, kappa0, alpha0, beta0):
