@@ -154,15 +154,14 @@ class Run_Cov_DP:
             else:
                 f =  major / (minor + major)
                 a=major;b=minor
-            r = np.exp(mu) * f
+            r = list(np.exp(s.norm.rvs(mu, sigma, size=group_len)) * s.beta.rvs(a,b, size=group_len))
 
             C = np.c_[np.log(grouped["C_len"]), grouped["C_RT_z"], grouped["C_GC_z"]]
             x = grouped['covcorr']
 
-            #V =  np.exp(np.log(x) - mu - (C @ self.beta).flatten())
             V = (np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a,b, size=10000)).var()
             
-            self.segment_V_list[ID] = min(np.sqrt(V) * 10, 20)
+            self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r 
             self.segment_cov_bins[ID] = group_len
             if self.coverage_prior:
@@ -191,7 +190,7 @@ class Run_Cov_DP:
         r = np.hstack(r_lst)
         V = np.hstack(V_lst)
         V_scale = (V * self.segment_cov_bins[cluster_set] / self.segment_cov_bins[cluster_set].sum()).sum()
-        alpha = max(10,len(r) / 2)
+        alpha = 10
         beta = alpha/2 * V_scale
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
     def ML_normalgamma(self, x, mu0, kappa0, alpha0, beta0):
@@ -254,7 +253,9 @@ class Run_Cov_DP:
         for i, nc in enumerate(cluster_vals):
             if i != cur_index:
                 prior_results[i] = ss.loggamma(M + nc) + ss.loggamma(N + self.alpha - M) - (ss.loggamma(nc) + ss.loggamma(N + self.alpha))
-        prior_results[cur_index] = np.log(1-np.exp(LSE(prior_results[prior_results != 0])))
+            else:
+                #the prior prob of remaining in the current cluster is the same as for joining a new cluster
+                prior_results[i] = ss.gammaln(M) + np.log(self.alpha) + ss.gammaln(N + self.alpha - M) - ss.gammaln(N + self.alpha)
         return prior_results
 
     # if we have prior assignments from the last iteration we can use those clusters to probalistically assign
@@ -599,12 +600,15 @@ class Run_Cov_DP:
                     [count_prior[self.prior_clusters.index(x)] for x in prior_diff], self.DP_merge_prior(clust_pick)]
 
                # construct transition probability distribution and draw from it
-                MLs_max = ML_rat.max()
-                choice_p = np.exp(ML_rat - MLs_max + count_prior + np.log(clust_prior_p)) / np.exp(
-                    ML_rat - MLs_max + count_prior + np.log(clust_prior_p)).sum()
+                MLs_max = (ML_rat + count_prior).max()
+                choice_p = np.exp(ML_rat + count_prior - MLs_max + np.log(clust_prior_p)) / np.exp(
+                    ML_rat + count_prior - MLs_max + np.log(clust_prior_p)).sum()
                 # print('clust_choice_p', choice_p)
                 if np.isnan(choice_p.sum()):
                     print("skipping iteration {} due to nan".format(n_it))
+                    print(ML_rat)
+                    print(count_prior)
+                    print(choice_p)
                     n_it += 1
                     continue
 
