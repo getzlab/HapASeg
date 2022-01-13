@@ -87,10 +87,10 @@ class Coverage_DP:
         plt.savefig(save_path)
 # for now input will be coverage_df with global segment id column
 class Run_Cov_DP:
-    def __init__(self, cov_df, beta, coverage_prior=True, prior_run=None, count_prior_sum=None):
+    def __init__(self, cov_df, beta, coverage_prior=True, seed_all_clusters = True, prior_run=None, count_prior_sum=None):
         self.cov_df = cov_df
         self.beta = beta
-
+        self.seed_all_clusters = seed_all_clusters
         self.num_segments = len(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
         self.segment_r_list = [None] * self.num_segments
         self.segment_V_list = [None] * self.num_segments
@@ -111,6 +111,8 @@ class Run_Cov_DP:
         self.prior_C_list = None
         self.count_prior_sum = None
         self.ML_total_history = []
+        
+        self.cdict_history = []
 
         self.coverage_prior = coverage_prior
         # for saving init clusters
@@ -173,8 +175,7 @@ class Run_Cov_DP:
 
     def _init_clusters(self, prior_run, count_prior_sum):
         [self.unassigned_segs.discard(s) for s in self.greylist_segments]
-        single_seed=False
-        if single_seed:
+        if not self.seed_all_clusters:
             first = (set(range(self.num_segments)) - self.greylist_segments)[0]
             clusterID = 0
             self.cluster_counts[0] = self.segment_counts[0]
@@ -334,6 +335,7 @@ class Run_Cov_DP:
 
             # start couting for burn in
             if not n_it % 100:
+                self.cdict_history.append(self.cluster_dict.copy())
                 if not all_assigned and (self.cluster_assignments[white_segments] > -1).all():
                     all_assigned = True
                     n_it_last = n_it
