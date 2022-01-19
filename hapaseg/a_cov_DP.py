@@ -75,9 +75,9 @@ def generate_acdp_df(SNP_path, # path to SNP df
                 acdp_clust = a_cov_seg_df.loc[a_cov_seg_df.cov_DP_cluster == cdp]
             r = acdp_clust.covcorr.values
             C = np.c_[np.log(acdp_clust['C_len'].values), acdp_clust['C_RT_z'].values, acdp_clust['C_GC_z'].values]
-            endog = np.exp(np.log(r) - (C @ dp_pickle.beta).flatten())
+            endog = r
             exog = np.ones(r.shape)
-            sNB = statsNB(endog, exog)
+            sNB = statsNB(endog, exog, offset = (C @ dp_pickle.beta).flatten())
             res = sNB.fit(disp=0)
             mu = res.params[0]
             a_cov_seg_df.loc[
