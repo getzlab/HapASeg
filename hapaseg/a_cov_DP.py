@@ -202,8 +202,8 @@ class Run_Cov_DP:
         r = np.hstack(r_lst)
         V = np.hstack(V_lst)
         V_scale = (V * self.segment_cov_bins[cluster_set] / self.segment_cov_bins[cluster_set].sum()).sum()
-        alpha = 1
-        beta = alpha/2 * V_scale
+        alpha = 100
+        beta = alpha/2 * 30
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
     def ML_normalgamma(self, x, mu0, kappa0, alpha0, beta0):
         x_mean = x.mean()
