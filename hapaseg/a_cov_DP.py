@@ -270,6 +270,17 @@ class Run_Cov_DP:
                 prior_results[i] = ss.gammaln(M) + np.log(self.alpha) + ss.gammaln(N + self.alpha - M) - ss.gammaln(N + self.alpha)
         return prior_results
 
+    # since were taking the ratio we can remove the final two terms:
+    # ss.gammaln(self.alpha + N - M) - ss.gammaln(self.alpha + N)
+    # from both split and stay
+    def DP_split_prior(self, split_A_segs, split_B_segs):
+        n_a = sum([len(self.segment_r_list[seg]) for seg in split_A_segs])
+        n_b = sum([len(self.segment_r_list[seg]) for seg in split_B_segs])
+        M = n_a + n_b
+        split = 2 * np.log(self.alpha) + ss.gammaln(n_a) + ss.gammaln(n_b)
+        stay = np.log(self.alpha) + ss.gammaln(M - 1)
+        return split - stay
+
     # if we have prior assignments from the last iteration we can use those clusters to probalistically assign
     # each segment into a old cluster
     def initial_prior_assignment(self, count_prior):
@@ -559,7 +570,7 @@ class Run_Cov_DP:
                     else:
                         self.unassigned_segs.discard(segID)
 
-            # pick cluster to merge
+            # pick cluster to merge or split
             else:
                 # it only makes sense to try joining two clusters if there are at least two of them!
                 if len(self.cluster_counts) < 2:
@@ -568,106 +579,153 @@ class Run_Cov_DP:
 
                 clust_pick = np.random.choice(self.cluster_dict.keys())
                 clust_pick_segs = np.r_[self.cluster_dict[clust_pick]].astype(int)
-                # print('clust_pick:', clust_pick)
-                # get ML of this cluster merged with each of the other existing clusters
-                ML_join = [
-                    self._ML_cluster(self.cluster_dict[i].union(clust_pick_segs)) if i != clust_pick else
-                    self.cluster_MLs[i] for i in self.cluster_dict.keys()]
-                # we need to compare this ML with the ML of leaving the target cluster and the picked cluster on their own
-                ML_split = np.array(self.cluster_MLs.values()) + self.cluster_MLs[clust_pick]
-                ML_split[self.cluster_MLs.keys().index(clust_pick)] = self.cluster_MLs[clust_pick]
-                ML_rat = np.array(ML_join) - ML_split
 
-                prior_diff = []
-                clust_prior_p = 1
-                if self.prior_clusters:
-                    prior_diff = self.prior_clusters.keys() - self.cluster_counts.keys()
-                    # currently active clusters in prior
-                    prior_com = self.prior_clusters.keys() & self.cluster_counts.keys()
-                    # currently active clusters not in prior
-                    prior_null = self.cluster_counts.keys() - self.prior_clusters.keys()
-                    # order of prior vector:
-                    # [-1 (totally new cluster), <prior_diff>, <prior_com + prior_null>]
-                    prior_idx = np.r_[
-                        np.r_[[self.prior_clusters.index(x) for x in prior_diff]],
-                        np.r_[[self.prior_clusters.index(x) if x in self.prior_clusters else -1 for x in
-                               (prior_com | prior_null)]]
-                    ].astype(int)
+                # half the time we'll propose splitting this cluster
+                if np.random.rand() < 0.5:
+                    # if theres only one tuple then we cant split
+                    if len(clust_pick_segs) == 1:
+                        n_it += 1
+                        continue
 
-                    prior_MLs = np.r_[[self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]],
-                                                              clust_pick_segs) if idx != -1 else 0 for idx in
-                                       prior_idx]] - (self.cluster_MLs[clust_pick] + np.r_[
-                        [self.clust_prior_ML[self.prior_clusters.keys()[idx]] if idx != -1 else -self.cluster_MLs[
-                            clust_pick] for idx in prior_idx]])
+                    #find the best place to split these tuples based on their datapoint means
+                    seg_means = np.array([np.array(self.segment_r_list[i]).mean() for i in clust_pick_segs])
+                    sort_indices = np.argsort(seg_means)
+                    sorted_vals = seg_means[sort_indices]
 
-                    # print('prior_MLs', prior_MLs)
-                    clust_prior_p = np.maximum(
-                        np.exp(prior_MLs - prior_MLs.max()) / np.exp(prior_MLs - prior_MLs.max()).sum(), 1e-300)
+                    abs_dif = []
+                    for i in np.r_[1:len(sorted_vals) - 1]:
+                        abs_dif.append(abs(sorted_vals[:i].mean() - sorted_vals[i:].mean()))
+                    abs_dif = np.array(abs_dif)
+                    A_list = clust_pick_segs[sort_indices[:np.argmax(abs_dif) + 1]]
+                    B_list = clust_pick_segs[sort_indices[np.argmax(abs_dif) + 1:]]
 
-                    # expand MLs to account for multiple new merge clusters--which have liklihood = cluster staying as is = 0
-                    ML_rat = np.r_[np.full(len(prior_diff), 0), ML_rat]
-                    # DP prior based on clusters sizes now with no alpha
-                #print('cluster ML_rat', ML_rat)
-                #will need to change this when we incorporate muliple smaples
-                count_prior = np.r_[
-                    [count_prior[self.prior_clusters.index(x)] for x in prior_diff], self.DP_merge_prior(clust_pick)]
+                    #compute ML ratio of spliting the cluster over leaving it as is
+                    ML_rat = self._ML_cluster(A_list) + self._ML_cluster(B_list) - self._ML_cluster(clust_pick_segs)
 
-               # construct transition probability distribution and draw from it
-                MLs_max = (ML_rat + count_prior).max()
-                choice_p = np.exp(ML_rat + count_prior - MLs_max + np.log(clust_prior_p)) / np.exp(
-                    ML_rat + count_prior - MLs_max + np.log(clust_prior_p)).sum()
-                # print('clust_choice_p', choice_p)
-                if np.isnan(choice_p.sum()):
-                    print("skipping iteration {} due to nan".format(n_it))
-                    print(ML_rat)
-                    print(count_prior)
-                    print(choice_p)
-                    n_it += 1
-                    continue
+                    #compute DP prior ratio of splitting cluster over leaving it as is
+                    dp_prior_rat = self.DP_split_prior(A_list, B_list)
 
-                choice_idx = np.random.choice(
-                    np.r_[0:len(ML_rat)],
-                    p=choice_p
-                )
+                    # add ML ratios to get the likelihood of splitting
+                    ML_tot = ML_rat + dp_prior_rat
 
-                # last = brand new, -1, -2, -3, ... = -(prior clust index) - 1
-                choice = np.r_[-np.r_[prior_diff] - 1, self.cluster_counts.keys()][choice_idx]
-                choice = int(choice)
+                    # we split with probabilty equal to this likelihood
+                    if np.random.rand() < np.exp(ML_tot):
+                        # split these clusters
+                        print("splitting cluster {}".format(clust_pick))
 
-                if choice != clust_pick:
-                    #print('cluster {} merging with {}'.format(clust_pick, choice_idx))
-                    if choice < 0:
-                        # we're merging into an old cluster, which we do by simply reindexing that cluster
-                        choice = -(choice + 1)
-                        # rename clustID to choice
-                        self.cluster_counts[choice] = self.cluster_counts[clust_pick].copy()
-                        self.cluster_dict[choice] = self.cluster_dict[clust_pick].copy()
-                        self.cluster_assignments[clust_pick_segs] = choice
-                        self.cluster_MLs[choice] = self.cluster_MLs[clust_pick]
-                        # delete obsolete cluster
-                        del self.cluster_counts[clust_pick]
-                        del self.cluster_dict[clust_pick]
-                        del self.cluster_MLs[clust_pick]
-                    else:
-                        # we need to merge clust_pick and choice_idx which we do by merging to the cluster with more
-                        # segments
-                        tup = (clust_pick, choice)
-                        larger_cluster = np.argmax([self.cluster_counts[clust_pick], self.cluster_counts[choice]])
-                        merged_ID = tup[larger_cluster]
-                        vacatingID = tup[int(not larger_cluster)]
+                        #update cluster pick to include only segments from list A
+                        self.cluster_counts[clust_pick] = sum(self.segment_counts[A_list])
+                        self.cluster_dict[clust_pick] = sc.SortedSet(A_list)
+                        self.cluster_MLs[clust_pick] = self._ML_cluster(A_list)
 
-                        # move vacatingID to newclustID
-                        # update new cluster with additional segments
-                        vacating_segs = self.cluster_dict[vacatingID]
-                        self.cluster_assignments[vacating_segs] = merged_ID
-                        self.cluster_counts[merged_ID] += self.segment_counts[vacating_segs].sum()
-                        self.cluster_dict[merged_ID] = self.cluster_dict[merged_ID].union(vacating_segs)
-                        self.cluster_MLs[merged_ID] = ML_join[choice_idx]
+                        # create new cluster with next available index and add segments from list B
+                        self.cluster_assignments[B_list] = self.next_cluster_index
+                        self.cluster_counts[self.next_cluster_index] = sum(self.segment_counts[B_list])
+                        self.cluster_dict[self.next_cluster_index] = sc.SortedSet(B_list)
+                        self.cluster_MLs[self.next_cluster_index] = self._ML_cluster(B_list)
+                        self.next_cluster_index += 1
 
-                        # delete last cluster
-                        del self.cluster_counts[vacatingID]
-                        del self.cluster_dict[vacatingID]
-                        del self.cluster_MLs[vacatingID]
+                #otherwise we'll propose a merge
+                else:
+                    # get ML of this cluster merged with each of the other existing clusters
+                    ML_join = [
+                        self._ML_cluster(self.cluster_dict[i].union(clust_pick_segs)) if i != clust_pick else
+                        self.cluster_MLs[i] for i in self.cluster_dict.keys()]
+                    # we need to compare this ML with the ML of leaving the target cluster and the picked cluster on their own
+                    ML_split = np.array(self.cluster_MLs.values()) + self.cluster_MLs[clust_pick]
+                    ML_split[self.cluster_MLs.keys().index(clust_pick)] = self.cluster_MLs[clust_pick]
+                    ML_rat = np.array(ML_join) - ML_split
+
+                    prior_diff = []
+                    clust_prior_p = 1
+                    if self.prior_clusters:
+                        prior_diff = self.prior_clusters.keys() - self.cluster_counts.keys()
+                        # currently active clusters in prior
+                        prior_com = self.prior_clusters.keys() & self.cluster_counts.keys()
+                        # currently active clusters not in prior
+                        prior_null = self.cluster_counts.keys() - self.prior_clusters.keys()
+                        # order of prior vector:
+                        # [-1 (totally new cluster), <prior_diff>, <prior_com + prior_null>]
+                        prior_idx = np.r_[
+                            np.r_[[self.prior_clusters.index(x) for x in prior_diff]],
+                            np.r_[[self.prior_clusters.index(x) if x in self.prior_clusters else -1 for x in
+                                   (prior_com | prior_null)]]
+                        ].astype(int)
+
+                        prior_MLs = np.r_[[self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]],
+                                                                  clust_pick_segs) if idx != -1 else 0 for idx in
+                                           prior_idx]] - (self.cluster_MLs[clust_pick] + np.r_[
+                            [self.clust_prior_ML[self.prior_clusters.keys()[idx]] if idx != -1 else -self.cluster_MLs[
+                                clust_pick] for idx in prior_idx]])
+
+                        # print('prior_MLs', prior_MLs)
+                        clust_prior_p = np.maximum(
+                            np.exp(prior_MLs - prior_MLs.max()) / np.exp(prior_MLs - prior_MLs.max()).sum(), 1e-300)
+
+                        # expand MLs to account for multiple new merge clusters--which have liklihood = cluster staying as is = 0
+                        ML_rat = np.r_[np.full(len(prior_diff), 0), ML_rat]
+                        # DP prior based on clusters sizes now with no alpha
+                    #print('cluster ML_rat', ML_rat)
+                    #will need to change this when we incorporate muliple smaples
+                    count_prior = np.r_[
+                        [count_prior[self.prior_clusters.index(x)] for x in prior_diff], self.DP_merge_prior(clust_pick)]
+
+                   # construct transition probability distribution and draw from it
+                    MLs_max = (ML_rat + count_prior).max()
+                    choice_p = np.exp(ML_rat + count_prior - MLs_max + np.log(clust_prior_p)) / np.exp(
+                        ML_rat + count_prior - MLs_max + np.log(clust_prior_p)).sum()
+                    # print('clust_choice_p', choice_p)
+                    if np.isnan(choice_p.sum()):
+                        print("skipping iteration {} due to nan".format(n_it))
+                        print(ML_rat)
+                        print(count_prior)
+                        print(choice_p)
+                        n_it += 1
+                        continue
+
+                    choice_idx = np.random.choice(
+                        np.r_[0:len(ML_rat)],
+                        p=choice_p
+                    )
+
+                    # last = brand new, -1, -2, -3, ... = -(prior clust index) - 1
+                    choice = np.r_[-np.r_[prior_diff] - 1, self.cluster_counts.keys()][choice_idx]
+                    choice = int(choice)
+
+                    if choice != clust_pick:
+                        #print('cluster {} merging with {}'.format(clust_pick, choice_idx))
+                        if choice < 0:
+                            # we're merging into an old cluster, which we do by simply reindexing that cluster
+                            choice = -(choice + 1)
+                            # rename clustID to choice
+                            self.cluster_counts[choice] = self.cluster_counts[clust_pick].copy()
+                            self.cluster_dict[choice] = self.cluster_dict[clust_pick].copy()
+                            self.cluster_assignments[clust_pick_segs] = choice
+                            self.cluster_MLs[choice] = self.cluster_MLs[clust_pick]
+                            # delete obsolete cluster
+                            del self.cluster_counts[clust_pick]
+                            del self.cluster_dict[clust_pick]
+                            del self.cluster_MLs[clust_pick]
+                        else:
+                            # we need to merge clust_pick and choice_idx which we do by merging to the cluster with more
+                            # segments
+                            tup = (clust_pick, choice)
+                            larger_cluster = np.argmax([self.cluster_counts[clust_pick], self.cluster_counts[choice]])
+                            merged_ID = tup[larger_cluster]
+                            vacatingID = tup[int(not larger_cluster)]
+
+                            # move vacatingID to newclustID
+                            # update new cluster with additional segments
+                            vacating_segs = self.cluster_dict[vacatingID]
+                            self.cluster_assignments[vacating_segs] = merged_ID
+                            self.cluster_counts[merged_ID] += self.segment_counts[vacating_segs].sum()
+                            self.cluster_dict[merged_ID] = self.cluster_dict[merged_ID].union(vacating_segs)
+                            self.cluster_MLs[merged_ID] = ML_join[choice_idx]
+
+                            # delete last cluster
+                            del self.cluster_counts[vacatingID]
+                            del self.cluster_dict[vacatingID]
+                            del self.cluster_MLs[vacatingID]
 
             # save draw after burn in for every n_seg / (n_clust / 2) iterations
             # if burned_in and n_it - n_it_last > self.num_segments / (len(self.cluster_counts) * 2):
