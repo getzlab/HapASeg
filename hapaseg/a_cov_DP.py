@@ -93,7 +93,7 @@ class Run_Cov_DP:
         self.seed_all_clusters = seed_all_clusters
         self.num_segments = len(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
         self.segment_r_list = [None] * self.num_segments
-        self.segment_V_list = [None] * self.num_segments
+        self.segment_V_list = np.zeros(self.num_segments)
         self.segment_sigma_list = [None] * self.num_segments
         self.segment_counts = np.zeros(self.num_segments, dtype=int)
         self.segment_cov_bins = np.zeros(self.num_segments, dtype=int)
@@ -105,6 +105,7 @@ class Run_Cov_DP:
         self.cluster_dict = sc.SortedDict({})
         self.cluster_MLs = sc.SortedDict({})
         self.greylist_segments = sc.SortedSet({})
+        self.blacklist_segments = sc.SortedSet({})
         self.cluster_datapoints = sc.SortedDict({})
 
         self.prior_clusters = None
@@ -152,7 +153,7 @@ class Run_Cov_DP:
             allele = grouped.allele.values[0]
             self.segment_allele[ID] = allele
             if group_len < 3:
-                self.greylist_segments.add(ID)
+                self.blacklist_segments.add(ID)
             
             if allele== -1:
                 f = minor / (minor + major)
@@ -167,20 +168,31 @@ class Run_Cov_DP:
 
             V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a,b, size=10000)).var()
             
-            if np.sqrt(V) > 4.5:
-                self.greylist_segments.add(ID) 
+            #blacklist segments with very high variance
+            if np.sqrt(V) > 15:
+                self.blacklist_segments.add(ID) 
+            
             self.segment_V_list[ID] = V
-            self.segment_r_list[ID] = r 
+            self.segment_r_list[ID] = r
             self.segment_cov_bins[ID] = group_len
             if self.coverage_prior:
                 self.segment_counts[ID] = group_len
             else:
                 self.segment_counts[ID] = 1
 
+        # go back through segments and greylist ones with high variance
+        blacklist_mask = np.ones(self.num_segments, dtype=bool)
+        blacklist_mask[self.blacklist_segments] = False
+        cutoff = np.quantile(self.segment_V_list[blacklist_mask], 0.75)
+        print(cutoff)
+        for i in set(range(self.num_segments)) - self.blacklist_segments:
+            if self.segment_V_list[i] > cutoff:
+                self.greylist_segments.add(i)
+        
     def _init_clusters(self, prior_run, count_prior_sum):
-        [self.unassigned_segs.discard(s) for s in self.greylist_segments]
+        [self.unassigned_segs.discard(s) for s in self.greylist_segments.union(self.blacklist_segments)]
         if not self.seed_all_clusters:
-            first = (set(range(self.num_segments)) - self.greylist_segments)[0]
+            first = (set(range(self.num_segments)) - self.greylist_segments - self.blacklist_segments)[0]
             clusterID = 0
             self.cluster_counts[0] = self.segment_counts[0]
             self.unassigned_segs.discard(0)
@@ -191,7 +203,7 @@ class Run_Cov_DP:
             #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
             self.next_cluster_index = 1
         else: 
-            for i in set(range(self.num_segments)) - self.greylist_segments:
+            for i in set(range(self.num_segments)) - self.greylist_segments - self.blacklist_segments:
                 self.cluster_counts[i] = self.segment_counts[i]
                 self.unassigned_segs.discard(i)
                 self.cluster_dict[i] = sc.SortedSet([i])
@@ -328,7 +340,7 @@ class Run_Cov_DP:
 
     def DP_tuple_split_prior(self, seg_id):
         cur_cluster = self.cluster_assignments[seg_id]
-        seg_size = len(self.segment_r_list[seg_id])
+        seg_size = self.segment_cov_bins[seg_id]
         cluster_vals = np.array(self.cluster_counts.values())
         
         if cur_cluster > -1:
@@ -338,13 +350,15 @@ class Run_Cov_DP:
             cluster_vals[cur_index] -= seg_size
         
         N = cluster_vals.sum()
-
+        
+        loggamma_N_alpha = ss.loggamma(N + self.alpha)
+        loggamma_N_alpha_seg = ss.loggamma(N + self.alpha - seg_size)
         prior_results = np.zeros(len(cluster_vals))
         for i, nc in enumerate(cluster_vals):
-            prior_results[i] = ss.loggamma(seg_size + nc) + ss.loggamma(N + self.alpha - seg_size) - (ss.loggamma(nc) + ss.loggamma(N + self.alpha))
+            prior_results[i] = ss.loggamma(seg_size + nc) + loggamma_N_alpha_seg - (ss.loggamma(nc) + loggamma_N_alpha)
    
-            #the prior prob of starting a new cluster
-            prior_new = ss.gammaln(seg_size) + np.log(self.alpha) + ss.gammaln(N + self.alpha - seg_size) - ss.gammaln(N + self.alpha)
+        #the prior prob of starting a new cluster
+        prior_new = ss.gammaln(seg_size) + np.log(self.alpha) + loggamma_N_alpha_seg - loggamma_N_alpha
         return np.r_[prior_results, prior_new]
 
     # since were taking the ratio we can remove the final two terms:
@@ -411,7 +425,7 @@ class Run_Cov_DP:
                                  k in self.prior_clusters.keys()]] / sample_num
             self.initial_prior_assignment(count_prior)
 
-        white_segments = set(range(self.num_segments)) - self.greylist_segments
+        white_segments = set(range(self.num_segments)) - self.greylist_segments - self.blacklist_segments
         # while n_it < n_iter:
         while len(self.bins_to_clusters) < n_iter:
             
