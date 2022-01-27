@@ -1,5 +1,6 @@
 import argparse
 import dask.distributed as dd
+import matplotlib.pyplot as plt
 import multiprocessing
 import numpy as np
 import os
@@ -11,9 +12,13 @@ import sortedcontainers as sc
 
 from capy import mut
 
-from .load import HapasegReference
+from .load import HapasegSNPs
 from .run_allelic_MCMC import AllelicMCMCRunner
 from .allelic_MCMC import A_MCMC
+
+from .allelic_DP import A_DP, DPinstance
+from . import utils as hs_utils
+
 from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters
 from .coverage_DP import Coverage_DP
 from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP
@@ -70,9 +75,10 @@ def parse_args():
     ref_group.add_argument("--cytoband_file", required=True)
 
     ## load
-    scatter = subparsers.add_parser("load", help="Load in phased VCF")
-    scatter.add_argument("--chunk_size", default=5000)
-    scatter.add_argument("--phased_VCF", required=True)
+    scatter = subparsers.add_parser("load_snps", help = "Load in phased VCF")
+    scatter.add_argument("--chunk_size", default = 5000) 
+    scatter.add_argument("--phased_VCF", required = True)
+    
     scatter.add_argument("--read_backed_phased_VCF")
     scatter.add_argument("--allele_counts_T", required=True)
     scatter.add_argument("--allele_counts_N", required=True)
@@ -98,8 +104,31 @@ def parse_args():
     concat.add_argument("--chunks", required=True, nargs="+")
     concat.add_argument("--scatter_intervals", required=True)
 
-    ## DP (TODO: will include gather step)
-    dp = subparsers.add_parser("dp", help="Run DP clustering on allelic imbalance segments")
+    ## Allelic Coverage DP
+
+    # generate df
+    gen_acdp_df = subparsers.add_parser("generate_acdp_df", help="generate dataframe for acdp clustering")
+
+    gen_acdp_df.add_argument("--snp_dataframe", help="path to dataframe containing snps")
+    gen_acdp_df.add_argument("--coverage_dp_object", help="path to coverage DP output object")
+    gen_acdp_df.add_argument("--allelic_clusters_object", help="npy file containing allelic dp segs-to-clusters results")
+    gen_acdp_df.add_argument("--allelic_draw_index", help="index of ADP draw used for coverage MCMC", type=int, default=-1)
+    
+    # run acdp clustering 
+    ac_dp = subparsers.add_parser("allelic_coverage_dp", help="Run DP clustering on allelic coverage tuples")
+    ac_dp.add_argument("--coverage_dp_object", help="path to coverage DP output object")
+    ac_dp.add_argument("--acdp_df_path", help="path to acdp dataframe")
+    ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
+    ac_dp.add_argument("--cytoband_dataframe", help="path to dataframe containing cytoband information")
+    ac_dp.add_argument("--warmstart", type=bool, default=True, help="run clustering with warmstart")
+    
+    ## DP
+    dp = subparsers.add_parser("dp", help = "Run DP clustering on allelic imbalance segments")
+    dp.add_argument("--seg_dataframe", required = True)
+    dp.add_argument("--n_dp_iter", default = 10)
+    dp.add_argument("--seg_samp_idx", default = 0)
+    dp.add_argument("--ref_fasta", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
+    dp.add_argument("--cytoband_file", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
 
     ## coverage MCMC
     coverage_mcmc = subparsers.add_parser("coverage_mcmc", help="Run TCR segmentation on allelic imbalance clusters")
@@ -130,25 +159,6 @@ def parse_args():
     coverage_dp.add_argument("--num_segmentation_samples", type=int, help="number of segmentation samples to use")
     coverage_dp.add_argument("--num_draws", type=int,
                              help="number of thinned draws from the coverage dp to take after burn in")
-
-    ## Allelic Coverage DP
-
-    # generate df
-    gen_acdp_df = subparsers.add_parser("generate_acdp_df", help="generate dataframe for acdp clustering")
-
-    gen_acdp_df.add_argument("--snp_dataframe", help="path to dataframe containing snps")
-    gen_acdp_df.add_argument("--coverage_dp_object", help="path to coverage DP output object")
-    gen_acdp_df.add_argument("--allelic_clusters_object", help="npy file containing allelic dp segs-to-clusters results")
-    gen_acdp_df.add_argument("--allelic_draw_index", help="index of ADP draw used for coverage MCMC", type=int, default=-1)
-    
-    # run acdp clustering 
-    ac_dp = subparsers.add_parser("allelic_coverage_dp", help="Run DP clustering on allelic coverage tuples")
-    ac_dp.add_argument("--coverage_dp_object", help="path to coverage DP output object")
-    ac_dp.add_argument("--acdp_df_path", help="path to acdp dataframe")
-    ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
-    ac_dp.add_argument("--cytoband_dataframe", help="path to dataframe containing cytoband information")
-    ac_dp.add_argument("--warmstart", type=bool, default=True, help="run clustering with warmstart")
-
     args = parser.parse_args()
 
     # validate arguments
@@ -165,24 +175,25 @@ def main():
 
     if not os.path.isdir(args.output_dir):
         os.mkdir(args.output_dir)
+    if not os.path.isdir(args.output_dir + "/figures"):
+        os.mkdir(args.output_dir + "/figures")
     output_dir = os.path.realpath(args.output_dir)
 
     if args.command == "run":
         dask_client = dd.Client(n_workers=int(args.n_workers))
 
-        refs = HapasegReference(
-            phased_VCF=args.phased_VCF,
-            readbacked_phased_VCF=args.read_backed_phased_VCF,
-            allele_counts=args.allele_counts_T,
-            allele_counts_N=args.allele_counts_N,
-            cytoband_file=args.cytoband_file
+        snps = HapasegSNPs(
+          phased_VCF = args.phased_VCF,
+          readbacked_phased_VCF = args.read_backed_phased_VCF,
+          allele_counts = args.allele_counts_T,
+          allele_counts_N = args.allele_counts_N
         )
 
         runner = AllelicMCMCRunner(
-            refs.allele_counts,
-            refs.chromosome_intervals,
-            dask_client,
-            phase_correct=args.phase_correct
+          snps.allele_counts,
+          snps.chromosome_intervals,
+          dask_client,
+          phase_correct = args.phase_correct
         )
 
         allelic_segs = runner.run_all()
@@ -192,20 +203,36 @@ def main():
 
         # TODO: save per-chromosome plots of raw allelic segmentations
 
-    elif args.command == "load":
+    elif args.command == "load_snps":
         # load from VCF
-        refs = HapasegReference(
-            phased_VCF=args.phased_VCF,
-            readbacked_phased_VCF=args.read_backed_phased_VCF,
-            allele_counts=args.allele_counts_T,
-            allele_counts_N=args.allele_counts_N,
-            cytoband_file=args.cytoband_file
+        snps = HapasegSNPs(
+          phased_VCF = args.phased_VCF,
+          readbacked_phased_VCF = args.read_backed_phased_VCF,
+          allele_counts = args.allele_counts_T,
+          allele_counts_N = args.allele_counts_N
         )
 
         # create chunks
-        t = mut.map_mutations_to_targets(refs.allele_counts, refs.chromosome_intervals, inplace=False)
-        groups = t.groupby(t).apply(lambda x: [x.index.min(), x.index.max()]).to_frame(name="bdy")
-        groups["ranges"] = groups["bdy"].apply(lambda x: np.r_[x[0]:x[1]:args.chunk_size, x[1]])
+        chromosome_intervals = hs_utils.parse_cytoband(args.cytoband_file)
+
+        t = mut.map_mutations_to_targets(snps.allele_counts, chromosome_intervals, inplace = False)
+        # ranges of SNPs spanned by each arm
+        groups = t.groupby(t).apply(lambda x : [x.index.min(), x.index.max()]).to_frame(name = "bdy")
+        # remove arms with too few SNPs (e.g. acrocentric chromosomes)
+        groups = groups.loc[groups["bdy"].apply(np.diff) > 5] # XXX: is 5 SNPs too small?
+
+        # chunk arms
+        groups["ranges"] = groups["bdy"].apply(lambda x : np.r_[x[0]:x[1]:args.chunk_size, x[1]])
+
+        # for arms with > 1 chunk, merge the last chunk with penultimate chunk if last chunk is short
+        short_last_chunks = groups.loc[
+          (groups["ranges"].apply(len) > 2) & \
+          (groups["ranges"].apply(lambda x : x[-1] - x[-2]) < args.chunk_size*0.05),
+          "ranges"
+        ]
+        groups.loc[short_last_chunks.index, "ranges"] = short_last_chunks.apply(lambda x : np.r_[x[:-2], x[-1]])
+
+        # create chunk scatter dataframe
         chunks = pd.DataFrame(
             np.vstack([
                 np.hstack(np.broadcast_arrays(k, np.c_[y[0:-1], y[1:]]))
@@ -215,9 +242,11 @@ def main():
         )
 
         # save to disk
-        refs.allele_counts.to_pickle(output_dir + "/allele_counts.pickle")
-        refs.chromosome_intervals.to_pickle(output_dir + "/chrom_int.pickle")
-        chunks.to_csv(output_dir + "/scatter_chunks.tsv", sep="\t", index=False)
+        snps.allele_counts.to_pickle(output_dir + "/allele_counts.pickle")
+        chunks.to_csv(output_dir + "/scatter_chunks.tsv", sep = "\t", index = False)
+
+    elif args.command == "load_coverage":
+        pass
 
     elif args.command == "amcmc":
         # loading from SNP dataframe produced by `hapaseg load`
@@ -331,6 +360,62 @@ def main():
 
             with open(output_dir + f"/AMCMC-arm{arm}.pickle", "wb") as f:
                 pickle.dump(A, f)
+
+    elif args.command == "dp":
+        # load allelic segmentation samples
+        A = A_DP(args.seg_dataframe, ref_fasta = args.ref_fasta)
+
+        # run DP
+        # TODO: when we have better type checking, drop the int coersion here
+        #N_seg_samps = A.n_samp - 1 if int(args.n_seg_samps) == 0 else int(args.n_seg_samps)
+        # TODO: if we decide to drop support for chained sampling altogether, remove N_seg_samps logic altogether
+        snps_to_clusters, snps_to_phases, likelihoods = A.run(
+          seg_sample_idx = int(args.seg_samp_idx),
+          #N_seg_samps = N_seg_samps,
+          N_clust_samps = int(args.n_dp_iter)
+        )
+
+        # save DP results
+        np.savez(output_dir + "/allelic_DP_SNP_clusts_and_phase_assignments.npz",
+          snps_to_clusters = snps_to_clusters,
+          snps_to_phases = snps_to_phases,
+          likelihoods = likelihoods
+        )
+
+        A.SNPs.to_pickle(output_dir + "/all_SNPs.pickle")
+
+        #
+        # plot DP results
+
+        # 1. phased SNP visualization
+        f = plt.figure(figsize = [17.56, 5.67])
+        hs_utils.plot_chrbdy(args.cytoband_file)
+        A.visualize_SNPs(snps_to_phases, color = True, f = f)
+        A.visualize_clusts(snps_to_clusters, f = f, thick = True, nocolor = True)
+        plt.ylabel("Haplotypic imbalance")
+        plt.title("SNP phasing/segmentation")
+        plt.savefig(output_dir + "/figures/SNPs.png", dpi = 300)
+        plt.close()
+
+        # 2. pre-clustering segments
+        f = plt.figure(figsize = [17.56, 5.67])
+        hs_utils.plot_chrbdy(args.cytoband_file)
+        A.visualize_SNPs(snps_to_phases, color = False, f = f)
+        A.visualize_segs(snps_to_clusters, f = f)
+        plt.ylabel("Haplotypic imbalance")
+        plt.title("Allelic segmentation, pre-DP clustering")
+        plt.savefig(output_dir + "/figures/allelic_imbalance_preDP.png", dpi = 300)
+        plt.close()
+
+        # 3. post-clustering segments
+        f = plt.figure(figsize = [17.56, 5.67])
+        hs_utils.plot_chrbdy(args.cytoband_file)
+        A.visualize_SNPs(snps_to_phases, color = False, f = f)
+        A.visualize_clusts(snps_to_clusters, f = f, thick = True)
+        plt.ylabel("Haplotypic imbalance")
+        plt.title("Allelic segmentation, post-DP clustering")
+        plt.savefig(output_dir + "/figures/allelic_imbalance_postDP.png", dpi = 300)
+        plt.close()
 
     elif args.command == "coverage_mcmc":
         cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,

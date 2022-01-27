@@ -207,3 +207,74 @@ A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(dr
 A.to_pickle("arms.pickle")
 
 # run DP
+
+
+#
+# coverage collection notes
+
+split_intervals = wolf.ImportTask(
+  task_path = "/home/jhess/Downloads/split_intervals_TOOL", # TODO: make remote
+  task_name = "split_intervals"
+)
+
+tumor_bam_localization_task = wolf.localization.BatchLocalDisk(
+  files = dict(
+    bam = "/mnt/j/proj/cnv/20201018_hapseg2/exome/18144_6_C1D1_tissue_DNA.bam",
+    bai = "/mnt/j/proj/cnv/20201018_hapseg2/exome/18144_6_C1D1_tissue_DNA.bai"
+  ),
+  run_locally = True
+)
+
+tumor_bam_localization = tumor_bam_localization_task.run()
+
+# split target list
+
+split_intervals_task = split_intervals.split_intervals(
+  bam = tumor_bam_localization["bam"],
+  bai = tumor_bam_localization["bai"],
+  interval_type = "bed",
+)
+
+split_intervals_results = split_intervals_task.run()
+
+# shim task to transform split_intervals files into subset parameters for covcollect task
+
+#@prefect.task
+def interval_gather(interval_files):
+    ints = []
+    for f in interval_files:
+        ints.append(pd.read_csv(f, sep = "\t", header = None, names = ["chr", "start", "end"]))
+    return pd.concat(ints).sort_values(["chr", "start", "end"])
+
+subset_intervals = interval_gather(split_intervals_results["interval_files"])
+
+
+# get coverage
+
+cov_collect = wolf.ImportTask(
+  task_path = "/mnt/j/proj/cnv/20210326_coverage_collector", # TODO: make remote
+  task_name = "covcollect"
+)
+
+cov_collect_task = cov_collect.Covcollect(
+  inputs = dict(
+    bam = tumor_bam_localization["bam"],
+    bai = tumor_bam_localization["bai"],
+    intervals = "/mnt/j/proj/cnv/20201018_hapseg2/exome/broad_custom_exome_v1.Homo_sapiens_assembly19.targets.interval_list.noheader",
+    subset_chr = subset_intervals["chr"],
+    subset_start = subset_intervals["start"],
+    subset_end = subset_intervals["end"],
+  )
+)
+
+cov_collect_results = cov_collect_task.run()
+
+# gather coverage
+cov_gather = wolf.Task(
+  name = "gather_coverage",
+  inputs = { "coverage_beds" : [cov_collect_results["coverage"]] },
+  script = """cat $(cat ${coverage_beds}) > coverage_cat.bed""",
+  outputs = { "coverage" : "coverage_cat.bed" }
+)
+
+cov_gather_results = cov_gather.run()

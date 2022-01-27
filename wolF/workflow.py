@@ -1,8 +1,10 @@
 import glob
+import numpy as np
 import os
 import pandas as pd
 import pickle
 import prefect
+import subprocess
 import tempfile
 import wolf
 
@@ -14,6 +16,12 @@ het_pulldown = wolf.ImportTask(
   #task_path = 'git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git',
   task_path = '/home/jhess/j/proj/cnv/20200909_hetpull',
   task_name = "het_pulldown"
+)
+
+mutect1 = wolf.ImportTask(
+  #task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
+  task_path = "/home/jhess/j/proj/mut/MuTect1/MuTect1_TOOL",
+  task_name = "mutect1"
 )
 
 # for phasing
@@ -28,14 +36,34 @@ hapaseg = wolf.ImportTask(
   task_name = "hapaseg"
 )
 
+# for coverage collection
+split_intervals = wolf.ImportTask(
+  task_path = "/home/jhess/Downloads/split_intervals_TOOL", # TODO: make remote
+  task_name = "split_intervals"
+)
+
+cov_collect = wolf.ImportTask(
+  task_path = "/mnt/j/proj/cnv/20210326_coverage_collector", # TODO: make remote
+  task_name = "covcollect"
+)
+
 def workflow(
   callstats_file = None,
+
+  tumor_bam = None,
+  tumor_bai = None,
+  tumor_coverage_bed = None,
+
+  normal_bam = None,
+  normal_bai = None,
+  normal_coverage_bed = None,
+
   common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
+  target_list = None
 ):
     #
     # localize reference files to RODISK
-
-    ref_panel = pd.DataFrame({ "path" : glob.glob("/mnt/j/db/hg38/1kg/*.bcf*") })
+    ref_panel = pd.DataFrame({ "path" : subprocess.check_output("gsutil ls gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/*.bcf*", shell = True).decode().rstrip().split("\n") })
     ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
     ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
 
@@ -45,24 +73,159 @@ def workflow(
         ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
         ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
 
-        genetic_map_file = "/home/jhess/Downloads/Eagle_v2.4.1/tables/genetic_map_hg38_withX.txt.gz",
+        genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
 
         # reference panel
         **ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
-      ),
-      run_locally = True
+      )
     )
 
     #
+    # localize BAMs to RODISK
+    if tumor_bam is not None and tumor_bai is not None:
+        tumor_bam_localization_task = wolf.localization.BatchLocalDisk(
+          files = {
+            "bam" : tumor_bam,
+            "bai" : tumor_bai,
+          }
+        )
+        collect_tumor_coverage = True
+    elif tumor_coverage_bed is not None:
+        collect_tumor_coverage = False
+    else:
+        raise ValueError("You must supply either a tumor BAM+BAI or a tumor coverage BED file!")
+
+    use_normal_coverage = True
+    if normal_bam is not None and normal_bai is not None:
+        normal_bam_localization_task = wolf.localization.BatchLocalDisk(
+          files = {
+            "bam" : normal_bam,
+            "bai" : normal_bai
+          }
+        )
+        collect_normal_coverage = True
+    elif normal_coverage_bed is not None:
+        collect_normal_coverage = False
+    else:
+        print("Normal coverage will not be used as a covariate; ability to regress out germline CNVs may suffer.")
+        use_normal_coverage = False
+
+    #
+    # collect or load coverage
+
+    # tumor
+    if collect_tumor_coverage:
+        # create scatter intervals
+        split_intervals_task = split_intervals.split_intervals(
+          bam = tumor_bam_localization_task["bam"],
+          bai = tumor_bam_localization_task["bai"],
+          interval_type = "bed",
+        )
+
+        # shim task to transform split_intervals files into subset parameters for covcollect task
+        @prefect.task
+        def interval_gather(interval_files):
+            ints = []
+            for f in interval_files:
+                ints.append(pd.read_csv(f, sep = "\t", header = None, names = ["chr", "start", "end"]))
+            return pd.concat(ints).sort_values(["chr", "start", "end"])
+
+        subset_intervals = interval_gather(split_intervals_task["interval_files"])
+
+        # dispatch coverage scatter
+        tumor_cov_collect_task = cov_collect.Covcollect(
+          inputs = dict(
+            bam = tumor_bam_localization_task["bam"],
+            bai = tumor_bam_localization_task["bai"],
+            intervals = target_list,
+            subset_chr = subset_intervals["chr"],
+            subset_start = subset_intervals["start"],
+            subset_end = subset_intervals["end"],
+          )
+        )
+
+        # gather tumor coverage
+        tumor_cov_gather_task = wolf.Task(
+          name = "gather_coverage",
+          inputs = { "coverage_beds" : [tumor_cov_collect_task["coverage"]] },
+          script = """cat $(cat ${coverage_beds}) > coverage_cat.bed""",
+          outputs = { "coverage" : "coverage_cat.bed" }
+        )
+
+    # load from supplied BED file
+    else:
+        tumor_cov_gather_task = { "coverage" : tumor_coverage_bed }
+
+    # normal
+    #if collect_normal_coverage:
+
+    #
     # get het site coverage/genotypes from callstats
-    hp_task = het_pulldown.get_het_coverage_from_callstats(
-      callstats_file = callstats_file,
-      common_snp_list = common_snp_list,
-      ref_fasta = localization_task["ref_fasta"],
-      ref_fasta_idx = localization_task["ref_fasta_idx"],
-      ref_fasta_dict = localization_task["ref_fasta_dict"],
-      dens_cutoff = 0.58 # TODO: set dynamically
-    )
+    if callstats_file is not None:
+        hp_task = het_pulldown.get_het_coverage_from_callstats(
+          callstats_file = callstats_file,
+          common_snp_list = common_snp_list,
+          ref_fasta = localization_task["ref_fasta"],
+          ref_fasta_idx = localization_task["ref_fasta_idx"],
+          ref_fasta_dict = localization_task["ref_fasta_dict"],
+          dens_cutoff = 0.58 # TODO: set dynamically
+        )
+
+    # otherwise, run M1 and get it from the BAM
+    elif callstats_file is None and tumor_bam is not None and normal_bam is not None:
+        m1_task = mutect1.mutect1(inputs = dict(
+          pairName = "het_coverage",
+          caseName = "tumor",
+          ctrlName = "normal",
+
+          t_bam = tumor_bam_localization_task["bam"],
+          t_bai = tumor_bam_localization_task["bai"],
+          n_bam = normal_bam_localization_task["bam"],
+          n_bai = normal_bam_localization_task["bai"],
+
+          fracContam = 0,
+
+          refFasta = localization_task["ref_fasta"],
+          refFastaIdx = localization_task["ref_fasta_idx"],
+          refFastaDict = localization_task["ref_fasta_dict"],
+
+          intervals = split_intervals_task["interval_files"]
+        ))
+
+        hp_scatter = het_pulldown.get_het_coverage_from_callstats(
+          callstats_file = m1_task["mutect1_cs"],
+          common_snp_list = common_snp_list,
+          ref_fasta = localization_task["ref_fasta"],
+          ref_fasta_idx = localization_task["ref_fasta_idx"],
+          ref_fasta_dict = localization_task["ref_fasta_dict"],
+          dens_cutoff = 0.58 # TODO: set dynamically
+        )
+
+        # gather het pulldown
+        hp_task = wolf.Task(
+          name = "hp_gather",
+          inputs = {
+            "tumor_hets" : [hp_scatter["tumor_hets"]],
+            "normal_hets" : [hp_scatter["normal_hets"]],
+            "normal_genotype" : [hp_scatter["normal_genotype"]],
+          },
+          script = """
+          cat <(cat $(head -n1 ${normal_genotype}) | head -n1) \
+            <(for f in $(cat ${normal_genotype}); do sed 1d $f; done | sort -k1,1V -k2,2n) > normal_genotype.txt
+          cat <(cat $(head -n1 ${normal_hets}) | head -n1) \
+            <(for f in $(cat ${normal_hets}); do sed 1d $f; done | sort -k1,1V -k2,2n) > normal_hets.txt
+          cat <(cat $(head -n1 ${tumor_hets}) | head -n1) \
+            <(for f in $(cat ${tumor_hets}); do sed 1d $f; done | sort -k1,1V -k2,2n) > tumor_hets.txt
+          """,
+          outputs = {
+            "tumor_hets" : "tumor_hets.txt",
+            "normal_hets" : "normal_hets.txt",
+            "normal_genotype" : "normal_genotype.txt",
+          }
+        )
+
+    else:
+        raise ValueError("You must either provide a callstats file or tumor+normal BAMs to collect SNP coverage")
 
     #
     # shim task to convert output of het pulldown to VCF
@@ -143,13 +306,13 @@ def workflow(
     #
     # run HapASeg
 
-    # load
-    hapaseg_load_task = hapaseg.Hapaseg_load(
+    # load SNPs
+    hapaseg_load_snps_task = hapaseg.Hapaseg_load_snps(
       inputs = {
         "phased_VCF" : combine_task["combined_vcf"],
         "tumor_allele_counts" : hp_task["tumor_hets"],
         "normal_allele_counts" : hp_task["normal_hets"],
-        "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt" # TODO: allow to be specified
+        "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt", # TODO: allow to be specified
       }
     )
 
@@ -158,12 +321,12 @@ def workflow(
     def get_chunks(scatter_chunks):
         return pd.read_csv(scatter_chunks, sep = "\t")
 
-    chunks = get_chunks(hapaseg_load_task["scatter_chunks"])
+    chunks = get_chunks(hapaseg_load_snps_task["scatter_chunks"])
 
     # burnin chunks
     hapaseg_burnin_task = hapaseg.Hapaseg_burnin(
      inputs = {
-       "allele_counts" : hapaseg_load_task["allele_counts"],
+       "allele_counts" : hapaseg_load_snps_task["allele_counts"],
        "start" : chunks["start"],
        "end" : chunks["end"]
      }
@@ -173,7 +336,7 @@ def workflow(
     hapaseg_concat_task = hapaseg.Hapaseg_concat(
      inputs = {
        "chunks" : [hapaseg_burnin_task["burnin_MCMC"]],
-       "scatter_intervals" : hapaseg_load_task["scatter_chunks"]
+       "scatter_intervals" : hapaseg_load_snps_task["scatter_chunks"]
      }
     )
 
@@ -186,7 +349,7 @@ def workflow(
     )
 
     # concat arm level results
-    @prefect.task
+    @prefect.task(nout = 2)
     def concat_arm_level_results(arm_results):
         A = []
         for arm_file in arm_results:
@@ -199,10 +362,27 @@ def workflow(
 
         # save
         _, tmpfile = tempfile.mkstemp(  )
-        A.to_pickle(tmpfile) 
+        A.to_pickle(tmpfile)
 
-        return tmpfile
+        # get number of MCMC samples
+        n_samps = int(np.minimum(np.inf, A.loc[~A["results"].isna(), "results"].apply(lambda x : len(x.breakpoint_list))).min())
 
-    arm_concat = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
+        return tmpfile, list(range(0, n_samps))
 
-    # run DP
+    arm_concat, n_samps_range = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
+
+    ## run DP
+
+    # scatter DP
+    hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
+     inputs = {
+       "seg_dataframe" : arm_concat,
+       "n_dp_iter" : 10,   # TODO: allow to be specified?
+       "seg_samp_idx" : n_samps_range,
+       "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt", # TODO: allow to be specified
+       "ref_fasta" : localization_task["ref_fasta"],
+       "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
+       "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink
+     }
+    )
+

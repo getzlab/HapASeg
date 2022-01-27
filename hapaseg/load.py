@@ -7,25 +7,16 @@ from itertools import zip_longest
 
 _chrmap = dict(zip(["chr" + str(x) for x in list(range(1, 23)) + ["X", "Y"]], range(1, 25)))
 
-class HapasegReference:
+class HapasegSNPs:
     def __init__(self,
       phased_VCF = "test.vcf",
       readbacked_phased_VCF = None,
       allele_counts = "3328.tumor.tsv",
-      allele_counts_N = None,
-      coverage = None,
-      cytoband_file = "cytoBand.txt"
+      allele_counts_N = None
     ):
         #
         # load in VCF
         self.allele_counts = self.load_VCF(phased_VCF, allele_counts, allele_counts_N, readbacked_phased_VCF)
-
-        #
-        # load in coverage; merge with allele counts
-
-        #
-        # parse cytoband file for chromosome arm boundaries
-        self.chromosome_intervals = self.parse_cytoband(cytoband_file)
 
     @staticmethod
     def load_VCF(VCF, allele_counts, allele_counts_N = None, RBP_VCF = None):
@@ -123,35 +114,9 @@ class HapasegReference:
         mm = df.multimap(P_RBP.loc[:, ["chr", "pos"]], P.loc[:, ["chr", "pos"]])
         return pd.concat([P, P_RBP.loc[mm[mm.isna()].index, P.columns]], ignore_index = True).sort_values(["chr", "pos"])
 
-    @staticmethod
-    def parse_cytoband(cytoband):
-        cband = pd.read_csv(cytoband, sep = "\t", names = ["chr", "start", "end", "band", "stain"])
-        cband["chr"] = cband["chr"].apply(lambda x : _chrmap[x])
-
-        chrs = cband["chr"].unique()
-        ints = dict(zip(chrs, [{0} for _ in range(0, len(chrs))]))
-        last_end = None
-        last_stain = None
-        last_chrom = None
-        for _, chrom, start, end, _, stain in cband.itertuples():
-            if start == 0:
-                if last_end is not None:
-                    ints[last_chrom].add(last_end)
-            if stain == "acen" and last_stain != "acen":
-                ints[chrom].add(start)
-            if stain != "acen" and last_stain == "acen":
-                ints[chrom].add(start)
-            
-            last_end = end
-            last_stain = stain
-            last_chrom = chrom
-        ints[chrom].add(end)
-
-        CI = np.full([len(ints), 4], 0)
-        for c in chrs:
-            CI[c - 1, :] = sorted(ints[c])
-
-        return pd.DataFrame(
-          np.c_[np.tile(np.c_[np.r_[1:25]], [1, 2]).reshape(-1, 1), CI.reshape(-1, 2)],
-          columns = ["chr", "start", "end"]
-        )
+class HapasegCoverage:
+    def __init__(self,
+      coverage_bed_file,
+      **covariates_bed_files
+    ):
+        pass
