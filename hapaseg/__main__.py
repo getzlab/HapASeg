@@ -147,6 +147,7 @@ def parse_args():
     ac_dp.add_argument("--acdp_df_path", help="path to acdp dataframe")
     ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
     ac_dp.add_argument("--cytoband_dataframe", help="path to dataframe containing cytoband information")
+    ac_dp.add_argument("--warmstart", type=bool, default=True, help="run clustering with warmstart")
 
     args = parser.parse_args()
 
@@ -419,7 +420,7 @@ def main():
         with open(args.coverage_dp_object, "rb") as f:
             cdp_pickle = pickle.load(f)
         beta = cdp_pickle.beta
-        acdp = AllelicCoverage_DP(acdp_df, beta, args.cytoband_dataframe)
+        acdp = AllelicCoverage_DP(acdp_df, beta, args.cytoband_dataframe, args.warmstart)
         acdp.run(args.num_samples)
         acdp.visualize_ACDP(output_dir)
         

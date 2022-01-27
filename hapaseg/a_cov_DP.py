@@ -111,7 +111,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
     return pd.concat(draw_dfs), dp_run.beta
 
 class AllelicCoverage_DP:
-    def __init__(self, cov_df, beta, allelic_segs_path, seed_all_clusters = True):
+    def __init__(self, cov_df, beta, allelic_segs_path, seed_all_clusters=True):
         self.cov_df = cov_df
         self.beta = beta
         self.allelic_segs_path = allelic_segs_path
