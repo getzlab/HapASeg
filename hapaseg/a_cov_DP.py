@@ -11,6 +11,7 @@ import scipy.sparse as sp
 import scipy.special as ss
 import sortedcontainers as sc
 import pickle
+import os
 
 from capy import seq, mut
 
@@ -196,10 +197,7 @@ class AllelicCoverage_DP:
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r
             self.segment_cov_bins[ID] = group_len
-            if self.coverage_prior:
-                self.segment_counts[ID] = group_len
-            else:
-                self.segment_counts[ID] = 1
+            self.segment_counts[ID] = group_len
 
         # go back through segments and greylist ones with high variance
         greylist_mask = np.ones(self.num_segments, dtype=bool)
@@ -754,7 +752,7 @@ class AllelicCoverage_DP:
         plt.xlim((0.0, 2879000000.0))
         plt.ylim([0, 300])
 
-        plt.savefig(save_path + 'acdp_genome_plot.png')
+        plt.savefig(os.path.join(save_path, 'acdp_genome_plot.png'))
 
         #plot individual tuples within clusters
         rs = []
@@ -763,7 +761,7 @@ class AllelicCoverage_DP:
                 (np.array([np.array(self.segment_r_list[i]).mean() for i in self.cluster_dict[c]]).mean(), c))
 
         f, ax = plt.subplots(1, figsize=[19.2, 10])
-        plt.clf()
+        #plt.clf()
         counter = 0
         cc = 0
         for c in [t[1] for t in sorted(rs)]:
@@ -779,15 +777,16 @@ class AllelicCoverage_DP:
                 ax.text(c0 + (counter - c0) / 2, 0, '{}'.format(c), horizontalalignment='center')
             cc += 1
 
-        plt.savefig(save_path + 'acdp_tuples_plot.png')
+        plt.savefig(os.path.join(save_path, 'acdp_tuples_plot.png'))
 
         #simple clusters plot
-        plt.clf()
+        f, ax = plt.subplots(1, figsize=[19.2, 10])
+        #plt.clf()
 
         counter = 0
         for c in [t[1] for t in sorted(rs)]:
             vals = [np.array(self.segment_r_list[i]).mean() for i in self.cluster_dict[c]]
-            plt.scatter(np.r_[counter:counter + len(vals)], vals)
+            ax.scatter(np.r_[counter:counter + len(vals)], vals)
             counter += len(vals)
 
-        plt.savefig(save_path + 'acdp_clusters_plot.png')
+        plt.savefig(os.path.join(save_path, 'acdp_clusters_plot.png'))
