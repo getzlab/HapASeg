@@ -421,7 +421,7 @@ def main():
         beta = cdp_pickle.beta
         acdp = AllelicCoverage_DP(acdp_df, beta, args.cytoband_dataframe)
         acdp.run(args.num_samples)
-        acdp.visualize_ACDP(os.path.join(output_dir, "acdp_figure"))
+        acdp.visualize_ACDP(output_dir)
         
         
         with open(os.path.join(output_dir, "acdp_model.pickle"), "wb") as f:
