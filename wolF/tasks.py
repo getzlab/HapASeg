@@ -134,3 +134,43 @@ class Hapaseg_coverage_dp(wolf.Task):
     """
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+
+class Hapaseg_acdp_generate_df(wolf.Task):
+    inputs = {
+        "SNPs_pickle": None,
+        "allelic_clusters_object" : None,
+        "coverage_dp_object" : None,
+        "allelic_draw_index" : -1
+    }
+
+    script = """
+    hapaseg generate_acdp_df --snp_dataframe ${SNPs_pickle} \
+    --coverage_dp_object ${coverage_dp_object} \
+    --allelic_clusters_object ${allelic_clusters_object}
+    --allelic_draw_index ${allelic_draw_index}
+    """
+
+    output_patterns = {
+        "acdp_df_pickle": "acdp_df.pickle"
+    }
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"
+
+class Hapaseg_run_acdp(wolf.Task):
+    inputs = {
+        "coverage_dp_object" : None,
+        "acdp_df" : None,
+        "num_samples" : None,
+        "cytoband_df" : None
+    }
+
+    script = """
+    hapaseg allelic_coverage_dp  --coverage_dp_object ${coverage_dp_object} \
+    --acdp_df_path ${acdp_df} \
+    --num_samples ${num_samples} \
+    --cytoband_dataframe ${cytoband_df}
+    """
+
+    output_patterns = {
+        "acdp_model_pickle": "acdp_model.pickle"
+    }
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v352"

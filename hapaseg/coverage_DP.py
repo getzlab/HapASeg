@@ -1,22 +1,14 @@
-import colorama
-import copy
-import itertools
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
-import numpy_groupies as npg
-import pandas as pd
-import scipy.stats as s
-import scipy.sparse as sp
 import scipy.special as ss
 import sortedcontainers as sc
-import h5py
 
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
 from capy import seq
 
-colors = mpl.cm.get_cmap("tab10").colors
+colors = mpl.cm.get_cmap("tab20").colors
 
 def LSE(x):
     lmax = np.max(x)
@@ -225,11 +217,12 @@ class Run_Cov_DP:
         exog = np.ones(r.shape[0])
         sNB = statsNB(endog, exog)
         res = sNB.fit(disp=0)
-            #print(endog.mean(), endog.var())
         if ret_hess:
             return res.params[0], -np.log(res.params[1]), sNB.hessian(res.params)
         else:
             return res.params[0], -np.log(res.params[1])
+
+    #TODO: switch to new DP prior
 
     # if we have prior assignments from the last iteration we can use those clusters to probalistically assign
     # each segment into a old cluster
@@ -267,7 +260,6 @@ class Run_Cov_DP:
 
             self.cluster_dict[choice].add(segID)
             self.cluster_MLs[choice] = self._ML_cluster(self.cluster_dict[choice])
-        # print('prior assigned')
         self.init_clusters = sc.SortedDict({k: v.copy() for k, v in self.cluster_dict.items()})
 
     def run(self, n_iter, sample_num=0):
@@ -286,7 +278,6 @@ class Run_Cov_DP:
             self.initial_prior_assignment(count_prior)
         
         white_segments = set(range(self.num_segments)) - self.greylist_segments
-        # while n_it < n_iter:
         while len(self.bins_to_clusters) < n_iter:
     
             # status update
@@ -321,7 +312,6 @@ class Run_Cov_DP:
                 
                 # get cluster assignment of S
                 clustID = self.cluster_assignments[segID]
-                #print('seg_pick:', segID, clustID)
                 # compute ML of AB = Cs (cached)
                 if clustID == -1:
                     ML_AB = 0
@@ -352,7 +342,7 @@ class Run_Cov_DP:
                 ML_rat_BC = ML_A + ML_BC - (ML_AB + ML_C)
 
                 # if cluster is unassigned we set the ML ratio to 1 for staying in its own cluster
-                #print(ML_rat_BC)
+
                 if clustID > -1:
                     ML_rat_BC[list(self.cluster_counts.keys()).index(clustID)] = 0
 
@@ -360,20 +350,11 @@ class Run_Cov_DP:
                 ML_new = ML_A + ML_S - ML_AB
 
                 ML_rat = np.r_[ML_rat_BC, ML_new]
-                # if self.prior_clusters:
-                # print('ML_A', ML_A)
-                # print('ML_AB', ML_AB)
-                # print('ML_C', ML_C)
-                # print('C now', [self._ML_cluster(self.cluster_dict[c]) for c in self.cluster_dict.keys()])
-                # print('ML_BC', ML_BC)
-
-                #print('ml_rat: ', ML_rat)
 
                 prior_diff = []
                 clust_prior_p = 1
                 # use prior cluster information if available
                 if self.prior_clusters:
-                    # print('segID: ', segID, 'cur cluster: ', clustID)
                     # divide prior into three sections:
                     # * clusters in prior not currently active (if picked, will open a new cluster with that ID)
                     # * clusters in prior currently active (if picked, will weight that cluster's posterior probability)
@@ -396,37 +377,29 @@ class Run_Cov_DP:
                         np.r_[[self.prior_clusters.index(x) if x in self.prior_clusters else -1 for x in
                                (prior_com | prior_null | {self.next_cluster_index})]]
                     ].astype(int)
-                    # print('prior_diff', prior_diff)
-                    # print('prior_idx', prior_id
-                    # print('prior BC', [self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]], [segID]) for idx in prior_idx])
-                    # print('prior C', [self.clust_prior_ML[self.prior_clusters.keys()[idx]]for idx in prior_idx] )
+
                     prior_MLs = np.r_[[self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]],
                                                               [segID]) if idx != -1 else 0 for idx in prior_idx]] - (
                                         self._ML_cluster([segID]) + np.r_[[self.clust_prior_ML[
                                                                                self.prior_clusters.keys()[
                                                                                    idx]] if idx != -1 else - self._ML_cluster(
                                     [segID]) for idx in prior_idx]])
-                    # print('prior_MLs', prior_MLs)
                     clust_prior_p = np.maximum(
                         np.exp(prior_MLs - prior_MLs.max()) / np.exp(prior_MLs - prior_MLs.max()).sum(), 1e-300)
 
-                    #  print('clust_prior_p: ', clust_prior_p)
                     # expand MLs to account for multiple new clusters
                     ML_rat = np.r_[np.full(len(prior_diff), ML_rat[-1]), ML_rat]
-                #   print('ML_rat:', ML_rat)
                 # DP prior based on clusters sizes
                 count_prior = np.r_[
                     [count_prior[self.prior_clusters.index(x)] for x in
                      prior_diff], self.cluster_counts.values(), self.alpha]
                 count_prior /= count_prior.sum()
 
-                # if self.prior_clusters:
-                # print('count prior: ', count_prior)
                 # construct transition probability distribution and draw from it
                 MLs_max = ML_rat.max()
                 choice_p = np.exp(ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)) / np.exp(
                     ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
-                #print(choice_p)
+
                 if np.isnan(choice_p.sum()):
                     print('skipping iteration {} due to nan. picked segment {}'.format(n_it, segID))
                     n_it += 1
@@ -436,16 +409,11 @@ class Run_Cov_DP:
                     p=choice_p
                 )
 
-                # if self.prior_clusters:
-                #   print(choice_p)
-                #  print(choice_idx)
                 # last = brand new, -1, -2, -3, ... = -(prior clust index) - 1
                 choice = np.r_[-np.r_[prior_diff] - 1,
                                self.cluster_counts.keys(), self.next_cluster_index][choice_idx]
                 choice = int(choice)
-                # print('choice: ', choice)
-                # print(self.cluster_counts)
-                # print(np.r_[-np.r_[prior_diff] - 1, self.cluster_counts.keys(), self.next_cluster_index])
+
                 # if choice == next_cluster_idx then start a brand new cluster with this new index
                 # if choice < 0 then we create a new cluster with the index of the old cluster
                 if choice == self.next_cluster_index or choice < 0:
@@ -454,11 +422,7 @@ class Run_Cov_DP:
                         # since its an old cluster we correct its index
                         choice = -(choice + 1)
                         old_clust = True
-                        # print('starting new old cluster')
-                    # else:
-                    # print('starting new clust')
 
-                    # print('{} starting new cluster {}'.format(segID, choice_idx))
                     if clustID > -1:
                         # if the segment used to occupy a cluster by itself, do nothing if its a new cluster
                         # need to rename it if its a old cluster
@@ -502,12 +466,10 @@ class Run_Cov_DP:
                 else:
                     # if remaining in same cluster, skip
                     if clustID == choice:
-                        #   print('{} staying in current cluster'.format(clustID))
                         n_it += 1
                         continue
 
                     # joining existing cluster
-                    # print('{} joining cluster {}'.format(segID, choice_idx))
 
                     # update new cluster with additional segment
                     self.cluster_assignments[segID] = choice
@@ -545,7 +507,6 @@ class Run_Cov_DP:
 
                 clust_pick = np.random.choice(self.cluster_dict.keys())
                 clust_pick_segs = np.r_[self.cluster_dict[clust_pick]].astype(int)
-                #print('clust_pick:', clust_pick)
                 # get ML of this cluster merged with each of the other existing clusters
                 ML_join = [
                     self._ML_cluster(self.cluster_dict[i].union(clust_pick_segs)) if i != clust_pick else
@@ -574,14 +535,12 @@ class Run_Cov_DP:
                     prior_MLs = np.r_[[self._ML_cluster_prior(self.prior_clusters[self.prior_clusters.keys()[idx]], clust_pick_segs) if idx != -1 else 0 for idx in prior_idx]] - (self.cluster_MLs[clust_pick] + np.r_[
                                     [self.clust_prior_ML[self.prior_clusters.keys()[idx]] if idx != -1 else -self.cluster_MLs[clust_pick] for idx in prior_idx]])
 
-                    # print('prior_MLs', prior_MLs)
                     clust_prior_p = np.maximum(
                         np.exp(prior_MLs - prior_MLs.max()) / np.exp(prior_MLs - prior_MLs.max()).sum(), 1e-300)
 
                     # expand MLs to account for multiple new merge clusters--which have liklihood = cluster staying as is = 0
                     ML_rat = np.r_[np.full(len(prior_diff), 0), ML_rat]
                     # DP prior based on clusters sizes now with no alpha
-                #print('cluster ML_rat', ML_rat)
                 count_prior = np.r_[
                     [count_prior[self.prior_clusters.index(x)] for x in prior_diff], self.cluster_counts.values()]
                 count_prior /= (count_prior.sum() + self.alpha)
@@ -590,7 +549,6 @@ class Run_Cov_DP:
                 MLs_max = ML_rat.max()
                 choice_p = np.exp(ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)) / np.exp(
                     ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
-                #print('clust_choice_p', choice_p)
                 if np.isnan(choice_p.sum()):
                     print("skipping iteration {} due to nan".format(n_it))
                     n_it += 1
@@ -606,7 +564,6 @@ class Run_Cov_DP:
                 choice = int(choice)
 
                 if choice != clust_pick:
-                    # print('cluster {} merging with {}'.format(clust_pick, choice_idx))h
                     if choice < 0:
                         # we're merging into an old cluster, which we do by simply reindexing that cluster
                         choice = -(choice + 1)
