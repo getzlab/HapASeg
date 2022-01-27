@@ -105,7 +105,6 @@ class Run_Cov_DP:
         self.cluster_dict = sc.SortedDict({})
         self.cluster_MLs = sc.SortedDict({})
         self.greylist_segments = sc.SortedSet({})
-        self.blacklist_segments = sc.SortedSet({})
         self.cluster_datapoints = sc.SortedDict({})
 
         self.prior_clusters = None
@@ -122,7 +121,10 @@ class Run_Cov_DP:
         self.coverage_prior = coverage_prior
         # for saving init clusters
         self.init_clusters = None
-    
+        
+        self.ig_alpha = 100
+        self.ig_ssd = 30
+        
         self._init_segments()
         self._init_clusters(prior_run, count_prior_sum)
 
@@ -130,6 +132,7 @@ class Run_Cov_DP:
         self.clusters_to_segs = []
         self.bins_to_clusters = []
         self.draw_indices = []
+
         self.alpha = 0.5
 
     # initialize each segment object with its data
@@ -153,7 +156,7 @@ class Run_Cov_DP:
             allele = grouped.allele.values[0]
             self.segment_allele[ID] = allele
             if group_len < 3:
-                self.blacklist_segments.add(ID)
+                self.greylist_segments.add(ID)
             
             if allele== -1:
                 f = minor / (minor + major)
@@ -170,7 +173,7 @@ class Run_Cov_DP:
             
             #blacklist segments with very high variance
             if np.sqrt(V) > 15:
-                self.blacklist_segments.add(ID) 
+                self.greylist_segments.add(ID) 
             
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r
@@ -181,18 +184,20 @@ class Run_Cov_DP:
                 self.segment_counts[ID] = 1
 
         # go back through segments and greylist ones with high variance
-        blacklist_mask = np.ones(self.num_segments, dtype=bool)
-        blacklist_mask[self.blacklist_segments] = False
-        cutoff = np.quantile(self.segment_V_list[blacklist_mask], 0.75)
+        greylist_mask = np.ones(self.num_segments, dtype=bool)
+        greylist_mask[self.greylist_segments] = False
+        cutoff = np.quantile(self.segment_V_list[greylist_mask], 0.80)
+        self.ig_ssd = self.segment_V_list[greylist_mask].mean()
+        self.ig_alpha = self.segment_cov_bins[greylist_mask].mean()
         print(cutoff)
-        for i in set(range(self.num_segments)) - self.blacklist_segments:
+        for i in set(range(self.num_segments)) - self.greylist_segments:
             if self.segment_V_list[i] > cutoff:
                 self.greylist_segments.add(i)
         
     def _init_clusters(self, prior_run, count_prior_sum):
-        [self.unassigned_segs.discard(s) for s in self.greylist_segments.union(self.blacklist_segments)]
+        [self.unassigned_segs.discard(s) for s in self.greylist_segments]
         if not self.seed_all_clusters:
-            first = (set(range(self.num_segments)) - self.greylist_segments - self.blacklist_segments)[0]
+            first = (set(range(self.num_segments)) - self.greylist_segments)[0]
             clusterID = 0
             self.cluster_counts[0] = self.segment_counts[0]
             self.unassigned_segs.discard(0)
@@ -203,7 +208,7 @@ class Run_Cov_DP:
             #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
             self.next_cluster_index = 1
         else: 
-            for i in set(range(self.num_segments)) - self.greylist_segments - self.blacklist_segments:
+            for i in set(range(self.num_segments)) - self.greylist_segments:
                 self.cluster_counts[i] = self.segment_counts[i]
                 self.unassigned_segs.discard(i)
                 self.cluster_dict[i] = sc.SortedSet([i])
@@ -238,32 +243,32 @@ class Run_Cov_DP:
         return np.concatenate([self.cluster_datapoints[clust_A], self.cluster_datapoints[clust_B]], axis=0)
     
     def _ML_cluster_from_r(self, r):
-        alpha = 50
-        beta = alpha/2 * 45
+        alpha = self.ig_alpha
+        beta = alpha/2 * self.ig_ssd
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
 
     def _ML_cluster_from_list(self, cluster_list):
         r = self._cluster_gen_from_list(cluster_list)
-        alpha = 50
-        beta = alpha/2 * 45
+        alpha = self.ig_alpha
+        beta = alpha/2 * self.ig_ssd
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
     
     def _ML_cluster_add_one(self, clusterID, segID):
         r = self._cluster_gen_add_one(clusterID, segID)
-        alpha = 50
-        beta = alpha/2 * 45
+        alpha = self.ig_alpha
+        beta = alpha/2 * self.ig_ssd
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
     
     def _ML_cluster_remove_one(self, clusterID, segID):
         r = self._cluster_gen_remove_one(clusterID, segID)
-        alpha = 50
-        beta = alpha/2 * 45
+        alpha = self.ig_alpha
+        beta = alpha/2 * self.ig_ssd
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
 
     def _ML_cluster_merge(self, clust_A, clust_B): 
         r = self._cluster_gen_merge(clust_A, clust_B)
-        alpha = 50
-        beta = alpha/2 * 45
+        alpha = self.ig_alpha
+        beta = alpha/2 * self.ig_ssd
         return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
 
     def ML_normalgamma(self, x, mu0, kappa0, alpha0, beta0):
@@ -409,12 +414,47 @@ class Run_Cov_DP:
             self.cluster_dict[choice].add(segID)
             self.cluster_MLs[choice] = self._ML_cluster(self.cluster_dict[choice])
         self.init_clusters = sc.SortedDict({k: v.copy() for k, v in self.cluster_dict.items()})
+    
+    # for assigning greylisted segments after the clustering is complete
+    def assign_greylist(self):
+        
+        #keep a copy of this since it will remain static
+        ML_C = np.array([ML for (ID, ML) in self.cluster_MLs.items()])
+        #make a deep copy of the cluster dict since we dont want assignment of greylisted clusters to affect subsequent assignments
+        greylist_added_dict = sc.SortedDict({k: v.copy() for k,v in a_cov_dp.cluster_dict.items()})
+    
+        for segID in a_cov_dp.greylist_segments:
+            # compute ML of S on its own
+            ML_S = self._ML_cluster_from_list([segID])
 
+            # compute ML of every cluster if S joins
+            ML_BC = np.array([self._ML_cluster_add_one(k, segID) for k in self.cluster_counts.keys()])
+
+            # likelihood ratios of S joining each other cluster S -> Ck
+            ML_rat = ML_BC - ML_C
+
+            # currently we do not support prior draws here
+            # construct transition probability distribution and draw from it
+            log_count_prior = self.DP_tuple_split_prior(segID)[:-1]
+            MLs_max = (ML_rat + log_count_prior).max()
+            choice_p = np.exp(ML_rat + log_count_prior - MLs_max) / np.exp(
+                ML_rat + log_count_prior - MLs_max).sum()
+            choice_idx = np.random.choice(
+                np.r_[0:len(ML_rat)],
+                p=choice_p
+            )
+            choice = np.r_[self.cluster_dict.keys()][choice_idx]
+            choice = int(choice)
+            greylist_added_dict[choice].add(segID)
+
+        # now set cluster dict to the one with the greylisted items assigned
+        self.cluster_dict = greylist_added_dict
+    
     def run(self, n_iter, sample_num=0):
 
         burned_in = False
         all_assigned = False
-
+        
         n_it = 0
         n_it_last = 0
 
@@ -425,7 +465,7 @@ class Run_Cov_DP:
                                  k in self.prior_clusters.keys()]] / sample_num
             self.initial_prior_assignment(count_prior)
 
-        white_segments = set(range(self.num_segments)) - self.greylist_segments - self.blacklist_segments
+        white_segments = set(range(self.num_segments)) - self.greylist_segments
         # while n_it < n_iter:
         while len(self.bins_to_clusters) < n_iter:
             
@@ -436,18 +476,17 @@ class Run_Cov_DP:
             
             # start couting for burn in
             if not n_it % 100:
-                self.cdict_history.append(self.cluster_dict.copy())
+                #self.cdict_history.append(self.cluster_dict.copy())
                 if not all_assigned and (self.cluster_assignments[white_segments] > -1).all():
                     all_assigned = True
                     n_it_last = n_it
-
                 # burn in after n_seg / n_clust iteration
                 if not burned_in and all_assigned and n_it - n_it_last > max(2000, self.num_segments):
                     if np.diff(np.r_[self.MLDP_total_history[-2000:]]).mean() <= 0:
                         print('burnin')
                         burned_in = True
                         n_it_last = n_it
-                        
+                           
             # pick either a segment or a cluster at random
             # pick segment
             if np.random.rand() < 0.5:
