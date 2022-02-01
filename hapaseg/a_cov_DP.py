@@ -122,16 +122,19 @@ class AllelicCoverage_DP:
         self.segment_r_list = [None] * self.num_segments
         self.segment_V_list = np.zeros(self.num_segments)
         self.segment_counts = np.zeros(self.num_segments, dtype=int)
-        self.segment_cov_bins = np.zeros(self.num_segments, dtype=int)
         self.segment_allele = np.zeros(self.num_segments, dtype=int)
         self.cluster_assignments = np.ones(self.num_segments, dtype=int) * -1
-         
+        self.segment_sums = np.zeros(self.num_segments)        
+        self.segment_ssd = np.zeros(self.num_segments)
+
         self.cluster_counts = sc.SortedDict({})
         self.unassigned_segs = sc.SortedList(np.r_[0:self.num_segments])
         self.cluster_dict = sc.SortedDict({})
         self.cluster_MLs = sc.SortedDict({})
         self.greylist_segments = sc.SortedSet({})
         self.cluster_datapoints = sc.SortedDict({})
+        self.cluster_sums = sc.SortedDict({})
+        self.cluster_ssd = sc.SortedDict({}) # sum of squared deviations
         
         self.prior_clusters = None
         self.prior_r_list = None
@@ -196,15 +199,16 @@ class AllelicCoverage_DP:
 
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r
-            self.segment_cov_bins[ID] = group_len
             self.segment_counts[ID] = group_len
+            self.segment_sums[ID] = r.sum()
+            self.segment_ssd[ID] = ((r - r.mean())**2).sum()
 
         # go back through segments and greylist ones with high variance
         greylist_mask = np.ones(self.num_segments, dtype=bool)
         greylist_mask[self.greylist_segments] = False
         cutoff = np.quantile(self.segment_V_list[greylist_mask], 0.80)
         self.ig_ssd = self.segment_V_list[greylist_mask].mean()
-        self.ig_alpha = self.segment_cov_bins[greylist_mask].mean()
+        self.ig_alpha = self.segment_counts[greylist_mask].mean()
         print(cutoff)
         for i in set(range(self.num_segments)) - self.greylist_segments:
             if self.segment_V_list[i] > cutoff:
@@ -221,6 +225,8 @@ class AllelicCoverage_DP:
             self.cluster_MLs[0] = self._ML_cluster_from_list([first])
             self.cluster_assignments[first] = 0
             self.cluster_datapoints[0] = self.segment_r_list[first].copy()
+            self.cluster_sums[0] = self.segment_sums[first]
+            self.cluster_ssd[0] = self.segment_ssd[first]
             #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
             self.next_cluster_index = 1
         else:
@@ -231,6 +237,8 @@ class AllelicCoverage_DP:
                 self.cluster_MLs[i] = self._ML_cluster_from_list([i])
                 self.cluster_assignments[i] = i
                 self.cluster_datapoints[i] = self.segment_r_list[i].copy()
+                self.cluster_sums[i] = self.segment_sums[i]
+                self.cluster_ssd[i] = self.segment_ssd[i]
             #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
             self.next_cluster_index = i+1
 
@@ -250,55 +258,128 @@ class AllelicCoverage_DP:
     # assumes the datapoints are ordered by segment ID
     def _cluster_gen_remove_one(self, clusterID, segID):
         cur = self.cluster_datapoints[clusterID]
-        seg_ind = self.cluster_dict[clusterID].index(segID)
-        st = self.segment_cov_bins[:seg_ind].sum()
-        en = st + self.segment_cov_bins[segID]
+        segs = self.cluster_dict[clusterID]
+        seg_ind = segs.index(segID)
+        st = self.segment_counts[segs][:seg_ind].sum()        
+        en = st + self.segment_counts[segID]
         return np.concatenate([cur[:st], cur[en:]], axis=0)
 
     def _cluster_gen_merge(self, clust_A, clust_B):
         return np.concatenate([self.cluster_datapoints[clust_A], self.cluster_datapoints[clust_B]], axis=0)
 
-    def _ML_cluster_from_r(self, r):
+    def _ML_cluster_from_r(self, r, r_mean, ssd):
+        n = len(r)
+        ssd_recalc = n * r.var()
+        if np.abs(ssd - ssd_recalc) > 0.01:
+            raise Exception("expected {}, got {}".format(ssd_recalc, ssd))
         alpha = self.ig_alpha
         beta = alpha / 2 * self.ig_ssd
-        return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
+        return self.ML_normalgamma(n, r_mean, 1e-4, alpha, beta, ssd)
 
     def _ML_cluster_from_list(self, cluster_list):
         r = self._cluster_gen_from_list(cluster_list)
+        n = len(r)
+        ssd = n * r.var()
         alpha = self.ig_alpha
         beta = alpha / 2 * self.ig_ssd
-        return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
+        return self.ML_normalgamma(n, r.mean(), 1e-4, alpha, beta, ssd)
 
     def _ML_cluster_add_one(self, clusterID, segID):
         r = self._cluster_gen_add_one(clusterID, segID)
+        
+        n = self.cluster_counts[clusterID]
+        m = self.segment_counts[segID]
+        mn = m + n
+        
+        sum_n = self.cluster_sums[clusterID]
+        sum_m = self.segment_sums[segID]
+        mu_mn = (sum_n + sum_m) / (mn)
+        
+        mu_n = sum_n / n
+        mu_m = sum_m / m
+        if abs(r.sum() - (sum_n + sum_m)) > 0.01:
+            raise Exception("{} {}".format(r.sum(),  (sum_n + sum_m)))
+        ssd = self.cluster_ssd[clusterID] + self.segment_ssd[segID] + m * n / (m + n) * (mu_m - mu_n)**2
+
         alpha = self.ig_alpha
         beta = alpha / 2 * self.ig_ssd
-        return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
+        return self.ML_normalgamma(mn, mu_mn, 1e-4, alpha, beta, ssd)
 
     def _ML_cluster_remove_one(self, clusterID, segID):
         r = self._cluster_gen_remove_one(clusterID, segID)
+        re = self.segment_sums[self.cluster_dict[clusterID] - {segID}].sum()
+        if abs(r.sum() - re) > 0.0001:
+            print(clusterID, segID)
+            raise Exception("remove one: {}, {}".format(r.sum(),re))
+        
+        mn = self.cluster_counts[clusterID]
+        n = self.segment_counts[segID]
+        m = mn - n
+
+        sum_mn = self.cluster_sums[clusterID]
+        sum_n = self.segment_sums[segID]
+
+        mu_m = (sum_mn - sum_n) / m
+        mu_n = self.segment_sums[segID] / n 
+        
+        #S_m = S_mn - S_n - mn/(m+n) / (mu_m - mu_n)^2
+        ssd = self.cluster_ssd[clusterID] - self.segment_ssd[segID] - (m * n) / (m + n) * (mu_m - mu_n)**2
+
         alpha = self.ig_alpha
         beta = alpha / 2 * self.ig_ssd
-        return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
+        return self.ML_normalgamma(m, mu_m, 1e-4, alpha, beta, ssd)
 
     def _ML_cluster_merge(self, clust_A, clust_B):
         r = self._cluster_gen_merge(clust_A, clust_B)
+
+        n = self.cluster_counts[clust_A]
+        m = self.cluster_counts[clust_B]
+        mn = m + n
+        sum_n = self.cluster_sums[clust_A]
+        sum_m = self.cluster_sums[clust_B]
+        mu_mn = (sum_n + sum_m) / (mn)
+        
+        mu_n = sum_n / n
+        mu_m = sum_m / m
+        
+        ssd = self.cluster_ssd[clust_A] + self.cluster_ssd[clust_B] + m * n / (m + n) * (mu_m - mu_n)**2
+
         alpha = self.ig_alpha
         beta = alpha / 2 * self.ig_ssd
-        return self.ML_normalgamma(r, r.mean(), 1e-4, alpha, beta)
-
+        if abs(len(r) * r.var() - ssd) > 0.01:
+            print(clust_A, clust_B)
+            print(n * self.cluster_datapoints[clust_A].var(), self.cluster_ssd[clust_A])
+            print(m * self.cluster_datapoints[clust_B].var(), self.cluster_ssd[clust_B])
+            raise Exception("in merge expected {} got {}".format(len(r) * r.var(), ssd))
+        return self.ML_normalgamma(mn, mu_mn, 1e-4, alpha, beta, ssd)
+    
     # worker function for normal-gamma distribution log Marginal Likelihood
-    def ML_normalgamma(self, x, mu0, kappa0, alpha0, beta0):
+    def ML_normalgamma(self, n, mu0, kappa0, alpha0, beta0, ssd):
         # for now x_mean is the same as mu0
         x_mean = mu0
-        n = len(x)
 
         mu_n = (kappa0*mu0 + n * x_mean) / (kappa0 + n)
         kappa_n = kappa0 + n
         alpha_n = alpha0 + n/2
-        beta_n = beta0 + 0.5 * ((x - x_mean)**2).sum() + kappa0 * n * (x_mean - mu0)**2 / 2*(kappa0 + n)
+        beta_n = beta0 + 0.5 * ssd + kappa0 * n * (x_mean - mu0)**2 / 2*(kappa0 + n)
 
         return ss.loggamma(alpha_n) - ss.loggamma(alpha0) + alpha0 * np.log(beta0) - alpha_n * np.log(beta_n) + np.log(kappa0 / kappa_n) / 2 - n * np.log(2*np.pi) / 2
+
+# utility method
+    def _ssd_cluster_remove_one(self, clusterID, segID):
+        mn = self.cluster_counts[clusterID]
+        n = self.segment_counts[segID]
+        m = mn - n
+
+        sum_mn = self.cluster_sums[clusterID]
+        sum_n = self.segment_sums[segID]
+
+        mu_m = (sum_mn - sum_n) / m
+        mu_n = self.segment_sums[segID] / n 
+        
+        #S_m = S_mn - S_n - mn/(m+n) / (mu_m - mu_n)^2
+        ssd = self.cluster_ssd[clusterID] - self.segment_ssd[segID] - (m * n) / (m + n) * (mu_m - mu_n)**2
+        return ssd
 
     def save_ML_total(self):
         ML_tot = np.r_[self.cluster_MLs.values()].sum()
@@ -332,7 +413,7 @@ class AllelicCoverage_DP:
 
     def DP_tuple_split_prior(self, seg_id):
         cur_cluster = self.cluster_assignments[seg_id]
-        seg_size = self.segment_cov_bins[seg_id]
+        seg_size = self.segment_counts[seg_id]
         cluster_vals = np.array(self.cluster_counts.values())
 
         if cur_cluster > -1:
@@ -357,8 +438,8 @@ class AllelicCoverage_DP:
     # ss.gammaln(self.alpha + N - M) - ss.gammaln(self.alpha + N)
     # from both split and stay
     def DP_split_prior(self, split_A_segs, split_B_segs):
-        n_a = self.segment_cov_bins[split_A_segs].sum()
-        n_b = self.segment_cov_bins[split_B_segs].sum()
+        n_a = self.segment_counts[split_A_segs].sum()
+        n_b = self.segment_counts[split_B_segs].sum()
         M = n_a + n_b
         split = 2 * np.log(self.alpha) + ss.gammaln(n_a) + ss.gammaln(n_b)
         stay = np.log(self.alpha) + ss.gammaln(M - 1)
@@ -425,7 +506,7 @@ class AllelicCoverage_DP:
                         print('burnin')
                         burned_in = True
                         n_it_last = n_it
-
+            
             # pick either a segment or a cluster at random
             # pick segment
             if np.random.rand() < 0.5:
@@ -506,6 +587,9 @@ class AllelicCoverage_DP:
                             self.cluster_datapoints[clustID] = self._cluster_gen_remove_one(clustID, segID)
                             self.cluster_dict[clustID].discard(segID)
                             self.cluster_MLs[clustID] = ML_A
+                            self.cluster_sums[clustID] -= self.segment_sums[segID]
+                            # this is lazy but doesnt get called often
+                            self.cluster_ssd[clustID] = self.cluster_counts[clustID] * self.cluster_datapoints[clustID].var()
                     else:
                         # if it wasn't previously assigned we need to remove it from the unassigned list
                         self.unassigned_segs.discard(segID)
@@ -516,6 +600,8 @@ class AllelicCoverage_DP:
                     self.cluster_dict[choice] = sc.SortedSet([segID])
                     self.cluster_datapoints[choice] = self.segment_r_list[segID].copy()
                     self.cluster_MLs[choice] = ML_S
+                    self.cluster_sums[choice] = self.segment_sums[segID]
+                    self.cluster_ssd[choice] = self.segment_ssd[segID]
                     self.next_cluster_index += 1
                 else:
                     # if remaining in same cluster, skip
@@ -532,6 +618,8 @@ class AllelicCoverage_DP:
                     self.cluster_MLs[choice] = ML_BC[list(self.cluster_counts.keys()).index(choice)]
                     # TODO possibly change to faster sorted insertion
                     self.cluster_datapoints[choice] = self._cluster_gen_from_list(self.cluster_dict[choice])
+                    self.cluster_sums[choice] += self.segment_sums[segID]
+                    self.cluster_ssd[choice] = self.cluster_counts[choice] * self.cluster_datapoints[choice].var()
                     # if seg was previously assigned we need to update its previous cluster
                     if clustID > -1:
                         # if segment was previously alone in cluster, that cluster will be destroyed
@@ -540,12 +628,16 @@ class AllelicCoverage_DP:
                             del self.cluster_dict[clustID]
                             del self.cluster_MLs[clustID]
                             del self.cluster_datapoints[clustID]
+                            del self.cluster_sums[clustID]
+                            del self.cluster_ssd[clustID]
                         else:
                             # otherwise update former cluster
                             self.cluster_counts[clustID] -= self.segment_counts[segID]
                             self.cluster_datapoints[clustID] = self._cluster_gen_remove_one(clustID, segID)
                             self.cluster_dict[clustID].discard(segID)
                             self.cluster_MLs[clustID] = ML_A
+                            self.cluster_sums[clustID] -= self.segment_sums[segID]
+                            self.cluster_ssd[clustID] = self.cluster_counts[clustID] * self.cluster_datapoints[clustID].var()
                     else:
                         self.unassigned_segs.discard(segID)
 
@@ -576,22 +668,55 @@ class AllelicCoverage_DP:
 
                     sorted_segs = clust_pick_segs[sort_indices]
                     sorted_datapoints = self._cluster_gen_from_list(sorted_segs)
-                    sorted_lens = self.segment_cov_bins[sorted_segs]
+                    sorted_lens = self.segment_counts[sorted_segs]
                     datapoint_ind = sorted_lens[0]
-
+                    n_B = sorted_lens[1:].sum() #n_A = datapoint_ind
+                    
+                    sorted_sums = self.segment_sums[sorted_segs]
+                    sum_A = sorted_sums[0]
+                    sum_B = sorted_sums[1:].sum()
+                    
+                    sorted_ssds = self.segment_ssd[sorted_segs]
+                    ssd_A = sorted_ssds[0]
+                    ssd_B = self._ssd_cluster_remove_one(clust_pick, sorted_segs[0])
+                    
                     search_inds = np.r_[1:len(sorted_vals)]
+                    print("splitting cluster:", clust_pick)
                     for i in search_inds:
                         A_list = sorted_segs[:i]
                         B_list = sorted_segs[i:]
 
                         A_r = sorted_datapoints[:datapoint_ind]
                         B_r = sorted_datapoints[datapoint_ind:]
-                        ML_rat = self._ML_cluster_from_r(A_r) + self._ML_cluster_from_r(B_r) - stay_ml
+                        mu_A = sum_A / datapoint_ind
+                        mu_B = sum_B/ n_B
+                        ML_A =  self._ML_cluster_from_r(A_r, mu_A, ssd_A)
+                        ML_B = self._ML_cluster_from_r(B_r, mu_B, ssd_B)
+                        ML_rat = ML_A + ML_B - stay_ml
+                        
                         dp_prior_rat = self.DP_split_prior(A_list, B_list)
                         ML_tot = ML_rat + dp_prior_rat
                         tot_list.append(ML_tot)
-
-                        datapoint_ind += sorted_lens[i]
+                        
+                        #update running statistics if there are more to compute
+                        if i < len(sorted_vals) - 1 :
+                            # S is the tuple we're moving from B to A
+                            len_S = sorted_lens[i]
+                            sum_S = sorted_sums[i]
+                            mu_S = sum_S / len_S
+                            
+                            ssd_S = self.segment_ssd[sorted_segs[i]]
+                            ssd_A = ssd_A + ssd_S + (datapoint_ind * len_S) / (datapoint_ind + len_S) * (mu_A - mu_S)**2
+                            n_newB = n_B - len_S
+                            mu_newB = (sum_B - sum_S)/ n_newB
+                
+                            ssd_B = ssd_B - ssd_S - (n_newB * len_S) / (n_newB + len_S) * (mu_newB - mu_S)**2
+                            datapoint_ind += len_S
+                            n_B -= len_S
+                            sum_A += sum_S
+                            sum_B -= sum_S
+                        
+                        
                     tot_list = np.array(tot_list)
                     tot_max = tot_list.max()
                     choice_p = np.exp(tot_list - tot_max) / np.exp(tot_list - tot_max).sum()
@@ -617,13 +742,16 @@ class AllelicCoverage_DP:
                         self.cluster_dict[clust_pick] = sc.SortedSet(A_list)
                         self.cluster_MLs[clust_pick] = self._ML_cluster_from_list(A_list)
                         self.cluster_datapoints[clust_pick] = self._cluster_gen_from_list(sorted(A_list))
-
+                        self.cluster_sums[clust_pick] = self.segment_sums[A_list].sum()
+                        self.cluster_ssd[clust_pick] = self.cluster_counts[clust_pick] * self.cluster_datapoints[clust_pick].var()
                         # create new cluster with next available index and add segments from list B
                         self.cluster_assignments[B_list] = self.next_cluster_index
                         self.cluster_counts[self.next_cluster_index] = sum(self.segment_counts[B_list])
                         self.cluster_dict[self.next_cluster_index] = sc.SortedSet(B_list)
                         self.cluster_MLs[self.next_cluster_index] = self._ML_cluster_from_list(B_list)
                         self.cluster_datapoints[self.next_cluster_index] = self._cluster_gen_from_list(sorted(B_list))
+                        self.cluster_sums[self.next_cluster_index] = self.segment_sums[B_list].sum()
+                        self.cluster_ssd[self.next_cluster_index] = self.cluster_counts[self.next_cluster_index] * self.cluster_datapoints[self.next_cluster_index].var()
                         self.next_cluster_index += 1
 
                 # otherwise we'll propose a merge
@@ -677,13 +805,17 @@ class AllelicCoverage_DP:
                         self.cluster_MLs[merged_ID] = ML_join[choice_idx]
                         self.cluster_datapoints[merged_ID] = self._cluster_gen_from_list(
                             self.cluster_dict[merged_ID])
+                        self.cluster_sums[merged_ID] += self.cluster_sums[vacatingID]
+                        self.cluster_ssd[merged_ID] = self.cluster_counts[merged_ID] * self.cluster_datapoints[merged_ID].var()
 
                         # delete last cluster
                         del self.cluster_counts[vacatingID]
                         del self.cluster_dict[vacatingID]
                         del self.cluster_MLs[vacatingID]
                         del self.cluster_datapoints[vacatingID]
-
+                        del self.cluster_sums[vacatingID]
+                        del self.cluster_ssd[vacatingID]
+                
             # save draw after burn in for every n_seg / (n_clust / 2) iterations
             # if burned_in and n_it - n_it_last > self.num_segments / (len(self.cluster_counts) * 2):
             if burned_in and n_it - n_it_last > self.num_segments:
