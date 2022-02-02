@@ -123,128 +123,6 @@ class AllelicCluster:
     # fit initial mu_k and epsilon_k for the cluster
     def NR_init(self):
         self.mu, self.lepsi = self.stats_init()
-    
-    # helper init derivative functions
-
-    def gradmu(self):
-        return ((self.epsi * (self.r - self.exp)) / (self.epsi + self.exp)).sum(0)
-
-    def gradepsi(self):
-        return (ss.digamma(self.r + self.epsi) - ss.digamma(self.epsi) + (
-                self.exp - self.r + self.exp *
-                np.log(self.epsi /
-                       (self.exp + self.epsi)) + self.epsi * np.log(self.epsi / (self.exp + self.epsi))) /
-                (self.exp + self.epsi)).sum(0)
-
-    def hessmu(self):
-        return (-(self.exp * self.epsi * (self.r + self.epsi)) / ((self.exp + self.epsi) ** 2)).sum(0)
-
-    def hessepsi(self):
-        return (ss.polygamma(1, self.r + self.epsi) -
-                ss.polygamma(1, self.epsi) + (self.exp ** 2 + self.r * self.epsi) /
-                (self.epsi * (self.exp + self.epsi) ** 2)).sum(0)
-
-    def hessmuepsi(self):
-        return ((self.exp * (self.r - self.exp)) / (self.exp + self.epsi) ** 2).sum(0)
-
-    # optimizes mu_i and epsi_i values for either a split segment or a join segment
-    # NR optmization for NB seems to be much more unstable than the statsmodels BFGS default optimizer
-    def NR_segment(self, ind, ret_hess=False):
-        # start by setting mu_i to the average of the residuals
-        mui_init = np.log(np.exp(np.log(self.r[ind[0]:ind[1]]) - (self.mu) -
-                                 (self.C[ind[0]:ind[1], :] @ self.beta).flatten()).mean())
-        # lepsi_init = np.log((((np.log(self.r[ind[0]:ind[1]]) - self.mu)**2 / self.mu - 1)).sum() / (ind[1]-ind[0]))
-        self.mu_i = mui_init
-        self.lepsi_i = self.lepsi_i_arr[ind[0]]
-        cur_iter = 0
-        max_iter = 75
-        self.mu_i, self.lepsi_i = self.stats_optimizer(ind)
-        stats_ll = self.ll_nbinom(self.r[ind[0]:ind[1]], self.mu, self.C[ind[0]:ind[1]], self.beta,
-                                  np.ones(self.r[ind[0]:ind[1]].shape) * self.mu_i, self.lepsi_i)
-        stats_mui, stats_lepsi = self.mu_i, self.lepsi_i
-        while (cur_iter < max_iter):
-            self.epsi_i = np.exp(self.lepsi_i)
-            self.exp = np.exp(self.mu + (self.C[ind[0]:ind[1]] @ self.beta).flatten() + self.mu_i)
-
-            gmu_i = self.gradmu_i(ind)
-            hmu_i = self.hessmu_i(ind)
-            gepsi_i = self.gradepsi_i(ind)
-            hepsi_i = self.hessepsi_i(ind) * self.epsi_i ** 2 + gmu_i * self.epsi_i
-            hmuepsi_i = self.hessepsi_i(ind)
-
-            grad = np.r_[gmu_i, gepsi_i * self.epsi_i]
-            H = np.r_[np.c_[hmu_i, hmuepsi_i], np.c_[hmuepsi_i, hepsi_i]]
-
-            try:
-                inv_H = np.linalg.inv(H)
-            except:
-                print('reached singular matrix. reseeting with grid search')
-                self.lepsi_i = self.ll_gridsearch(ind)
-                continue
-            delta = inv_H @ grad
-
-            self.mu_i -= delta[0]
-            self.lepsi_i -= delta[1]
-
-            if np.isnan(self.mu_i):
-                # if we hit a nan try a new initialization
-                print('hit a nan in optimizer, reseting')
-                self.mu_i = mui_init + np.random.rand() - 0.5
-                self.lepsi_i = self.ll_gridsearch(ind)
-                continue
-
-            if np.linalg.norm(grad) < 1e-5:
-                # print('opt reached')
-                # print(np.linalg.det)
-                break
-
-            if cur_iter == 25:
-                # if its taking this long we should reset with a grid search
-                print('failing to converge. Trying grid search')
-                self.mu_i = mui_init
-                self.lepsi_i = self.ll_gridsearch(ind)
-
-            if cur_iter == 50:
-                print('trying stats opt')
-                self.mu_i, self.lepsi_i = self.stats_optimizer(ind)
-
-            if cur_iter == 75:
-                print('failed to optimize: ', ind)
-
-            cur_iter += 1
-        # print(ind, self.mu_i, self.lepsi_i)
-        # need to theshold due to overflow
-        self.lepsi_i = min(self.lepsi_i, 40)
-
-        NR_ll = self.ll_nbinom(self.r[ind[0]:ind[1]], self.mu, self.C[ind[0]:ind[1]], self.beta,
-                               np.ones(self.r[ind[0]:ind[1]].shape) * self.mu_i, self.lepsi_i)
-        self.opt_views.append((ind, stats_ll, stats_mui, stats_lepsi, NR_ll, self.mu_i, self.lepsi_i))
-        if ret_hess:
-            return self.mu_i, self.lepsi_i, H
-        else:
-            return self.mu_i, self.lepsi_i
-
-    # helper segment derivative function ** make sure to set epsi_i, mu_i and exp before use
-    def gradmu_i(self, ind):
-        return ((self.epsi_i * (self.r[ind[0]:ind[1]] - self.exp)) / (self.epsi_i + self.exp)).sum(0)
-
-    def gradepsi_i(self, ind):
-        return (ss.digamma(self.r[ind[0]: ind[1]] + self.epsi_i) - ss.digamma(self.epsi_i) + (
-                self.exp - self.r[ind[0]: ind[1]] + self.exp * np.log(
-            self.epsi_i / (self.exp + self.epsi_i)) + self.epsi_i * np.log(
-            self.epsi_i / (self.exp + self.epsi_i))) / (self.exp + self.epsi_i)).sum(0)
-
-    def hessmu_i(self, ind):
-        return (-(self.exp * self.epsi_i * (self.r[ind[0]: ind[1]] + self.epsi_i)) /
-                ((self.exp + self.epsi_i) ** 2)).sum(0)
-
-    def hessepsi_i(self, ind):
-        return (ss.polygamma(1, self.r[ind[0]: ind[1]] + self.epsi_i) -
-                ss.polygamma(1, self.epsi_i) + (self.exp ** 2 + self.r[ind[0]: ind[1]] * self.epsi_i) /
-                (self.epsi_i * (self.exp + self.epsi_i) ** 2)).sum(0)
-
-    def hessmuepsi_i(self, ind):
-        return ((self.exp * (self.r[ind[0]: ind[1]] - self.exp)) / (self.exp + self.epsi_i) ** 2).sum(0)
 
     def get_seg_ind(self, seg):
         return seg, seg + self.segment_lens[seg]
@@ -300,17 +178,6 @@ class AllelicCluster:
         return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
                 (r * (mu + bc + mu_i - np.log(epsi + exp))) +
                 (epsi * np.log(epsi / (epsi + exp)))).sum()
-
-    # DEPRECATED
-    # this method was used as a fallback for the hand rolled NR method. It is no longer used
-    def ll_gridsearch(self, ind):
-        eps = np.r_[-5:15:0.1]
-        res = np.zeros(eps.shape)
-        r_ind = self.r[ind[0]:ind[1]]
-        C_ind = self.C[ind[0]:ind[1]]
-        for i, ep in enumerate(eps):
-            res[i] = self.ll_nbinom(r_ind, self.mu, C_ind, self.beta, self.mu_i, ep)
-        return eps[np.argmax(res)]
 
     """
     method for convolving a change kernel with a given window across an array of residuals. This change kernel returns 
@@ -507,73 +374,6 @@ class AllelicCluster:
                     break
         return lls, split_indices, mus, lepsis, Hs
 
-    """
-    DEPRECATED. 
-    
-    This function was used for the metropolis sampler
-    
-    Main function for deciding where to split segments. For segments less than 150 bins we consider every feasible split.
-    For larger segments we apply the change kernel and do detailed sampling to find proposal splits in order to limit
-    the number of optimizer calls.
-    """
-    def calc_pk(self, ind, break_pick=None, debug=False):
-        ind_len = ind[1] - ind[0]
-        # do not allow segments to be split into segments of size less than 2
-        if ind_len < 4 and not debug:
-            raise Exception('segment was too small to split: length: ', ind[1] - ind[0])
-        
-        if break_pick:
-            #check to see if we have this query cached
-            if (ind[0], ind[1], break_pick) in self.breakpoint_cache:
-                res = self.breakpoint_cache[(ind[0], ind[1], break_pick)]
-                return res[0], res[1], res[2], res[3], res[4]
-        
-        # if the cluster is sufficiently small we interrogate the whole space of splits    
-        if ind_len < 150:
-            split_indices = np.r_[ind[0] + 2: ind[1] - 1, -1]
-            lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
-        # otherwise we deploy our change kernel to limit our search space
-        # these parameters essentially differentiate between wgs and exome samples
-        else:
-            split_indices = self._find_difs(ind)
-            
-            # if we are inerested in the liklihood of a particular split we add that to the list of indices to sample
-            if break_pick:
-                split_indices.append(break_pick)
-            
-            #option of no split is index -1
-            split_indices.append(-1)
-
-            # get lls from the difference kernel guesses
-            lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
-            lls, split_indices, mus, lepsis, Hs = self._detailed_sampling(ind, lls, split_indices, mus, lepsis, Hs)
-
-        lls = np.array(lls)
-        log_k_probs = (lls - LSE(lls)).flatten()
-        if break_pick:
-            i = list(split_indices).index(break_pick)
-            # return the probability of proposing a split here along with the optimal parameter values
-            return lls[i], np.exp(log_k_probs[i]), mus[i], lepsis[i], Hs[i]
-
-        else:
-            # pick a breakpoint based on relative likelihood
-            b_idx = np.random.choice(np.r_[:len(split_indices)], p=np.exp(log_k_probs))
-            break_pick = split_indices[b_idx]
-            
-            if break_pick < 0:
-                #we picked no split so we end this iteration
-                if debug:
-                    return lls, split_indices, break_pick, None, None, None, None, None
-                return -1, None, None, None, None, None
-
-            if debug:
-                return lls, split_indices, break_pick, lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx]
-            
-            #cache this breakpoint for future joins
-            self.breakpoint_cache[(ind[0],ind[1],break_pick)] = (lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx])
-
-            return break_pick, lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx]
-
     # function for calculating the log marginal likelihood of a split given the log likelihood and the hessians for
     # the NB fit of each split segment
     def _lls_to_MLs(self, lls, Hs):
@@ -630,13 +430,6 @@ class AllelicCluster:
         if ret_opt_params:
             return mu_share, lepsi_share, self._get_log_ML_join(H_share) + ll_join
         return mu_share, lepsi_share, self._get_log_ML_approx_join(H_share) + ll_join
-
-    # Deprecated methods for calculating the proposal distributions in our metropolis sampling scheme
-    def _log_q_split(self, pk):
-        return np.log(pk / len(self.segments))
-
-    def _log_q_join(self):
-        return - np.log(len(self.segments))
 
     """
     Split segment method. This method chooses a segment at random
@@ -955,7 +748,7 @@ class NB_MCMC_SingleCluster:
         while self.n_iter > len(self.F_samples):
 
             # check if we have burnt in
-            if n_it >= min_it  and not self.burnt_in and not n_it % 50:
+            if n_it >= min_it and not self.burnt_in and not n_it % 50:
                 if np.diff(np.array(self.ll_iter[-min_it:])).mean() <= 0:
                     print('burnt in!')
                     self.burnt_in = True
