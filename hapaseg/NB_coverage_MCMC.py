@@ -1,11 +1,9 @@
 import numpy as np
 import scipy.special as ss
 import sortedcontainers as sc
-import os
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 import warnings
 from statsmodels.tools.sm_exceptions import ConvergenceWarning, HessianInversionWarning
-import h5py
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
@@ -100,7 +98,8 @@ class AllelicCluster:
         self.segments = sc.SortedSet([0])
         self.segment_lens = sc.SortedDict([(0, len(self.r))])
         
-        #keep cache of previously computed breakpoints
+        # keep cache of previously computed breakpoints for fast splitting
+        # these breakpoints keys are in the form (st, en, breakpoint)
         self.breakpoint_cache = {}
 
         self.phase_history = []
@@ -123,7 +122,6 @@ class AllelicCluster:
 
     # fit initial mu_k and epsilon_k for the cluster
     def NR_init(self):
-        ind_len = len(self.r)
         self.mu, self.lepsi = self.stats_init()
     
     # helper init derivative functions
@@ -149,8 +147,8 @@ class AllelicCluster:
     def hessmuepsi(self):
         return ((self.exp * (self.r - self.exp)) / (self.exp + self.epsi) ** 2).sum(0)
 
-    # TODO something wrong here
     # optimizes mu_i and epsi_i values for either a split segment or a join segment
+    # NR optmization for NB seems to be much more unstable than the statsmodels BFGS default optimizer
     def NR_segment(self, ind, ret_hess=False):
         # start by setting mu_i to the average of the residuals
         mui_init = np.log(np.exp(np.log(self.r[ind[0]:ind[1]]) - (self.mu) -
@@ -257,20 +255,20 @@ class AllelicCluster:
     def get_ll(self):
         return self.ll_cluster(self.mu_i_arr, self.lepsi_i_arr, True)
     
-    # use stats optimizer to set cluster mu and lepsi
+    # use stats optimizer to set initial cluster mu and lepsi
     def stats_init(self):
-        endog = np.exp(np.log(self.r.flatten()) - (self.C @ self.beta).flatten())
+        endog = self.r.flatten()
         exog = np.ones(self.r.shape[0])
-        sNB = statsNB(endog, exog)
+        sNB = statsNB(endog, exog, offset=(self.C @ self.beta).flatten())
         res = sNB.fit(disp=0)
         return res.params[0], -np.log(res.params[1])
 
-    # off the shelf optimizer for testing
+    # statsmodels NB BFGS optimizer is more stable than NR so we will use it until migration to LNP
     def stats_optimizer(self, ind, ret_hess=False):
-        endog = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) - (self.C[ind[0]:ind[1]] @ self.beta).flatten())
+        endog = self.r[ind[0]:ind[1]].flatten()
         exog = np.ones(self.r[ind[0]:ind[1]].shape[0])
         exposure = np.ones(self.r[ind[0]:ind[1]].shape[0]) * np.exp(self.mu)
-        sNB = statsNB(endog, exog, exposure=exposure)
+        sNB = statsNB(endog, exog, exposure=exposure, offset=(self.C[ind[0]:ind[1]] @ self.beta).flatten())
         res = sNB.fit(disp=0)
 
         if ret_hess:
@@ -278,6 +276,7 @@ class AllelicCluster:
         else:
             return res.params[0], -np.log(res.params[1])
 
+    # method for calculating the overall log likelihood of an allelic cluster given a hypothetical mu_i and lepsi arrays
     def ll_cluster(self, mu_i_arr, lepsi_i_arr, take_sum=True):
         mu_i_arr = mu_i_arr.flatten()
         epsi_i_arr = np.exp(lepsi_i_arr).flatten()
@@ -291,6 +290,7 @@ class AllelicCluster:
             return lls
         return lls.sum()
 
+    # method for calculating the log likelihood of our NB model
     @staticmethod
     def ll_nbinom(r, mu, C, beta, mu_i, lepsi):
         r = r.flatten()
@@ -301,7 +301,8 @@ class AllelicCluster:
                 (r * (mu + bc + mu_i - np.log(epsi + exp))) +
                 (epsi * np.log(epsi / (epsi + exp)))).sum()
 
-    # TODO make this into a binary search
+    # DEPRECATED
+    # this method was used as a fallback for the hand rolled NR method. It is no longer used
     def ll_gridsearch(self, ind):
         eps = np.r_[-5:15:0.1]
         res = np.zeros(eps.shape)
@@ -310,7 +311,13 @@ class AllelicCluster:
         for i, ep in enumerate(eps):
             res[i] = self.ll_nbinom(r_ind, self.mu, C_ind, self.beta, self.mu_i, ep)
         return eps[np.argmax(res)]
+
+    """
+    method for convolving a change kernel with a given window across an array of residuals. This change kernel returns 
+    the absolute difference between the means of the residuals within windows on either side of a rolling change point.
     
+    returns a list of peaks above the 98th quantile that are seperated by at least max(25, window/2)
+    """
     def _change_kernel(self, ind, residuals, window):
         
         difs = []
@@ -322,13 +329,22 @@ class AllelicCluster:
             prior = np.exp(2 * np.abs(x - len(difs) / 2) / len(difs))
             difs = prior * difs
         
-        cutoff = difs.mean() + 2 * np.sqrt(difs.var())
-        
-        peaks, _ = find_peaks(difs, height=cutoff, distance= max(25, window/2))
+        #cutoff = difs.mean() + 2 * np.sqrt(difs.var())
+        cutoff = np.quantile(difs, 0.98)
+
+        # use helper function to find peaks above cutoff that are seperated
+        peaks, _ = find_peaks(difs, height=cutoff, distance=max(25, window/2))
         peaks = peaks + ind[0] + window
         return list(peaks)
 
-    # finds the indices of the top ~3% (2 stds above mean) of the difference kernel values in addition to the first and last window bins
+    """
+    method for narrowing search space of possible split positions in a segment. Finds the indices of the top ~2% of 
+    the difference kernel values for multiple window sizes in addition to the first and last window bins. Falls back on 
+    an exhaustive search, which means returning all possible split points.
+    
+    returns list of possible split points to try
+    """
+    #
     def _find_difs(self, ind):
         residuals = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) - (self.mu.flatten()) - (
                     self.C[ind[0]:ind[1]] @ self.beta).flatten())
@@ -341,7 +357,6 @@ class AllelicCluster:
             difs.append(self._change_kernel(ind, residuals, window))
         difs_idxs = set().union(*difs)
         difs_idxs = np.r_[list(difs_idxs)]
-       # print(difs_idxs)
         # if there are no that pass the threshold return them all
         if len(difs_idxs) ==0:
             print('no significant bins')
@@ -349,9 +364,14 @@ class AllelicCluster:
 
         # add on first and last windows
         difs_idxs = np.r_[np.r_[ind[0] + 2: ind[0] + 10], difs_idxs, np.r_[ind[1] - 10:ind[1] - 1]]
-        #print('len ind: {}, len search region: {}'.format(ind[1] - ind[0], len(difs_idxs)))
         return list(difs_idxs)
 
+    """
+    Given the indices of the segment and the proposed split indices to try, this method computes the likelihood of each
+    split proposal and saves the associated mu, lepsi and Hessian results associated to the split segments. 
+    
+    Returns lists of likelihoods and optimal split parameters
+    """
     def _calculate_splits(self, ind, split_indices):
         lls = []
         mus = []
@@ -384,7 +404,15 @@ class AllelicCluster:
                 lls.append(ll)
 
         return lls, mus, lepsis, Hs
+
+    """
+    This method is simpler of the two options for refining the search space of possible splits, which is important for 
+    both finding the best split and for properly normalizing the split likelihoods. This neighborhood sampling approach
+    simply samples the 5 positions on either side of a split proposal.
     
+    returns an amended list of likelihoods and optimal parameters for the original split indicies in addition to the 
+    ones sampled from the neighbors of the originals.
+    """
     def _neighborhood_sampling(self, ind, lls, split_indices, mus, lepsis, Hs):
 
         # find the most likely index and those indices within a significant range
@@ -413,6 +441,15 @@ class AllelicCluster:
         
         return lls, split_indices, mus, lepsis, Hs
 
+    """
+        This method is used for refining the search space of possible splits, which is important for 
+        both finding the best split and for properly normalizing the split likelihoods. It works by iteratively sampling
+        points in either direction of a proposed split until it reaches a potential split point which is less than 1/1k 
+        as likely as the most likely point seen so far.
+
+        returns an amended list of likelihoods and optimal parameters for the original split indicies in addition to the 
+        ones sampled.
+        """
     def _detailed_sampling(self, ind, lls, split_indices, mus, lepsis, Hs):
         max_samples = 25
         # find the most likely index and those indices within a significant range
@@ -468,9 +505,17 @@ class AllelicCluster:
                     l_samples +=1
                 else:
                     break
-        #print('num_extra samps', num_samps)
         return lls, split_indices, mus, lepsis, Hs
-        
+
+    """
+    DEPRECATED. 
+    
+    This function was used for the metropolis sampler
+    
+    Main function for deciding where to split segments. For segments less than 150 bins we consider every feasible split.
+    For larger segments we apply the change kernel and do detailed sampling to find proposal splits in order to limit
+    the number of optimizer calls.
+    """
     def calc_pk(self, ind, break_pick=None, debug=False):
         ind_len = ind[1] - ind[0]
         # do not allow segments to be split into segments of size less than 2
@@ -506,7 +551,6 @@ class AllelicCluster:
         lls = np.array(lls)
         log_k_probs = (lls - LSE(lls)).flatten()
         if break_pick:
-            #i = break_pick - ind[0] - 2
             i = list(split_indices).index(break_pick)
             # return the probability of proposing a split here along with the optimal parameter values
             return lls[i], np.exp(log_k_probs[i]), mus[i], lepsis[i], Hs[i]
@@ -527,17 +571,25 @@ class AllelicCluster:
             
             #cache this breakpoint for future joins
             self.breakpoint_cache[(ind[0],ind[1],break_pick)] = (lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx])
+
             return break_pick, lls[b_idx], np.exp(log_k_probs[b_idx]), mus[b_idx], lepsis[b_idx], Hs[b_idx]
 
+    # function for calculating the log marginal likelihood of a split given the log likelihood and the hessians for
+    # the NB fit of each split segment
     def _lls_to_MLs(self, lls, Hs):
         MLs = np.zeros(len(lls))
         for i, (ll, Hs) in enumerate(zip(lls, Hs)):
             laplacian = self._get_log_ML_split(Hs[0], Hs[1])
+            # the split results in a nan make it impossible to split there
             if np.isnan(laplacian):
                 laplacian = -1e50
             MLs[i] = ll + laplacian
         return MLs
 
+    """
+    Function for computing log MLs for all possible split points of interest. If a segment is small enough we will 
+    consider every possible split point, otherwise will use change kernel and detailed sampling
+    """
     def _get_split_liks(self, ind, debug=False):
         ind_len = ind[1] - ind[0]
         # do not allow segments to be split into segments of size less than 2
@@ -559,14 +611,16 @@ class AllelicCluster:
 
         return split_indices, MLs, mus, lepsis
 
+    # computes ML component from hessian approximation for a single segment
     def _get_log_ML_approx_join(self, Hess):
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-Hess))) / 2
 
+    # computes ML component from hessian approximation for two split segments
     def _get_log_ML_split(self, H1, H2):
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-H1) * np.linalg.det(-H2))) / 2
 
+    # computes the log ML of joining two segments
     def _log_ML_join(self, ind, ret_opt_params=False):
-        # mu_share, lepsi_share, H_share = self.NR_segment(ind, True)
         mu_share, lepsi_share, H_share = self.stats_optimizer(ind, True)
         tmp_mui = self.mu_i_arr.copy()
         tmp_mui[ind[0]:ind[1]] = mu_share
@@ -577,13 +631,22 @@ class AllelicCluster:
             return mu_share, lepsi_share, self._get_log_ML_join(H_share) + ll_join
         return mu_share, lepsi_share, self._get_log_ML_approx_join(H_share) + ll_join
 
+    # Deprecated methods for calculating the proposal distributions in our metropolis sampling scheme
     def _log_q_split(self, pk):
         return np.log(pk / len(self.segments))
 
     def _log_q_join(self):
         return - np.log(len(self.segments))
 
-    # TODO: check if marginal liklihoods are correct
+    """
+    Split segment method. This method chooses a segment at random
+    from the allelic cluster, and calculates the MLs of splitting the segment either every possible position or positions
+    informed by the change kernel heuristic. Compares the MLs of splitting the segment at each position with the ML of 
+    the joint cluster and probabilistically takes an action proportional to likelihood. 
+    
+    Returns -1 if splitting was skipped due to segment being too small to split (<4 bins), 0 if the choice was not to
+    leave the cluster as is, and <breakpoint> if the segment was split at <breakpoint>
+    """
     def split(self, debug):
 
         # pick a random segment
@@ -625,11 +688,19 @@ class AllelicCluster:
             self.lepsi_i_arr[break_idx:ind[1]] = lepsis[1]
 
             self.F.update([break_idx, break_idx])
-            # print(self.F)
             self.phase_history.append(self.F.copy())
             return break_idx
         # otherwise we have chosen to join and we do nothing
         return 0
+
+    """
+    Join segments method. This method chooses a segment at random from the allelic cluster, and probabilistically 
+    chooses to join that segment with its neighbor to the right. This action is taken with probability equal to the 
+    ratio of the joint and split MLs
+    
+    returns -1 if there is only one segment, 0 if the proposed join is rejected, and <breakpoint> if a join occurred,
+    where <breakpoint is the left most index of the right segment joined.
+    """
 
     def join(self, debug):
         num_segs = len(self.segments)
@@ -660,15 +731,15 @@ class AllelicCluster:
             self.segments.discard(seg_r)
             del self.segment_lens[seg_r]
             self.segment_lens[seg_l] = ind[1] - ind[0]
-            # print('joining!')
             # update mu_i and lepsi_i values
             self.mu_i_arr[ind[0]:ind[1]] = mu_share
             self.lepsi_i_arr[ind[0]:ind[1]] = lepsi_share
 
+            # we need to discard twice since the breakpoint is saved
+            # both as an end to an interval and a start to the next interval
             self.F.discard(seg_r)
             self.F.discard(seg_r)
-            # self.phase_history.append(self.F.copy())
-            #   print(self.F)
+            self.phase_history.append(self.F.copy())
             return seg_r
 
         return 0
@@ -676,6 +747,10 @@ class AllelicCluster:
 
 class NB_MCMC_AllClusters:
 
+    """
+    This class is for running segmentation on all allelic clusters on the same node. Each iteration first randomly
+    chooses a cluster, and then proposes and split/join operation.
+    """
     def __init__(self, n_iter, r, C, Pi):
         self.n_iter = n_iter
         self.r = r
@@ -817,9 +892,15 @@ class NB_MCMC_AllClusters:
         overall_exposure = mu_global + mu_i_samples[:, -1]
         global_beta = self.update_beta(overall_exposure)
         return seg_samples, global_beta, mu_i_samples
-        
+
         # TODO: add visualization script
 
+    """
+    This class is for running segmentation on a single allelic clusters, which allows for scattering cluster segmentations
+    across nodes. Under the current structuring of the package the global beta values still need to be calculated in each
+    node, hence the need for passing the full r, C, and Pi matrices to each call. In the future this should be pushed to
+    the initialization sequence in the run_coverage_mcmc class.
+    """
 class NB_MCMC_SingleCluster:
 
     def __init__(self, n_iter, r, C, Pi, cluster_num):
@@ -867,7 +948,7 @@ class NB_MCMC_SingleCluster:
             debug=False,
             stop_after_burnin=False):
         print("starting MCMC coverage segmentation for cluster {}...".format(self.cluster_num))
-        
+
         past_it = 0
         n_it = 0
         min_it = min(200, max(50, self.r.shape[0]))
@@ -907,15 +988,7 @@ class NB_MCMC_SingleCluster:
             n_it += 1
             self.ll_iter.append(self.ll_cluster)
 
-    def update_beta(self, total_exposure):
-        endog = np.exp(np.log(self.r.flatten()) - total_exposure)
-        exog = self.C
-        start_params = np.r_[self.beta.flatten(), 1]
-        sNB = statsNB(endog, exog, start_params=start_params)
-        res = sNB.fit(start_params=start_params, disp=0)
-        return res.params[:-1]
-
-    # return just the preliminary beta in this case since we cant do global calculation until we see all of the clusters
+    # return just the local beta in this case since we cant do global calculation until we see all of the clusters
     def prepare_results(self):
         num_draws = len(self.F_samples)
         num_bins = len(self.cluster.r)
@@ -933,8 +1006,6 @@ class NB_MCMC_SingleCluster:
                 seg_counter += 1
 
         return segmentation_samples, self.beta, mu_i_full
-
-        # TODO: add visualization script
 
     def visualize_cluster_samples(self, savepath):
         residuals = np.exp(np.log(self.cluster.r.flatten()) - (self.cluster.mu.flatten()) - (self.cluster.C@self.cluster.beta).flatten())
