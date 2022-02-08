@@ -786,7 +786,7 @@ class DPinstance:
 
         return liks
 
-    def run(self, n_iter = 0, n_samps = 0, stop_after_assignment = False):
+    def run(self, n_iter = 0, n_samps = 0):
         #
         # assign segments to likeliest prior component {{{
 
@@ -847,8 +847,6 @@ class DPinstance:
         self.clust_members = sc.SortedDict({ k : set(v) for k, v in self.S.groupby("clust").groups.items() if k != -1 })
         # for the first round, this is { 1 : {0} }
 
-        unassigned_segs = sc.SortedList(self.S.index[self.S["clust"] == -1])
-
         # store this as numpy for speed
         self.clusts = self.S["clust"].values
 
@@ -859,7 +857,6 @@ class DPinstance:
         self.phase_orientations = []
 
         burned_in = False
-        all_assigned = False
         all_touched = False
         seg_touch_idx = np.zeros(len(self.S), dtype = bool)
 
@@ -884,10 +881,10 @@ class DPinstance:
 
             # poll every 100 iterations for burnin status
             if not n_it % 100:
-                self.lik_tmp.append(self.post)
-                if not all_assigned and len(unassigned_segs) == 0:
-                    all_assigned = True
-                if not burned_in and all_assigned:
+
+                # have most segments been adjacency corrected?
+                # if so, has the overall likelihood stabilized enough that we're burned in?
+                if not burned_in:
                     # 1. have >90% of segments been adjacency corrected?
                     # print(seg_touch_idx.mean())
                     if seg_touch_idx.mean() > 0.9:
@@ -906,13 +903,7 @@ class DPinstance:
 
             # pick a segment at random
             if np.random.rand() < 0.5:
-            #if np.random.rand() < 1:
-                # bias picking unassigned segments if >90% of segments have been assigned
-                if len(unassigned_segs) > 0 and len(unassigned_segs)/len(self.S) < 0.1 and np.random.rand() < 0.5:
-                    seg_idx = sc.SortedSet({np.random.choice(unassigned_segs)})
-                else:
-                    seg_idx = sc.SortedSet({np.random.choice(len(self.S))})
-
+                seg_idx = sc.SortedSet({np.random.choice(len(self.S))})
                 cur_clust = int(self.clusts[seg_idx])
 
                 # expand segment to include all adjacent segments in the same cluster,
@@ -989,7 +980,6 @@ class DPinstance:
                         self.clust_sums[cur_clust] -= np.r_[self._Ssum_ph(seg_idx, min = True), self._Ssum_ph(seg_idx, min = False)]
                         self.clust_members[cur_clust] -= set(seg_idx)
 
-                    unassigned_segs.update(seg_idx)
                     self.clusts[seg_idx] = -1
 
             # pick a cluster at random
@@ -1011,13 +1001,9 @@ class DPinstance:
                 del self.clust_counts[cl_idx]
                 del self.clust_sums[cl_idx]
                 del self.clust_members[cl_idx]
-                unassigned_segs.update(seg_idx)
                 self.clusts[seg_idx] = -1
 
                 move_clust = True
-
-            if not all_assigned:
-                seg_touch_idx[seg_idx] += 1
 
             #
             # perform phase correction on segment/cluster
@@ -1129,10 +1115,9 @@ class DPinstance:
             #adj_BC = np.zeros([len(self.clust_sums), 2])
 
             log_adj_lik = 0
-            if not move_clust and not split_clust: # or (all_assigned and move_clust and np.random.rand() < 0.01):
+            if not move_clust and not split_clust: # or (move_clust and np.random.rand() < 0.01):
                 log_adj_lik = self.compute_adj_prob(seg_idx)
-                if all_assigned:
-                    seg_touch_idx[seg_idx] = True
+                seg_touch_idx[seg_idx] = True
 
             # p(X|clust,phase)p(X|seg,phase)p(clust)
             num = (MLs               # p({a_i, b_i}_{i\in B} | {a_i, b_i}_{i\in clust}, phase_{i\in B})
@@ -1209,8 +1194,6 @@ class DPinstance:
 
                 self.clust_members[choice].update(set(seg_idx))
 
-            for si in seg_idx:
-                unassigned_segs.discard(si)
 
             # track global state of cluster assignments
             # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
