@@ -786,7 +786,7 @@ class DPinstance:
 
         return liks
 
-    def run(self, n_iter = 50):
+    def run(self, n_iter = 0, n_samps = 0, stop_after_assignment = False):
         #
         # assign segments to likeliest prior component {{{
 
@@ -869,10 +869,18 @@ class DPinstance:
 
         n_it = 0
         n_it_last = 0
-        while len(self.segs_to_clusters) < n_iter:
+        while True:
             if not n_it % 1000:
                 print(self.S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
                 print("n unassigned: {}".format((self.S["clust"] == -1).sum()))
+
+            # stop after a raw number of iterations
+            if n_iter > 0 and n_it > n_iter:
+                return
+
+#            # stop after a number of samples have been taken
+#            if n_samps > 0 and len() > n_samps:
+#                break
 
             # poll every 100 iterations for burnin status
             if not n_it % 100:
