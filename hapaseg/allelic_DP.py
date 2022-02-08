@@ -500,6 +500,13 @@ class DPinstance:
         return probs
 
     def compute_adj_liks(self, seg_idx, cur_clust):
+        # idea to simplify this code:
+        # - strip out logic for working with noncontiguous seg_idx's
+        # - compute all four possibile segmentations:
+        #   ABC, AAB, ABB, AAA
+        # - associate those segmentations with each cluster choice, in order
+        #   to return `adj_BC` with same size as `MLs`
+
         adj_AB = 0
         adj_BC = np.zeros([len(self.clust_sums), 2])
 
