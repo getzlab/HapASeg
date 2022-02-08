@@ -701,14 +701,17 @@ class DPinstance:
 
     def compute_overall_lik_simple(self):
         ## overall clustering likelihood
+        # p({a_i, b_i} | {c_k}, {phase_i})
         clust_lik = np.r_[[ss.betaln(v[0] + 1, v[1] + 1) for k, v in self.clust_sums.items() if k >= 0]].sum()
 
         ## overall phasing likelihood
+        # p({phase_i} | {a_i, b_i})
         phase_lik = 1 - self.S["rephase_prob"].copy()
         phase_lik[self.S["flipped"]] = 1 - phase_lik[self.S["flipped"]]
         phase_lik = np.log(phase_lik).sum()
 
         ## Dirichlet count prior (Dirichlet-categorical marginal likelihood)
+        # p({c_k})
         dirvec = np.r_[self.clust_counts.values()].astype(float)
         k = len(dirvec)
         count_prior = ss.gammaln(dirvec + self.alpha/k).sum() + ss.gammaln(self.alpha) - ss.gammaln(dirvec.sum() + self.alpha) - k*ss.gammaln(self.alpha/k)
@@ -724,7 +727,9 @@ class DPinstance:
               self._Ssum_ph(np.r_[st:en], min = False) + 1
             )
 
-        return clust_lik + phase_lik + count_prior + seg_lik
+        # p({c_k}, {s}, {phase_i} | {a_i, b_i})
+        #return clust_lik + phase_lik + count_prior + seg_lik
+        return np.r_[clust_lik, phase_lik, count_prior, seg_lik]
 
     def compute_overall_lik(self, segs_to_clusters = None, phase_orientations = None, debug = False):
         if segs_to_clusters is None:
