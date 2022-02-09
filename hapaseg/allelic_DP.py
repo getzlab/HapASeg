@@ -897,7 +897,6 @@ class DPinstance:
 
             # poll every 100 iterations for burnin status
             if not n_it % 100:
-
                 # have most segments been adjacency corrected?
                 # if so, has the overall likelihood stabilized enough that we're burned in?
                 if not burned_in:
@@ -909,9 +908,16 @@ class DPinstance:
                     # 2. if >90% of segments have been adjacency corrected, check for burnin
                     # does the smoothed derivative of the posterior numerator go below zero? this would indicate that we've solidly reached an optimum
                     # TODO: make this check more efficient?
-                    if all_touched and (np.convolve(np.diff(self.lik_tmp), np.ones(50)/50, mode = "same") < 0).sum() > 2:
-                        burned_in = True
-                        breakpoint()
+#                    if all_touched and (np.convolve(np.diff(self.lik_tmp), np.ones(50)/50, mode = "same") < 0).sum() > 2:
+#                        pass
+#                        burned_in = True
+#                        n_it_last = n_it
+#                        seg_touch_idx[:] = False
+
+                if burned_in and seg_touch_idx.mean() > 0.3:
+                    self.segs_to_clusters.append(self.S["clust"].copy())
+                    self.phase_orientations.append(self.S["flipped"].copy())
+                    seg_touch_idx[:] = False
 
             #
             # pick either a segment or a cluster at random (50:50 prob.)
@@ -1189,7 +1195,6 @@ class DPinstance:
                 self.clusts[seg_idx] = choice
 
                 self.clust_members[choice].update(set(seg_idx))
-
 
             # track global state of cluster assignments
             # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
