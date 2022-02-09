@@ -225,7 +225,6 @@ class A_DP:
                     if k != -1 and k not in next_clust_prior:
                         clust_count_prior[k] -= clust_count_prior[k]/cur_samp_iter
 
-
             # remove improbable clusters from prior
             for kk in [k for k, v in clust_count_prior.items() if v < 1]:
                 del clust_prior[kk]
@@ -1056,22 +1055,6 @@ class DPinstance:
 
             MLs = BC - C[:, None]
 
-            # {{{
-            #     L(join)           L(split)
-            #MLs = A + BC + adj_BC - (AB + C + adj_AB)
-            # TODO: remove extraneous calculations (e.g. adj_AB, AB, A);
-            #       likelihood simplifies to this in the prior:
-            #MLs = adj_BC + BC - C
-
-            # if we are moving multiple contiguous segments assigned to the same
-            # cluster, do not allow them to create a new cluster. this helps keep
-            # cluster indices consistent
-            # TODO: if we don't care about keeping indices consistent, then we can probably remove this line
-            if n_move > 1 and not move_clust:
-                MLs[self.clust_sums.index(-1)] = -np.inf
-
-            # }}}
-
             #
             # priors
 
@@ -1162,11 +1145,6 @@ class DPinstance:
             )
             # -1 = brand new, -2, -3, ... = -(prior clust index) - 2
             choice = np.r_[-np.r_[prior_diff] - 2, self.clust_counts.keys()][choice_idx//2]
-
-            # compute posterior delta between previous and current state
-            post_delta = num.ravel()[choice_idx] - \
-              num[self.clust_sums.index(cur_clust if cur_clust in self.clust_sums else -1), 0]
-            self.post += post_delta
 
             # save rephasing status
             if choice_idx & 1:
