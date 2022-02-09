@@ -1117,6 +1117,11 @@ class DPinstance:
             if choice_idx & 1:
                 self.S.iloc[seg_idx, self.flip_col] = ~self.S.iloc[seg_idx, self.flip_col]
 
+            if not move_clust:
+                print(f"{cur_clust}->{choice} ({len(seg_idx)}, s, [{seg_idx[0]}, {seg_idx[-1]}])")
+            else:
+                print(f"{cl_idx}->{choice} ({len(seg_idx)}, c, [{seg_idx[0]}, {seg_idx[-1]}])")
+
             # create new cluster
             if choice < 0:
                 # if we are moving an entire cluster, give it the same index it used to have
