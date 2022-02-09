@@ -861,15 +861,20 @@ class DPinstance:
         seg_touch_idx = np.zeros(len(self.S), dtype = bool)
 
         # likelihood trace
-        self.lik_tmp = []
+        self.lik_tmp = [-np.inf]
         self.post = 0
 
         n_it = 0
         n_it_last = 0
         while True:
             if not n_it % 1000:
-                print(self.S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
-                print("n unassigned: {}".format((self.S["clust"] == -1).sum()))
+                if len(self.clust_counts) > 20:
+                    print(pd.Series(self.clust_counts.values()).value_counts().sort_index())
+                else:
+                    print("\n".join([str(self.clust_counts[k]) + ": " + str(x/(x + y)) for k, (x, y) in self.clust_sums.items() if k != -1]))
+                print(self.lik_tmp[-1])
+                #print(self.S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
+                #print("n unassigned: {}".format((self.S["clust"] == -1).sum()))
 
             # stop after a raw number of iterations
             if n_iter > 0 and n_it > n_iter:
