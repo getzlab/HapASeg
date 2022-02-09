@@ -44,84 +44,45 @@ class A_DP:
         if samp_idx > self.n_samp:
             raise ValueError(f"Only {self.n_samp} MCMC samples were taken!")
 
-        all_segs = []
-        all_SNPs = []
-
-        maj_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("MAJ_COUNT")
-        min_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
-
-        alt_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("ALT_COUNT")
-        ref_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("REF_COUNT")
-
-        chunk_offset = 0
+        SNPs = []
+        clust_offset = 0
         for _, H in self.allelic_segs.dropna(subset = ["results"]).iterrows():
-            r = copy.deepcopy(H["results"])
+            S = copy.deepcopy(H["results"].P)
+            S["A_alt"] = 0
+            S.loc[S["aidx"], "A_alt"] = S.loc[S["aidx"], "ALT_COUNT"]
+            S["A_ref"] = 0
+            S.loc[S["aidx"], "A_ref"] = S.loc[S["aidx"], "REF_COUNT"]
+            S["B_alt"] = 0
+            S.loc[~S["aidx"], "B_alt"] = S.loc[~S["aidx"], "ALT_COUNT"]
+            S["B_ref"] = 0
+            S.loc[~S["aidx"], "B_ref"] = S.loc[~S["aidx"], "REF_COUNT"]
 
-            # set phasing orientation back to original
-            for st, en in r.F.intervals():
-                # code excised from flip_hap
-                x = r.P.iloc[st:en, maj_idx].copy()
-                r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
-                r.P.iloc[st:en, min_idx] = x
+            S = S.rename(columns = { "MIN_COUNT" : "min", "MAJ_COUNT" : "maj" })
+            S = S.loc[:, ["chr", "pos", "min", "maj", "A_alt", "A_ref", "B_alt", "B_ref"]]
 
-            # save SNPs for this chunk
-            if self.SNPs is None:
-                all_SNPs.append(pd.DataFrame({
-                  "maj" : r.P["MAJ_COUNT"],
-                  "min" : r.P["MIN_COUNT"],
-                  # TODO: gpos should be computed earlier, so that that we don't need to pass ref_fasta here
-                  "gpos" : seq.chrpos2gpos(r.P.loc[0, "chr"], r.P["pos"], ref = self.ref_fasta),
-                  "allele" : r.P["allele_A"]
-                }))
+            # set initial cluster assignments based on segmentation
+            S["clust"] = -1
+            # TODO: use ML segmentation
+            bpl = np.array(H["results"].breakpoint_list[samp_idx]); bpl = np.c_[bpl[0:-1], bpl[1:]]
+            for i, (st, en) in enumerate(bpl):
+                S.iloc[st:en, S.columns.get_loc("clust")] = i + clust_offset
+            clust_offset += i
 
-            # draw breakpoint, phasing, and SNP inclusion sample from segmentation MCMC trace
-            bp_samp, pi_samp, inc_samp = (r.breakpoint_list[samp_idx], r.phase_interval_list[samp_idx] if r.phase_correct else None, r.include[samp_idx])
-            # flip everything according to sample
-            if r.phase_correct:
-                for st, en in pi_samp.intervals():
-                    x = r.P.iloc[st:en, maj_idx].copy()
-                    r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
-                    r.P.iloc[st:en, min_idx] = x
+            # bug in segmentation omits final SNP?
+            S = S.iloc[:-1]
+            assert (S["clust"] != -1).all()
 
-            bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
+            SNPs.append(S)
 
-            # get major/minor sums for each segment
-            # also get {alt, ref} x {aidx, bidx}
-            for st, en in bpl:
-                all_segs.append([
-                  st + chunk_offset, en + chunk_offset,                        # SNP index for seg
-                  r.P.loc[st, "chr"], r.P.loc[st, "pos"], r.P.loc[en, "pos"],  # chromosomal position of seg
-                  r._Piloc(st, en, min_idx, inc_samp).sum(),                   # min/maj counts
-                  r._Piloc(st, en, maj_idx, inc_samp).sum(),
-
-                  r._Piloc(st, en, alt_idx, inc_samp & r.P["aidx"]).sum(),     # allele A alt/ref
-                  r._Piloc(st, en, ref_idx, inc_samp & r.P["aidx"]).sum(),
-                  r._Piloc(st, en, alt_idx, inc_samp & ~r.P["aidx"]).sum(),    # allele B alt/ref
-                  r._Piloc(st, en, ref_idx, inc_samp & ~r.P["aidx"]).sum()
-                ])
-
-            chunk_offset += len(r.P)
-
-        # convert samples into dataframe
-        S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj", "A_alt", "A_ref", "B_alt", "B_ref"])
+        SNPs = pd.concat(SNPs, ignore_index = True)
 
         # convert chr-relative positions to absolute genomic coordinates
-        S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"], ref = self.ref_fasta)
-        S["end_gp"] = seq.chrpos2gpos(S["chr"], S["end"], ref = self.ref_fasta)
-
-        # initial cluster assignments
-        S["clust"] = -1 # initially, all segments are unassigned
-        S.iloc[0, S.columns.get_loc("clust")] = 0 # first segment is assigned to cluster 0
+        SNPs["pos_gp"] = seq.chrpos2gpos(SNPs["chr"], SNPs["pos"], ref = self.ref_fasta)
 
         # initial phasing orientation
-        S["flipped"] = False
+        SNPs["flipped"] = False
 
-        if self.SNPs is None:
-            self.SNPs = pd.concat(all_SNPs, ignore_index = True)
-            CI = s.beta.ppf([0.05, 0.5, 0.95], self.SNPs["min"].values[:, None] + 1, self.SNPs["maj"].values[:, None] + 1)
-            self.SNPs[["f_CI_lo", "f", "f_CI_hi"]] = CI
-
-        return S, self.SNPs
+        return SNPs, None
 
     # map trace of segment cluster assignments to the SNPs within
     @staticmethod
