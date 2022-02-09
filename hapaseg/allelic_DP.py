@@ -732,6 +732,7 @@ class DPinstance:
         #return clust_lik + phase_lik + count_prior + seg_lik
         return np.r_[clust_lik, phase_lik, count_prior, seg_lik]
 
+    # {{{
     def compute_overall_lik(self, segs_to_clusters = None, phase_orientations = None, debug = False):
         if segs_to_clusters is None:
             su, segs_to_clusters = self.get_unique_clust_idxs()
@@ -745,10 +746,11 @@ class DPinstance:
 
         max_clust_idx = segs_to_clusters.max() + 1
 
-        liks = np.full(segs_to_clusters.shape[0], np.nan)
+        liks = np.full([segs_to_clusters.shape[0], 2], np.nan)
 
         for i, (cl_samp, ph_samp) in enumerate(zip(segs_to_clusters, phase_orientations)):
             ## overall clustering likelihood
+            clust_lik = np.r_[[ss.betaln(v[0] + 1, v[1] + 1) for k, v in self.clust_sums.items() if k >= 0]].sum()
 
             A1 = npg.aggregate(cl_samp[ph_samp], self.S.loc[ph_samp, "maj"], size = max_clust_idx)
             A2 = npg.aggregate(cl_samp[~ph_samp], self.S.loc[~ph_samp, "maj"], size = max_clust_idx)
@@ -756,36 +758,45 @@ class DPinstance:
             B1 = npg.aggregate(cl_samp[ph_samp], self.S.loc[ph_samp, "min"], size = max_clust_idx)
             B2 = npg.aggregate(cl_samp[~ph_samp], self.S.loc[~ph_samp, "min"], size = max_clust_idx)
 
-            count_prior = np.bincount(cl_samp, minlength = max_clust_idx).astype(np.double)
+            # print(A1[1:].sum(), B1[1:].sum(), A2[1:].sum(), B2[1:].sum())
+
+            count_prior = np.bincount(cl_samp, minlength = max_clust_idx).astype(np.double)[min_clust_idx:]
             count_prior /= count_prior.sum()
 
-            clust_lik = (ss.betaln(A1 + 1, B1 + 1) + ss.betaln(A2 + 1, B2 + 1))[min_clust_idx:].sum()
+            #breakpoint()
+
+            clust_lik = ((ss.betaln(A1 + 1, B1 + 1) + ss.betaln(A2 + 1, B2 + 1))[min_clust_idx:] + np.log(count_prior)).sum()
             # account for unassigned clusters, if present
             if min_clust_idx == 1:
                 clust_lik += ss.betaln(self.S.loc[cl_samp == 0, "maj"] + 1, self.S.loc[cl_samp == 0, "min"] + 1).sum()
 
-#            ## segmentation likelihood
-#
-#            # get segment boundaries
-#            bdy = np.flatnonzero(np.r_[1, np.diff(cl_samp) != 0, 1])
-#            bdy = np.c_[bdy[:-1], bdy[1:]]
-#
-#            # sum log-likelihoods of each segment
-#            seg_lik = 0
-#            for st, en in bdy:
-#                A, B = S_ph.iloc[st:en, [self.min_col, self.maj_col]].sum()
-#
-## for when self.S is not modified
-##               A = self.S["min"].iloc[st:en].loc[~ph_samp[st:en]].sum() + \
-##                   self.S["maj"].iloc[st:en].loc[ph_samp[st:en]].sum()
-##               B = self.S["maj"].iloc[st:en].loc[~ph_samp[st:en]].sum() + \
-##                   self.S["min"].iloc[st:en].loc[ph_samp[st:en]].sum()
-#
-#                seg_lik += ss.betaln(A + 1, B + 1)
+            if debug:
+                breakpoint()
 
-            liks[i] = clust_lik
+            ## segmentation likelihood
+
+            seg_lik = np.nan
+#            if min_clust_idx == 0:
+#                # get segment boundaries
+#                bdy = np.flatnonzero(np.r_[1, np.diff(cl_samp) != 0, 1])
+#                bdy = np.c_[bdy[:-1], bdy[1:]]
+#
+#                # sum log-likelihoods of each segment
+#                seg_lik = 0
+#                for st, en in bdy:
+#                   A1 = self.S["maj"].iloc[st:en].loc[ph_samp[st:en]].sum()
+#                   A2 = self.S["maj"].iloc[st:en].loc[~ph_samp[st:en]].sum()
+#                   B1 = self.S["min"].iloc[st:en].loc[ph_samp[st:en]].sum()
+#                   B2 = self.S["min"].iloc[st:en].loc[~ph_samp[st:en]].sum()
+#
+#                   seg_lik += ss.betaln(A1 + 1, B1 + 1) + ss.betaln(A2 + 1, B2 + 1)
+#            else:
+#                seg_lik = np.nan
+
+            liks[i, :] = np.r_[clust_lik, seg_lik]
 
         return liks
+# }}}
 
     def run(self, n_iter = 0, n_samps = 0):
         #
