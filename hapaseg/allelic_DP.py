@@ -905,11 +905,17 @@ class DPinstance:
 #                        n_it += 1
 #                        continue
 
-                # propose splitting out a contiguous interval of segments within the current cluster
+                # propose splitting out a contiguous interval of segments within the current cluster {{{
                 split_clust = False
-                if all_assigned and np.random.rand() < 0.1:
+                if np.random.rand() < 0.1:
                     # TODO: if we use cur_clust, this will be biased towards larger clusters. is this desireable?
                     clust_segs = np.sort(np.r_[list(self.clust_members[cur_clust])])
+
+                    # can't split clusters of length 1
+                    if len(clust_segs) == 1:
+                        n_it += 1
+                        continue
+
                     split_bdy = self.compute_cluster_splitpoints(clust_segs)
 
                     A_tot, B_tot = self.clust_sums[cur_clust]
