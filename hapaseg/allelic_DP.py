@@ -305,12 +305,6 @@ class DPinstance:
         self.flip_col = self.S.columns.get_loc("flipped")
 
         #
-        # compute rephase probabilities for each segment
-        self.S["rephase_prob"] = np.nan
-        for i in range(0, len(self.S)):
-            self.S.at[i, "rephase_prob"] = self.compute_rephase_prob(np.r_[i])
-
-        #
         # initialize priors
 
         # store likelihoods for each cluster in the prior (from previous iterations)
@@ -891,7 +885,7 @@ class DPinstance:
 
                 # expand segment to include all adjacent segments in the same cluster,
                 # if it has already been assigned to a cluster
-                if cur_clust >= 0 and np.random.rand() < 0.5:
+                if cur_clust >= 0 and np.random.rand() < 0.95:
                     si = seg_idx[0]
 
                     j = 1
