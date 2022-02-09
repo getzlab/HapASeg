@@ -982,6 +982,8 @@ class DPinstance:
 
                     split_clust = True
 
+                # }}}
+
                 seg_idx = np.r_[list(seg_idx)]
 
                 n_move = len(seg_idx)
@@ -1122,7 +1124,6 @@ class DPinstance:
             log_count_prior[1:] = ss.gammaln(n_move + n_c) + ss.gammaln(N + self.alpha - n_move) \
               - (ss.gammaln(n_c) + ss.gammaln(N + self.alpha))
             # probability of opening a new cluster
-            # TODO: accommodate prior clusters here
             log_count_prior[0] = ss.gammaln(n_move) + np.log(self.alpha) + ss.gammaln(N + self.alpha - n_move) - ss.gammaln(N + self.alpha)
 
             #
