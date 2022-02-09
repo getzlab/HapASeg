@@ -714,9 +714,10 @@ class DPinstance:
         # p({c_k})
         dirvec = np.r_[self.clust_counts.values()].astype(float)
         k = len(dirvec)
-        count_prior = ss.gammaln(dirvec + self.alpha/k).sum() + ss.gammaln(self.alpha) - ss.gammaln(dirvec.sum() + self.alpha) - k*ss.gammaln(self.alpha/k)
+        count_prior = k*np.log(self.alpha) + ss.gammaln(dirvec).sum() + ss.gammaln(self.alpha) - ss.gammaln(dirvec.sum() + self.alpha)
 
         ## segmentation likelihood
+        # p({a_i, b_i} | {s}, {phase_i})
         bdy = np.flatnonzero(np.r_[1, np.diff(self.S["clust"]) != 0, 1])
         bdy = np.c_[bdy[:-1], bdy[1:]]
 
