@@ -211,8 +211,8 @@ class AllelicCoverage_DP:
         greylist_mask = np.ones(self.num_segments, dtype=bool)
         greylist_mask[self.greylist_segments] = False
         cutoff = np.quantile(self.segment_V_list[greylist_mask], 0.80)
-        self.alpha_0 = self.segment_V_list[greylist_mask].mean()
-        self.beta_0 = self.segment_counts[greylist_mask].mean()
+        self.alpha_0 = self.segment_counts[greylist_mask].mean()
+        self.beta_0 = self.alpha_0 / 2 * self.segment_V_list[greylist_mask].mean()
         self.loggamma_alpha_0 = ss.loggamma(self.alpha_0)
         self.log_beta_0 = np.log(self.beta_0)
 
@@ -283,17 +283,16 @@ class AllelicCoverage_DP:
 
     def _ML_cluster_add_one(self, clusterID, segID):
         mn, mu_mn, ssd = self._ssd_cluster_add_one(clusterID, segID)
-    
+        
         return self.ML_normalgamma(mn, mu_mn, ssd)
 
     def _ML_cluster_remove_one(self, clusterID, segID):
         m, mu_m, ssd = self._ssd_cluster_remove_one(clusterID, segID) 
-
+        
         return self.ML_normalgamma(m, mu_m, ssd)
 
     def _ML_cluster_merge(self, clust_A, clust_B):
         mn, mu_mn, ssd = self._ssd_cluster_merge(clust_A, clust_B)
-
         return self.ML_normalgamma(mn, mu_mn, ssd)
     
     # worker function for normal-gamma distribution log Marginal Likelihood
@@ -514,7 +513,7 @@ class AllelicCoverage_DP:
                 ML_C = np.array([ML for (ID, ML) in self.cluster_MLs.items()])
 
                 # compute ML of every cluster if S joins
-                ML_BC = np.array([self._ML_cluster_add_one(k, segID) for k in self.cluster_counts.keys()])
+                ML_BC = np.array([self._ML_cluster_add_one(k, segID) if k!= clustID else ML_AB for k in self.cluster_counts.keys()])
 
                 # likelihood ratios of S joining each other cluster S -> Ck
                 ML_rat_BC = ML_A + ML_BC - (ML_AB + ML_C)
@@ -654,6 +653,7 @@ class AllelicCoverage_DP:
 
                         mu_A = sum_A / n_A
                         mu_B = sum_B/ n_B
+                        
                         ML_A =  self._ML_cluster_direct(n_A, mu_A, ssd_A)
                         ML_B = self._ML_cluster_direct(n_B, mu_B, ssd_B)
                         ML_rat = ML_A + ML_B - stay_ml
