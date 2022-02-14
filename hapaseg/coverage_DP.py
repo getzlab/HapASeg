@@ -10,11 +10,15 @@ from capy import seq
 
 colors = mpl.cm.get_cmap("tab20").colors
 
+# helper LogSumExp implementation
 def LSE(x):
     lmax = np.max(x)
     return lmax + np.log(np.exp(x - lmax).sum())
 
-
+# This wrapper class allows for multiple segmentation samples to be used as 
+# seeds for consecutive CDP runs. Following the clustering of the first
+# segmentation sample, subsequent CDP runs use the clustering of the previous run
+# as a prior
 class Coverage_DP:
     def __init__(self,
             segmentation_draws,
@@ -75,6 +79,7 @@ class Coverage_DP:
             axs.add_patch(mpl.patches.Rectangle((clust_start,0), cur-clust_start, 500, fill=True, alpha=0.15, color = colors[c % 10]))
         plt.savefig(save_path)
 
+# This class implements the actual DP clustering
 # for now input will be coverage_df with global segment id column
 class Run_Cov_DP:
     def __init__(self, cov_df, beta, prior_run=None, count_prior_sum=None):
@@ -129,6 +134,7 @@ class Run_Cov_DP:
             # next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
             self.next_cluster_index = 1
         else:
+            #otherwise we initialize the prior clusters
             self.prior_clusters = prior_run.cluster_dict.copy()
             self.prior_r_list = prior_run.segment_r_list.copy()
             self.prior_C_list = prior_run.segment_C_list.copy()
@@ -146,29 +152,6 @@ class Run_Cov_DP:
                 (r * (mu + bc - np.log(epsi + exp))) +
                 (epsi * np.log(epsi / (epsi + exp)))).sum()
 
-    @staticmethod
-    def ll_nbinom_a_cov(r, mu, lepsi):
-        r = r.flatten()
-        epsi = np.exp(lepsi)
-        exp = np.exp(mu).flatten()
-        return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
-                (r * (mu - np.log(epsi + exp))) +
-                (epsi * np.log(epsi / (epsi + exp)))).sum()
-
-    def _ML_a_cov_cluster(self, cluster_set):
-        r_lst = []
-        for s in cluster_set:
-            major, minor= self.segment_counts_list[s]
-            if self.segment_allele[s] == -1:
-                r_lst.append(self.segment_r_list[s] * np.random.beta(minor+1, major+1))
-            else:
-                r_lst.append(self.segment_r_list[s] * np.random.beta(major+1, minor+1))
-        #r = np.hstack([self.segment_r_list[i] for i in cluster_set])
-        r = np.hstack(r_lst)
-        mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, None, ret_hess=True)
-        ll_opt = self.ll_nbinom_a_cov(r, mu_opt,  lepsi_opt)
-        return ll_opt + self._get_laplacian_approx(H_opt)
-
     # main worker function for computing marginal likelihoods of clusters
     def _ML_cluster(self, cluster_set):
         # aggregate r and C arrays
@@ -180,6 +163,7 @@ class Run_Cov_DP:
         # print('clust set: ', cluster_set, 'll: ', ll_opt, 'lap approx: ', self._get_laplacian_approx(H_opt))
         return ll_opt + self._get_laplacian_approx(H_opt)
 
+    # computes the log likelihood for a set of segments comprising a cluster
     def _LL_cluster(self, cluster_set):
         # aggregate r and C arrays
         r = np.hstack([self.segment_r_list[i] for i in cluster_set])
@@ -189,6 +173,8 @@ class Run_Cov_DP:
 
         return ll_opt
 
+    # computes the ML of a cluster with some clusters optionally containing 
+    # segments from previous iterations (i.e. prior clustering)
     def _ML_cluster_prior(self, cluster_set, new_segIDs=None):
         # aggregate r and C arrays
         if new_segIDs is not None:
@@ -208,14 +194,12 @@ class Run_Cov_DP:
     def _get_laplacian_approx(H):
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-H))) / 2
 
+    # returns optimal NB parameter values, along with optionally the hessian
+    # from the MLE point
     def stats_optimizer(self, r, C, ret_hess=False):
-        if C is None:
-            endog = r
-        else:
-            endog = np.exp(np.log(r) - (C @ self.beta).flatten())
-        
+        offset = (C @ self.beta).flatten()
         exog = np.ones(r.shape[0])
-        sNB = statsNB(endog, exog)
+        sNB = statsNB(r, exog, offset=offset)
         res = sNB.fit(disp=0)
         if ret_hess:
             return res.params[0], -np.log(res.params[1]), sNB.hessian(res.params)
