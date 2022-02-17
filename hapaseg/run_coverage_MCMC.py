@@ -48,7 +48,7 @@ class CoverageMCMCRunner:
             cov_mcmc = NB_MCMC_AllClusters(self.num_draws, r, C, Pi)
         else:
             # run mcmc on single cluster
-            if self.cluster_num > Pi.shape[1]:
+            if self.cluster_num >= Pi.shape[1]:
                 # in this case our assigned cluster was trimmed for being garbage so we abort
                 return None, None, None, None
             #c_assignments = np.argmax(Pi, axis=1)
@@ -170,18 +170,39 @@ def nat_sort(lst):
         alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
         return sorted(lst, key=alphanum_key)
 
+
 #TODO inputs are actually F_Sample lists which need to be converted to global seg numbers
-def aggregate_clusters(coverage_dir):
-    # assume that all files of the form cov_mcmc*_cluster* in the supplied are from the correct run
-    cluster_files = nat_sort(glob.glob(os.path.join(coverage_dir, 'cov_mcmc_data_cluster_*')))
+def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None):
+    if coverage_dir is None and f_file_list is None:
+        raise ValueError("need to pass in either coverage_dir or file_list txt file!")
+    if coverage_dir is not None and f_file_list is not None:
+        raise ValueError("need to pass in either coverage_dir or file_list txt file!, got both!")
+    
+    if coverage_dir is not None:
+        cluster_files = nat_sort(glob.glob(os.path.join(coverage_dir, 'cov_mcmc_data_cluster_*')))
+        cov_df = pd.read_pickle(os.path.join(coverage_dir, 'cov_df.pickle'))
+        
+    else:
+        if cov_df_pickle is None:
+            raise ValueError("Need to pass in cov_df file")
+        #read in files from f_file_list
+        read_files = []
+        with open(f_file_list, 'r') as f:
+            all_lines = f.readlines()
+            for l in all_lines:
+                to_add = l.rstrip('\n')
+                if to_add != "nan":
+                    read_files.append(to_add)
+        cluster_files = nat_sort(read_files)
+        cov_df = pd.read_pickle(cov_df_pickle)
+    
+    clust_assignments = cov_df['allelic_cluster'].values
     seg_results = []
     mu_i_results = []
     for data_path in cluster_files:
         cluster_data= np.load(data_path)
         seg_results.append(cluster_data['seg_samples'])
         mu_i_results.append(cluster_data['mu_i_samples'])
-        cov_df = pd.read_pickle(os.path.join(coverage_dir, 'cov_df.pickle'))
-        clust_assignments = cov_df['allelic_cluster'].values
         num_draws = seg_results[0].shape[1]
         num_clusters = len(seg_results)
 

@@ -151,6 +151,8 @@ def parse_args():
     ## collect coverage MCMC shards
     collect_cov_mcmc = subparsers.add_parser("collect_cov_mcmc", help="collect sharded cov mcmc results")
     collect_cov_mcmc.add_argument("--coverage_dir", help="path to the directory containing the coverage mcmc results")
+    collect_cov_mcmc.add_argument("--cov_mcmc_files", help="path to txt file with each line containing a path to a cov mcmc shard result")
+    collect_cov_mcmc.add_argument("--cov_df_pickle", help="path to cov_df pickle filei. Required for using --cov_mcmc_files option")
 
     ## Coverage DP
     coverage_dp = subparsers.add_parser("coverage_dp", help="Run DP clustering on coverage segmentations")
@@ -429,8 +431,8 @@ def main():
 
         seg_samples, beta, mu_i_samples, filtered_cov_df = cov_mcmc_runner.run()
 
-        #TODO make method for concatenating results from each cluster
         #save_results
+        #first case is if we ran on a single cluster that existed
         if args.cluster_num is not None and seg_samples is not None:
             # if its a single cluster that was not skipped, save the results to a new coverage dir
             coverage_dir = os.path.join(output_dir, 'coverage_mcmc_clusters')
@@ -454,24 +456,42 @@ def main():
             
             # save visualization
             cov_mcmc_runner.model.visualize_cluster_samples(os.path.join(figure_dir, 'cov_mcmc_cluster_{}_visual'.format(args.cluster_num)))
-        else:
+        # case of running on all clusters
+        elif seg_samples is not None:
             with open(os.path.join(output_dir, 'cov_mcmc_model.pickle'), 'wb') as f:
                 pickle.dump(cov_mcmc_runner.model, f)
 
             np.savez(os.path.join(output_dir, 'cov_mcmc_data'),
                      seg_samples=seg_samples, beta=beta, mu_i_samples=mu_i_samples)
             filtered_cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
-    
+        #case of running on a null cluster (i.e. cluster num did not exist)
+        else:
+            pass
     elif args.command == "collect_cov_mcmc":
-        full_segmentation = aggregate_clusters(args.coverage_dir)
+        if args.coverage_dir:
+            full_segmentation = aggregate_clusters(coverage_dir=args.coverage_dir)
         
-        #load beta from one of the clusters
-        cov_data = np.load(os.path.join(args.coverage_dir, 'cov_mcmc_data_cluster_0.npz'))
-        beta = cov_data['beta']
+            #load beta from one of the clusters
+            cov_data = np.load(os.path.join(args.coverage_dir, 'cov_mcmc_data_cluster_0.npz'))
+            beta = cov_data['beta']
+        elif args.cov_mcmc_files:
+            if args.cov_df_pickle is None:
+                raise ValueError("cov_df_pickle argument required for passing shard file")
+            full_segmentation = aggregate_clusters(f_file_list=args.cov_mcmc_files, cov_df_pickle=args.cov_df_pickle)
+            #get beta from first cluster
+            with open(args.cov_mcmc_files, 'r') as f:
+                path = f.readlines()[0].rstrip('\n')
+            cov_data = np.load(path)
+        else:
+            #need to pass in one or the other
+            raise ValueError("must pass in either a directory or a txt file listing mcmc results")
 
+        beta = cov_data['beta']        
         ## save these results to new aggregated file
-        np.savez(os.path.join(args.coverage_dir, 'cov_mcmc_collected_data'), seg_samples=full_segmentation, beta=beta)
-
+        if args.coverage_dir:
+            np.savez(os.path.join(args.coverage_dir, 'cov_mcmc_collected_data'), seg_samples=full_segmentation, beta=beta)
+        else:
+            np.savez('./cov_mcmc_collected_data', seg_samples=full_segmentation, beta=beta)
     elif args.command == "coverage_dp":
         cov_df = pd.read_pickle(args.f_cov_df)
         mcmc_data = np.load(args.cov_mcmc_data)
