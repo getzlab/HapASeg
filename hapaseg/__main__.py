@@ -423,11 +423,10 @@ def main():
         cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
                                              args.allelic_clusters_object,
                                              args.SNPs_pickle,
-                                             None, # no dask client for now
                                              args.covariate_dir,
-                                             args.num_draws,
-                                             args.cluster_num,
-                                             args.allelic_sample)
+                                             num_draws=args.num_draws,
+                                             cluster_num=args.cluster_num,
+                                             allelic_sample=args.allelic_sample)
 
         seg_samples, beta, mu_i_samples, filtered_cov_df = cov_mcmc_runner.run()
 

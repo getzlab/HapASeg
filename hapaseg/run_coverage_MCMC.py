@@ -3,7 +3,7 @@ import pandas as pd
 import glob
 import re
 import os
-
+import scipy.special as ss
 from capy import mut, seq
 
 from .NB_coverage_MCMC import NB_MCMC_AllClusters, NB_MCMC_SingleCluster
@@ -14,14 +14,12 @@ class CoverageMCMCRunner:
                  coverage_csv,
                  f_allelic_clusters,
                  f_SNPs,
-                 c,
                  covariate_dir,
                  num_draws=50,
                  cluster_num=None,
                  allelic_sample=None
                  ):
         # TODO: type check sample is int within range
-        self.client = c
         self.covariate_dir = covariate_dir
         self.num_draws = num_draws
         self.cluster_num = cluster_num
@@ -30,9 +28,13 @@ class CoverageMCMCRunner:
         if allelic_sample is not None:
             self.allelic_sample = allelic_sample
         else:
-            # randomly chose sample
-            num_samples = self.allelic_clusters["snps_to_clusters"].shape[0]
-            self.allelic_sample = np.random.choice(num_samples)
+            #TODO: randomly chose sample based on likelihood
+            #num_samples = self.allelic_clusters["snps_to_clusters"].shape[0]
+            #self.allelic_sample = np.random.choice(num_samples)
+            
+            #for now we will use last sample
+            self.allelic_sample = len(self.allelic_clusters["snps_to_clusters"]) -1 
+
         # for now coverage input is expected to be a csv file with columns: ["chr", "start", "end", "covcorr", "covraw"]
         self.full_cov_df = self.load_coverage(coverage_csv)
         self.load_covariates()
@@ -41,7 +43,6 @@ class CoverageMCMCRunner:
 
     def run(self):
         Pi, r, C, filtered_cov_df = self.assign_clusters()
-
         if self.cluster_num is None:
             # run coverage mcmc on all clusters
             # assign coverage bins to allelic clusters from the specified allelic sample (if specified; o.w. random choice)
@@ -62,6 +63,31 @@ class CoverageMCMCRunner:
         segment_samples, global_beta, mu_i_samples = cov_mcmc.prepare_results()
         return segment_samples, global_beta, mu_i_samples, filtered_cov_df
 
+    # method for calculating DP prior likelihood of an ADP cluster    
+    @staticmethod    
+    def dp_prior(cluster_counts_arr, alpha):
+        N = cluster_counts_arr.sum()
+        m = len(cluster_counts)
+        return m * np.log(alpha) + ss.gammaln(cluster_counts).sum() + ss.gammaln(alpha) - ss.gammaln(N+alpha)
+    
+    # method for selecting ADP clustering based on likelihoods
+    def select_clustering(self):
+        ADP_draws= nb_runner.allelic_clusters["snps_to_clusters"]
+        tmp_snps = nb_runner.SNPs.copy()
+        lls = []
+        for ADP_draw in ADP_draws:
+            tmp_snps['cluster_assignment'] = ADP_draw
+            count_arr = tmp_snps.groupby(by='cluster_assignment').agg({"maj":sum, "min":sum}).values
+            count_arr += 1
+            beta_ll = ss.betaln(count_arr[:,0], count_arr[:,1]).sum()
+            cluster_counts = tmp_snps['cluster_assignment'].value_counts().values
+            dp_ll = dp_prior(cluster_counts, 0.5)
+            lls.append(beta_ll + dp_ll)
+        lls = np.array(lls)
+        lls_max = np.max(lls)
+        choice_p = np.exp(lls - lls_max) / np.exp(lls- lls_max).sum()
+        return np.random.choice(len(ADP_draws), p=choice_p)
+    
     @staticmethod
     def load_coverage(coverage_csv):
         Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "covraw"],
@@ -88,7 +114,6 @@ class CoverageMCMCRunner:
 
         # load repl timing
         F = pd.read_pickle(os.path.join(self.covariate_dir, "GSE137764_H1.hg19_liftover.pickle"))
-
         # map targets to RT intervals
         tidx = mut.map_mutations_to_targets(self.full_cov_df.rename(columns={"start": "pos"}), F, inplace=False)
         self.full_cov_df.loc[tidx.index, "C_RT"] = F.iloc[tidx, 3:].mean(1).values
