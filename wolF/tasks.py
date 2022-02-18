@@ -110,7 +110,7 @@ class Hapaseg_allelic_DP(wolf.Task):
 
 class Hapaseg_coverage_mcmc(wolf.Task):
     inputs = {
-        "coverage_csv" : None,
+        "coverage_bed" : None,
         "allelic_clusters_object" : None,
         "SNPs_pickle" : None,
         "covariate_dir" : None,
@@ -121,7 +121,7 @@ class Hapaseg_coverage_mcmc(wolf.Task):
     }
     script = """
     export CAPY_REF_FA=${ref_file_path}
-    hapaseg coverage_mcmc --coverage_csv ${coverage_csv} \
+    hapaseg coverage_mcmc --coverage_csv ${coverage_bed} \
     --allelic_clusters_object ${allelic_clusters_object} \
     --SNPs_pickle ${SNPs_pickle} \
     --covariate_dir ${covariate_dir} \
@@ -181,10 +181,12 @@ class Hapaseg_acdp_generate_df(wolf.Task):
         "SNPs_pickle": None,
         "allelic_clusters_object" : None,
         "coverage_dp_object" : None,
-        "allelic_draw_index" : -1
+        "allelic_draw_index" : -1,
+        "ref_file_path": None
     }
 
     script = """
+    export CAPY_REF_FA=${ref_file_path}
     hapaseg generate_acdp_df --snp_dataframe ${SNPs_pickle} \
     --coverage_dp_object ${coverage_dp_object} \
     --allelic_clusters_object ${allelic_clusters_object} \

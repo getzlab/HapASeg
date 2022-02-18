@@ -13,20 +13,18 @@ import wolf
 
 # for genotyping het sites/getting het site coverage
 het_pulldown = wolf.ImportTask(
-  #task_path = 'git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git',
-  task_path = '/home/jhess/j/proj/cnv/20200909_hetpull',
+  task_path = 'git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git',
   task_name = "het_pulldown"
 )
 
 mutect1 = wolf.ImportTask(
-  #task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
-  task_path = "/home/jhess/j/proj/mut/MuTect1/MuTect1_TOOL",
+  task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
   task_name = "mutect1"
 )
 
 # for phasing
 phasing = wolf.ImportTask(
-  task_path = "/home/jhess/j/proj/cnv/20210901_phasing_TOOL", # TODO: make remote
+  task_path = "git@github.com:getzlab/phasing_TOOL.git",
   task_name = "phasing"
 )
 
@@ -38,12 +36,12 @@ hapaseg = wolf.ImportTask(
 
 # for coverage collection
 split_intervals = wolf.ImportTask(
-  task_path = "/home/jhess/Downloads/split_intervals_TOOL", # TODO: make remote
+  task_path = "git@github.com:getzlab/split_intervals_TOOL.git",
   task_name = "split_intervals"
 )
 
 cov_collect = wolf.ImportTask(
-  task_path = "/mnt/j/proj/cnv/20210326_coverage_collector", # TODO: make remote
+  task_path = "git@github.com:getzlab/coverage_collector_TOOL.git", # TODO: make remote
   task_name = "covcollect"
 )
 
@@ -385,4 +383,60 @@ def workflow(
        "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink
      }
     )
-
+    
+    
+    #coverage MCMC scatter
+    clusts = [i for i in range(25)]
+    cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc(
+    inputs = {
+            "coverage_csv":tumor_cov_gather_task["coverage"],
+            "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+            "SNPs_pickle":hapaseg_allelic_DP_task["all_SNPs"],
+            "covariate_dir":localization_task["covariate_dir"],
+            "num_draws":10,
+            "cluster_num":clusts,
+            "ref_file_path":localization_task["ref_fasta"]
+        }
+    )
+    
+    # collect coverage MCMC
+    cov_mcmc_gather_task = hapaseg.Hapaseg_collect_coverage_mcmc(
+    inputs = {
+        "cov_mcmc_files":[cov_mcmc_scatter_task["cov_segmentation_data"]],
+        "cov_df_pickle":cov_mcmc_scatter_task["cov_df_segmentation"][0]
+        }
+    )
+    
+    
+    # coverage DP
+    cov_dp_task = hapaseg.Hapaseg_coverage_dp(
+    inputs = {
+        "f_cov_df":cov_mcmc_scatter_task["cov_df_segmentation"][0],
+        "cov_mcmc_data": cov_mcmc_gather_task["cov_collected_data"],
+        "num_segmentation_samples":10,
+        "num_draws":10
+        }   
+    )
+    
+    
+    # generate acdp dataframe
+    gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
+    inputs = {
+        "SNPs_pickle":hapaseg_allelic_DP_task["all_SNPs"],
+        "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+        "coverage_dp_object":cov_dp_task["cov_dp_object"],
+        "allelic_draw_index":-1,
+        "ref_file_path":localization_task["ref_fasta"]
+        }
+    )
+    
+    # run acdp
+    acdp_task = hapaseg.Hapaseg_run_acdp(
+    inputs = {
+        "coverage_dp_object":cov_dp_task["cov_dp_object"],
+        "acdp_df":gen_acdp_task["acdp_df_pickle"],
+        "num_samples":10,
+        "cytoband_df":  #TODO get this from localization task
+    }
+    
+    
