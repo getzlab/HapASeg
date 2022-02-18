@@ -86,7 +86,7 @@ class Run_Cov_DP:
         self.cov_df = cov_df
         self.seg_id_col = self.cov_df.columns.get_loc('segment_ID')
         self.beta = beta
-
+        
         self.num_segments = self.cov_df.iloc[:, self.seg_id_col].max() + 1
         self.segment_r_list = [None] * self.num_segments
         self.segment_C_list = [None] * self.num_segments
@@ -99,6 +99,7 @@ class Run_Cov_DP:
         self.cluster_MLs = sc.SortedDict({})
         self.greylist_segments = sc.SortedSet({})
         self.cluster_LLs = sc.SortedDict({})
+        self.cluster_ml_cache={}
 
         self.prior_clusters = None
         self.prior_r_list = None
@@ -115,7 +116,7 @@ class Run_Cov_DP:
         self.bins_to_clusters = []
         self.ll_history = []
         self.alpha = 0.1
-
+        
     # initialize each segment object with its data
     def _init_segments(self):
         for ID, seg_df in self.cov_df.groupby('segment_ID'):
@@ -153,15 +154,21 @@ class Run_Cov_DP:
                 (epsi * np.log(epsi / (epsi + exp)))).sum()
 
     # main worker function for computing marginal likelihoods of clusters
-    def _ML_cluster(self, cluster_set):
-        # aggregate r and C arrays
-        r = np.hstack([self.segment_r_list[i] for i in cluster_set])
-        C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
-        mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, C, ret_hess=True)
-        ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt)
-
-        # print('clust set: ', cluster_set, 'll: ', ll_opt, 'lap approx: ', self._get_laplacian_approx(H_opt))
-        return ll_opt + self._get_laplacian_approx(H_opt)
+    #TODO: move to a bounded size LFU chache over dictionary?
+     def _ML_cluster(self, cluster_set):
+        fs = frozenset(cluster_set)
+        if fs in self.cluster_ml_cache:
+            return self.cluster_ml_cache[fs]
+        else:
+            # aggregate r and C arrays
+            r = np.hstack([self.segment_r_list[i] for i in cluster_set])
+            C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
+            mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, C, ret_hess=True)
+            ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt)
+            
+            res = ll_opt + self._get_laplacian_approx(H_opt)
+            self.cluster_ml_cache[fs] = res
+            return res
 
     # computes the log likelihood for a set of segments comprising a cluster
     def _LL_cluster(self, cluster_set):
