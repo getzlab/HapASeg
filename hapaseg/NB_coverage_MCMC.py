@@ -640,13 +640,12 @@ class NB_MCMC_AllClusters:
     """
 class NB_MCMC_SingleCluster:
 
-    def __init__(self, n_iter, r, C, Pi, cluster_num):
+    def __init__(self, n_iter, r, C, mu, beta, cluster_num):
         self.n_iter = n_iter
         self.r = r
         self.C = C
-        self.Pi = Pi
-        self.beta = None
-        self.mu = None
+        self.beta = beta
+        self.mu = mu
         self.cluster_num = cluster_num
         # for now assume that the Pi vector assigns each bin to exactly one cluster
 
@@ -664,14 +663,7 @@ class NB_MCMC_SingleCluster:
         self._init_cluster()
 
     def _init_cluster(self):
-        # first we find good starting values for mu and beta for each cluster by fitting a poisson model
-        pois_regr = PoissonRegression(self.r, self.C, self.Pi)
-        all_mu, self.beta = pois_regr.fit()
-        self.mu = all_mu[self.cluster_num]
-
-        c_assignments = np.argmax(self.Pi, axis=1)
-        cluster_mask = (c_assignments == self.cluster_num)
-        self.cluster = AllelicCluster(self.r[cluster_mask], self.C[cluster_mask], self.mu, self.beta)
+        self.cluster = AllelicCluster(self.r, self.C, self.mu, self.beta)
 
         # set initial ll
         self.ll_cluster = self.cluster.get_ll()
