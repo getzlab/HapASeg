@@ -7,7 +7,7 @@ from statsmodels.tools.sm_exceptions import ConvergenceWarning, HessianInversion
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
-from model_optimizers import PoissonRegression
+from .model_optimizers import PoissonRegression
 
 # turn off warnings for statsmodels fitting
 warnings.simplefilter('ignore', ConvergenceWarning)

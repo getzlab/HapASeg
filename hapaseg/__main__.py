@@ -476,12 +476,11 @@ def main():
                                              args.allelic_clusters_object,
                                              args.SNPs_pickle,
                                              args.covariate_dir,
-                                             num_draws=args.num_draws,
                                              allelic_sample=args.allelic_sample)
         Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
-        np.savez(os.path.join(output_dir, 'preprocess_data'), Pi=Pi, r=r, all_mu=all_mu,
+        np.savez(os.path.join(output_dir, 'preprocess_data'), Pi=Pi, r=r, C=C, all_mu=all_mu,
                  global_beta=global_beta, adp_cluster=adp_cluster)
-        cov_df.to_pickle(os.path.join(output_dir, 'cov_df'))
+        cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
 
     ## run scattered coverage mcmc job using preprocessed data
     elif args.command == "coverage_mcmc_shard":

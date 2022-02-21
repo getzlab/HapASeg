@@ -132,7 +132,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "cov_df_pickle": "cov_df.pickle"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v605"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:cov_refactor_v613"
 
 
 class Hapaseg_coverage_mcmc(wolf.Task):
@@ -153,7 +153,7 @@ class Hapaseg_coverage_mcmc(wolf.Task):
         "cov_seg_figure": 'cov_mcmc_cluster_*_visual.png'
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v605"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:cov_refactor_v613"
     resources = {"mem" : "5G"}
 
 
@@ -171,7 +171,7 @@ class Hapaseg_collect_coverage_mcmc(wolf.Task):
         "cov_collected_data":'cov_mcmc_collected_data.npz'   
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v605"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:cov_refactor_v613"
 
 
 class Hapaseg_coverage_dp(wolf.Task):
@@ -193,7 +193,7 @@ class Hapaseg_coverage_dp(wolf.Task):
         "cov_dp_object" : "Cov_DP_model.pickle",
         "cov_dp_figure" : "coverage_figures/coverage_draw*"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v605"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:cov_refactor_v613"
 
 class Hapaseg_acdp_generate_df(wolf.Task):
     inputs = {
@@ -213,7 +213,7 @@ class Hapaseg_acdp_generate_df(wolf.Task):
     output_patterns = {
         "acdp_df_pickle": "acdp_df.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v605"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:cov_refactor_v613"
 
 class Hapaseg_run_acdp(wolf.Task):
     inputs = {
@@ -233,4 +233,4 @@ class Hapaseg_run_acdp(wolf.Task):
     output_patterns = {
         "acdp_model_pickle": "acdp_model.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v605"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:cov_refactor_v613"

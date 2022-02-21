@@ -7,7 +7,7 @@ import scipy.special as ss
 from capy import mut, seq
 
 from .NB_coverage_MCMC import NB_MCMC_AllClusters, NB_MCMC_SingleCluster
-from model_optimizers import PoissonRegression
+from .model_optimizers import PoissonRegression
 
 class CoverageMCMCRunner:
     def __init__(self,
@@ -51,7 +51,7 @@ class CoverageMCMCRunner:
     # Do preprocessing for running on each ADP cluster individually
     def prepare_single_cluster(self):
         Pi, r, C, filtered_cov_df = self.assign_clusters()
-        pois_regr = PoissonRegression(self.r, self.C, self.Pi)
+        pois_regr = PoissonRegression(r, C, Pi)
         all_mu, global_beta = pois_regr.fit()
 
         # save these results to a numpy object
