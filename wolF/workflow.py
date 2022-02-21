@@ -45,6 +45,47 @@ cov_collect = wolf.ImportTask(
   task_name = "covcollect"
 )
 
+####
+# defining reference config generators for hg19 and hg38
+
+#hg19
+def _hg19_config_gen(coverage_dir):
+    hg19_ref_panel = pd.DataFrame({ "path" : subprocess.check_output("gsutil ls gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/*.bcf*", shell = True).decode().rstrip().split("\n") })
+    hg19_ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
+    hg19_ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
+    hg19_ref_dict = ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
+
+    hg19_ref_config = dict(
+        ref_fasta ="gs://getzlab-workflows-reference_files-oa/hg19/Homo_sapiens_assembly19.fasta",
+        ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg19/Homo_sapiens_assembly19.fasta.fai",
+        ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg19/Homo_sapiens_assembly19.dict",
+        genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg19/eagle/genetic_map_hg19_withX.txt.gz",
+        common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg19/gnomad/gnomAD_MAF10_80pct_45prob.txt",
+        allelic_segs =,
+        coverage_dir = coverage_dir,
+        ref_panel_1000g = hg19_ref_dict
+    )
+    return hg19_ref_config
+
+#hg38
+def _hg38_config_gen(coverage_dir):
+    hg38_ref_panel = pd.DataFrame({ "path" : subprocess.check_output("gsutil ls gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/*.bcf*", shell = True).decode().rstrip().split("\n") })
+    hg38_ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
+    hg38_ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
+    hg38_ref_dict = ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
+
+    hg38_ref_config= dict(
+        ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
+        ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
+        ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
+        genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
+        common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
+        allelic_segs=,
+        coverage_dir=coverage_dir,
+        ref_panel_1000g = hg38_ref_panel
+    )
+    return hg38_ref_config
+
 def workflow(
   callstats_file = None,
 
@@ -56,32 +97,46 @@ def workflow(
   normal_bai = None,
   normal_coverage_bed = None,
 
-  common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
-  target_list = None
+  ref_genome_build=None, #must be hg19 or hg38
+  
+  target_list = None,
+  coverage_dir = None
 ):
-    #
+    
+    ###
+    # Select config based on ref genome choice
+    if ref_genome_build is None:
+        raise ValueError("Reference genome must be specified! Options are 'hg19' or hg38'")
+    
+    elif ref_genome_build == "hg19":
+        ref_config = _hg19_config_gen(coverage_dir)
+    elif ref_genome_build == "hg38":
+        ref_config = _hg19_config_gen(coverage_dir)
+    else:
+        raise ValueError("Reference genome options are 'hg19' or hg38', got {}".format(ref_genome_build))
+        
     # localize reference files to RODISK
     ref_panel = pd.DataFrame({ "path" : subprocess.check_output("gsutil ls gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/*.bcf*", shell = True).decode().rstrip().split("\n") })
     ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
     ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
 
-    localization_task = wolf.localization.BatchLocalDisk(
+    localization_task = wolf.LocalizeToDisk(
       files = dict(
-        ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
-        ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
-        ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
+        ref_fasta = ref_config["ref_fasta"],
+        ref_fasta_idx = ref_config["ref_fasta_idx"],
+        ref_fasta_dict = ref_config["ref_fasta_dict"],
 
-        genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
+        genetic_map_file = ref_config["genetic_map_file"],
 
         # reference panel
-        **ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
+        **ref_config["ref_panel_1000g"]
       )
     )
 
     #
     # localize BAMs to RODISK
     if tumor_bam is not None and tumor_bai is not None:
-        tumor_bam_localization_task = wolf.localization.BatchLocalDisk(
+        tumor_bam_localization_task = wolf.LocalizeToDisk(
           files = {
             "bam" : tumor_bam,
             "bai" : tumor_bai,
@@ -95,7 +150,7 @@ def workflow(
 
     use_normal_coverage = True
     if normal_bam is not None and normal_bai is not None:
-        normal_bam_localization_task = wolf.localization.BatchLocalDisk(
+        normal_bam_localization_task = wolf.LocalizeToDisk(
           files = {
             "bam" : normal_bam,
             "bai" : normal_bai

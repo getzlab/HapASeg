@@ -175,6 +175,7 @@ class Hapaseg_coverage_dp(wolf.Task):
         "cov_dp_figure" : "coverage_figures/coverage_draw*"
     }
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v608"
+    resources = {"mem" : "10G"} #potentially overkill and wont be necessary if cache table implemented
 
 class Hapaseg_acdp_generate_df(wolf.Task):
     inputs = {
