@@ -19,9 +19,11 @@ from .allelic_MCMC import A_MCMC
 from .allelic_DP import A_DP, DPinstance
 from . import utils as hs_utils
 
+from .NB_coverage_MCMC import NB_MCMC_SingleCluster
 from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters
 from .coverage_DP import Coverage_DP
 from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Call somatic copynumber alterations taking advantage of SNP phasing")
@@ -75,10 +77,10 @@ def parse_args():
     ref_group.add_argument("--cytoband_file", required=True)
 
     ## load
-    scatter = subparsers.add_parser("load_snps", help = "Load in phased VCF")
-    scatter.add_argument("--chunk_size", default = 5000) 
-    scatter.add_argument("--phased_VCF", required = True)
-    
+    scatter = subparsers.add_parser("load_snps", help="Load in phased VCF")
+    scatter.add_argument("--chunk_size", default=5000)
+    scatter.add_argument("--phased_VCF", required=True)
+
     scatter.add_argument("--read_backed_phased_VCF")
     scatter.add_argument("--allele_counts_T", required=True)
     scatter.add_argument("--allele_counts_N", required=True)
@@ -111,9 +113,11 @@ def parse_args():
 
     gen_acdp_df.add_argument("--snp_dataframe", help="path to dataframe containing snps")
     gen_acdp_df.add_argument("--coverage_dp_object", help="path to coverage DP output object")
-    gen_acdp_df.add_argument("--allelic_clusters_object", help="npy file containing allelic dp segs-to-clusters results")
-    gen_acdp_df.add_argument("--allelic_draw_index", help="index of ADP draw used for coverage MCMC", type=int, default=-1)
-    
+    gen_acdp_df.add_argument("--allelic_clusters_object",
+                             help="npy file containing allelic dp segs-to-clusters results")
+    gen_acdp_df.add_argument("--allelic_draw_index", help="index of ADP draw used for coverage MCMC", type=int,
+                             default=-1)
+
     # run acdp clustering 
     ac_dp = subparsers.add_parser("allelic_coverage_dp", help="Run DP clustering on allelic coverage tuples")
     ac_dp.add_argument("--coverage_dp_object", help="path to coverage DP output object")
@@ -121,17 +125,20 @@ def parse_args():
     ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
     ac_dp.add_argument("--cytoband_dataframe", help="path to dataframe containing cytoband information")
     ac_dp.add_argument("--warmstart", type=bool, default=True, help="run clustering with warmstart")
-    
+
     ## DP
-    dp = subparsers.add_parser("dp", help = "Run DP clustering on allelic imbalance segments")
-    dp.add_argument("--seg_dataframe", required = True)
-    dp.add_argument("--n_dp_iter", default = 10)
-    dp.add_argument("--seg_samp_idx", default = 0)
-    dp.add_argument("--ref_fasta", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
-    dp.add_argument("--cytoband_file", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
+    dp = subparsers.add_parser("dp", help="Run DP clustering on allelic imbalance segments")
+    dp.add_argument("--seg_dataframe", required=True)
+    dp.add_argument("--n_dp_iter", default=10)
+    dp.add_argument("--seg_samp_idx", default=0)
+    dp.add_argument("--ref_fasta",
+                    required=True)  # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
+    dp.add_argument("--cytoband_file",
+                    required=True)  # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
 
     ## coverage MCMC
-    coverage_mcmc = subparsers.add_parser("coverage_mcmc", help="Run TCR segmentation on allelic imbalance clusters")
+    coverage_mcmc = subparsers.add_parser("coverage_mcmc",
+                                          help="Run TCR segmentation on all allelic imbalance clusters")
     coverage_mcmc.add_argument("--coverage_csv",
                                help="csv file containing '['chr', 'start', 'end', 'covcorr', 'covraw'] data")
     coverage_mcmc.add_argument("--allelic_clusters_object",
@@ -141,23 +148,48 @@ def parse_args():
                                help="path to covariate directory with covariates all in pickled files")
     coverage_mcmc.add_argument("--num_draws", type=int,
                                help="number of draws to take from coverage segmentation MCMC", default=50)
-    coverage_mcmc.add_argument("--cluster_num", type=int,
-                               help="cluster index for this worker to run on. If unspecified method will simulate "
-                                    "all clusters on the same machine", default=None)
     coverage_mcmc.add_argument("--allelic_sample", type=int,
                                help="index of sample clustering from allelic DP to use as seed for segmentation",
                                default=None)
 
+    ## proprocessing coverage MCMC data for scatter tasks
+    preprocess_coverage_mcmc = subparsers.add_parser("coverage_mcmc_preprocess",
+                                                     help="Preform preprocessing on ADP results to allow for coverage mcmc scatter jobs")
+    preprocess_coverage_mcmc.add_argument("--coverage_csv",
+                                          help="csv file containing '['chr', 'start', 'end', 'covcorr', 'covraw'] data")
+    preprocess_coverage_mcmc.add_argument("--allelic_clusters_object",
+                                          help="npy file containing allelic dp segs-to-clusters results")
+    preprocess_coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs")
+    preprocess_coverage_mcmc.add_argument("--covariate_dir",
+                                          help="path to covariate directory with covariates all in pickled files")
+    preprocess_coverage_mcmc.add_argument("--allelic_sample", type=int,
+                                          help="index of sample clustering from allelic DP to use as seed for segmentation. Will use most likely clustering by default",
+                                          default=None)
+
+    ## running coverage mcmc on single cluster for scatter task
+    coverage_mcmc_shard = subparsers.add_parser("coverage_mcmc_shard",
+                                                help="run coverage mcmc on single ADP cluster")
+    coverage_mcmc_shard.add_argument("--preprocess_data", help='path to numpy object containing preprocessed data',
+                                     required=True)
+    coverage_mcmc_shard.add_argument("--num_draws", type=int,
+                               help="number of draws to take from coverage segmentation MCMC", default=50)
+    coverage_mcmc_shard.add_argument("--cluster_num", type=int,
+                               help="cluster index for this worker to run on. If unspecified method will simulate "
+                                    "all clusters on the same machine", default=None)
+
     ## collect coverage MCMC shards
     collect_cov_mcmc = subparsers.add_parser("collect_cov_mcmc", help="collect sharded cov mcmc results")
     collect_cov_mcmc.add_argument("--coverage_dir", help="path to the directory containing the coverage mcmc results")
-    collect_cov_mcmc.add_argument("--cov_mcmc_files", help="path to txt file with each line containing a path to a cov mcmc shard result")
-    collect_cov_mcmc.add_argument("--cov_df_pickle", help="path to cov_df pickle filei. Required for using --cov_mcmc_files option")
+    collect_cov_mcmc.add_argument("--cov_mcmc_files",
+                                  help="path to txt file with each line containing a path to a cov mcmc shard result")
+    collect_cov_mcmc.add_argument("--cov_df_pickle",
+                                  help="path to cov_df pickle file. Required for using --cov_mcmc_files option")
 
     ## Coverage DP
     coverage_dp = subparsers.add_parser("coverage_dp", help="Run DP clustering on coverage segmentations")
     coverage_dp.add_argument("--f_cov_df", help="path to saved filtered coverage dataframe")
-    coverage_dp.add_argument("--cov_mcmc_data", help="path to numpy savez file containing bins to segments array and global beta")
+    coverage_dp.add_argument("--cov_mcmc_data",
+                             help="path to numpy savez file containing bins to segments array and global beta")
     coverage_dp.add_argument("--num_segmentation_samples", type=int, help="number of segmentation samples to use")
     coverage_dp.add_argument("--num_draws", type=int,
                              help="number of thinned draws from the coverage dp to take after burn in")
@@ -185,17 +217,17 @@ def main():
         dask_client = dd.Client(n_workers=int(args.n_workers))
 
         snps = HapasegSNPs(
-          phased_VCF = args.phased_VCF,
-          readbacked_phased_VCF = args.read_backed_phased_VCF,
-          allele_counts = args.allele_counts_T,
-          allele_counts_N = args.allele_counts_N
+            phased_VCF=args.phased_VCF,
+            readbacked_phased_VCF=args.read_backed_phased_VCF,
+            allele_counts=args.allele_counts_T,
+            allele_counts_N=args.allele_counts_N
         )
 
         runner = AllelicMCMCRunner(
-          snps.allele_counts,
-          snps.chromosome_intervals,
-          dask_client,
-          phase_correct = args.phase_correct
+            snps.allele_counts,
+            snps.chromosome_intervals,
+            dask_client,
+            phase_correct=args.phase_correct
         )
 
         allelic_segs = runner.run_all()
@@ -208,31 +240,31 @@ def main():
     elif args.command == "load_snps":
         # load from VCF
         snps = HapasegSNPs(
-          phased_VCF = args.phased_VCF,
-          readbacked_phased_VCF = args.read_backed_phased_VCF,
-          allele_counts = args.allele_counts_T,
-          allele_counts_N = args.allele_counts_N
+            phased_VCF=args.phased_VCF,
+            readbacked_phased_VCF=args.read_backed_phased_VCF,
+            allele_counts=args.allele_counts_T,
+            allele_counts_N=args.allele_counts_N
         )
 
         # create chunks
         chromosome_intervals = hs_utils.parse_cytoband(args.cytoband_file)
 
-        t = mut.map_mutations_to_targets(snps.allele_counts, chromosome_intervals, inplace = False)
+        t = mut.map_mutations_to_targets(snps.allele_counts, chromosome_intervals, inplace=False)
         # ranges of SNPs spanned by each arm
-        groups = t.groupby(t).apply(lambda x : [x.index.min(), x.index.max()]).to_frame(name = "bdy")
+        groups = t.groupby(t).apply(lambda x: [x.index.min(), x.index.max()]).to_frame(name="bdy")
         # remove arms with too few SNPs (e.g. acrocentric chromosomes)
-        groups = groups.loc[groups["bdy"].apply(np.diff) > 5] # XXX: is 5 SNPs too small?
+        groups = groups.loc[groups["bdy"].apply(np.diff) > 5]  # XXX: is 5 SNPs too small?
 
         # chunk arms
-        groups["ranges"] = groups["bdy"].apply(lambda x : np.r_[x[0]:x[1]:args.chunk_size, x[1]])
+        groups["ranges"] = groups["bdy"].apply(lambda x: np.r_[x[0]:x[1]:args.chunk_size, x[1]])
 
         # for arms with > 1 chunk, merge the last chunk with penultimate chunk if last chunk is short
         short_last_chunks = groups.loc[
-          (groups["ranges"].apply(len) > 2) & \
-          (groups["ranges"].apply(lambda x : x[-1] - x[-2]) < args.chunk_size*0.05),
-          "ranges"
+            (groups["ranges"].apply(len) > 2) & \
+            (groups["ranges"].apply(lambda x: x[-1] - x[-2]) < args.chunk_size * 0.05),
+            "ranges"
         ]
-        groups.loc[short_last_chunks.index, "ranges"] = short_last_chunks.apply(lambda x : np.r_[x[:-2], x[-1]])
+        groups.loc[short_last_chunks.index, "ranges"] = short_last_chunks.apply(lambda x: np.r_[x[:-2], x[-1]])
 
         # create chunk scatter dataframe
         chunks = pd.DataFrame(
@@ -245,7 +277,7 @@ def main():
 
         # save to disk
         snps.allele_counts.to_pickle(output_dir + "/allele_counts.pickle")
-        chunks.to_csv(output_dir + "/scatter_chunks.tsv", sep = "\t", index = False)
+        chunks.to_csv(output_dir + "/scatter_chunks.tsv", sep="\t", index=False)
 
     elif args.command == "load_coverage":
         pass
@@ -365,24 +397,24 @@ def main():
 
     elif args.command == "dp":
         # load allelic segmentation samples
-        A = A_DP(args.seg_dataframe, ref_fasta = args.ref_fasta)
+        A = A_DP(args.seg_dataframe, ref_fasta=args.ref_fasta)
 
         # run DP
         # TODO: when we have better type checking, drop the int coersion here
-        #N_seg_samps = A.n_samp - 1 if int(args.n_seg_samps) == 0 else int(args.n_seg_samps)
+        # N_seg_samps = A.n_samp - 1 if int(args.n_seg_samps) == 0 else int(args.n_seg_samps)
         # TODO: if we decide to drop support for chained sampling altogether, remove N_seg_samps logic altogether
         snps_to_clusters, snps_to_phases, likelihoods = A.run(
-          seg_sample_idx = int(args.seg_samp_idx),
-          #N_seg_samps = N_seg_samps,
-          N_clust_samps = int(args.n_dp_iter)
+            seg_sample_idx=int(args.seg_samp_idx),
+            # N_seg_samps = N_seg_samps,
+            N_clust_samps=int(args.n_dp_iter)
         )
 
         # save DP results
         np.savez(output_dir + "/allelic_DP_SNP_clusts_and_phase_assignments.npz",
-          snps_to_clusters = snps_to_clusters,
-          snps_to_phases = snps_to_phases,
-          likelihoods = likelihoods
-        )
+                 snps_to_clusters=snps_to_clusters,
+                 snps_to_phases=snps_to_phases,
+                 likelihoods=likelihoods
+                 )
 
         A.SNPs.to_pickle(output_dir + "/all_SNPs.pickle")
 
@@ -390,107 +422,127 @@ def main():
         # plot DP results
 
         # 1. phased SNP visualization
-        f = plt.figure(figsize = [17.56, 5.67])
+        f = plt.figure(figsize=[17.56, 5.67])
         hs_utils.plot_chrbdy(args.cytoband_file)
-        A.visualize_SNPs(snps_to_phases, color = True, f = f)
-        A.visualize_clusts(snps_to_clusters, f = f, thick = True, nocolor = True)
+        A.visualize_SNPs(snps_to_phases, color=True, f=f)
+        A.visualize_clusts(snps_to_clusters, f=f, thick=True, nocolor=True)
         plt.ylabel("Haplotypic imbalance")
         plt.title("SNP phasing/segmentation")
-        plt.savefig(output_dir + "/figures/SNPs.png", dpi = 300)
+        plt.savefig(output_dir + "/figures/SNPs.png", dpi=300)
         plt.close()
 
         # 2. pre-clustering segments
-        f = plt.figure(figsize = [17.56, 5.67])
+        f = plt.figure(figsize=[17.56, 5.67])
         hs_utils.plot_chrbdy(args.cytoband_file)
-        A.visualize_SNPs(snps_to_phases, color = False, f = f)
-        A.visualize_segs(snps_to_clusters, f = f)
+        A.visualize_SNPs(snps_to_phases, color=False, f=f)
+        A.visualize_segs(snps_to_clusters, f=f)
         plt.ylabel("Haplotypic imbalance")
         plt.title("Allelic segmentation, pre-DP clustering")
-        plt.savefig(output_dir + "/figures/allelic_imbalance_preDP.png", dpi = 300)
+        plt.savefig(output_dir + "/figures/allelic_imbalance_preDP.png", dpi=300)
         plt.close()
 
         # 3. post-clustering segments
-        f = plt.figure(figsize = [17.56, 5.67])
+        f = plt.figure(figsize=[17.56, 5.67])
         hs_utils.plot_chrbdy(args.cytoband_file)
-        A.visualize_SNPs(snps_to_phases, color = False, f = f)
-        A.visualize_clusts(snps_to_clusters, f = f, thick = True)
+        A.visualize_SNPs(snps_to_phases, color=False, f=f)
+        A.visualize_clusts(snps_to_clusters, f=f, thick=True)
         plt.ylabel("Haplotypic imbalance")
         plt.title("Allelic segmentation, post-DP clustering")
-        plt.savefig(output_dir + "/figures/allelic_imbalance_postDP.png", dpi = 300)
+        plt.savefig(output_dir + "/figures/allelic_imbalance_postDP.png", dpi=300)
         plt.close()
 
+    ## running coverage mcmc on all clusters
     elif args.command == "coverage_mcmc":
         cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
                                              args.allelic_clusters_object,
                                              args.SNPs_pickle,
                                              args.covariate_dir,
                                              num_draws=args.num_draws,
-                                             cluster_num=args.cluster_num,
                                              allelic_sample=args.allelic_sample)
 
         seg_samples, beta, mu_i_samples, filtered_cov_df = cov_mcmc_runner.run()
 
-        #save_results
-        #first case is if we ran on a single cluster that existed
-        if args.cluster_num is not None and seg_samples is not None:
-            # if its a single cluster that was not skipped, save the results to a new coverage dir
-            coverage_dir = os.path.join(output_dir, 'coverage_mcmc_clusters')
-            figure_dir = os.path.join(coverage_dir, 'figures')
+        # save_results
+        with open(os.path.join(output_dir, 'cov_mcmc_model.pickle'), 'wb') as f:
+            pickle.dump(cov_mcmc_runner.model, f)
 
-            if not os.path.isdir(coverage_dir):
-                os.mkdir(coverage_dir)
-            
-            if not os.path.isdir(figure_dir):
-                os.mkdir(figure_dir)
+        np.savez(os.path.join(output_dir, 'cov_mcmc_data'),
+                 seg_samples=seg_samples, beta=beta, mu_i_samples=mu_i_samples)
+        filtered_cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
 
-            with open(os.path.join(coverage_dir,
-                                   'cov_mcmc_model_cluster_{}.pickle'.format(args.cluster_num)), 'wb') as f:
-                pickle.dump(cov_mcmc_runner.model, f)
+    ## preprocess ADP data to run scattered coverage mcmc jobs on each ADP cluster
+    elif args.command == "coverage_mcmc_preprocess":
+        cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
+                                             args.allelic_clusters_object,
+                                             args.SNPs_pickle,
+                                             args.covariate_dir,
+                                             allelic_sample=args.allelic_sample)
+        Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
+        np.savez(os.path.join(output_dir, 'preprocess_data'), Pi=Pi, r=r, C=C, all_mu=all_mu,
+                 global_beta=global_beta, adp_cluster=adp_cluster)
+        cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
 
-            np.savez(os.path.join(coverage_dir, 'cov_mcmc_data_cluster_{}'.format(args.cluster_num)),
-                     seg_samples=seg_samples, beta=beta, mu_i_samples=mu_i_samples)
-            if args.cluster_num == 0:
-                # only need one copy of this
-                filtered_cov_df.to_pickle(os.path.join(coverage_dir, 'cov_df.pickle'))
-            
-            # save visualization
-            cov_mcmc_runner.model.visualize_cluster_samples(os.path.join(figure_dir, 'cov_mcmc_cluster_{}_visual'.format(args.cluster_num)))
-        # case of running on all clusters
-        elif seg_samples is not None:
-            with open(os.path.join(output_dir, 'cov_mcmc_model.pickle'), 'wb') as f:
-                pickle.dump(cov_mcmc_runner.model, f)
+    ## run scattered coverage mcmc job using preprocessed data
+    elif args.command == "coverage_mcmc_shard":
+        # load preprocessed data
+        preprocess_data = np.load(args.preprocess_data)
+        # check to make sure that the cluster index is within the range
+        Pi = preprocess_data['Pi']
+        if args.cluster_num > Pi.shape[1] - 1:
+            raise ValueError("Received cluster number {}, which is out of range".format(args.cluster_num))
 
-            np.savez(os.path.join(output_dir, 'cov_mcmc_data'),
-                     seg_samples=seg_samples, beta=beta, mu_i_samples=mu_i_samples)
-            filtered_cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
-        #case of running on a null cluster (i.e. cluster num did not exist)
-        else:
-            pass
+        # extract preprocessed data from this cluster
+        mu = preprocess_data["all_mu"][args.cluster_num]
+        beta = preprocess_data["global_beta"]
+        c_assignments = np.argmax(Pi, axis=1)
+        cluster_mask = (c_assignments == args.cluster_num)
+        r = preprocess_data['r'][cluster_mask]
+        C = preprocess_data['C'][cluster_mask]
+
+        # run on the specified cluster
+        cov_mcmc = NB_MCMC_SingleCluster(args.num_draws, r, C, mu, beta, args.cluster_num)
+        cov_mcmc.run()
+
+        # collect the results
+        segment_samples, global_beta, mu_i_samples = cov_mcmc.prepare_results()
+
+        # save samples
+        with open(os.path.join(output_dir, 'cov_mcmc_model_cluster_{}.pickle'.format(args.cluster_num)), 'wb') as f:
+            pickle.dump(cov_mcmc, f)
+
+        np.savez(os.path.join(output_dir, 'cov_mcmc_data_cluster_{}'.format(args.cluster_num)),
+                 seg_samples=segment_samples, beta=global_beta, mu_i_samples=mu_i_samples)
+
+        # save visualization
+        cov_mcmc.visualize_cluster_samples(
+            os.path.join(output_dir, 'cov_mcmc_cluster_{}_visual'.format(args.cluster_num)))
+
     elif args.command == "collect_cov_mcmc":
         if args.coverage_dir:
             full_segmentation = aggregate_clusters(coverage_dir=args.coverage_dir)
-        
-            #load beta from one of the clusters
+
+            # load beta from one of the clusters
             cov_data = np.load(os.path.join(args.coverage_dir, 'cov_mcmc_data_cluster_0.npz'))
-            beta = cov_data['beta']
         elif args.cov_mcmc_files:
             if args.cov_df_pickle is None:
                 raise ValueError("cov_df_pickle argument required for passing shard file")
             full_segmentation = aggregate_clusters(f_file_list=args.cov_mcmc_files, cov_df_pickle=args.cov_df_pickle)
-            #get beta from first cluster
+            # get beta from first cluster
             with open(args.cov_mcmc_files, 'r') as f:
                 path = f.readlines()[0].rstrip('\n')
             cov_data = np.load(path)
         else:
-            #need to pass in one or the other
+            # need to pass in one or the other
             raise ValueError("must pass in either a directory or a txt file listing mcmc results")
 
-        beta = cov_data['beta']        
+        beta = cov_data['beta']
         ## save these results to new aggregated file
         if args.coverage_dir:
-            np.savez(os.path.join(args.coverage_dir, 'cov_mcmc_collected_data'), seg_samples=full_segmentation, beta=beta)
+            np.savez(os.path.join(args.coverage_dir, 'cov_mcmc_collected_data'), seg_samples=full_segmentation,
+                     beta=beta)
         else:
             np.savez('./cov_mcmc_collected_data', seg_samples=full_segmentation, beta=beta)
+
     elif args.command == "coverage_dp":
         cov_df = pd.read_pickle(args.f_cov_df)
         mcmc_data = np.load(args.cov_mcmc_data)
@@ -502,25 +554,26 @@ def main():
         cov_dp_runner.run_dp(args.num_segmentation_samples, args.num_draws)
         with open(args.output_dir + f"/Cov_DP_model.pickle", "wb") as f:
             pickle.dump(cov_dp_runner, f)
-   
-        #save visualization
+
+        # save visualization
         # first make sure the directory exists
         figure_dir = os.path.join(output_dir, 'coverage_figures')
         if not os.path.isdir(figure_dir):
             os.mkdir(figure_dir)
 
-        cov_dp_runner.visualize_DP_run(args.num_segmentation_samples - 1, os.path.join(figure_dir, 'coverage_draw_{}'.format(args.num_draws -1)))
-    
+        cov_dp_runner.visualize_DP_run(args.num_segmentation_samples - 1,
+                                       os.path.join(figure_dir, 'coverage_draw_{}'.format(args.num_draws - 1)))
+
     elif args.command == "generate_acdp_df":
         acdp_df, beta = generate_acdp_df(args.snp_dataframe,
-                               args.coverage_dp_object,
-                               args.allelic_clusters_object,
-                               args.allelic_draw_index)
+                                         args.coverage_dp_object,
+                                         args.allelic_clusters_object,
+                                         args.allelic_draw_index)
         acdp_df.to_pickle(os.path.join(output_dir, "acdp_df.pickle"))
- 
+
     elif args.command == "allelic_coverage_dp":
         acdp_df = pd.read_pickle(args.acdp_df_path)
-        #may want to switch this to a preferred method of beta loading
+        # may want to switch this to a preferred method of beta loading
         with open(args.coverage_dp_object, "rb") as f:
             cdp_pickle = pickle.load(f)
         beta = cdp_pickle.beta
@@ -528,10 +581,10 @@ def main():
         acdp.run(args.num_samples)
         print("visualizing run")
         acdp.visualize_ACDP(output_dir)
-        
-        
+
         with open(os.path.join(output_dir, "acdp_model.pickle"), "wb") as f:
             pickle.dump(acdp, f)
+
 
 if __name__ == "__main__":
     main()
