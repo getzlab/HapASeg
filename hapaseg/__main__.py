@@ -492,9 +492,16 @@ def main():
         if args.cluster_num > Pi.shape[1] - 1:
             raise ValueError("Received cluster number {}, which is out of range".format(args.cluster_num))
 
+        # extract preprocessed data from this cluster
+        mu = preprocess_data["all_mu"][args.cluster_num]
+        beta = preprocess_data["global_beta"]
+        c_assignments = np.argmax(Pi, axis=1)
+        cluster_mask = (c_assignments == args.cluster_num)
+        r = preprocess_data['r'][cluster_mask]
+        C = preprocess_data['C'][cluster_mask]
+
         # run on the specified cluster
-        cov_mcmc = NB_MCMC_SingleCluster(args.num_draws, preprocess_data['r'], preprocess_data['C'], Pi,
-                                         args.cluster_num)
+        cov_mcmc = NB_MCMC_SingleCluster(args.num_draws, r, C, mu, beta, args.cluster_num)
         cov_mcmc.run()
 
         # collect the results
