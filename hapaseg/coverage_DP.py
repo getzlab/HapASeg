@@ -100,7 +100,8 @@ class Run_Cov_DP:
         self.greylist_segments = sc.SortedSet({})
         self.cluster_LLs = sc.SortedDict({})
         self.cluster_ml_cache={}
-
+        self.cluster_prior_ml_cache={}
+        
         self.prior_clusters = None
         self.prior_r_list = None
         self.prior_C_list = None
@@ -155,7 +156,7 @@ class Run_Cov_DP:
 
     # main worker function for computing marginal likelihoods of clusters
     #TODO: move to a bounded size LFU chache over dictionary?
-     def _ML_cluster(self, cluster_set):
+    def _ML_cluster(self, cluster_set):
         fs = frozenset(cluster_set)
         if fs in self.cluster_ml_cache:
             return self.cluster_ml_cache[fs]
@@ -183,19 +184,30 @@ class Run_Cov_DP:
     # computes the ML of a cluster with some clusters optionally containing 
     # segments from previous iterations (i.e. prior clustering)
     def _ML_cluster_prior(self, cluster_set, new_segIDs=None):
-        # aggregate r and C arrays
-        if new_segIDs is not None:
-            r_new = np.hstack([self.segment_r_list[s] for s in new_segIDs])
-            C_new = np.concatenate([self.segment_C_list[s] for s in new_segIDs])
-            r = np.r_[np.hstack([self.prior_r_list[i] for i in cluster_set]), r_new]
-            C = np.r_[np.concatenate([self.prior_C_list[i] for i in cluster_set]), C_new]
+        if new_segIDs is None:
+            fs_new = None
         else:
-            r = np.hstack([self.prior_r_list[i] for i in cluster_set])
-            C = np.concatenate([self.prior_C_list[i] for i in cluster_set])
+            fs_new = frozenset(new_segIDs)
+        query = (frozenset(cluster_set), fs_new)
+        
+        if query in self.cluster_prior_ml_cache:
+            return self.cluster_prior_ml_cache[query]
+        else:
+            # aggregate r and C arrays
+            if new_segIDs is not None:
+                r_new = np.hstack([self.segment_r_list[s] for s in new_segIDs])
+                C_new = np.concatenate([self.segment_C_list[s] for s in new_segIDs])
+                r = np.r_[np.hstack([self.prior_r_list[i] for i in cluster_set]), r_new]
+                C = np.r_[np.concatenate([self.prior_C_list[i] for i in cluster_set]), C_new]
+            else:
+                r = np.hstack([self.prior_r_list[i] for i in cluster_set])
+                C = np.concatenate([self.prior_C_list[i] for i in cluster_set])
 
-        mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, C, ret_hess=True)
-        ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt)
-        return ll_opt + self._get_laplacian_approx(H_opt)
+            mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, C, ret_hess=True)
+            ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt)
+            res =  ll_opt + self._get_laplacian_approx(H_opt)
+            self.cluster_prior_ml_cache[query] = res
+            return res
 
     @staticmethod
     def _get_laplacian_approx(H):
