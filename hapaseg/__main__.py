@@ -106,25 +106,6 @@ def parse_args():
     concat.add_argument("--chunks", required=True, nargs="+")
     concat.add_argument("--scatter_intervals", required=True)
 
-    ## Allelic Coverage DP
-
-    # generate df
-    gen_acdp_df = subparsers.add_parser("generate_acdp_df", help="generate dataframe for acdp clustering")
-
-    gen_acdp_df.add_argument("--snp_dataframe", help="path to dataframe containing snps")
-    gen_acdp_df.add_argument("--coverage_dp_object", help="path to coverage DP output object")
-    gen_acdp_df.add_argument("--allelic_clusters_object",
-                             help="npy file containing allelic dp segs-to-clusters results")
-    gen_acdp_df.add_argument("--allelic_draw_index", help="index of ADP draw used for coverage MCMC", type=int,
-                             default=-1)
-
-    # run acdp clustering 
-    ac_dp = subparsers.add_parser("allelic_coverage_dp", help="Run DP clustering on allelic coverage tuples")
-    ac_dp.add_argument("--coverage_dp_object", help="path to coverage DP output object")
-    ac_dp.add_argument("--acdp_df_path", help="path to acdp dataframe")
-    ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
-    ac_dp.add_argument("--cytoband_dataframe", help="path to dataframe containing cytoband information")
-    ac_dp.add_argument("--warmstart", type=bool, default=True, help="run clustering with warmstart")
 
     ## DP
     dp = subparsers.add_parser("dp", help="Run DP clustering on allelic imbalance segments")
@@ -193,6 +174,25 @@ def parse_args():
     coverage_dp.add_argument("--num_segmentation_samples", type=int, help="number of segmentation samples to use")
     coverage_dp.add_argument("--num_draws", type=int,
                              help="number of thinned draws from the coverage dp to take after burn in")
+    ## Allelic Coverage DP
+
+    # generate df
+    gen_acdp_df = subparsers.add_parser("generate_acdp_df", help="generate dataframe for acdp clustering")
+
+    gen_acdp_df.add_argument("--snp_dataframe", help="path to dataframe containing snps")
+    gen_acdp_df.add_argument("--coverage_dp_object", help="path to coverage DP output object")
+    gen_acdp_df.add_argument("--allelic_clusters_object",
+                             help="npy file containing allelic dp segs-to-clusters results")
+    gen_acdp_df.add_argument("--allelic_draw_index", help="index of ADP draw used for coverage MCMC", type=int,
+                             default=-1)
+
+    # run acdp clustering 
+    ac_dp = subparsers.add_parser("allelic_coverage_dp", help="Run DP clustering on allelic coverage tuples")
+    ac_dp.add_argument("--coverage_dp_object", help="path to coverage DP output object")
+    ac_dp.add_argument("--acdp_df_path", help="path to acdp dataframe")
+    ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
+    ac_dp.add_argument("--cytoband_file", help="path to cytoband txt file")
+    ac_dp.add_argument("--warmstart", type=bool, default=True, help="run clustering with warmstart")
     args = parser.parse_args()
 
     # validate arguments
@@ -577,7 +577,7 @@ def main():
         with open(args.coverage_dp_object, "rb") as f:
             cdp_pickle = pickle.load(f)
         beta = cdp_pickle.beta
-        acdp = AllelicCoverage_DP(acdp_df, beta, args.cytoband_dataframe, args.warmstart)
+        acdp = AllelicCoverage_DP(acdp_df, beta, args.cytoband_file, args.warmstart)
         acdp.run(args.num_samples)
         print("visualizing run")
         acdp.visualize_ACDP(output_dir)

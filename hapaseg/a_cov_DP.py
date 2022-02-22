@@ -17,6 +17,8 @@ from capy import seq, mut
 
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
+from .utils import *
+
 colors = mpl.cm.get_cmap("tab20").colors
 
 
@@ -112,10 +114,10 @@ def generate_acdp_df(SNP_path, # path to SNP df
     return pd.concat(draw_dfs), dp_run.beta
 
 class AllelicCoverage_DP:
-    def __init__(self, cov_df, beta, allelic_segs_path, seed_all_clusters=True):
+    def __init__(self, cov_df, beta, cytoband_file, seed_all_clusters=True):
         self.cov_df = cov_df
         self.beta = beta
-        self.allelic_segs_path = allelic_segs_path
+        self.cytoband_file = cytoband_file
         self.seed_all_clusters = seed_all_clusters
 
         self.num_segments = len(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
@@ -800,7 +802,7 @@ class AllelicCoverage_DP:
             ADP_dict[ADP] = (group['maj_count'].sum(), group['min_count'].sum())
 
         # compute chr ends for plotting
-        allelic_segs = pd.read_pickle(self.allelic_segs_path)
+        allelic_segs = parse_cytoband(self.cytoband_file)
         chrbdy = allelic_segs.dropna().loc[:, ["start", "end"]]
         chr_ends = chrbdy.loc[chrbdy["start"] != 0, "end"].cumsum()
 

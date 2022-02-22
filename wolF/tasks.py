@@ -132,7 +132,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "cov_df_pickle": "cov_df.pickle"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v621"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v622"
 
 
 class Hapaseg_coverage_mcmc(wolf.Task):
@@ -153,7 +153,7 @@ class Hapaseg_coverage_mcmc(wolf.Task):
         "cov_seg_figure": 'cov_mcmc_cluster_*_visual.png'
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v621"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v622"
     resources = {"mem" : "5G"}
 
 
@@ -171,7 +171,7 @@ class Hapaseg_collect_coverage_mcmc(wolf.Task):
         "cov_collected_data":'cov_mcmc_collected_data.npz'   
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v621"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v622"
 
 
 class Hapaseg_coverage_dp(wolf.Task):
@@ -193,7 +193,7 @@ class Hapaseg_coverage_dp(wolf.Task):
         "cov_dp_object" : "Cov_DP_model.pickle",
         "cov_dp_figure" : "coverage_figures/coverage_draw*"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v621"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v622"
     resources = {"mem" : "10G"} #potentially overkill and wont be necessary if cache table implemented
 
 class Hapaseg_acdp_generate_df(wolf.Task):
@@ -216,24 +216,27 @@ class Hapaseg_acdp_generate_df(wolf.Task):
     output_patterns = {
         "acdp_df_pickle": "acdp_df.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v621"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v622"
 
 class Hapaseg_run_acdp(wolf.Task):
     inputs = {
         "coverage_dp_object" : None,
         "acdp_df" : None,
         "num_samples" : None,
-        "cytoband_df" : None
+        "cytoband_file" : None
     }
 
     script = """
     hapaseg allelic_coverage_dp  --coverage_dp_object ${coverage_dp_object} \
     --acdp_df_path ${acdp_df} \
     --num_samples ${num_samples} \
-    --cytoband_dataframe ${cytoband_df}
+    --cytoband_file ${cytoband_file}
     """
 
     output_patterns = {
-        "acdp_model_pickle": "acdp_model.pickle"
+        "acdp_model_pickle": "acdp_model.pickle",
+        "acdp_clusters_plot": "acdp_clusters_plot.png",
+        "acdp_genome_plot": "acdp_genome_plot.png",
+        "acdp_tuples_plot": "acdp_tuples_plot.png"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v621"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v622"

@@ -61,7 +61,7 @@ def _hg19_config_gen(coverage_dir):
         ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg19/Homo_sapiens_assembly19.dict",
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg19/eagle/genetic_map_hg19_withX.txt.gz",
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg19/gnomad/gnomAD_MAF10_80pct_45prob.txt",
-        allelic_segs =,
+        cytoband_file = 'gs://getzlab-workflows-reference_files-oa/hg19/cytoBand.txt',
         coverage_dir = coverage_dir,
         ref_panel_1000g = hg19_ref_dict
     )
@@ -80,7 +80,7 @@ def _hg38_config_gen(coverage_dir):
         ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
-        allelic_segs=,
+        cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg19/cytoBand.txt',
         coverage_dir=coverage_dir,
         ref_panel_1000g = hg38_ref_panel
     )
@@ -127,7 +127,8 @@ def workflow(
         ref_fasta_dict = ref_config["ref_fasta_dict"],
 
         genetic_map_file = ref_config["genetic_map_file"],
-
+          
+        cytoband_file = ref_config["cytoband_file"],
         # reference panel
         **ref_config["ref_panel_1000g"]
       )
@@ -439,18 +440,27 @@ def workflow(
      }
     )
     
+    ### coverage tasks ####
     
-    #coverage MCMC scatter
-    clusts = [i for i in range(25)]
+    # prepare coverage MCMC
+    prep_cov_mcmc_task = hapaseg.Hapaseg_prepare_coverage_mcmc(
+    inputs={
+        "coverage_csv":tumor_cov_gather_task["coverage"],
+        "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+        "SNPs_pickle":hapaseg_allelic_DP_task["all_SNPs"],
+        "covariate_dir":localization_task["covariate_dir"],
+        "ref_file_path":localization_task["ref_fasta"]
+        }
+    )
+    
+    # coverage MCMC scatter
+    num_clusters = np.load(prep_cov_mcmc_res["preprocess_data"])["Pi"].shape[1]
+    cluster_idxs = [i for i in np.arange(num_clusters)]
     cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc(
-    inputs = {
-            "coverage_csv":tumor_cov_gather_task["coverage"],
-            "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
-            "SNPs_pickle":hapaseg_allelic_DP_task["all_SNPs"],
-            "covariate_dir":localization_task["covariate_dir"],
+        inputs={
+            "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
             "num_draws":10,
-            "cluster_num":clusts,
-            "ref_file_path":localization_task["ref_fasta"]
+            "cluster_num":cluster_idxs
         }
     )
     
@@ -458,10 +468,9 @@ def workflow(
     cov_mcmc_gather_task = hapaseg.Hapaseg_collect_coverage_mcmc(
     inputs = {
         "cov_mcmc_files":[cov_mcmc_scatter_task["cov_segmentation_data"]],
-        "cov_df_pickle":cov_mcmc_scatter_task["cov_df_segmentation"][0]
+        "cov_df_pickle":prep_cov_mcmc_task["cov_df_pickle"]
         }
     )
-    
     
     # coverage DP
     cov_dp_task = hapaseg.Hapaseg_coverage_dp(
@@ -473,14 +482,14 @@ def workflow(
         }   
     )
     
-    
     # generate acdp dataframe
+    adp_draw_num = int(np.load(prep_cov_mcmc_res["preprocess_data"])["adp_cluster"])
     gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
     inputs = {
         "SNPs_pickle":hapaseg_allelic_DP_task["all_SNPs"],
         "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
         "coverage_dp_object":cov_dp_task["cov_dp_object"],
-        "allelic_draw_index":-1,
+        "allelic_draw_index":adp_draw_num,
         "ref_file_path":localization_task["ref_fasta"]
         }
     )
@@ -491,7 +500,8 @@ def workflow(
         "coverage_dp_object":cov_dp_task["cov_dp_object"],
         "acdp_df":gen_acdp_task["acdp_df_pickle"],
         "num_samples":10,
-        "cytoband_df":  #TODO get this from localization task
-    }
+        "cytoband_file": localization_task["cytoband_file"]
+        }
+    )
     
     
