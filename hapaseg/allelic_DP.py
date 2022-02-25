@@ -421,7 +421,7 @@ class DPinstance:
             seg_st = self.breakpoints[break_idx]
             seg_en = self.breakpoints[break_idx + 1]
             D_cl = self.clusts[seg_st]
-            while break_idx < len(self.breakpoints) - 1 and self.clusts[seg_st] != -1 and \
+            while break_idx < len(self.breakpoints) - 2 and self.clusts[seg_st] != -1 and \
               self.clusts[seg_st] == D_cl:
                 D_A += self.seg_sums[seg_st][0]
                 D_B += self.seg_sums[seg_st][1]
