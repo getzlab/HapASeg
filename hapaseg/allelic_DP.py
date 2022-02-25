@@ -282,12 +282,13 @@ class A_DP:
         scerrorbar(idx, rev = True, alpha = ph_prob[idx]*default_alpha, show_CI = color)
 
 class DPinstance:
-    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 1, temperature = 1):
+    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 1, temperature = 1, dp_count_scale_factor = 1):
         self.S = S
         self.clust_prior = clust_prior.copy()
         self.clust_count_prior = clust_count_prior.copy()
         self.alpha = alpha
         self.temperature = temperature
+        self.dp_count_scale_factor = dp_count_scale_factor
 
         self.mm_mat = self.S.loc[:, ["min", "maj"]].values.reshape(-1, order = "F") # numpy for speed
         self.ref_mat = self.S.loc[:, ["A_ref", "B_ref"]].values.reshape(-1, order = "F")
@@ -1068,13 +1069,14 @@ class DPinstance:
             # }}}
                 
             ## DP prior based on clusters sizes
-            n_c = np.c_[self.clust_counts.values()]
-            N = n_c.sum() + n_move
+            n_c = np.c_[self.clust_counts.values()]/self.dp_count_scale_factor
+            M = n_move/self.dp_count_scale_factor
+            N = n_c.sum() + M
             log_count_prior = np.full([len(self.clust_sums), 1], np.nan)
-            log_count_prior[1:] = ss.gammaln(n_move + n_c) + ss.gammaln(N + self.alpha - n_move) \
+            log_count_prior[1:] = ss.gammaln(M + n_c) + ss.gammaln(N + self.alpha - M) \
               - (ss.gammaln(n_c) + ss.gammaln(N + self.alpha))
             # probability of opening a new cluster
-            log_count_prior[0] = ss.gammaln(n_move) + np.log(self.alpha) + ss.gammaln(N + self.alpha - n_move) - ss.gammaln(N + self.alpha)
+            log_count_prior[0] = ss.gammaln(M) + np.log(self.alpha) + ss.gammaln(N + self.alpha - M) - ss.gammaln(N + self.alpha)
 
             #
             # adjacent segment likelihood
