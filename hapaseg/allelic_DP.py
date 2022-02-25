@@ -1184,10 +1184,10 @@ class DPinstance:
                 self.clust_members[choice].update(set(seg_idx))
 
             # update breakpoints
-            snp_idx = [self.breakpoints[b] for b in break_idx]
+            snp_idx = [self.breakpoints[b] for b in break_idx | { x + 1 for x in break_idx }]
             update_idx = sc.SortedSet()
             for snp in snp_idx:
-                if self.clusts[snp - 1] == self.clusts[snp]:
+                if snp < len(self.S) and self.clusts[snp - 1] == self.clusts[snp]:
                     self.breakpoints.remove(snp)
                     self.seg_sums.pop(snp)
                     update_idx.add(self.breakpoints.bisect_left(snp) - 1)
