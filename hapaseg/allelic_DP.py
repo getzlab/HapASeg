@@ -1140,6 +1140,10 @@ class DPinstance:
             # save rephasing status
             if choice_idx & 1:
                 self.S.iloc[seg_idx, self.flip_col] = ~self.S.iloc[seg_idx, self.flip_col]
+                for b in break_idx:
+                    st = self.breakpoints[b]
+                    en = self.breakpoints[b + 1]
+                    self.seg_sums[st] = self.seg_sums[st][::-1]
 
             if not move_clust:
                 print(f"{cur_clust}->{choice} ({len(seg_idx)}, s, [{seg_idx[0]}, {seg_idx[-1]}])")
@@ -1197,9 +1201,10 @@ class DPinstance:
             for bp_idx in update_idx:
                 st = self.breakpoints[bp_idx]
                 en = self.breakpoints[bp_idx + 1]
-                mn = self._Ssum_ph(np.r_[st:en], min = True)
-                mj = self._Ssum_ph(np.r_[st:en], min = False)
-                self.seg_sums[st] = np.r_[mn, mj]
+                self.seg_sums[st] = np.r_[
+                  self._Ssum_ph(np.r_[st:en], min = True),
+                  self._Ssum_ph(np.r_[st:en], min = False)
+                ]
 
             # track global state of cluster assignments
             # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
