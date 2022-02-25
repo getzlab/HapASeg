@@ -898,9 +898,8 @@ class DPinstance:
             # pick a segment at random
             if True or np.random.rand() < 0.5:
                 # get all SNPs within this segment
-                # TODO: why is seg_idx a sortedset? we don't use that functionality elsewhere
-                break_idx = np.random.choice(len(self.breakpoints) - 1)
-                seg_idx = sc.SortedSet(np.r_[self.breakpoints[break_idx]:self.breakpoints[break_idx + 1]])
+                break_idx = sc.SortedSet({np.random.choice(len(self.breakpoints) - 1)})
+                seg_idx = sc.SortedSet(np.r_[self.breakpoints[break_idx[0]]:self.breakpoints[break_idx[0] + 1]])
 
                 cur_clust = int(self.clusts[seg_idx[0]])
 
@@ -1183,6 +1182,21 @@ class DPinstance:
                 self.clusts[seg_idx] = choice
 
                 self.clust_members[choice].update(set(seg_idx))
+
+            # update breakpoints
+            snp_idx = [self.breakpoints[b] for b in break_idx]
+            update_idx = sc.SortedSet()
+            for snp in snp_idx:
+                if self.clusts[snp - 1] == self.clusts[snp]:
+                    self.breakpoints.remove(snp)
+                    self.seg_sums.pop(snp)
+                    update_idx.add(self.breakpoints.bisect_left(snp) - 1)
+            for bp_idx in update_idx:
+                st = self.breakpoints[bp_idx]
+                en = self.breakpoints[bp_idx + 1]
+                mn = self._Ssum_ph(np.r_[st:en], min = True)
+                mj = self._Ssum_ph(np.r_[st:en], min = False)
+                self.seg_sums[st] = np.r_[mn, mj]
 
             # track global state of cluster assignments
             # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
