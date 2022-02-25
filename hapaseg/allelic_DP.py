@@ -899,7 +899,9 @@ class DPinstance:
             if True or np.random.rand() < 0.5:
                 # get all SNPs within this segment
                 break_idx = sc.SortedSet({np.random.choice(len(self.breakpoints) - 1)})
-                seg_idx = np.r_[self.breakpoints[break_idx[0]]:self.breakpoints[break_idx[0] + 1]]
+                seg_st = self.breakpoints[break_idx[0]]
+                seg_en = self.breakpoints[break_idx[0] + 1]
+                seg_idx = np.r_[seg_st:seg_en]
 
                 cur_clust = int(self.clusts[seg_idx[0]])
 
@@ -920,6 +922,13 @@ class DPinstance:
                     split_lik -= split_lik.max()
                     split_point = np.random.choice(np.r_[0:len(seg_idx)], p = np.exp(split_lik)/np.exp(split_lik).sum())
                     seg_idx = seg_idx[:(split_point + 1)]
+
+                    # add breakpoint (can be erased subsequently if segment rejoins original cluster)
+                    new_bp = seg_idx[-1] + 1
+                    if len(seg_idx) < seg_en - seg_st: # don't add breakpoint if we're not splitting segment
+                        self.breakpoints.add(new_bp)
+                        self.seg_sums[new_bp] = np.r_[self._Ssum_ph(np.r_[new_bp:seg_en], min = True), self._Ssum_ph(np.r_[new_bp:seg_en], min = False)]
+                        self.seg_sums[seg_idx[0]] -= self.seg_sums[new_bp]
 
                 # propose splitting out a contiguous interval of segments within the current cluster {{{
                 split_clust = False
