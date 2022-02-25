@@ -395,34 +395,42 @@ class DPinstance:
         ## compute boundaries of adjacent segments
 
         # maj/min counts of contiguous upstream segments belonging to the same cluster
-        st = seg_idx[0]
         U_A = 0
         U_B = 0
         U_cl = -1
-        if st - 1 > 0:
-            U_cl = self.clusts[st - 1]
-            j = 1
-            while st - j > 0 and self.clusts[st - j] != -1 and \
-              self.clusts[st - j] == U_cl:
-                U_A += self._Siat_ph(st - j, min = True)
-                U_B += self._Siat_ph(st - j, min = False)
+        if seg_idx[0] - 1 > 0:
+            break_idx = self.breakpoints.index(seg_idx[0]) - 1
+            seg_st = self.breakpoints[break_idx]
+            seg_en = self.breakpoints[break_idx + 1]
+            U_cl = self.clusts[seg_st]
+            while break_idx > 0 and self.clusts[seg_st] != -1 and \
+              self.clusts[seg_st] == U_cl:
+                # TODO: segment sums will eventually be memoized
+                U_A += self._Ssum_ph(np.r_[seg_st:seg_en], min = True)
+                U_B += self._Ssum_ph(np.r_[seg_st:seg_en], min = False)
 
-                j += 1
+                break_idx = self.breakpoints.index(seg_st) - 1
+                seg_st = self.breakpoints[break_idx]
+                seg_en = self.breakpoints[break_idx + 1]
 
         # maj/min counts of contiguous downstream segments belonging to the same cluster
-        en = seg_idx[-1]
         D_A = 0
         D_B = 0
         D_cl = -1
-        if en + 1 < len(self.S):
-            D_cl = self.clusts[en + 1]
-            j = 1
-            while en + j < len(self.S) - 1 and self.clusts[en + j] != -1 and \
-              self.clusts[en + j] == D_cl:
-                D_A += self._Siat_ph(en + j, min = True)
-                D_B += self._Siat_ph(en + j, min = False)
+        if seg_idx[-1] + 1 < len(self.S):
+            break_idx = self.breakpoints.index(seg_idx[0]) + 1
+            seg_st = self.breakpoints[break_idx]
+            seg_en = self.breakpoints[break_idx + 1]
+            D_cl = self.clusts[seg_st]
+            while break_idx < len(self.breakpoints) - 1 and self.clusts[seg_st] != -1 and \
+              self.clusts[seg_st] == D_cl:
+                # TODO: segment sums will eventually be memoized
+                D_A += self._Ssum_ph(np.r_[seg_st:seg_en], min = True)
+                D_B += self._Ssum_ph(np.r_[seg_st:seg_en], min = False)
 
-                j += 1 
+                break_idx = self.breakpoints.index(seg_st) + 1
+                seg_st = self.breakpoints[break_idx]
+                seg_en = self.breakpoints[break_idx + 1]
 
         # maj/min counts of segment(s) being moved
         S_A = self._Ssum_ph(seg_idx, min = True)
@@ -526,7 +534,7 @@ class DPinstance:
                 # min/maj counts of the segment(s) being moved
                 st = ordpairs[j, 0]
                 en = ordpairs[j, 1]
-                S_a = self._Ssum_ph(np.r_[st:(en + 1)], min = True) # en + 1 because ordpairs is closed
+                S_a = self._Ssum_ph(np.r_[st:(en + 1)], min = True) # en + 1 because ordpairs is a closed interval
                 S_b = self._Ssum_ph(np.r_[st:(en + 1)], min = False) 
 
                 # adjacency likelihood of this segment remaining where it is
@@ -819,6 +827,10 @@ class DPinstance:
 
         max_clust_idx = np.max(self.clust_members.keys() | self.clust_prior.keys() if self.clust_prior is not None else {})
 
+        # segmentation breakpoints
+        self.breakpoints = sc.SortedSet(np.flatnonzero(np.diff(self.S["clust"]) != 0) + 1) | {0, len(self.S)}
+        # TODO: memoize min/maj counts for each segment
+
         # containers for saving the MCMC trace
         self.segs_to_clusters = []
         self.phase_orientations = []
@@ -880,9 +892,13 @@ class DPinstance:
             move_clust = False
 
             # pick a segment at random
-            if np.random.rand() < 0.5:
-                seg_idx = sc.SortedSet({np.random.choice(len(self.S))})
-                cur_clust = int(self.clusts[seg_idx])
+            if True or np.random.rand() < 0.5:
+                # get all SNPs within this segment
+                # TODO: why is seg_idx a sortedset? we don't use that functionality elsewhere
+                break_idx = np.random.choice(len(self.breakpoints) - 1)
+                seg_idx = sc.SortedSet(np.r_[self.breakpoints[break_idx]:self.breakpoints[break_idx + 1]])
+
+                cur_clust = int(self.clusts[seg_idx[0]])
 
                 # expand segment to include all adjacent segments in the same cluster,
                 # if it has already been assigned to a cluster
