@@ -899,31 +899,27 @@ class DPinstance:
             if True or np.random.rand() < 0.5:
                 # get all SNPs within this segment
                 break_idx = sc.SortedSet({np.random.choice(len(self.breakpoints) - 1)})
-                seg_idx = sc.SortedSet(np.r_[self.breakpoints[break_idx[0]]:self.breakpoints[break_idx[0] + 1]])
+                seg_idx = np.r_[self.breakpoints[break_idx[0]]:self.breakpoints[break_idx[0] + 1]]
 
                 cur_clust = int(self.clusts[seg_idx[0]])
 
-                # expand segment to include all adjacent segments in the same cluster,
-                # if it has already been assigned to a cluster
-                if cur_clust >= 0 and np.random.rand() < 0.95:
-                    si = seg_idx[0]
+                # propose breaking this segment
+                if np.random.rand() < 0.1:
+                    # can't split segments of length 1
+                    if len(seg_idx) == 1:
+                        n_it += 1
+                        continue
 
-                    j = 1
-                    while si - j > 0 and self.clusts[si - j] == cur_clust:
-                        seg_idx.add(si - j)
-                        j += 1
-                    j = 1
-                    while si + j < len(self.S) and self.clusts[si + j] == cur_clust:
-                        seg_idx.add(si + j)
-                        j += 1
+                    # TODO: memoize cumsums?
+                    min_cs = self._Scumsum_ph(seg_idx, min = True)
+                    min_csr = self.seg_sums[seg_idx[0]][0] - min_cs
+                    maj_cs = self._Scumsum_ph(seg_idx, min = False)
+                    maj_csr = self.seg_sums[seg_idx[0]][1] - maj_cs
 
-                    # if we've expanded to include a large fraction (>10%) of segments 
-                    # in this cluster, cluster indexing might become inconsistent.
-                    # skip this iteration
-#                    if len(seg_idx) >= 0.1*self.clust_counts[cur_clust]:
-#                        breakpoint()
-#                        n_it += 1
-#                        continue
+                    split_lik = ss.betaln(min_cs + 1, maj_cs + 1) + ss.betaln(min_csr + 1, maj_csr + 1)
+                    split_lik -= split_lik.max()
+                    split_point = np.random.choice(np.r_[0:len(seg_idx)], p = np.exp(split_lik)/np.exp(split_lik).sum())
+                    seg_idx = seg_idx[:(split_point + 1)]
 
                 # propose splitting out a contiguous interval of segments within the current cluster {{{
                 split_clust = False
@@ -969,8 +965,6 @@ class DPinstance:
                     split_clust = True
 
                 # }}}
-
-                seg_idx = np.r_[list(seg_idx)]
 
                 n_move = len(seg_idx)
 
