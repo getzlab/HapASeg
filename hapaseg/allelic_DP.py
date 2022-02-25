@@ -405,9 +405,8 @@ class DPinstance:
             U_cl = self.clusts[seg_st]
             while break_idx > 0 and self.clusts[seg_st] != -1 and \
               self.clusts[seg_st] == U_cl:
-                # TODO: segment sums will eventually be memoized
-                U_A += self._Ssum_ph(np.r_[seg_st:seg_en], min = True)
-                U_B += self._Ssum_ph(np.r_[seg_st:seg_en], min = False)
+                U_A += self.seg_sums[seg_st][0]
+                U_B += self.seg_sums[seg_st][1]
 
                 break_idx = self.breakpoints.index(seg_st) - 1
                 seg_st = self.breakpoints[break_idx]
@@ -424,17 +423,16 @@ class DPinstance:
             D_cl = self.clusts[seg_st]
             while break_idx < len(self.breakpoints) - 1 and self.clusts[seg_st] != -1 and \
               self.clusts[seg_st] == D_cl:
-                # TODO: segment sums will eventually be memoized
-                D_A += self._Ssum_ph(np.r_[seg_st:seg_en], min = True)
-                D_B += self._Ssum_ph(np.r_[seg_st:seg_en], min = False)
+                D_A += self.seg_sums[seg_st][0]
+                D_B += self.seg_sums[seg_st][1]
 
                 break_idx = self.breakpoints.index(seg_st) + 1
                 seg_st = self.breakpoints[break_idx]
                 seg_en = self.breakpoints[break_idx + 1]
 
         # maj/min counts of segment(s) being moved
-        S_A = self._Ssum_ph(seg_idx, min = True)
-        S_B = self._Ssum_ph(seg_idx, min = False)
+        S_A = self.seg_sums[seg_idx[0]][0]
+        S_B = self.seg_sums[seg_idx[0]][1]
 
         ## compute all four possible segmentations relative to neighbor, in
         ## both phasing orientations
@@ -810,11 +808,11 @@ class DPinstance:
         self.clust_counts = sc.SortedDict(self.S["clust"].value_counts().drop(-1, errors = "ignore"))
         # for the first round of clustering, this is { 0 : 1, 1 : 1, ..., N - 1 : 1 }
 
-        x = self.S.groupby(["clust", "flipped"])[["min", "maj"]].sum()
-        if (x.droplevel(0).index == True).any():
-            x.loc[(slice(None), True), ["min", "maj"]] = x.loc[(slice(None), True), ["maj", "min"]].values
+        Sgc = self.S.groupby(["clust", "flipped"])[["min", "maj"]].sum()
+        if (Sgc.droplevel(0).index == True).any():
+            Sgc.loc[(slice(None), True), ["min", "maj"]] = Sgc.loc[(slice(None), True), ["maj", "min"]].values
         self.clust_sums = sc.SortedDict({
-          **{ k : np.r_[v["min"], v["maj"]] for k, v in x.groupby(level = "clust").sum().to_dict(orient = "index").items() },
+          **{ k : np.r_[v["min"], v["maj"]] for k, v in Sgc.groupby(level = "clust").sum().to_dict(orient = "index").items() },
           **{-1 : np.r_[0, 0]}
         })
         # for the first round, this is { -1 : np.r_[0, 0], 0 : np.r_[S[0, "min"], S[0, "maj"]], 1 : S[1, "min"], S[1, "maj"], ..., N : S[N - 1, "min"], S[N - 1, "maj"] }
@@ -829,7 +827,13 @@ class DPinstance:
 
         # segmentation breakpoints
         self.breakpoints = sc.SortedSet(np.flatnonzero(np.diff(self.S["clust"]) != 0) + 1) | {0, len(self.S)}
-        # TODO: memoize min/maj counts for each segment
+        # min/maj counts in each segment
+        self.seg_sums = sc.SortedDict()
+        bpl = np.r_[self.breakpoints]
+        for st, en in np.c_[bpl[:-1], bpl[1:]]:
+            mn = self._Ssum_ph(np.r_[st:en], min = True)
+            mj = self._Ssum_ph(np.r_[st:en], min = False)
+            self.seg_sums[st] = np.r_[mn, mj]
 
         # containers for saving the MCMC trace
         self.segs_to_clusters = []
