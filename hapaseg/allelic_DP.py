@@ -376,13 +376,13 @@ class DPinstance:
 #                J_b = S.iloc[st:(en + 1), maj_col].sum()
         SU_a = SU_b = SD_a = SD_b = 0
 
-        if targ_clust != - 1 and targ_clust == upstream_clust:
+        if targ_clust != -1 and targ_clust == upstream_clust:
             J_a += U_a
             J_b += U_b
         else:
             SU_a += U_a
             SU_b += U_b
-        if targ_clust != - 1 and targ_clust == downstream_clust:
+        if targ_clust != -1 and targ_clust == downstream_clust:
             J_a += D_a
             J_b += D_b
         else:
