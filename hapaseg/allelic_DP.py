@@ -834,6 +834,11 @@ class DPinstance:
             mn = self._Ssum_ph(np.r_[st:en], min = True)
             mj = self._Ssum_ph(np.r_[st:en], min = False)
             self.seg_sums[st] = np.r_[mn, mj]
+        # breakpoints for each cluster
+        self.clust_members_bps = sc.SortedDict({
+          k : sc.SortedSet(v) for k, v in \
+            self.S.loc[self.breakpoints[:-1], ["clust"]].groupby("clust").groups.items()
+        })
 
         # containers for saving the MCMC trace
         self.segs_to_clusters = []
@@ -929,6 +934,7 @@ class DPinstance:
                         self.breakpoints.add(new_bp)
                         self.seg_sums[new_bp] = np.r_[self._Ssum_ph(np.r_[new_bp:seg_en], min = True), self._Ssum_ph(np.r_[new_bp:seg_en], min = False)]
                         self.seg_sums[seg_idx[0]] -= self.seg_sums[new_bp]
+                        self.clust_members_bps[cur_clust].add(new_bp)
 
                 # propose splitting out a contiguous interval of segments within the current cluster {{{
                 split_clust = False
@@ -984,9 +990,11 @@ class DPinstance:
                         del self.clust_counts[cur_clust]
                         del self.clust_sums[cur_clust]
                         del self.clust_members[cur_clust]
+                        del self.clust_members_bps[cur_clust]
                     else:
                         self.clust_sums[cur_clust] -= np.r_[self._Ssum_ph(seg_idx, min = True), self._Ssum_ph(seg_idx, min = False)]
                         self.clust_members[cur_clust] -= set(seg_idx)
+                        self.clust_members_bps[cur_clust].remove(self.breakpoints[break_idx[0]])
 
                     self.clusts[seg_idx] = -1
 
@@ -1205,6 +1213,11 @@ class DPinstance:
                   self._Ssum_ph(np.r_[st:en], min = True),
                   self._Ssum_ph(np.r_[st:en], min = False)
                 ]
+
+            if choice < 0:
+                self.clust_members_bps[new_clust_idx] = sc.SortedSet([self.breakpoints[b] for b in break_idx | update_idx])
+            else:
+                self.clust_members_bps[choice] |= sc.SortedSet([self.breakpoints[b] for b in break_idx | update_idx])
 
             # track global state of cluster assignments
             # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
