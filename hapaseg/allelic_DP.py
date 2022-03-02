@@ -1007,6 +1007,10 @@ class DPinstance:
 
                 cl_idx = np.random.choice(self.clust_counts.keys())
                 seg_idx = np.r_[list(self.clust_members[cl_idx])]
+
+                # get all breakpoints corresponding to this cluster
+                break_idx = sc.SortedSet([self.breakpoints.index(x) for x in self.clust_members_bps[cl_idx]])
+
                 n_move = len(seg_idx)
                 cur_clust = -1 # only applicable for individual segments, so we set to -1 here
                                # (this is so that subsequent references to clust_sums[cur_clust]
@@ -1017,6 +1021,7 @@ class DPinstance:
                 del self.clust_counts[cl_idx]
                 del self.clust_sums[cl_idx]
                 del self.clust_members[cl_idx]
+                del self.clust_members_bps[cl_idx]
                 self.clusts[seg_idx] = -1
 
                 move_clust = True
@@ -1199,13 +1204,25 @@ class DPinstance:
                 self.clust_members[choice].update(set(seg_idx))
 
             # update breakpoints
-            snp_idx = [self.breakpoints[b] for b in break_idx | { x + 1 for x in break_idx }]
+
+            # B->A
+            #    .   .     .   break_idx + 1
+            # A B A B A C B A
+            #  +   +     +     break_idx
+            #  *         *     update_idx
+
+            break_idx_bi = break_idx | { x + 1 for x in break_idx }
+            snp_idx_bi = sc.SortedSet([self.breakpoints[b] for b in break_idx_bi])
+            snp_idx = sc.SortedSet([self.breakpoints[b] for b in break_idx])
             update_idx = sc.SortedSet()
-            for snp in snp_idx:
+            for snp in snp_idx_bi:
                 if snp < len(self.S) and self.clusts[snp - 1] == self.clusts[snp]:
+                    snp_idx.discard(snp) # discard rather than remvoe because this could be in snp_idx + 1
                     self.breakpoints.remove(snp)
                     self.seg_sums.pop(snp)
+                    self.clust_members_bps[self.clusts[snp]].discard(snp) # discard rather than remove since this breakpoint could be in break_idx + 1, which would belong to another cluster
                     update_idx.add(self.breakpoints.bisect_left(snp) - 1)
+                    snp_idx.add(self.breakpoints[self.breakpoints.bisect_left(snp) - 1])
             for bp_idx in update_idx:
                 st = self.breakpoints[bp_idx]
                 en = self.breakpoints[bp_idx + 1]
@@ -1215,9 +1232,9 @@ class DPinstance:
                 ]
 
             if choice < 0:
-                self.clust_members_bps[new_clust_idx] = sc.SortedSet([self.breakpoints[b] for b in break_idx | update_idx])
+                self.clust_members_bps[new_clust_idx] = snp_idx
             else:
-                self.clust_members_bps[choice] |= sc.SortedSet([self.breakpoints[b] for b in break_idx | update_idx])
+                self.clust_members_bps[choice] |= snp_idx
 
             # track global state of cluster assignments
             # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
