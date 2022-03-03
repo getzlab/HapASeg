@@ -391,48 +391,21 @@ class DPinstance:
 
         return ss.betaln(SU_a + 1, SU_b + 1) + ss.betaln(J_a + 1, J_b + 1) + ss.betaln(SD_a + 1, SD_b + 1)
 
-    def compute_adj_prob(self, seg_idx):
-        ## compute boundaries of adjacent segments
+    def compute_adj_prob(self, break_idx):
+        if break_idx > 1:
+            U_A, U_B = self.seg_sums[self.breakpoints[break_idx - 1]]
+            U_cl = self.clusts[self.breakpoints[break_idx - 1]]
+        else:
+            U_A = U_B = 0
+            U_cl = -1
+        if break_idx + 2 < len(self.breakpoints):
+            D_A, D_B = self.seg_sums[self.breakpoints[break_idx + 1]]
+            D_cl = self.clusts[self.breakpoints[break_idx + 1]]
+        else:
+            D_A = D_B = 0
+            D_cl = -1
 
-        # maj/min counts of contiguous upstream segments belonging to the same cluster
-        U_A = 0
-        U_B = 0
-        U_cl = -1
-        if seg_idx[0] - 1 > 0:
-            break_idx = self.breakpoints.index(seg_idx[0]) - 1
-            seg_st = self.breakpoints[break_idx]
-            seg_en = self.breakpoints[break_idx + 1]
-            U_cl = self.clusts[seg_st]
-            while break_idx > 0 and self.clusts[seg_st] != -1 and \
-              self.clusts[seg_st] == U_cl:
-                U_A += self.seg_sums[seg_st][0]
-                U_B += self.seg_sums[seg_st][1]
-
-                break_idx = self.breakpoints.index(seg_st) - 1
-                seg_st = self.breakpoints[break_idx]
-                seg_en = self.breakpoints[break_idx + 1]
-
-        # maj/min counts of contiguous downstream segments belonging to the same cluster
-        D_A = 0
-        D_B = 0
-        D_cl = -1
-        if seg_idx[-1] + 1 < len(self.S):
-            break_idx = self.breakpoints.index(seg_idx[0]) + 1
-            seg_st = self.breakpoints[break_idx]
-            seg_en = self.breakpoints[break_idx + 1]
-            D_cl = self.clusts[seg_st]
-            while break_idx < len(self.breakpoints) - 2 and self.clusts[seg_st] != -1 and \
-              self.clusts[seg_st] == D_cl:
-                D_A += self.seg_sums[seg_st][0]
-                D_B += self.seg_sums[seg_st][1]
-
-                break_idx = self.breakpoints.index(seg_st) + 1
-                seg_st = self.breakpoints[break_idx]
-                seg_en = self.breakpoints[break_idx + 1]
-
-        # maj/min counts of segment(s) being moved
-        S_A = self.seg_sums[seg_idx[0]][0]
-        S_B = self.seg_sums[seg_idx[0]][1]
+        S_A, S_B = self.seg_sums[self.breakpoints[break_idx]]
 
         ## compute all four possible segmentations relative to neighbor, in
         ## both phasing orientations
@@ -453,10 +426,15 @@ class DPinstance:
         ]
 
         ## match probs to cluster choices (will match MLs matrix in main calculation)
-        probs = np.full([len(self.clust_sums), 2], -np.inf)
-        for k in self.clust_sums.keys():
-            MLs_idx = np.r_[k == U_cl, k == D_cl]@np.r_[2, 1]
-            probs[self.clust_sums.index(k), :] = MLs[:, MLs_idx]
+        probs = np.full([len(self.clust_sums), 2], MLs[0, 0])
+        if U_cl == D_cl and U_cl != -1 and D_cl != -1:
+            probs[self.clust_sums.index(U_cl), :] = MLs[:, 3]
+            probs[self.clust_sums.index(D_cl), :] = MLs[:, 3]
+        else:
+            if U_cl != -1:
+                probs[self.clust_sums.index(U_cl), :] = MLs[:, 2]
+            if D_cl != -1:
+                probs[self.clust_sums.index(D_cl), :] = MLs[:, 1]
 
         return probs
 
@@ -1120,10 +1098,10 @@ class DPinstance:
             #adj_BC = np.zeros([len(self.clust_sums), 2])
 
             log_adj_lik = 0
-            if not move_clust and not split_clust: # or (move_clust and np.random.rand() < 0.01):
-                log_adj_lik = self.compute_adj_prob(seg_idx)
-                seg_touch_idx[seg_idx] = True
-
+            if not move_clust: # or (move_clust and np.random.rand() < 0.01):
+                log_adj_lik = self.compute_adj_prob(break_idx[0])
+                #seg_touch_idx[seg_idx] = True
+ 
             # p(X|clust,phase)p(X|seg,phase)p(clust)
             num = (MLs               # p({a_i, b_i}_{i\in B} | {a_i, b_i}_{i\in clust}, phase_{i\in B})
                   + log_adj_lik      # p({a_i, b_i}_{i\in B} | U, D, phase_{i\in B})
