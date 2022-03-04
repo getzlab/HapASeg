@@ -294,6 +294,8 @@ class DPinstance:
         self.ref_mat = self.S.loc[:, ["A_ref", "B_ref"]].values.reshape(-1, order = "F")
         self.alt_mat = self.S.loc[:, ["A_alt", "B_alt"]].values.reshape(-1, order = "F")
 
+        self.betahyp = 1
+
         #
         # define column indices
         self.clust_col = self.S.columns.get_loc("clust")
@@ -310,7 +312,7 @@ class DPinstance:
 
         # store likelihoods for each cluster in the prior (from previous iterations)
         self.clust_prior[-1] = np.r_[0, 0]
-        self.clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1, v[1] + 1) for k, v in self.clust_prior.items()})
+        self.clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1 + self.betahyp, v[1] + 1 + self.betahyp) for k, v in self.clust_prior.items()})
         self.clust_prior_mat = np.r_[self.clust_prior.values()]
 
         self.clust_count_prior[-1] = self.alpha # DP alpha factor, i.e. relative probability of opening new cluster
@@ -389,7 +391,7 @@ class DPinstance:
             SD_a += D_a
             SD_b += D_b
 
-        return ss.betaln(SU_a + 1, SU_b + 1) + ss.betaln(J_a + 1, J_b + 1) + ss.betaln(SD_a + 1, SD_b + 1)
+        return ss.betaln(SU_a + 1 + self.betahyp, SU_b + 1 + self.betahyp) + ss.betaln(J_a + 1 + self.betahyp, J_b + 1 + self.betahyp) + ss.betaln(SD_a + 1 + self.betahyp, SD_b + 1 + self.betahyp)
 
     def compute_adj_prob(self, break_idx):
         if break_idx > 1:
@@ -597,7 +599,7 @@ class DPinstance:
             maj_cs = self._Scumsum_ph(seg_idx_sp, min = False)
             maj_csr = self._Ssum_ph(seg_idx_sp, min = False) - maj_cs
 
-            split_lik = ss.betaln(min_cs[:-1] + 1, maj_cs[:-1] + 1) + ss.betaln(min_csr[1:] + 1, maj_csr[1:] + 1)
+            split_lik = ss.betaln(min_cs[:-1] + 1 + self.betahyp, maj_cs[:-1] + 1 + self.betahyp) + ss.betaln(min_csr[1:] + 1 + self.betahyp, maj_csr[1:] + 1 + self.betahyp)
             # split_lprob = split_lik - split_lik.max() - np.log(np.exp(split_lik - split_lik.max()).sum())
             # NOTE: instead of argmax, probabilistically choose? will this make a difference?
 
@@ -622,7 +624,7 @@ class DPinstance:
             maj_cs = self._Scumsum_ph(seg_idx_sp, min = False)
             maj_csr = self._Ssum_ph(seg_idx_sp, min = False) - maj_cs
 
-            split_lik = ss.betaln(min_cs[:-1] + 1, maj_cs[:-1] + 1) + ss.betaln(min_csr[1:] + 1, maj_csr[1:] + 1)
+            split_lik = ss.betaln(min_cs[:-1] + 1 + self.betahyp, maj_cs[:-1] + 1 + self.betahyp) + ss.betaln(min_csr[1:] + 1 + self.betahyp, maj_csr[1:] + 1 + self.betahyp)
             # split_lprob = split_lik - split_lik.max() - np.log(np.exp(split_lik - split_lik.max()).sum())
 
             start += split_lik.argmax() + 1
@@ -641,7 +643,7 @@ class DPinstance:
     def compute_overall_lik_simple(self):
         ## overall clustering likelihood
         # p({a_i, b_i} | {c_k}, {phase_i})
-        clust_lik = np.r_[[ss.betaln(v[0] + 1, v[1] + 1) for k, v in self.clust_sums.items() if k >= 0]].sum()
+        clust_lik = np.r_[[ss.betaln(v[0] + 1 + self.betahyp, v[1] + 1 + self.betahyp) + self.betahyp for k, v in self.clust_sums.items() if k >= 0]].sum()
 
         ## overall phasing likelihood
         # p({phase_i} | {a_i, b_i})
@@ -901,7 +903,7 @@ class DPinstance:
                     maj_cs = self._Scumsum_ph(seg_idx, min = False)
                     maj_csr = self.seg_sums[seg_idx[0]][1] - maj_cs
 
-                    split_lik = ss.betaln(min_cs + 1, maj_cs + 1) + ss.betaln(min_csr + 1, maj_csr + 1)
+                    split_lik = ss.betaln(min_cs + 1 + self.betahyp, maj_cs + 1 + self.betahyp) + ss.betaln(min_csr + 1 + self.betahyp, maj_csr + 1 + self.betahyp)
                     split_lik -= split_lik.max()
                     split_point = np.random.choice(np.r_[0:len(seg_idx)], p = np.exp(split_lik)/np.exp(split_lik).sum())
                     seg_idx = seg_idx[:(split_point + 1)]
@@ -929,7 +931,7 @@ class DPinstance:
 
                     A_tot, B_tot = self.clust_sums[cur_clust]
 
-                    lik0 = ss.betaln(A_tot + 1, B_tot + 1)
+                    lik0 = ss.betaln(A_tot + 1 + self.betahyp, B_tot + 1 + self.betahyp)
 
                     liks = np.zeros(len(split_bdy) + 1)
                     liks[-1] = lik0 # don't split at all
@@ -939,7 +941,7 @@ class DPinstance:
                         A = self._Ssum_ph(clust_segs[st:en], min = True)
                         B = self._Ssum_ph(clust_segs[st:en], min = False)
 
-                        liks[i] = ss.betaln(A_tot - A + 1, B_tot - B + 1) + ss.betaln(A + 1, B + 1)
+                        liks[i] = ss.betaln(A_tot - A + 1 + self.betahyp, B_tot - B + 1 + self.betahyp) + ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
 
                     # pick a region to split
                     split_idx = np.random.choice(
@@ -1028,11 +1030,11 @@ class DPinstance:
             # A+B is likelihood of current cluster B is part of
             #AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
             # C is likelihood of target cluster pre-join
-            C = ss.betaln(C_ab[:, 0] + 1, C_ab[:, 1] + 1)
+            C = ss.betaln(C_ab[:, 0] + 1 + self.betahyp, C_ab[:, 1] + 1 + self.betahyp)
             # A is likelihood cluster B is part of, minus B
             #A = ss.betaln(A_a + 1, A_b + 1)
             # B+C is likelihood of target cluster post-join, with both phase orientations
-            BC = ss.betaln(C_ab[:, [0]] + np.c_[B_a, B_b] + 1, C_ab[:, [1]] + np.c_[B_b, B_a] + 1)
+            BC = ss.betaln(C_ab[:, [0]] + np.c_[B_a, B_b] + 1 + self.betahyp, C_ab[:, [1]] + np.c_[B_b, B_a] + 1 + self.betahyp)
 
             MLs = BC - C[:, None]
 
