@@ -348,10 +348,10 @@ class DPinstance:
         flip = self.S.iloc[seg_idx, self.flip_col]
         flip_n = ~flip
 
-        A_a = self.alt_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum() + 1
-        A_b = self.ref_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum() + 1
-        B_a = self.alt_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum() + 1
-        B_b = self.ref_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum() + 1
+        A_a = self.alt_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum() + 1 + self.betahyp
+        A_b = self.ref_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum() + 1 + self.betahyp
+        B_a = self.alt_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum() + 1 + self.betahyp
+        B_b = self.ref_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum() + 1 + self.betahyp
 
         # use normal approximation to beta if conditions are right
         if A_a > 20 and A_b > 20 and B_a > 20 and B_b > 20:
