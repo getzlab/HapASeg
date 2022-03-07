@@ -659,15 +659,7 @@ class DPinstance:
 
         ## segmentation likelihood
         # p({a_i, b_i} | {s}, {phase_i})
-        bdy = np.flatnonzero(np.r_[1, np.diff(self.S["clust"]) != 0, 1])
-        bdy = np.c_[bdy[:-1], bdy[1:]]
-
-        seg_lik = 0.0
-        for st, en in bdy:
-            seg_lik += ss.betaln(
-              self._Ssum_ph(np.r_[st:en], min = True) + 1,
-              self._Ssum_ph(np.r_[st:en], min = False) + 1
-            )
+        seg_lik = np.r_[self.seg_liks].sum()
 
         # p({c_k}, {s}, {phase_i} | {a_i, b_i})
         #return clust_lik + phase_lik + count_prior + seg_lik
@@ -805,8 +797,12 @@ class DPinstance:
 
         max_clust_idx = np.max(self.clust_members.keys() | self.clust_prior.keys() if self.clust_prior is not None else {})
 
+        #
+        # breakpoint tracking
+
         # segmentation breakpoints
         self.breakpoints = sc.SortedSet(np.flatnonzero(np.diff(self.S["clust"]) != 0) + 1) | {0, len(self.S)}
+
         # min/maj counts in each segment
         self.seg_sums = sc.SortedDict()
         bpl = np.r_[self.breakpoints]
@@ -814,6 +810,12 @@ class DPinstance:
             mn = self._Ssum_ph(np.r_[st:en], min = True)
             mj = self._Ssum_ph(np.r_[st:en], min = False)
             self.seg_sums[st] = np.r_[mn, mj]
+
+        # likelihoods for each segment
+        self.seg_liks = sc.SortedDict()
+        for k, (a, b) in self.seg_sums.items():
+            self.seg_liks[k] = ss.betaln(a + 1 + self.betahyp, b + 1 + self.betahyp)
+
         # breakpoints for each cluster
         self.clust_members_bps = sc.SortedDict({
           k : sc.SortedSet(v) for k, v in \
@@ -912,8 +914,16 @@ class DPinstance:
                     new_bp = seg_idx[-1] + 1
                     if len(seg_idx) < seg_en - seg_st: # don't add breakpoint if we're not splitting segment
                         self.breakpoints.add(new_bp)
-                        self.seg_sums[new_bp] = np.r_[self._Ssum_ph(np.r_[new_bp:seg_en], min = True), self._Ssum_ph(np.r_[new_bp:seg_en], min = False)]
+
+                        A = self._Ssum_ph(np.r_[new_bp:seg_en], min = True)
+                        B = self._Ssum_ph(np.r_[new_bp:seg_en], min = False)
+
+                        self.seg_sums[new_bp] = np.r_[A, B]
                         self.seg_sums[seg_idx[0]] -= self.seg_sums[new_bp]
+
+                        self.seg_liks[new_bp] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
+                        self.seg_liks[seg_idx[0]] -= self.seg_liks[new_bp]
+
                         self.clust_members_bps[cur_clust].add(new_bp)
 
                 # propose splitting out a contiguous interval of segments within the current cluster {{{
@@ -1200,16 +1210,17 @@ class DPinstance:
                     snp_idx.discard(snp) # discard rather than remvoe because this could be in snp_idx + 1
                     self.breakpoints.remove(snp)
                     self.seg_sums.pop(snp)
+                    self.seg_liks.pop(snp)
                     self.clust_members_bps[self.clusts[snp]].discard(snp) # discard rather than remove since this breakpoint could be in break_idx + 1, which would belong to another cluster
                     update_idx.add(self.breakpoints.bisect_left(snp) - 1)
                     snp_idx.add(self.breakpoints[self.breakpoints.bisect_left(snp) - 1])
             for bp_idx in update_idx:
                 st = self.breakpoints[bp_idx]
                 en = self.breakpoints[bp_idx + 1]
-                self.seg_sums[st] = np.r_[
-                  self._Ssum_ph(np.r_[st:en], min = True),
-                  self._Ssum_ph(np.r_[st:en], min = False)
-                ]
+                A = self._Ssum_ph(np.r_[st:en], min = True)
+                B = self._Ssum_ph(np.r_[st:en], min = False)
+                self.seg_sums[st] = np.r_[A, B]
+                self.seg_liks[st] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
 
             if choice < 0:
                 self.clust_members_bps[new_clust_idx] = snp_idx
