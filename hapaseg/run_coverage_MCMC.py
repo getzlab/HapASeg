@@ -14,26 +14,29 @@ class CoverageMCMCRunner:
                  coverage_csv,
                  f_allelic_clusters,
                  f_SNPs,
-                 covariate_dir,
+                 f_repl,
+                 f_GC=None,
                  num_draws=50,
                  cluster_num=None,
                  allelic_sample=None
                  ):
 
-        self.covariate_dir = covariate_dir
         self.num_draws = num_draws
         self.cluster_num = cluster_num
+        self.f_repl = f_repl
+        self.f_GC = f_GC
 
         self.allelic_clusters = np.load(f_allelic_clusters)
+        # coverage input is expected to be a df file with columns: ["chr", "start", "end", "covcorr", "covraw"]
+        self.full_cov_df = self.load_coverage(coverage_csv)
+        self.load_covariates()
+        self.SNPs = self.load_SNPs(f_SNPs)
+        
         if allelic_sample is not None:
             self.allelic_sample = allelic_sample
         else:
             self.allelic_sample = self.select_ADP_cluster()
 
-        # coverage input is expected to be a df file with columns: ["chr", "start", "end", "covcorr", "covraw"]
-        self.full_cov_df = self.load_coverage(coverage_csv)
-        self.load_covariates()
-        self.SNPs = self.load_SNPs(f_SNPs)
         self.model = None
 
     def run_all_clusters(self):
@@ -87,8 +90,10 @@ class CoverageMCMCRunner:
     def load_coverage(coverage_csv):
         Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "covraw"],
                           low_memory=False)
+        Cov.loc[Cov['chr'] == 'chrM', 'chr'] = 'chrMT' #change mitocondrial contigs to follow mut conventions
         Cov["chr"] = mut.convert_chr(Cov["chr"])
         Cov = Cov.loc[Cov["chr"] != 0]
+        Cov=Cov.reset_index(drop=True)
         Cov["start_g"] = seq.chrpos2gpos(Cov["chr"], Cov["start"])
         Cov["end_g"] = seq.chrpos2gpos(Cov["chr"], Cov["end"])
 
@@ -101,26 +106,46 @@ class CoverageMCMCRunner:
         SNPs["tidx"] = mut.map_mutations_to_targets(SNPs, self.full_cov_df, inplace=False)
         return SNPs
 
+    def generate_GC(self):
+        #grab fasta object from seq to avoid rebuilding
+        F = seq._fa.ref_fa_obj
+        self.full_cov_df['C_GC'] = np.nan
+        
+        #this indexing assumes 0-indexed start and end cols
+        for (i, chrm, start, end, _, _, _) in self.full_cov_df.itertuples():
+            self.full_cov_df.iat[i, -1] = F[chrm-1][start:end+1].gc
+        
+
     def load_covariates(self):
-        # TODO make this more flexlable for arbitrary covariate inputs
-
-        # f_covariate_lst = glob.glob(self.covariate_dir + '*.pickle')
-        self.full_cov_df["C_len"] = self.full_cov_df["end"] - self.full_cov_df["start"] + 1
-
+        #check if we are doing wgs, in which case we will have uniform 200 bp bins
+        wgs = True if self.f_GC is not None else False
+        
+        #we only need bin size if doing exomes
+        if not wgs:
+            self.full_cov_df["C_len"] = self.full_cov_df["end"] - self.full_cov_df["start"] + 1
+        
         # load repl timing
-        F = pd.read_pickle(os.path.join(self.covariate_dir, "GSE137764_H1.hg19_liftover.pickle"))
+        F = pd.read_pickle(self.f_repl)
         # map targets to RT intervals
         tidx = mut.map_mutations_to_targets(self.full_cov_df.rename(columns={"start": "pos"}), F, inplace=False)
-        self.full_cov_df.loc[tidx.index, "C_RT"] = F.iloc[tidx, 3:].mean(1).values
+        self.full_cov_df['C_RT'] = np.nan
+        self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, 3:].mean(1).values
 
         # z-transform
         self.full_cov_df["C_RT_z"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(
             np.log(self.full_cov_df["C_RT"] + 1e-20))
 
-        # load GC content
-        B = pd.read_pickle(os.path.join(self.covariate_dir, "GC.pickle"))
-        self.full_cov_df = self.full_cov_df.merge(B.rename(columns={"gc": "C_GC"}), left_on=["chr", "start", "end"],
+        # load GC content if we have it precomputed, otherwise generate it
+        if wgs and os.path.exists(self.f_GC):
+            print("Using precomputed GC content")
+            B = pd.read_pickle(self.f_GC)
+            
+            self.full_cov_df = self.full_cov_df.merge(B.rename(columns={"gc": "C_GC"}), left_on=["chr", "start", "end"],
                                                   right_on=["chr", "start", "end"], how="left")
+        else:
+            print("Computing GC content")
+            self.generate_GC()
+        
         self.full_cov_df["C_GC_z"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(
             np.log(self.full_cov_df["C_GC"] + 1e-20))
 
@@ -134,11 +159,11 @@ class CoverageMCMCRunner:
         clust_uj = clust_uj.reshape(clust_choice.shape)
 
         # assign coverage intervals to clusters
-        Cov_clust_probs = np.zeros([len(self.full_cov_df), clust_u.max()])
+        Cov_clust_probs = np.zeros([len(self.full_cov_df), clust_uj.max()+1])
 
         # first compute assignment probabilities based on the SNPs within each bin
         for targ, snp_idx in self.SNPs.groupby("tidx").indices.items():
-            targ_clust_hist = np.bincount(clust_uj[snp_idx].ravel(), minlength=clust_u.max())
+            targ_clust_hist = np.bincount(clust_uj[snp_idx].ravel(), minlength=clust_uj.max()+1)
 
             Cov_clust_probs[int(targ), :] = targ_clust_hist / targ_clust_hist.sum()
 
@@ -176,19 +201,37 @@ class CoverageMCMCRunner:
 
         Cov_overlap = Cov_overlap.loc[~bad_bins, :]
         Pi = filtered.copy()
-
+       
         r = np.c_[Cov_overlap["covcorr"]]
-
+        
         # making covariate matrix
-        C = np.c_[np.log(Cov_overlap["C_len"]), Cov_overlap["C_RT_z"], Cov_overlap["C_GC_z"]]
-
+        if self.f_GC is None:
+            #for exomes we include bin size
+            C = np.c_[np.log(Cov_overlap["C_len"]), Cov_overlap["C_RT_z"], Cov_overlap["C_GC_z"]]
+            repl_idx=1
+        else:
+            #otherwise we do not
+            C = np.c_[ Cov_overlap["C_RT_z"], Cov_overlap["C_GC_z"]]
+            repl_idx=0
+        
         # dropping Nans
-        naidx = np.isnan(C[:, 1])
+        naidx = np.isnan(C[:, repl_idx])
+        # drop zero coverage bins as well (this is to account for a bug in coverage collector) TODO: remove need for this
+        naidx = np.logical_or(naidx, (r==0).flatten())
         r = r[~naidx]
         C = C[~naidx]
         Pi = Pi[~naidx]
 
         Cov_overlap = Cov_overlap.iloc[~naidx]
+
+        #temporary downsampling for wgs
+        if len(r) > 20000:
+            downsample_mask = np.random.rand(Pi.shape[0]) < 0.1
+            Pi = Pi[downsample_mask,:]
+            r = r[downsample_mask]
+            C = C[downsample_mask]
+            Cov_overlap = Cov_overlap.iloc[downsample_mask]
+        
         Cov_overlap['allelic_cluster'] = np.argmax(Pi, axis=1)
 
         return Pi, r, C, Cov_overlap
