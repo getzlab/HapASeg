@@ -106,7 +106,10 @@ def parse_args():
     concat.add_argument("--chunks", required=True, nargs="+")
     concat.add_argument("--scatter_intervals", required=True)
 
-
+    ## concat arms
+    concat_arms = subparsers.add_parser("concat_arms", help="concat arm segs")
+    concat_arms.add_argument("--arm_results", help="file containing paths to arm mcmc objects",
+                            required=True)
     ## DP
     dp = subparsers.add_parser("dp", help="Run DP clustering on allelic imbalance segments")
     dp.add_argument("--seg_dataframe", required=True)
@@ -116,7 +119,7 @@ def parse_args():
                     required=True)  # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
     dp.add_argument("--cytoband_file",
                     required=True)  # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
-
+  
     ## coverage MCMC
     coverage_mcmc = subparsers.add_parser("coverage_mcmc",
                                           help="Run TCR segmentation on all allelic imbalance clusters")
@@ -133,16 +136,21 @@ def parse_args():
                                help="index of sample clustering from allelic DP to use as seed for segmentation",
                                default=None)
 
+    #collect ADP data
+    collect_adp = subparsers.add_parser("collect_adp", help="collect ADP resuts from shards")
+    collect_adp.add_argument("--dp_results", help="path to txt file with paths to dp results")
+
+
     ## proprocessing coverage MCMC data for scatter tasks
     preprocess_coverage_mcmc = subparsers.add_parser("coverage_mcmc_preprocess",
                                                      help="Preform preprocessing on ADP results to allow for coverage mcmc scatter jobs")
     preprocess_coverage_mcmc.add_argument("--coverage_csv",
-                                          help="csv file containing '['chr', 'start', 'end', 'covcorr', 'covraw'] data")
+                                          help="csv file containing '['chr', 'start', 'end', 'covcorr', 'covraw'] data", required=True)
     preprocess_coverage_mcmc.add_argument("--allelic_clusters_object",
-                                          help="npy file containing allelic dp segs-to-clusters results")
-    preprocess_coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs")
-    preprocess_coverage_mcmc.add_argument("--covariate_dir",
-                                          help="path to covariate directory with covariates all in pickled files")
+                                          help="npy file containing allelic dp segs-to-clusters results", required=True)
+    preprocess_coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs", required=True)
+    preprocess_coverage_mcmc.add_argument("--repl_pickle", help="pickled dataframe containing replication timing data", required=True)
+    preprocess_coverage_mcmc.add_argument("--gc_pickle", help="pickled dataframe containing precomputed gc content. This is not required but will speed up runtime if passed", default=None)
     preprocess_coverage_mcmc.add_argument("--allelic_sample", type=int,
                                           help="index of sample clustering from allelic DP to use as seed for segmentation. Will use most likely clustering by default",
                                           default=None)
@@ -157,6 +165,8 @@ def parse_args():
     coverage_mcmc_shard.add_argument("--cluster_num", type=int,
                                help="cluster index for this worker to run on. If unspecified method will simulate "
                                     "all clusters on the same machine", default=None)
+    coverage_mcmc_shard.add_argument("--bin_width", type=int, default=1, help="size of uniform bins if using. Otherwise 1.")
+
 
     ## collect coverage MCMC shards
     collect_cov_mcmc = subparsers.add_parser("collect_cov_mcmc", help="collect sharded cov mcmc results")
@@ -174,6 +184,8 @@ def parse_args():
     coverage_dp.add_argument("--num_segmentation_samples", type=int, help="number of segmentation samples to use")
     coverage_dp.add_argument("--num_draws", type=int,
                              help="number of thinned draws from the coverage dp to take after burn in")
+    coverage_dp.add_argument("--bin_width", type=int, default=1, help="size of uniform bins if using. Otherwise 1.")
+
     ## Allelic Coverage DP
 
     # generate df
@@ -394,7 +406,28 @@ def main():
 
             with open(output_dir + f"/AMCMC-arm{arm}.pickle", "wb") as f:
                 pickle.dump(A, f)
+    
+    elif args.command == "concat_arms":
+        with open(args.arm_results, 'r') as f:
+	        arm_results = f.readlines()
+        
+        A = []
+        for arm_file in arm_results:
+            with open(arm_file.rstrip('\n'), "rb") as f:
+                H = pickle.load(f)
+            A.append(pd.Series({ "chr" : H.P["chr"].iloc[0], "start" : H.P["pos"].iloc[0], "end" : H.P["pos"].iloc[-1], "results" : H }))
 
+        # get into order
+        A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(drop = True)
+
+        # save
+        A.to_pickle(os.path.join(output_dir, "arm_results.pickle"))
+
+        # get number of MCMC samples
+        n_samps = int(np.minimum(np.inf, A.loc[~A["results"].isna(), "results"].apply(lambda x : len(x.breakpoint_list))).min())
+
+        np.savez(os.path.join(output_dir, "num_arm_samples"), n_samps = n_samps)
+        
     elif args.command == "dp":
         # load allelic segmentation samples
         A = A_DP(args.seg_dataframe, ref_fasta=args.ref_fasta)
@@ -450,8 +483,29 @@ def main():
         plt.title("Allelic segmentation, post-DP clustering")
         plt.savefig(output_dir + "/figures/allelic_imbalance_postDP.png", dpi=300)
         plt.close()
+    
+    #collect adp run data
+    elif args.command == "collect_adp":
+        with open(args.dp_results, 'r') as f:
+	        dp_results = f.readlines()
+        accum_clusts = []
+        accum_phases = []
+        accum_liks = []
+        
+        for dp_shard in dp_results:
+            obj = np.load(dp_shard.rstrip('\n'))
+            accum_clusts.append(obj['snps_to_clusters'])
+            accum_phases.append(obj['snps_to_phases'])
+            accum_liks.append(obj['likelihoods'])
+        all_clusts = np.vstack(accum_clusts)
+        all_phases = np.vstack(accum_phases)
+        all_liks = np.vstack(accum_liks)
+        # save
+        np.savez(os.path.join(output_dir, "full_dp_results"), snps_to_clusters=all_clusts, snps_to_phases=all_phases, likelihoods=all_liks)
+
 
     ## running coverage mcmc on all clusters
+
     elif args.command == "coverage_mcmc":
         cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
                                              args.allelic_clusters_object,
@@ -475,7 +529,8 @@ def main():
         cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
                                              args.allelic_clusters_object,
                                              args.SNPs_pickle,
-                                             args.covariate_dir,
+                                             f_repl=args.repl_pickle,
+                                             f_GC=args.gc_pickle,
                                              allelic_sample=args.allelic_sample)
         Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
         np.savez(os.path.join(output_dir, 'preprocess_data'), Pi=Pi, r=r, C=C, all_mu=all_mu,
@@ -500,7 +555,7 @@ def main():
         C = preprocess_data['C'][cluster_mask]
 
         # run on the specified cluster
-        cov_mcmc = NB_MCMC_SingleCluster(args.num_draws, r, C, mu, beta, args.cluster_num)
+        cov_mcmc = NB_MCMC_SingleCluster(args.num_draws, r, C, mu, beta, args.cluster_num, args.bin_width)
         cov_mcmc.run()
 
         # collect the results
@@ -549,7 +604,7 @@ def main():
         segmentation_samples = mcmc_data['seg_samples']
         beta = mcmc_data['beta']
 
-        cov_dp_runner = Coverage_DP(segmentation_samples, beta, cov_df)
+        cov_dp_runner = Coverage_DP(segmentation_samples, beta, cov_df, args.bin_width)
 
         cov_dp_runner.run_dp(args.num_segmentation_samples, args.num_draws)
         with open(args.output_dir + f"/Cov_DP_model.pickle", "wb") as f:
