@@ -30,6 +30,7 @@ def LSE(x):
 def generate_acdp_df(SNP_path, # path to SNP df
                  CDP_path, # path to CDP runner pickle object
                  ADP_path, # path to npz ADP result
+                 bin_width=1, #set to uniform bin width for wgs or 1 for exomes
                  ADP_draw_index=-1): # index of ADP draw used in Coverage MCMC
 
     SNPs = pd.read_pickle(SNP_path)
@@ -77,10 +78,14 @@ def generate_acdp_df(SNP_path, # path to SNP df
             if len(acdp_clust) < 10:
                 acdp_clust = a_cov_seg_df.loc[a_cov_seg_df.cov_DP_cluster == cdp]
             r = acdp_clust.covcorr.values
-            C = np.c_[np.log(acdp_clust['C_len'].values), acdp_clust['C_RT_z'].values, acdp_clust['C_GC_z'].values]
+            if 'C_len' in acdp_clust.columns:
+                C = np.c_[np.log(acdp_clust['C_len'].values), acdp_clust['C_RT_z'].values, acdp_clust['C_GC_z'].values]
+            else:
+                C = np.c_[acdp_clust['C_RT_z'].values, acdp_clust['C_GC_z'].values]
             endog = r
             exog = np.ones(r.shape)
-            sNB = statsNB(endog, exog, offset = (C @ dp_pickle.beta).flatten())
+            exposure = np.ones(r.shape) * bin_width
+            sNB = statsNB(endog, exog, exposure=exposure, offset = (C @ dp_pickle.beta).flatten())
             res = sNB.fit(disp=0)
             mu = res.params[0]
             a_cov_seg_df.loc[
@@ -200,8 +205,8 @@ class AllelicCoverage_DP:
             V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a, b, size=10000)).var()
 
             # blacklist segments with very high variance
-            if np.sqrt(V) > 15:
-                self.greylist_segments.add(ID)
+            #if np.sqrt(V) > 15:
+            #    self.greylist_segments.add(ID)
 
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r
