@@ -23,10 +23,12 @@ class Coverage_DP:
     def __init__(self,
             segmentation_draws,
             beta,
-            cov_df):
+            cov_df,
+            bin_width=1): #set to one for exomes, binsize for genomes
         self.segmentation_draws = segmentation_draws
         self.beta = beta
         self.cov_df = cov_df
+        self.bin_exposure = bin_width
 
         # number of seg samples to use and draws from each DP to take
         self.num_samples = None
@@ -57,7 +59,7 @@ class Coverage_DP:
             print('starting sample {}'.format(samp))
             self.cov_df['segment_ID'] = self.segmentation_draws[:, samp].astype(int)
 
-            DP_runner = Run_Cov_DP(self.cov_df.copy(), self.beta, prior_run, count_prior_sum)
+            DP_runner = Run_Cov_DP(self.cov_df.copy(), self.beta, self.bin_exposure, prior_run, count_prior_sum)
             self.DP_runs[samp] = DP_runner
             draws, count_prior_sum = DP_runner.run(self.num_draws, samp)
             self.bins_to_clusters.append(draws)
@@ -74,7 +76,7 @@ class Coverage_DP:
             clust_start = cur
             for seg in cov_dp.cluster_dict[c]:
                 len_seg = len(cov_dp.segment_r_list[seg])
-                axs.scatter(np.r_[cur:len_seg+cur], np.exp(np.log(cov_dp.segment_r_list[seg]) - (cov_dp.segment_C_list[seg] @ cov_dp.beta).flatten()))
+                axs.scatter(np.r_[cur:len_seg+cur], np.exp(np.log(cov_dp.segment_r_list[seg]) - (cov_dp.segment_C_list[seg] @ cov_dp.beta + np.log(self.bin_exposure)).flatten()))
                 cur += len_seg
             axs.add_patch(mpl.patches.Rectangle((clust_start,0), cur-clust_start, 500, fill=True, alpha=0.15, color = colors[c % 10]))
         plt.savefig(save_path)
@@ -82,10 +84,11 @@ class Coverage_DP:
 # This class implements the actual DP clustering
 # for now input will be coverage_df with global segment id column
 class Run_Cov_DP:
-    def __init__(self, cov_df, beta, prior_run=None, count_prior_sum=None):
+    def __init__(self, cov_df, beta, bin_exposure, prior_run=None, count_prior_sum=None):
         self.cov_df = cov_df
         self.seg_id_col = self.cov_df.columns.get_loc('segment_ID')
         self.beta = beta
+        self.bin_exposure=bin_exposure
         
         self.num_segments = self.cov_df.iloc[:, self.seg_id_col].max() + 1
         self.segment_r_list = [None] * self.num_segments
@@ -145,10 +148,11 @@ class Run_Cov_DP:
             self.clust_prior_ML = None
     
     @staticmethod
-    def ll_nbinom(r, mu, C, beta, lepsi):
+    def ll_nbinom(r, mu, C, beta, lepsi, bin_exposure):
         r = r.flatten()
         epsi = np.exp(lepsi)
-        bc = (C @ beta).flatten()
+        exposure = np.log(bin_exposure)
+        bc = (C @ beta).flatten() + exposure
         exp = np.exp(mu + bc).flatten()
         return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
                 (r * (mu + bc - np.log(epsi + exp))) +
@@ -165,7 +169,7 @@ class Run_Cov_DP:
             r = np.hstack([self.segment_r_list[i] for i in cluster_set])
             C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
             mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, C, ret_hess=True)
-            ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt)
+            ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt, self.bin_exposure)
             
             res = ll_opt + self._get_laplacian_approx(H_opt)
             self.cluster_ml_cache[fs] = res
@@ -177,7 +181,7 @@ class Run_Cov_DP:
         r = np.hstack([self.segment_r_list[i] for i in cluster_set])
         C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
         mu_opt, lepsi_opt = self.stats_optimizer(r, C, ret_hess=False)
-        ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt)
+        ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt, self.bin_exposure)
 
         return ll_opt
 
@@ -204,7 +208,7 @@ class Run_Cov_DP:
                 C = np.concatenate([self.prior_C_list[i] for i in cluster_set])
 
             mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, C, ret_hess=True)
-            ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt)
+            ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt, self.bin_exposure)
             res =  ll_opt + self._get_laplacian_approx(H_opt)
             self.cluster_prior_ml_cache[query] = res
             return res
@@ -218,7 +222,8 @@ class Run_Cov_DP:
     def stats_optimizer(self, r, C, ret_hess=False):
         offset = (C @ self.beta).flatten()
         exog = np.ones(r.shape[0])
-        sNB = statsNB(r, exog, offset=offset)
+        exposure = np.ones(r.shape[0]) * self.bin_exposure
+        sNB = statsNB(r, exog, exposure=exposure, offset=offset)
         res = sNB.fit(disp=0)
         if ret_hess:
             return res.params[0], -np.log(res.params[1]), sNB.hessian(res.params)
