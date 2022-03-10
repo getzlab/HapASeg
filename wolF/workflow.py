@@ -30,7 +30,7 @@ phasing = wolf.ImportTask(
 
 # for Hapaseg itself
 hapaseg = wolf.ImportTask(
-  task_path = ".", # TODO: make remote
+  task_path = "../", # TODO: make remote
   task_name = "hapaseg"
 )
 
@@ -41,7 +41,7 @@ split_intervals = wolf.ImportTask(
 )
 
 cov_collect = wolf.ImportTask(
-  task_path = "git@github.com:getzlab/coverage_collector_TOOL.git", # TODO: make remote
+  task_path = "git@github.com:getzlab/covcollect.git",
   task_name = "covcollect"
 )
 
@@ -49,12 +49,12 @@ cov_collect = wolf.ImportTask(
 # defining reference config generators for hg19 and hg38
 
 #hg19
-def _hg19_config_gen(coverage_dir):
+def _hg19_config_gen(wgs):
     hg19_ref_panel = pd.DataFrame({ "path" : subprocess.check_output("gsutil ls gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/*.bcf*", shell = True).decode().rstrip().split("\n") })
-    hg19_ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
-    hg19_ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
-    hg19_ref_dict = ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
-
+    hg19_ref_panel = hg19_ref_panel.join(hg19_ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
+    hg19_ref_panel["key"] = hg19_ref_panel["chr"] + "_" + hg19_ref_panel["ext"]
+    hg19_ref_dict = hg19_ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
+    
     hg19_ref_config = dict(
         ref_fasta ="gs://getzlab-workflows-reference_files-oa/hg19/Homo_sapiens_assembly19.fasta",
         ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg19/Homo_sapiens_assembly19.fasta.fai",
@@ -62,17 +62,19 @@ def _hg19_config_gen(coverage_dir):
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg19/eagle/genetic_map_hg19_withX.txt.gz",
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg19/gnomad/gnomAD_MAF10_80pct_45prob.txt",
         cytoband_file = 'gs://getzlab-workflows-reference_files-oa/hg19/cytoBand.txt',
-        coverage_dir = coverage_dir,
+        repl_file = 'gs://opriebe-tmp/GSE137764_H1.hg19_liftover.pickle',
         ref_panel_1000g = hg19_ref_dict
     )
+    #if we're using whole genome we can use the precomputed gc file for 200 bp bins
+    hg19_ref_config['gc_file'] = 'gs://opriebe-tmp/GC_hg19_200bp.pickle' if wgs else ""
     return hg19_ref_config
 
 #hg38
-def _hg38_config_gen(coverage_dir):
+def _hg38_config_gen(wgs):
     hg38_ref_panel = pd.DataFrame({ "path" : subprocess.check_output("gsutil ls gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/*.bcf*", shell = True).decode().rstrip().split("\n") })
-    hg38_ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
-    hg38_ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
-    hg38_ref_dict = ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
+    hg38_ref_panel = hg38_ref_panel.join(hg38_ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
+    hg38_ref_panel["key"] = hg38_ref_panel["chr"] + "_" + hg38_ref_panel["ext"]
+    hg38_ref_dict = hg38_ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
 
     hg38_ref_config= dict(
         ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
@@ -81,9 +83,12 @@ def _hg38_config_gen(coverage_dir):
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
         cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg19/cytoBand.txt',
-        coverage_dir=coverage_dir,
-        ref_panel_1000g = hg38_ref_panel
+        repl_file = 'gs://opriebe-tmp/GSE137764_H1.hg38.pickle',
+        ref_panel_1000g = hg38_ref_dict
     )
+    #if we're using whole genome we can use the precomputed gc file for 200 bp bins
+    hg38_ref_config['gc_file'] = 'gs://opriebe-tmp/GC_hg38_2kb.pickle' if wgs else ""
+    
     return hg38_ref_config
 
 def workflow(
@@ -100,26 +105,24 @@ def workflow(
   ref_genome_build=None, #must be hg19 or hg38
   
   target_list = None,
-  coverage_dir = None
+  localization_token=None
 ):
     
     ###
+     # integer target list implies wgs
+    bin_width = target_list if isinstance(target_list, int) else 1
+    wgs = True if bin_width > 1 else False
+    
     # Select config based on ref genome choice
     if ref_genome_build is None:
         raise ValueError("Reference genome must be specified! Options are 'hg19' or hg38'")
-    
     elif ref_genome_build == "hg19":
-        ref_config = _hg19_config_gen(coverage_dir)
+        ref_config = _hg19_config_gen(wgs)
     elif ref_genome_build == "hg38":
-        ref_config = _hg19_config_gen(coverage_dir)
+        ref_config = _hg38_config_gen(wgs)
     else:
         raise ValueError("Reference genome options are 'hg19' or hg38', got {}".format(ref_genome_build))
         
-    # localize reference files to RODISK
-    ref_panel = pd.DataFrame({ "path" : subprocess.check_output("gsutil ls gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/*.bcf*", shell = True).decode().rstrip().split("\n") })
-    ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
-    ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
-
     localization_task = wolf.LocalizeToDisk(
       files = dict(
         ref_fasta = ref_config["ref_fasta"],
@@ -128,7 +131,14 @@ def workflow(
 
         genetic_map_file = ref_config["genetic_map_file"],
           
+        common_snp_list = ref_config["common_snp_list"],
+          
         cytoband_file = ref_config["cytoband_file"],
+        
+        repl_file = ref_config["repl_file"],
+        
+        gc_file = ref_config["gc_file"],
+        
         # reference panel
         **ref_config["ref_panel_1000g"]
       )
@@ -139,9 +149,10 @@ def workflow(
     if tumor_bam is not None and tumor_bai is not None:
         tumor_bam_localization_task = wolf.LocalizeToDisk(
           files = {
-            "bam" : tumor_bam,
-            "bai" : tumor_bai,
-          }
+            "t_bam" : tumor_bam,
+            "t_bai" : tumor_bai,
+          },
+        token=localization_token
         )
         collect_tumor_coverage = True
     elif tumor_coverage_bed is not None:
@@ -153,9 +164,10 @@ def workflow(
     if normal_bam is not None and normal_bai is not None:
         normal_bam_localization_task = wolf.LocalizeToDisk(
           files = {
-            "bam" : normal_bam,
-            "bai" : normal_bai
-          }
+            "n_bam" : normal_bam,
+            "n_bai" : normal_bai
+          },
+        token=localization_token
         )
         collect_normal_coverage = True
     elif normal_coverage_bed is not None:
@@ -169,11 +181,14 @@ def workflow(
 
     # tumor
     if collect_tumor_coverage:
+        primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
+        primary_contigs.extend(['chrX','chrY','chrM'])
         # create scatter intervals
         split_intervals_task = split_intervals.split_intervals(
-          bam = tumor_bam_localization_task["bam"],
-          bai = tumor_bam_localization_task["bai"],
+          bam = tumor_bam_localization_task["t_bam"],
+          bai = tumor_bam_localization_task["t_bai"],
           interval_type = "bed",
+          selected_chrs = primary_contigs
         )
 
         # shim task to transform split_intervals files into subset parameters for covcollect task
@@ -182,15 +197,20 @@ def workflow(
             ints = []
             for f in interval_files:
                 ints.append(pd.read_csv(f, sep = "\t", header = None, names = ["chr", "start", "end"]))
-            return pd.concat(ints).sort_values(["chr", "start", "end"])
+            #filter non-primary contigs
+            primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
+            primary_contigs.extend(['chrX','chrY','chrM'])
+            full_bed = pd.concat(ints).sort_values(["chr", "start", "end"])
+            filtered_bed = full_bed.loc[full_bed.chr.isin(primary_contigs)]
+            return filtered_bed
 
         subset_intervals = interval_gather(split_intervals_task["interval_files"])
 
         # dispatch coverage scatter
         tumor_cov_collect_task = cov_collect.Covcollect(
           inputs = dict(
-            bam = tumor_bam_localization_task["bam"],
-            bai = tumor_bam_localization_task["bai"],
+            bam = tumor_bam_localization_task["t_bam"],
+            bai = tumor_bam_localization_task["t_bai"],
             intervals = target_list,
             subset_chr = subset_intervals["chr"],
             subset_start = subset_intervals["start"],
@@ -218,7 +238,7 @@ def workflow(
     if callstats_file is not None:
         hp_task = het_pulldown.get_het_coverage_from_callstats(
           callstats_file = callstats_file,
-          common_snp_list = common_snp_list,
+          common_snp_list = localization_task["common_snp_list"],
           ref_fasta = localization_task["ref_fasta"],
           ref_fasta_idx = localization_task["ref_fasta_idx"],
           ref_fasta_dict = localization_task["ref_fasta_dict"],
@@ -227,15 +247,15 @@ def workflow(
 
     # otherwise, run M1 and get it from the BAM
     elif callstats_file is None and tumor_bam is not None and normal_bam is not None:
-        m1_task = mutect1.mutect1(inputs = dict(
+        m1_task = mutect1.mutect1(inputs=dict(
           pairName = "het_coverage",
           caseName = "tumor",
           ctrlName = "normal",
 
-          t_bam = tumor_bam_localization_task["bam"],
-          t_bai = tumor_bam_localization_task["bai"],
-          n_bam = normal_bam_localization_task["bam"],
-          n_bai = normal_bam_localization_task["bai"],
+          t_bam = tumor_bam_localization_task["t_bam"],
+          t_bai = tumor_bam_localization_task["t_bai"],
+          n_bam = normal_bam_localization_task["n_bam"],
+          n_bai = normal_bam_localization_task["n_bai"],
 
           fracContam = 0,
 
@@ -248,7 +268,7 @@ def workflow(
 
         hp_scatter = het_pulldown.get_het_coverage_from_callstats(
           callstats_file = m1_task["mutect1_cs"],
-          common_snp_list = common_snp_list,
+          common_snp_list = localization_task["common_snp_list"],
           ref_fasta = localization_task["ref_fasta"],
           ref_fasta_idx = localization_task["ref_fasta_idx"],
           ref_fasta_dict = localization_task["ref_fasta_dict"],
@@ -366,7 +386,8 @@ def workflow(
         "phased_VCF" : combine_task["combined_vcf"],
         "tumor_allele_counts" : hp_task["tumor_hets"],
         "normal_allele_counts" : hp_task["normal_hets"],
-        "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt", # TODO: allow to be specified
+        "cytoband_file" : localization_task["cytoband_file"],
+        "ref_file_path": localization_task["ref_fasta"]
       }
     )
 
@@ -401,43 +422,40 @@ def workflow(
        "ref_bias" : hapaseg_concat_task["ref_bias"]
      }
     )
-
-    # concat arm level results
-    @prefect.task(nout = 2)
-    def concat_arm_level_results(arm_results):
-        A = []
-        for arm_file in arm_results:
-            with open(arm_file, "rb") as f:
-                H = pickle.load(f)
-                A.append(pd.Series({ "chr" : H.P["chr"].iloc[0], "start" : H.P["pos"].iloc[0], "end" : H.P["pos"].iloc[-1], "results" : H }))
-
-        # get into order
-        A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(drop = True)
-
-        # save
-        _, tmpfile = tempfile.mkstemp(  )
-        A.to_pickle(tmpfile)
-
-        # get number of MCMC samples
-        n_samps = int(np.minimum(np.inf, A.loc[~A["results"].isna(), "results"].apply(lambda x : len(x.breakpoint_list))).min())
-
-        return tmpfile, list(range(0, n_samps))
-
-    arm_concat, n_samps_range = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
-
+    
+    hapaseg_arm_concat_task = hapaseg.Hapaseg_concat_arms(
+        inputs={
+        "arm_results":[hapaseg_arm_AMCMC_task["arm_level_MCMC"]],
+        "ref_fasta":localization_task["ref_fasta"] #pickle load will import capy
+        }
+    )
+    @prefect.task
+    def get_arm_samples_range(arm_concat_object):
+        obj = np.load(arm_concat_object)
+        n_samples_range = list(range(int(obj["n_samps"])))
+        return n_samples_range
+    
+    n_samps_range = get_arm_samples_range(hapaseg_arm_concat_task["num_samples_obj"])
+    
     ## run DP
 
     # scatter DP
     hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
      inputs = {
-       "seg_dataframe" : arm_concat,
+       "seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
        "n_dp_iter" : 10,   # TODO: allow to be specified?
        "seg_samp_idx" : n_samps_range,
-       "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt", # TODO: allow to be specified
+       "cytoband_file" : localization_task["cytoband_file"], # TODO: allow to be specified
        "ref_fasta" : localization_task["ref_fasta"],
        "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
        "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink
      }
+    )
+    
+    ##collect DP results
+    collect_adp_task = hapaseg.Hapaseg_collect_adp(
+        inputs={"dp_results":[hapaseg_allelic_DP_task["cluster_and_phase_assignments"]]
+               }
     )
     
     ### coverage tasks ####
@@ -445,22 +463,31 @@ def workflow(
     # prepare coverage MCMC
     prep_cov_mcmc_task = hapaseg.Hapaseg_prepare_coverage_mcmc(
     inputs={
-        "coverage_csv":tumor_cov_gather_task["coverage"],
-        "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
-        "SNPs_pickle":hapaseg_allelic_DP_task["all_SNPs"],
-        "covariate_dir":localization_task["covariate_dir"],
+        "coverage_csv":tumor_cov_gather_task["coverage"], #each scatter result is the same
+        "allelic_clusters_object":collect_adp_task["full_dp_results"],
+        "SNPs_pickle":hapaseg_allelic_DP_task["all_SNPs"][0], #each scatter result is the same
+        "repl_pickle":localization_task["repl_file"],
+        "gc_pickle":localization_task["gc_file"],
         "ref_file_path":localization_task["ref_fasta"]
         }
     )
     
+    #get the cluster indices from the preprocess data
+    @prefect.task
+    def _get_ADP_cluster_list(preprocess_data_obj):
+        num_clusters = np.load(preprocess_data_obj)["Pi"].shape[1]
+        cluster_idxs = [i for i in np.arange(num_clusters)]
+        return cluster_idxs
+    
+    cluster_idxs = _get_ADP_cluster_list(prep_cov_mcmc_task["preprocess_data"])
+    
     # coverage MCMC scatter
-    num_clusters = np.load(prep_cov_mcmc_res["preprocess_data"])["Pi"].shape[1]
-    cluster_idxs = [i for i in np.arange(num_clusters)]
     cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc(
         inputs={
             "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
             "num_draws":10,
-            "cluster_num":cluster_idxs
+            "cluster_num":cluster_idxs,
+            "bin_width":bin_width
         }
     )
     
@@ -475,19 +502,27 @@ def workflow(
     # coverage DP
     cov_dp_task = hapaseg.Hapaseg_coverage_dp(
     inputs = {
-        "f_cov_df":cov_mcmc_scatter_task["cov_df_segmentation"][0],
+        "f_cov_df":prep_cov_mcmc_task["cov_df_pickle"],
         "cov_mcmc_data": cov_mcmc_gather_task["cov_collected_data"],
-        "num_segmentation_samples":10,
-        "num_draws":10
+        "num_segmentation_samples":5,
+        "num_draws":5,
+         "bin_width":bin_width
         }   
     )
     
+    #get the adp draw number from the preprocess data object
+    @prefect.task
+    def _get_ADP_draw_num(preprocess_data_obj):
+        return int(np.load(preprocess_data_obj)["adp_cluster"])
+    
+    adp_draw_num = _get_ADP_draw_num(prep_cov_mcmc_task["preprocess_data"])
+    
     # generate acdp dataframe
-    adp_draw_num = int(np.load(prep_cov_mcmc_res["preprocess_data"])["adp_cluster"])
+
     gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
     inputs = {
-        "SNPs_pickle":hapaseg_allelic_DP_task["all_SNPs"],
-        "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+        "SNPs_pickle":hapaseg_allelic_DP_task["all_SNPs"][0],
+        "allelic_clusters_object":collect_adp_task["full_dp_results"],
         "coverage_dp_object":cov_dp_task["cov_dp_object"],
         "allelic_draw_index":adp_draw_num,
         "ref_file_path":localization_task["ref_fasta"]
