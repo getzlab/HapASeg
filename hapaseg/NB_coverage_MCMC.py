@@ -18,7 +18,7 @@ colors = mpl.cm.get_cmap("tab10").colors
 
 
 class AllelicCluster:
-    def __init__(self, r, C, mu_0, beta_0):
+    def __init__(self, r, C, mu_0, beta_0, bin_width=1):
         # cluster wide params
         self.r = r.flatten()
         self.C = C
@@ -26,6 +26,11 @@ class AllelicCluster:
         self.beta = beta_0
         self.lepsi = 1
         self.epsi = np.exp(self.lepsi)
+        
+        # bin width is set if were are dealing with uniform bin lengths
+        # we use this as an exposure to account for the lack of an explicit
+        # covaraiate
+        self.bin_exposure = bin_width
 
         # individual segment params
         self.mu_i = 0
@@ -81,7 +86,8 @@ class AllelicCluster:
     def stats_init(self):
         endog = self.r.flatten()
         exog = np.ones(self.r.shape[0])
-        sNB = statsNB(endog, exog, offset=(self.C @ self.beta).flatten())
+        exposure = np.ones(self.r.shape[0]) * self.bin_exposure
+        sNB = statsNB(endog, exog, exposure=exposure, offset=(self.C @ self.beta).flatten())
         res = sNB.fit(disp=0)
         return res.params[0], -np.log(res.params[1])
 
@@ -89,8 +95,8 @@ class AllelicCluster:
     def stats_optimizer(self, ind, ret_hess=False):
         endog = self.r[ind[0]:ind[1]].flatten()
         exog = np.ones(self.r[ind[0]:ind[1]].shape[0])
-        exposure = np.ones(self.r[ind[0]:ind[1]].shape[0]) * np.exp(self.mu)
-        sNB = statsNB(endog, exog, exposure=exposure, offset=(self.C[ind[0]:ind[1]] @ self.beta).flatten())
+        exposure = np.ones(self.r[ind[0]:ind[1]].shape[0]) * self.bin_exposure
+        sNB = statsNB(endog, exog, exposure=exposure, offset=(self.C[ind[0]:ind[1]] @ self.beta).flatten() + self.mu)
         res = sNB.fit(disp=0)
 
         if ret_hess:
@@ -102,7 +108,8 @@ class AllelicCluster:
     def ll_cluster(self, mu_i_arr, lepsi_i_arr, take_sum=True):
         mu_i_arr = mu_i_arr.flatten()
         epsi_i_arr = np.exp(lepsi_i_arr).flatten()
-        bc = (self.C @ self.beta).flatten()
+        exposure= np.log(self.bin_exposure)
+        bc = (self.C @ self.beta).flatten() + exposure
         exp = np.exp(self.mu + bc + mu_i_arr).flatten()
 
         lls = (ss.gammaln(self.r + epsi_i_arr) - ss.gammaln(self.r + 1) - ss.gammaln(epsi_i_arr) +
@@ -114,10 +121,11 @@ class AllelicCluster:
 
     # method for calculating the log likelihood of our NB model
     @staticmethod
-    def ll_nbinom(r, mu, C, beta, mu_i, lepsi):
+    def ll_nbinom(r, mu, C, beta, mu_i, lepsi, bin_exposure=1):
         r = r.flatten()
         epsi = np.exp(lepsi)
-        bc = (C @ beta).flatten()
+        exposure = np.log(bin_exposure)
+        bc = (C @ beta).flatten() + exposure
         exp = np.exp(mu + bc + mu_i).flatten()
         return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
                 (r * (mu + bc + mu_i - np.log(epsi + exp))) +
@@ -142,9 +150,16 @@ class AllelicCluster:
         
         #cutoff = difs.mean() + 2 * np.sqrt(difs.var())
         cutoff = np.quantile(difs, 0.98)
-
+        
+        ind_len = ind[1]-ind[0]
+        if ind_len > 50000:
+            distance = 10000
+        elif ind_len > 5000:
+            distance = 1000
+        else:
+            distance = 50
         # use helper function to find peaks above cutoff that are seperated
-        peaks, _ = find_peaks(difs, height=cutoff, distance=max(25, window/2))
+        peaks, _ = find_peaks(difs, height=cutoff, distance=distance)
         peaks = peaks + ind[0] + window
         return list(peaks)
 
@@ -160,8 +175,17 @@ class AllelicCluster:
         residuals = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) - (self.mu.flatten()) - (
                     self.C[ind[0]:ind[1]] @ self.beta).flatten())
        
+        minimal=False
         len_ind = ind[1]-ind[0]
-        windows = np.array([10, 50, 100, 250])
+        if len_ind > 50000:
+            windows=np.array([1000])
+        elif len_ind > 5000:
+            windows=np.array([500,100,25])
+        elif len_ind > 1000:
+            windows = np.array([100, 50])
+        else:
+            minimal = True
+            windows = np.array([50, 10])
         windows = windows[2*windows < len_ind]
         difs = []
         for window in windows:
@@ -173,8 +197,10 @@ class AllelicCluster:
             print('no significant bins')
             return list(np.r_[ind[0] + 2:ind[1] - 1])
 
-        # add on first and last windows
-        difs_idxs = np.r_[np.r_[ind[0] + 2: ind[0] + 10], difs_idxs, np.r_[ind[1] - 10:ind[1] - 1]]
+        # add on first and last windows edges if were in a small interval
+        # since these are not considered by the kernel
+        if minimal:
+            difs_idxs = np.r_[difs_idxs, ind[0] + 10, ind[1]-10]
         return list(difs_idxs)
 
     """
@@ -262,9 +288,12 @@ class AllelicCluster:
         ones sampled.
         """
     def _detailed_sampling(self, ind, lls, split_indices, mus, lepsis, Hs):
-        max_samples = 25
+        if ind[1] -ind[0] > 25000:
+            max_samples = 5
+        else:
+            max_samples = 15
         # find the most likely index and those indices within a significant range
-        # (rn 7 -> at least 1/1000th as likely)
+        # (rn 5 ll points -> at least 1/150th as likely)
         top_lik = max(lls)
         sig_threshold = top_lik - 5
         within_range = np.r_[lls] > sig_threshold
@@ -404,6 +433,10 @@ class AllelicCluster:
 
         max_ML = max(log_MLs)
         k_probs = np.exp(log_MLs - max_ML) / np.exp(log_MLs - max_ML).sum()
+        
+        if np.isnan(k_probs).any():
+            print("skipping split iteration due to nan. log MLs: ", log_MLs)
+            return 0
         choice_idx = np.random.choice(len(split_indices), p=k_probs)
         break_idx = split_indices[choice_idx]
         if break_idx > 0:
@@ -458,7 +491,10 @@ class AllelicCluster:
         log_MLs = np.r_[log_split_ML, log_join_ML]
         max_ML = max(log_MLs)
         k_probs = np.exp(log_MLs - max_ML)/np.exp(log_MLs - max_ML).sum()
-
+        
+        if np.isnan(k_probs).any():
+            print("skipping iter due to nan in join. log_MLs:", log_MLs)
+            return 0
         join_choice = np.random.choice([0, 1], p=k_probs)
 
         if join_choice:
@@ -488,12 +524,13 @@ class NB_MCMC_AllClusters:
     This class is for running segmentation on all allelic clusters on the same node. Each iteration first randomly
     chooses a cluster, and then proposes and split/join operation.
     """
-    def __init__(self, n_iter, r, C, Pi):
+    def __init__(self, n_iter, r, C, Pi, bin_width=1):
         self.n_iter = n_iter
         self.r = r
         self.C = C
         self.Pi = Pi
         self.beta = None
+        self.bin_exposure=bin_width
 
         # for now assume that the Pi vector assigns each bin to exactly one cluster
         self.c_assignments = np.argmax(self.Pi, axis=1)
@@ -559,7 +596,7 @@ class NB_MCMC_AllClusters:
         while self.n_iter > len(self.F_samples):
 
             # check if we have burnt in
-            if n_it > 2000 and not self.burnt_in and not n_it % 100:
+            if n_it > 500 and not self.burnt_in and not n_it % 100:
                 if np.diff(np.array(self.ll_iter[-500:])).mean() < 0:
                     print('burnt in!')
                     self.burnt_in = True
@@ -599,10 +636,11 @@ class NB_MCMC_AllClusters:
             self.ll_iter.append(self.ll_clusters.sum())
 
     def update_beta(self, total_exposure):
-        endog = np.exp(np.log(self.r.flatten()) - total_exposure)
+        endog = self.r.flatten()
         exog = self.C
+        exposure = np.ones(self.r.shape) * self.bin_exposure
         start_params = np.r_[self.beta.flatten(), 1]
-        sNB = statsNB(endog, exog, start_params=start_params)
+        sNB = statsNB(endog, exog, exposure=exposure, offset=total_exposure, start_params=start_params)
         res = sNB.fit(start_params=start_params, disp=0)
         return res.params[:-1]
 
@@ -640,13 +678,14 @@ class NB_MCMC_AllClusters:
     """
 class NB_MCMC_SingleCluster:
 
-    def __init__(self, n_iter, r, C, mu, beta, cluster_num):
+    def __init__(self, n_iter, r, C, mu, beta, cluster_num, bin_width=1):
         self.n_iter = n_iter
         self.r = r
         self.C = C
         self.beta = beta
         self.mu = mu
         self.cluster_num = cluster_num
+        self.bin_width = bin_width
         # for now assume that the Pi vector assigns each bin to exactly one cluster
 
         self.burnt_in = False
@@ -663,7 +702,7 @@ class NB_MCMC_SingleCluster:
         self._init_cluster()
 
     def _init_cluster(self):
-        self.cluster = AllelicCluster(self.r, self.C, self.mu, self.beta)
+        self.cluster = AllelicCluster(self.r, self.C, self.mu, self.beta, bin_width=self.bin_width)
 
         # set initial ll
         self.ll_cluster = self.cluster.get_ll()
@@ -737,7 +776,7 @@ class NB_MCMC_SingleCluster:
         return segmentation_samples, self.beta, mu_i_full
 
     def visualize_cluster_samples(self, savepath):
-        residuals = np.exp(np.log(self.cluster.r.flatten()) - (self.cluster.mu.flatten()) - (self.cluster.C@self.cluster.beta).flatten())
+        residuals = np.exp(np.log(self.cluster.r.flatten()) - (self.cluster.mu.flatten()) - np.log(self.bin_width) - (self.cluster.C@self.cluster.beta).flatten())
         num_draws = len(self.F_samples)
         num_rows = int(np.ceil(num_draws / 4))
         fig, axs = plt.subplots(num_rows, 4, figsize = (25,num_rows*3), sharey=True)
