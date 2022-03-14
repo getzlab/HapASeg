@@ -176,20 +176,51 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     resources = { "mem" : "15G" }
 
 
-class Hapaseg_coverage_mcmc(wolf.Task):
+class Hapaseg_coverage_mcmc_burnin(wolf.Task):
     inputs = {
         "preprocess_data": None,
         "num_draws": 50,
         "cluster_num": None,
-        "bin_width":None
+        "bin_width":None,
+        "range":""
     }
     script = """
     hapaseg coverage_mcmc_shard --preprocess_data ${preprocess_data} \
     --num_draws ${num_draws} \
     --cluster_num ${cluster_num} \
-    --bin_width ${bin_width}
-    """
+    --bin_width ${bin_width}"""
      
+    def prolog(self):
+        if self.conf["inputs"]["range"] != "":
+            self.conf["script"][-1] += " --range ${range}"
+    
+    output_patterns = {
+        "burnin_model": 'cov_mcmc_model_cluster_*.pickle',
+        "burnin_data": 'cov_mcmc_data_cluster_*.npz',
+        "burnin_figure": 'cov_mcmc_cluster_*_visual.png'
+    }
+
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
+    resources = {"mem" : "5G"}
+
+class Hapaseg_coverage_mcmc(wolf.Task):
+    inputs = {
+        "preprocess_data": None,
+        "num_draws": 50,
+        "cluster_num": None,
+        "bin_width":None,
+        "burnin_files":""
+    }
+    script = """
+    hapaseg coverage_mcmc_shard --preprocess_data ${preprocess_data} \
+    --num_draws ${num_draws} \
+    --cluster_num ${cluster_num} \
+    --bin_width ${bin_width}"""
+     
+    def prolog(self):
+        if self.conf["inputs"]["burnin_files"] != "":
+            self.conf["script"][-1] += " --burnin_files ${burnin_files}"
+    
     output_patterns = {
         "cov_segmentation_model": 'cov_mcmc_model_cluster_*.pickle',
         "cov_segmentation_data": 'cov_mcmc_data_cluster_*.npz',
@@ -198,7 +229,6 @@ class Hapaseg_coverage_mcmc(wolf.Task):
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
     resources = {"mem" : "5G"}
-
 
 class Hapaseg_collect_coverage_mcmc(wolf.Task):
     inputs = {
