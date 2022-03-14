@@ -82,6 +82,42 @@ class AllelicCluster:
     def get_ll(self):
         return self.ll_cluster(self.mu_i_arr, self.lepsi_i_arr, True)
     
+    # read in the merged cluster assignments from burnin scatter jobs and 
+    # fill in data structures for cluster mcmc accordingly
+    def _init_burnin(self, reconciled_assignments):
+        if len(self.r) != len(reconciled_assignments):
+            raise ValueError("reconciled_assignemnts did not match the number of cluster bins, expected {} got {}".format(len(self.r), len(reconciled_assignments)))
+
+        self.segment_ID = np.ones(len(reconciled_assignments), dtype=int) * -1
+        self.segments = sc.SortedSet()
+        self.segment_lens = sc.SortedDict()
+        self.F = sc.SortedList([0,len(self.segment_ID)])
+
+        prev = 0
+        prev_index = 0
+        for i, v in enumerate(reconciled_assignments):
+            #if we notice a value change we add the segment to the datastructures
+            if v != prev:
+                self.segment_ID[prev_index:i] = prev_index
+                self.segments.add(prev_index)
+                self.segment_lens[prev_index] = i - prev_index
+                self.F.update([i,i])
+        
+                prev = v
+                prev_index = i
+        # once we reach the end we add the last segment
+        self.segment_ID[prev_index:] = prev_index
+        self.segments.add(prev_index)
+        self.segment_lens[prev_index] = i - prev_index
+
+        #now we need to update the lepsi and mu_i arrays based on the burnin segmentation
+        for row in np.array(self.F).reshape(-1,2):
+            mu_i, lepsi_i = self.stats_optimizer(row)
+            self.mu_i_arr[row[0]:row[1]] = mu_i
+            self.lepsi_i_arr[row[0]:row[1]] = lepsi_i
+        
+        print("finished reading in burnin data")
+        
     # use stats optimizer to set initial cluster mu and lepsi
     def stats_init(self):
         endog = self.r.flatten()
@@ -687,9 +723,12 @@ class NB_MCMC_SingleCluster:
         self.cluster_num = cluster_num
         self.bin_width = bin_width
         # for now assume that the Pi vector assigns each bin to exactly one cluster
-
+        
         self.burnt_in = False
-
+        
+        #flag designating whether we initialized from burnin scatter
+        self.from_burnin = False
+        
         self.cluster = None
         self.num_segments = 1
 
@@ -706,6 +745,16 @@ class NB_MCMC_SingleCluster:
 
         # set initial ll
         self.ll_cluster = self.cluster.get_ll()
+    
+    #allow user to pass in reconciled burnin cluster assignments
+    def init_burnin(self, reconciled_assignments):
+        self.from_burnin = True
+        self.cluster._init_burnin(reconciled_assignments)
+        # reset initial ll
+        self.ll_cluster = self.cluster.get_ll()
+        
+        #set num segments
+        self.num_segments = len(self.cluster.segments)
 
     def save_sample(self):
         self.mu_i_samples.append(self.cluster.mu_i_arr.copy())
@@ -719,12 +768,18 @@ class NB_MCMC_SingleCluster:
 
         past_it = 0
         n_it = 0
-        min_it = min(200, max(50, self.r.shape[0]))
+        if self.from_burnin:
+            min_it = max(200, self.num_segments)
+        else:
+            min_it = min(200, max(50, self.r.shape[0]))
+        
+        lookback_len = min(50, min_it)
+    
         while self.n_iter > len(self.F_samples):
 
             # check if we have burnt in
             if n_it >= min_it and not self.burnt_in and not n_it % 50:
-                if np.diff(np.array(self.ll_iter[-min_it:])).mean() <= 0:
+                if np.diff(np.array(self.ll_iter[-lookback_len:])).mean() <= 0:
                     print('burnt in!')
                     self.burnt_in = True
                     past_it = n_it
@@ -755,6 +810,8 @@ class NB_MCMC_SingleCluster:
                     self.num_segments -= 1
             n_it += 1
             self.ll_iter.append(self.ll_cluster)
+
+    
 
     # return just the local beta in this case since we cant do global calculation until we see all of the clusters
     def prepare_results(self):
