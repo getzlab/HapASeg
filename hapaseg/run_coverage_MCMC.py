@@ -295,3 +295,29 @@ def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None):
         #C = np.c_[np.log(cov_df["C_len"]), cov_df["C_RT_z"], cov_df["C_GC_z"]]
     return coverage_segmentation
 
+def aggregate_burnin_files(file_list, cluster_num):
+    file_captures = []
+    for s in file_list:
+        match = re.match(".*cluster_(\d*)_(\d*)-(\d*).npz", s)
+        file_captures.append((int(match[1]), int(match[2]), int(match[3]), s))
+    files_df = pd.DataFrame(file_captures).sort_values(by=[0,1])
+    files_df = files_df.loc[files_df[0] == cluster_num]
+
+    arrs=[]
+    prev_max = 0
+    prev_en = 0
+    for i, _, st, en, path in files_df.itertuples():
+        if st != prev_en:
+            raise ValueError("missing a burnin file. please check input files")
+        data = np.load(path)
+        arr = data['seg_samples'][:,0]
+
+        #set cluster assignments to be consistent with the previous clusters
+        # we want the last cluster from the previous subset to be merged with the first subset of this interval
+        arr += prev_max
+        arrs.append(arr)
+
+        prev_en = en
+        prev_max = arr.max()
+    reconciled_assignments = np.hstack(arrs)
+    return reconciled_assignments
