@@ -20,7 +20,7 @@ from .allelic_DP import A_DP, DPinstance
 from . import utils as hs_utils
 
 from .NB_coverage_MCMC import NB_MCMC_SingleCluster
-from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters
+from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters, aggregate_burnin_files 
 from .coverage_DP import Coverage_DP
 from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP
 
@@ -166,7 +166,8 @@ def parse_args():
                                help="cluster index for this worker to run on. If unspecified method will simulate "
                                     "all clusters on the same machine", default=None)
     coverage_mcmc_shard.add_argument("--bin_width", type=int, default=1, help="size of uniform bins if using. Otherwise 1.")
-
+    coverage_mcmc_shard.add_argument("--range", type=str, help="range of coverage bins within the cluster to burnin. should be in start-end form. Note that this will cause num draws to be overridden to 1")
+    coverage_mcmc_shard.add_argument("--burnin_files", type=str, help="txt file containing burnt in segment assignments")
 
     ## collect coverage MCMC shards
     collect_cov_mcmc = subparsers.add_parser("collect_cov_mcmc", help="collect sharded cov mcmc results")
@@ -545,7 +546,7 @@ def main():
         Pi = preprocess_data['Pi']
         if args.cluster_num > Pi.shape[1] - 1:
             raise ValueError("Received cluster number {}, which is out of range".format(args.cluster_num))
-
+        
         # extract preprocessed data from this cluster
         mu = preprocess_data["all_mu"][args.cluster_num]
         beta = preprocess_data["global_beta"]
@@ -553,24 +554,59 @@ def main():
         cluster_mask = (c_assignments == args.cluster_num)
         r = preprocess_data['r'][cluster_mask]
         C = preprocess_data['C'][cluster_mask]
-
+        
+        # if we get a range argument well be doing burnin on a subset of the coverage bins
+        if args.range is not None:
+            #parse range from string
+            range_lst = args.range.split('-')
+            st,en = int(range_lst[0]), int(range_lst[1]) 
+            if st > en or st < 0 or en > len(r):
+                raise ValueError("invalid range! got range {} for cluster {} with size {}".format(args.range, args.cluster_num, len(r)))
+            
+            #trim data to our desired range
+            r = r[st:en]
+            C = C[st:en]
+            num_draws = 1
+            
+            # if we're just burning in a subset use different save strings
+            model_save_str = 'cov_mcmc_model_cluster_{}_{}.pickle'.format(args.cluster_num, args.range)
+            data_save_str = 'cov_mcmc_data_cluster_{}_{}'.format(args.cluster_num, args.range)
+            figure_save_str = 'cov_mcmc_cluster_{}_{}_visual'.format(args.cluster_num, args.range)
+            
+        else:
+            #if not in burnin use the specified number of draws
+            num_draws = args.num_draws
+            
+            
+            model_save_str = 'cov_mcmc_model_cluster_{}.pickle'.format(args.cluster_num)
+            data_save_str = 'cov_mcmc_data_cluster_{}'.format(args.cluster_num)
+            figure_save_str = 'cov_mcmc_cluster_{}_visual'.format(args.cluster_num)
+        
         # run on the specified cluster
-        cov_mcmc = NB_MCMC_SingleCluster(args.num_draws, r, C, mu, beta, args.cluster_num, args.bin_width)
+        cov_mcmc = NB_MCMC_SingleCluster(num_draws, r, C, mu, beta, args.cluster_num, args.bin_width)
+        
+        # if we're using burnin results load them now
+        if args.burnin_files is not None:
+            with open(args.burnin_files, 'r') as f:
+                file_list = f.read().splitlines()
+            assignments_arr = aggregate_burnin_files(file_list, args.cluster_num)
+            cov_mcmc.init_burnin(assignments_arr)
+
         cov_mcmc.run()
 
         # collect the results
         segment_samples, global_beta, mu_i_samples = cov_mcmc.prepare_results()
-
+        
         # save samples
-        with open(os.path.join(output_dir, 'cov_mcmc_model_cluster_{}.pickle'.format(args.cluster_num)), 'wb') as f:
+        with open(os.path.join(output_dir, model_save_str), 'wb') as f:
             pickle.dump(cov_mcmc, f)
 
-        np.savez(os.path.join(output_dir, 'cov_mcmc_data_cluster_{}'.format(args.cluster_num)),
+        np.savez(os.path.join(output_dir, data_save_str),
                  seg_samples=segment_samples, beta=global_beta, mu_i_samples=mu_i_samples)
 
         # save visualization
         cov_mcmc.visualize_cluster_samples(
-            os.path.join(output_dir, 'cov_mcmc_cluster_{}_visual'.format(args.cluster_num)))
+            os.path.join(output_dir, figure_save_str))
 
     elif args.command == "collect_cov_mcmc":
         if args.coverage_dir:
