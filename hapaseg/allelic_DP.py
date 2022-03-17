@@ -391,7 +391,9 @@ class DPinstance:
             SD_a += D_a
             SD_b += D_b
 
-        return ss.betaln(SU_a + 1 + self.betahyp, SU_b + 1 + self.betahyp) + ss.betaln(J_a + 1 + self.betahyp, J_b + 1 + self.betahyp) + ss.betaln(SD_a + 1 + self.betahyp, SD_b + 1 + self.betahyp)
+        return (ss.betaln(SU_a + 1 + self.betahyp, SU_b + 1 + self.betahyp) if SU_a > 0 or SU_b > 0 else 0) + \
+          ss.betaln(J_a + 1 + self.betahyp, J_b + 1 + self.betahyp) + \
+          (ss.betaln(SD_a + 1 + self.betahyp, SD_b + 1 + self.betahyp) if SD_a > 0 or SD_b > 0 else 0)
 
     def compute_adj_prob(self, break_idx):
         if break_idx > 1:
