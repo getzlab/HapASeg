@@ -906,6 +906,7 @@ class DPinstance:
                     maj_csr = self.seg_sums[seg_idx[0]][1] - maj_cs
 
                     split_lik = ss.betaln(min_cs + 1 + self.betahyp, maj_cs + 1 + self.betahyp) + ss.betaln(min_csr + 1 + self.betahyp, maj_csr + 1 + self.betahyp)
+                    split_lik[-1] = ss.betaln(min_cs[-1] + 1 + self.betahyp, maj_cs[-1] + 1 + self.betahyp)
                     split_lik -= split_lik.max()
                     split_point = np.random.choice(np.r_[0:len(seg_idx)], p = np.exp(split_lik)/np.exp(split_lik).sum())
                     seg_idx = seg_idx[:(split_point + 1)]
