@@ -109,6 +109,14 @@ class AllelicCluster:
         self.segment_ID[prev_index:] = prev_index
         self.segments.add(prev_index)
         self.segment_lens[prev_index] = i - prev_index
+        
+        # refit poisson to get new beta
+        pois_regr = PoissonRegression(np.exp(np.log(self.r).flatten() - np.log(self.bin_exposure) - self.mu_i_arr)[:,None], self.C, np.ones(self.r.shape).reshape(-1,1))
+        mu, beta = pois_regr.fit()
+        self.beta=beta
+    
+        # get new NB mu and lepsi values
+        self._init_params()
 
         #now we need to update the lepsi and mu_i arrays based on the burnin segmentation
         for row in np.array(self.F).reshape(-1,2):
@@ -139,6 +147,22 @@ class AllelicCluster:
             return res.params[0], -np.log(res.params[1]), sNB.hessian(res.params)
         else:
             return res.params[0], -np.log(res.params[1])
+    
+    # method for refitting beta value of the cluster
+    def refit_beta(self):
+        #fit poisson to get new beta
+        pois_regr = PoissonRegression(np.exp(np.log(self.r).flatten() - np.log(self.bin_exposure) - self.mu_i_arr).reshape(-1,1), self.C, np.ones(self.r.shape).reshape(-1,1))
+        mu, beta = pois_regr.fit()
+        self.beta=beta
+    
+        # get new NB mu and lepsi values
+        self._init_params()
+    
+        # refit to segments to get lepsi_i and mu_i arrays
+        for row in np.array(self.F).reshape(-1,2):
+            mu_i, lepsi_i = self.stats_optimizer(row)
+            self.mu_i_arr[row[0]:row[1]] = mu_i
+            self.lepsi_i_arr[row[0]:row[1]] = lepsi_i
 
     # method for calculating the overall log likelihood of an allelic cluster given a hypothetical mu_i and lepsi arrays
     def ll_cluster(self, mu_i_arr, lepsi_i_arr, take_sum=True):
@@ -230,7 +254,7 @@ class AllelicCluster:
         difs_idxs = np.r_[list(difs_idxs)]
         # if there are no that pass the threshold return them all
         if len(difs_idxs) ==0:
-            print('no significant bins')
+            print('no significant bins', flush=True)
             return list(np.r_[ind[0] + 2:ind[1] - 1])
 
         # add on first and last windows edges if were in a small interval
@@ -471,7 +495,7 @@ class AllelicCluster:
         k_probs = np.exp(log_MLs - max_ML) / np.exp(log_MLs - max_ML).sum()
         
         if np.isnan(k_probs).any():
-            print("skipping split iteration due to nan. log MLs: ", log_MLs)
+            print("skipping split iteration due to nan. log MLs: ", log_MLs, flush=True)
             return 0
         choice_idx = np.random.choice(len(split_indices), p=k_probs)
         break_idx = split_indices[choice_idx]
@@ -529,7 +553,7 @@ class AllelicCluster:
         k_probs = np.exp(log_MLs - max_ML)/np.exp(log_MLs - max_ML).sum()
         
         if np.isnan(k_probs).any():
-            print("skipping iter due to nan in join. log_MLs:", log_MLs)
+            print("skipping iter due to nan in join. log_MLs:", log_MLs, flush=True)
             return 0
         join_choice = np.random.choice([0, 1], p=k_probs)
 
@@ -764,31 +788,37 @@ class NB_MCMC_SingleCluster:
     def run(self,
             debug=False,
             stop_after_burnin=False):
-        print("starting MCMC coverage segmentation for cluster {}...".format(self.cluster_num))
+        print("starting MCMC coverage segmentation for cluster {}...".format(self.cluster_num), flush=True)
 
         past_it = 0
         n_it = 0
         if self.from_burnin:
             min_it = max(200, self.num_segments)
+            refit=True if len(self.r) > 1000 else False
         else:
             min_it = min(200, max(50, self.r.shape[0]))
-        
+            refit = False
+
         lookback_len = min(50, min_it)
     
         while self.n_iter > len(self.F_samples):
-
+            
+            #status update
+            if not n_it % 50:
+                print('n_it: {}'.format(n_it), flush=True)
+                if not self.burnt_in and refit:
+                    self.cluster.refit_beta()
+            
             # check if we have burnt in
             if n_it >= min_it and not self.burnt_in and not n_it % 50:
                 if np.diff(np.array(self.ll_iter[-lookback_len:])).mean() <= 0:
-                    print('burnt in!')
+                    print('burnt in!', flush=True)
                     self.burnt_in = True
                     past_it = n_it
                     if stop_after_burnin:
                         print('Burn-in complete: ll: {} n_it: {}'.format(self.ll_cluster, n_it))
                         return
-            #status update
-            if not n_it % 50:
-                print('n_it: {}'.format(n_it))
+            
             # save dynamicaly thinned chain samples
             if not n_it % 25 and self.burnt_in and n_it - past_it > self.num_segments:
                 self.save_sample()
@@ -835,12 +865,14 @@ class NB_MCMC_SingleCluster:
     def visualize_cluster_samples(self, savepath):
         residuals = np.exp(np.log(self.cluster.r.flatten()) - (self.cluster.mu.flatten()) - np.log(self.bin_width) - (self.cluster.C@self.cluster.beta).flatten())
         num_draws = len(self.F_samples)
-        num_rows = int(np.ceil(num_draws / 4))
-        fig, axs = plt.subplots(num_rows, 4, figsize = (25,num_rows*3), sharey=True)
-        ax_lst = axs.flatten()
+        fig, axs = plt.subplots(num_draws, figsize = (20,num_draws*8), sharex=True)
+        if isinstance(axs, np.ndarray):
+            ax_lst = axs.flatten()
+        else:
+            ax_lst = [axs]
         for d in range(num_draws):
             ax_lst[d].scatter(np.r_[:len(residuals)], residuals)
             hist = np.array(self.F_samples[d]).reshape(-1,2)
             for j, r in enumerate(hist):
                 ax_lst[d].add_patch(mpl.patches.Rectangle((r[0],0), r[1]-r[0], 2.3, fill=True, alpha=0.3, color = colors[j % 10]))
-        plt.savefig(savepath)
+        plt.savefig(savepath, dpi=300)
