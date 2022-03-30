@@ -66,7 +66,9 @@ def _hg19_config_gen(wgs):
         ref_panel_1000g = hg19_ref_dict
     )
     #if we're using whole genome we can use the precomputed gc file for 200 bp bins
-    hg19_ref_config['gc_file'] = 'gs://opriebe-tmp/GC_hg19_200bp.pickle' if wgs else ""
+    #going to leave this for the method to compute until we settle on a bin width
+    #hg19_ref_config['gc_file'] = 'gs://opriebe-tmp/GC_hg19_200bp.pickle' if wgs else ""
+    hg19_ref_config['gc_file'] = ""
     return hg19_ref_config
 
 #hg38
@@ -87,8 +89,8 @@ def _hg38_config_gen(wgs):
         ref_panel_1000g = hg38_ref_dict
     )
     #if we're using whole genome we can use the precomputed gc file for 200 bp bins
-    hg38_ref_config['gc_file'] = 'gs://opriebe-tmp/GC_hg38_2kb.pickle' if wgs else ""
-    
+    #hg38_ref_config['gc_file'] = 'gs://opriebe-tmp/GC_hg38_2kb.pickle' if wgs else ""
+    hg38_ref_config['gc_file'] = ""
     return hg38_ref_config
 
 def workflow(
@@ -105,7 +107,11 @@ def workflow(
   ref_genome_build=None, #must be hg19 or hg38
   
   target_list = None,
-  localization_token=None
+  localization_token=None,
+
+  num_cov_seg_samples=5,
+
+  persistant_dry_run = False
 ):
     
     ###
@@ -152,7 +158,8 @@ def workflow(
             "t_bam" : tumor_bam,
             "t_bai" : tumor_bai,
           },
-        token=localization_token
+        token=localization_token,
+        persistent_disk_dry_run = persistant_dry_run
         )
         collect_tumor_coverage = True
     elif tumor_coverage_bed is not None:
@@ -167,7 +174,8 @@ def workflow(
             "n_bam" : normal_bam,
             "n_bai" : normal_bai
           },
-        token=localization_token
+        token=localization_token,
+        persistent_disk_dry_run = persistant_dry_run
         )
         collect_normal_coverage = True
     elif normal_coverage_bed is not None:
@@ -175,10 +183,12 @@ def workflow(
     else:
         print("Normal coverage will not be used as a covariate; ability to regress out germline CNVs may suffer.")
         use_normal_coverage = False
-
+    
+    if tumor_coverage_bed is not None:
+        collect_tumor_coverage=False
+        
     #
     # collect or load coverage
-
     # tumor
     if collect_tumor_coverage:
         primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
@@ -225,15 +235,10 @@ def workflow(
           script = """cat $(cat ${coverage_beds}) > coverage_cat.bed""",
           outputs = { "coverage" : "coverage_cat.bed" }
         )
-
-    # load from supplied BED file
     else:
-        tumor_cov_gather_task = { "coverage" : tumor_coverage_bed }
-
-    # normal
-    #if collect_normal_coverage:
-
-    #
+        tumor_cov_gather_task = {"coverage":tumor_coverage_bed}
+    
+    
     # get het site coverage/genotypes from callstats
     if callstats_file is not None:
         hp_task = het_pulldown.get_het_coverage_from_callstats(
@@ -459,13 +464,13 @@ def workflow(
     )
     
     ### coverage tasks ####
-    
+
     # prepare coverage MCMC
     prep_cov_mcmc_task = hapaseg.Hapaseg_prepare_coverage_mcmc(
     inputs={
         "coverage_csv":tumor_cov_gather_task["coverage"], #each scatter result is the same
         "allelic_clusters_object":collect_adp_task["full_dp_results"],
-        "SNPs_pickle":hapaseg_allelic_DP_task["all_SNPs"][0], #each scatter result is the same
+        "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'][0], #each scatter result is the same
         "repl_pickle":localization_task["repl_file"],
         "gc_pickle":localization_task["gc_file"],
         "ref_file_path":localization_task["ref_fasta"]
@@ -518,7 +523,7 @@ def workflow(
     cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc(
         inputs={
             "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
-            "num_draws":1,
+            "num_draws":num_cov_seg_samples,
             "cluster_num":cluster_idxs,
             "bin_width":bin_width,
             "burnin_files":[cov_mcmc_burnin_task["burnin_data"]] * num_clusters # this is to account for a wolf input len bug
@@ -529,19 +534,20 @@ def workflow(
     cov_mcmc_gather_task = hapaseg.Hapaseg_collect_coverage_mcmc(
     inputs = {
         "cov_mcmc_files":[cov_mcmc_scatter_task["cov_segmentation_data"]],
-        "cov_df_pickle":prep_cov_mcmc_task["cov_df_pickle"]
+        "cov_df_pickle":prep_cov_mcmc_task["cov_df_pickle"],
+        "bin_width":bin_width
         }
     )
-    
     # coverage DP
     cov_dp_task = hapaseg.Hapaseg_coverage_dp(
     inputs = {
         "f_cov_df":prep_cov_mcmc_task["cov_df_pickle"],
         "cov_mcmc_data": cov_mcmc_gather_task["cov_collected_data"],
-        "num_segmentation_samples":5,
-        "num_draws":5,
-         "bin_width":bin_width
-        }   
+        "num_segmentation_samples":num_cov_samples,
+        "num_dp_samples":5,
+        "sample_idx":list(range(num_cov_seg_samples)),
+        "bin_width":bin_width
+        }
     )
     
     #get the adp draw number from the preprocess data object
@@ -555,22 +561,21 @@ def workflow(
 
     gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
     inputs = {
-        "SNPs_pickle":hapaseg_allelic_DP_task["all_SNPs"][0],
+        "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'][0], #each scatter result is the same
         "allelic_clusters_object":collect_adp_task["full_dp_results"],
-        "coverage_dp_object":cov_dp_task["cov_dp_object"],
+        "cdp_filepaths":[cov_dp_task["cov_dp_object"]],
         "allelic_draw_index":adp_draw_num,
-        "ref_file_path":localization_task["ref_fasta"]
+        "ref_file_path":localization_task["ref_fasta"],
+        "bin_width":bin_width
         }
     )
     
     # run acdp
     acdp_task = hapaseg.Hapaseg_run_acdp(
     inputs = {
-        "coverage_dp_object":cov_dp_task["cov_dp_object"],
+        "coverage_dp_object":cov_dp_task["cov_dp_object"][0],
         "acdp_df":gen_acdp_task["acdp_df_pickle"],
-        "num_samples":10,
+        "num_samples":num_cov_samples,
         "cytoband_file": localization_task["cytoband_file"]
         }
     )
-    
-    
