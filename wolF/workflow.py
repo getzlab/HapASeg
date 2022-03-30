@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import wolf
 
+from wolf.localization import LocalizeToDisk, DeleteDisk
 #
 # import tasks
 
@@ -51,7 +52,7 @@ cov_collect = wolf.ImportTask(
 #hg19
 def _hg19_config_gen(wgs):
     hg19_ref_panel = pd.DataFrame({ "path" : subprocess.check_output("gsutil ls gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/*.bcf*", shell = True).decode().rstrip().split("\n") })
-    hg19_ref_panel = hg19_ref_panel.join(hg19_ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
+    hg19_ref_panel = hg19_ref_panel.join(hg19_ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+).*(?P<ext>bcf(?:\.csi)?)"))
     hg19_ref_panel["key"] = hg19_ref_panel["chr"] + "_" + hg19_ref_panel["ext"]
     hg19_ref_dict = hg19_ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
     
@@ -113,6 +114,10 @@ def workflow(
 
   persistant_dry_run = False
 ):
+    # alert for persistant dry run
+    if persistant_dry_run:
+        #TODO push this message to canine
+        print("WARNING: Skipping file localization in dry run!")
     
     ###
      # integer target list implies wgs
@@ -129,7 +134,7 @@ def workflow(
     else:
         raise ValueError("Reference genome options are 'hg19' or hg38', got {}".format(ref_genome_build))
         
-    localization_task = wolf.LocalizeToDisk(
+    localization_task = LocalizeToDisk(
       files = dict(
         ref_fasta = ref_config["ref_fasta"],
         ref_fasta_idx = ref_config["ref_fasta_idx"],
@@ -581,7 +586,8 @@ def workflow(
         DeleteDisk(
           inputs = {
             "disk" : [tumor_bam_localization_task["t_bam"], tumor_bam_localization_task["t_bai"]],
-            "upstream" : m1_task["mutect1_cs"] # to prevent execution until mutect has run
+            "upstream" : m1_task["mutect1_cs"] if callstats_file is None else tumor_cov_gather_task["coverage"] 
+     )
     
     if not persistant_dry_run:
         DeleteDisk(
@@ -589,4 +595,4 @@ def workflow(
             "disk" : [localization_task["cytoband_file"]],
             "upstream" : acdp_task["acdp_model_pickle"] # to prevent execution until acdp has run
           }
-        )
+    )
