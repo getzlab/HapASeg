@@ -31,8 +31,8 @@ class Coverage_DP:
         self.bin_exposure = bin_width
 
         # number of seg samples to use and draws from each DP to take
-        self.num_samples = None
-        self.num_draws = None
+        self.num_seg_samples = None
+        self.num_dp_samples = None
 
         # Coverage DP run object for each seg sample
         self.DP_runs = None
@@ -40,28 +40,46 @@ class Coverage_DP:
         self.bins_to_clusters = None
         self.segs_to_clusters = None
 
-    def run_dp(self, num_samples=-1, num_draws=50):
+    def run_dp(self, 
+                num_seg_samples=-1, 
+                num_dp_samples=10,
+                sample_idx=None): # option to pass sample number to scatter DP jobs
 
-        if num_samples == -1:
-            self.num_samples = self.segmentation_draws.shape[1]
+        if num_seg_samples == -1:
+            self.num_seg_samples = self.segmentation_draws.shape[1]
         else:
-            self.num_samples = num_samples
-        self.num_draws = num_draws
-
-        self.DP_runs = [None] * self.num_samples
+            self.num_seg_samples = num_seg_samples
+        
+        self.num_dp_samples = num_dp_samples
+        
+        if sample_idx is not None:
+            if num_seg_samples > 1:
+                raise ValueError("cannot pass sample number and num_samples")
+            if sample_idx > self.segmentation_draws.shape[1]:
+                raise ValueError("invalid input segmentation sample number", self.sample_idx)
+        
+        self.sample_idx = sample_idx
+            
+        self.DP_runs = [None] * self.num_seg_samples
         prior_run = None
         count_prior_sum = None
 
         # TODO: load segmentation samples randomly
         self.bins_to_clusters = []
         self.segs_to_clusters = []
-        for samp in range(self.num_samples):
+        for samp in range(self.num_seg_samples):
+            #if we're just doing a single sample change samp to that
+            if self.sample_idx is not None:
+                samp = self.sample_idx
+                run_idx = 0
+            else:
+                run_idx = samp
             print('starting sample {}'.format(samp))
             self.cov_df['segment_ID'] = self.segmentation_draws[:, samp].astype(int)
-
+            
             DP_runner = Run_Cov_DP(self.cov_df.copy(), self.beta, self.bin_exposure, prior_run, count_prior_sum)
-            self.DP_runs[samp] = DP_runner
-            draws, count_prior_sum = DP_runner.run(self.num_draws, samp)
+            self.DP_runs[run_idx] = DP_runner
+            draws, count_prior_sum = DP_runner.run(self.num_dp_samples, samp)
             self.bins_to_clusters.append(draws)
             prior_run = DP_runner
 
@@ -71,6 +89,15 @@ class Coverage_DP:
         
         cov_dp = self.DP_runs[run_idx]
         cur = 0
+        
+        # get residuals to compute ylim
+        # could save these results to not compute residuals twice but it costs ~2ms
+        max_resid = 0
+        for c in cov_dp.cluster_dict.keys():
+            for seg in cov_dp.cluster_dict[c]:
+                resids = np.exp(np.log(cov_dp.segment_r_list[seg]) - (cov_dp.segment_C_list[seg] @ cov_dp.beta + np.log(self.bin_exposure)).flatten())
+                max_resid = max(max_resid, resids.max())
+        
         f, axs = plt.subplots(1, figsize = (25,10))
         for c in cov_dp.cluster_dict.keys():
             clust_start = cur
@@ -78,7 +105,7 @@ class Coverage_DP:
                 len_seg = len(cov_dp.segment_r_list[seg])
                 axs.scatter(np.r_[cur:len_seg+cur], np.exp(np.log(cov_dp.segment_r_list[seg]) - (cov_dp.segment_C_list[seg] @ cov_dp.beta + np.log(self.bin_exposure)).flatten()))
                 cur += len_seg
-            axs.add_patch(mpl.patches.Rectangle((clust_start,0), cur-clust_start, 500, fill=True, alpha=0.15, color = colors[c % 10]))
+            axs.add_patch(mpl.patches.Rectangle((clust_start,0), cur-clust_start, max_resid + 10, fill=True, alpha=0.15, color = colors[c % 10]))
         plt.savefig(save_path)
 
 # This class implements the actual DP clustering
@@ -89,6 +116,7 @@ class Run_Cov_DP:
         self.seg_id_col = self.cov_df.columns.get_loc('segment_ID')
         self.beta = beta
         self.bin_exposure=bin_exposure
+        self.covar_cols = sorted([c for c in self.cov_df.columns if "C_" in c])
         
         self.num_segments = self.cov_df.iloc[:, self.seg_id_col].max() + 1
         self.segment_r_list = [None] * self.num_segments
@@ -125,10 +153,8 @@ class Run_Cov_DP:
     def _init_segments(self):
         for ID, seg_df in self.cov_df.groupby('segment_ID'):
             self.segment_r_list[ID] = seg_df['covcorr'].values
-            if 'C_len' in self.cov_df.columns:
-                self.segment_C_list[ID] = np.c_[np.log(seg_df["C_len"]), seg_df["C_RT_z"], seg_df["C_GC_z"]]
-            else:
-                self.segment_C_list[ID] = np.c_[seg_df["C_RT_z"], seg_df["C_GC_z"]]
+            self.segment_C_list[ID] = np.c_[seg_df[self.covar_cols]]
+    
     def _init_clusters(self, prior_run, count_prior_sum):
         # if first iteration then add first segment to first cluster
         if prior_run is None:
@@ -290,10 +316,11 @@ class Run_Cov_DP:
     
             # status update
             if not n_it % 250 and self.prior_clusters is None:
-                print("n unassigned: {}".format(len(self.unassigned_segs)))
+                print("n unassigned: {}".format(len(self.unassigned_segs)), flush=True)
 
             # start couting for burn in
             if not n_it % 100:
+                print("n_it:", n_it, flush=True)
                 if not all_assigned and (self.cluster_assignments[white_segments] > -1).all():
                     all_assigned = True
                     n_it_last = n_it
@@ -304,7 +331,7 @@ class Run_Cov_DP:
                 # burn in based on ll changes after all are assigned
                 if not burned_in and all_assigned and n_it - n_it_last > 500:
                     if np.diff(np.r_[self.ll_history[-500:]]).mean() <= 0:
-                        print('burnin')
+                        print('burnin', flush=True)
                         burned_in = True
                         n_it_last = n_it
 
@@ -409,7 +436,7 @@ class Run_Cov_DP:
                     ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
 
                 if np.isnan(choice_p.sum()):
-                    print('skipping iteration {} due to nan. picked segment {}'.format(n_it, segID))
+                    print('skipping iteration {} due to nan. picked segment {}'.format(n_it, segID), flush=True)
                     n_it += 1
                     continue
                 choice_idx = np.random.choice(
@@ -558,7 +585,7 @@ class Run_Cov_DP:
                 choice_p = np.exp(ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)) / np.exp(
                     ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
                 if np.isnan(choice_p.sum()):
-                    print("skipping iteration {} due to nan".format(n_it))
+                    print("skipping iteration {} due to nan".format(n_it), flush=True)
                     n_it += 1
                     continue
 
