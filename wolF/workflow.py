@@ -581,18 +581,23 @@ def workflow(
         }
     )
 
-    #cleanup by deleting disks. we make seperate tasks for the bams and the ref files
+    #cleanup by deleting bam disks. we make seperate tasks for the bams
     if not persistant_dry_run and t_bam is not None and t_bai is not None:
-        DeleteDisk(
+        delete_tbams_task = DeleteDisk(
           inputs = {
             "disk" : [tumor_bam_localization_task["t_bam"], tumor_bam_localization_task["t_bai"]],
             "upstream" : m1_task["mutect1_cs"] if callstats_file is None else tumor_cov_gather_task["coverage"] 
      )
-    
-    if not persistant_dry_run:
-        DeleteDisk(
+     
+    if not persistant_dry_run and n_bam is not None and n_bai is not None:
+        delete_nbams_task = DeleteDisk(
           inputs = {
-            "disk" : [localization_task["cytoband_file"]],
-            "upstream" : acdp_task["acdp_model_pickle"] # to prevent execution until acdp has run
-          }
+            "disk" : [normal_bam_localization_task["n_bam"], normal_bam_localization_task["n_bai"]],
+            "upstream" : m1_task["mutect1_cs"]
+    )
+    #also delete the cached files disk
+    delete_file_disk_task = DeleteDisk(
+        inputs = {"disk" : [localization_task["cytoband_file"]],
+                  "upstream" : acdp_task["acdp_model_pickle"] # to prevent execution until acdp has run
+        }
     )
