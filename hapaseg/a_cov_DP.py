@@ -28,8 +28,9 @@ def LSE(x):
 
 # method for concatenating dp draws into a single large df to be used by the acdp
 def generate_acdp_df(SNP_path, # path to SNP df
-                 CDP_path, # path to CDP runner pickle object
                  ADP_path, # path to npz ADP result
+                 cdp_object_path=None, # path to CDP runner pickle object
+                 cdp_scatter_files=None, #path to CDP scattered pickle obj txt file
                  bin_width=1, #set to uniform bin width for wgs or 1 for exomes
                  ADP_draw_index=-1): # index of ADP draw used in Coverage MCMC
 
@@ -38,16 +39,31 @@ def generate_acdp_df(SNP_path, # path to SNP df
     ADP_clusters = np.load(ADP_path)
     phases = ADP_clusters["snps_to_phases"][ADP_draw_index]
     SNPs.iloc[phases, [0, 1]] = SNPs.iloc[phases, [1, 0]]
-
-    with open(CDP_path, 'rb') as f:
-        dp_pickle = pickle.load(f)
-
+    
+    if cdp_object_path is not None:
+        with open(CDP_path, 'rb') as f:
+            dp_pickle = pickle.load(f)
+            DP_runs = dp_pickle.DP_runs
+    elif cdp_scatter_files is not None:
+        #load in the file names
+        with open(cdp_scatter_files, 'r') as f:
+            cdp_file_list = f.read().splitlines()
+        #fill in dp objects from the scatter jobs
+        DP_runs = []
+        for cdp_file in cdp_file_list:
+             with open(cdp_file, 'rb') as cdp:
+                dp_pickle = pickle.load(cdp)
+                print("file {} : len dp runs: {}".format(cdp_file, len(dp_pickle.DP_runs)), flush=True)
+                DP_runs.extend(dp_pickle.DP_runs)
+    else:
+        raise ValueError("must pass in either a cdp object path or a txt file containing a list of object paths")
     # currently uses the last sample from every DP draw
     draw_dfs = []
-    for draw_num, dp_run in enumerate(dp_pickle.DP_runs):
+    for draw_num, dp_run in enumerate(DP_runs):
         print('concatenating dp run ', draw_num)
         a_cov_seg_df = dp_run.cov_df.copy()
 
+        covar_cols = sorted([c for c in a_cov_seg_df.columns if "C_" in c])
         # add minor and major allele counts for each bin to the cov_seg_df here to allow for beta draws on the fly for each segment
         a_cov_seg_df['min_count'] = 0
         a_cov_seg_df['maj_count'] = 0
@@ -78,10 +94,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
             if len(acdp_clust) < 10:
                 acdp_clust = a_cov_seg_df.loc[a_cov_seg_df.cov_DP_cluster == cdp]
             r = acdp_clust.covcorr.values
-            if 'C_len' in acdp_clust.columns:
-                C = np.c_[np.log(acdp_clust['C_len'].values), acdp_clust['C_RT_z'].values, acdp_clust['C_GC_z'].values]
-            else:
-                C = np.c_[acdp_clust['C_RT_z'].values, acdp_clust['C_GC_z'].values]
+            C = np.c_[acdp_clust[covar_cols]]
             endog = r
             exog = np.ones(r.shape)
             exposure = np.ones(r.shape) * bin_width
@@ -822,6 +835,7 @@ class AllelicCoverage_DP:
         plt.figure(6, figsize=[19.2, 5.39])
         plt.clf()
         full_df = list(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
+        max_acov = 0
         for i, c in enumerate(self.cluster_dict.keys()):
             for seg in self.cluster_dict[c]:
                 x = full_df[seg][1].loc[:,
@@ -834,9 +848,11 @@ class AllelicCoverage_DP:
 
                 locs, f = _scatter_apply(x, minor, major)
                 y = np.exp(x.cov_DP_mu)
+                acov_levels = f*y
+                max_acov = max(max_acov, max(acov_levels))
                 plt.scatter(
                     locs,
-                    f * y,
+                    acov_levels,
                     color=np.array(colors)[i % len(colors)],
                     marker='.',
                     alpha=0.03,
@@ -847,11 +863,11 @@ class AllelicCoverage_DP:
 
         plt.xlabel("Genomic position")
         plt.ylabel("Coverage of major/minor alleles")
-
+        round_max_acov = 25*int(np.ceil(max_acov / 25))
         plt.xlim((0.0, 2879000000.0))
-        plt.ylim([0, 300])
+        plt.ylim([0, round_max_acov])
 
-        plt.savefig(os.path.join(save_path, 'acdp_genome_plot.png'))
+        plt.savefig(os.path.join(save_path, 'acdp_genome_plot.png'), dpi=300)
 
         #plot individual tuples within clusters
         rs = []
@@ -876,7 +892,7 @@ class AllelicCoverage_DP:
                 ax.text(c0 + (counter - c0) / 2, 0, '{}'.format(c), horizontalalignment='center')
             cc += 1
 
-        plt.savefig(os.path.join(save_path, 'acdp_tuples_plot.png'))
+        plt.savefig(os.path.join(save_path, 'acdp_tuples_plot.png'), dpi=300)
 
         #simple clusters plot
         f, ax = plt.subplots(1, figsize=[19.2, 10])
@@ -888,4 +904,4 @@ class AllelicCoverage_DP:
             ax.scatter(np.r_[counter:counter + len(vals)], vals)
             counter += len(vals)
 
-        plt.savefig(os.path.join(save_path, 'acdp_clusters_plot.png'))
+        plt.savefig(os.path.join(save_path, 'acdp_clusters_plot.png'), dpi=300)
