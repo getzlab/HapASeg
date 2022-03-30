@@ -233,11 +233,12 @@ class Hapaseg_coverage_mcmc(wolf.Task):
 class Hapaseg_collect_coverage_mcmc(wolf.Task):
     inputs = {
         "cov_mcmc_files":None,
-        "cov_df_pickle":None
+        "cov_df_pickle":None,
+        "bin_width":1
      }
 
     script = """
-    hapaseg collect_cov_mcmc --cov_mcmc_files ${cov_mcmc_files} --cov_df_pickle ${cov_df_pickle}
+    hapaseg collect_cov_mcmc --cov_mcmc_files ${cov_mcmc_files} --cov_df_pickle ${cov_df_pickle} --bin_width ${bin_width}
     """
     
     output_patterns={
@@ -251,22 +252,27 @@ class Hapaseg_coverage_dp(wolf.Task):
     inputs = {
         "f_cov_df": None,
         "cov_mcmc_data": None,
-        "num_segmentation_samples": 50,
-        "num_draws": 10,
-        "bin_width":None
+        "num_segmentation_samples": 10,
+        "num_dp_samples":10,
+        "bin_width":"",
+        "sample_idx":"",
     }
 
     script = """
     hapaseg coverage_dp --f_cov_df ${f_cov_df} \
     --cov_mcmc_data ${cov_mcmc_data} \
-    --num_segmentation_samples ${num_segmentation_samples} \
-    --num_draws ${num_draws} \
-    --bin_width ${bin_width}
-    """
+    --num_segmentation_samples ${num_segmentation_samples}\
+    --num_dp_samples ${num_dp_samples}"""
+    
+    def prolog(self):
+        if self.conf["inputs"]["sample_idx"] != "":
+            self.conf["script"][-1] += " --sample_idx ${sample_idx}"
+        if self.conf["inputs"]["bin_width"] != "":
+            self.conf["script"][-1] += " --bin_width ${bin_width}"
 
     output_patterns = {
-        "cov_dp_object" : "Cov_DP_model.pickle",
-        "cov_dp_figure" : "coverage_figures/coverage_draw*"
+        "cov_dp_object" : "Cov_DP_model*",
+        "cov_dp_figure" : "cov_dp_visual_draw*"
     }
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
     resources = {"mem" : "10G"} #potentially overkill and wont be necessary if cache table implemented
@@ -275,19 +281,27 @@ class Hapaseg_acdp_generate_df(wolf.Task):
     inputs = {
         "SNPs_pickle": None,
         "allelic_clusters_object" : None,
-        "coverage_dp_object" : None,
+        "cdp_object" : "",
+        "cdp_filepaths" : "",
         "allelic_draw_index" : -1,
-        "ref_file_path": None
+        "ref_file_path": None,
+        "bin_width":""
     }
 
     script = """
     export CAPY_REF_FA=${ref_file_path}
     hapaseg generate_acdp_df --snp_dataframe ${SNPs_pickle} \
-    --coverage_dp_object ${coverage_dp_object} \
     --allelic_clusters_object ${allelic_clusters_object} \
-    --allelic_draw_index ${allelic_draw_index}
-    """
+    --allelic_draw_index ${allelic_draw_index}"""
 
+    def prolog(self):
+        if self.conf["inputs"]["bin_width"] != "":
+            self.conf["script"][-1] += " --bin_width ${bin_width}"
+        if self.conf["inputs"]["cdp_object"] != "":
+            self.conf["script"][-1] += " --cdp_object ${cdp_object}"
+        if self.conf["inputs"]["cdp_filepaths"] != "":
+            self.conf["script"][-1] += " --cdp_filepaths ${cdp_filepaths}"
+    
     output_patterns = {
         "acdp_df_pickle": "acdp_df.pickle"
     }
