@@ -141,10 +141,6 @@ def workflow(
           
         cytoband_file = ref_config["cytoband_file"],
         
-        repl_file = ref_config["repl_file"],
-        
-        gc_file = ref_config["gc_file"],
-        
         # reference panel
         **ref_config["ref_panel_1000g"]
       )
@@ -471,8 +467,8 @@ def workflow(
         "coverage_csv":tumor_cov_gather_task["coverage"], #each scatter result is the same
         "allelic_clusters_object":collect_adp_task["full_dp_results"],
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'][0], #each scatter result is the same
-        "repl_pickle":localization_task["repl_file"],
-        "gc_pickle":localization_task["gc_file"],
+        "repl_pickle":ref_config["repl_file"],
+        "gc_pickle":ref_config["gc_file"],
         "ref_file_path":localization_task["ref_fasta"]
         }
     )
@@ -543,7 +539,7 @@ def workflow(
     inputs = {
         "f_cov_df":prep_cov_mcmc_task["cov_df_pickle"],
         "cov_mcmc_data": cov_mcmc_gather_task["cov_collected_data"],
-        "num_segmentation_samples":num_cov_samples,
+        "num_segmentation_samples":num_cov_seg_samples, # this argument get overwritten TODO:make it optional
         "num_dp_samples":5,
         "sample_idx":list(range(num_cov_seg_samples)),
         "bin_width":bin_width
@@ -575,7 +571,22 @@ def workflow(
     inputs = {
         "coverage_dp_object":cov_dp_task["cov_dp_object"][0],
         "acdp_df":gen_acdp_task["acdp_df_pickle"],
-        "num_samples":num_cov_samples,
+        "num_samples":num_cov_seg_samples,
         "cytoband_file": localization_task["cytoband_file"]
         }
     )
+
+    #cleanup by deleting disks. we make seperate tasks for the bams and the ref files
+    if not persistant_dry_run and t_bam is not None and t_bai is not None:
+        DeleteDisk(
+          inputs = {
+            "disk" : [tumor_bam_localization_task["t_bam"], tumor_bam_localization_task["t_bai"]],
+            "upstream" : m1_task["mutect1_cs"] # to prevent execution until mutect has run
+    
+    if not persistant_dry_run:
+        DeleteDisk(
+          inputs = {
+            "disk" : [localization_task["cytoband_file"]],
+            "upstream" : acdp_task["acdp_model_pickle"] # to prevent execution until acdp has run
+          }
+        )
