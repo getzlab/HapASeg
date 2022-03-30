@@ -5,6 +5,8 @@ import re
 import os
 import scipy.special as ss
 from capy import mut, seq
+import scipy.stats as stats
+from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
 from .NB_coverage_MCMC import NB_MCMC_AllClusters, NB_MCMC_SingleCluster
 from .model_optimizers import PoissonRegression
@@ -88,15 +90,14 @@ class CoverageMCMCRunner:
 
     @staticmethod
     def load_coverage(coverage_csv):
-        Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "covraw"],
-                          low_memory=False)
+        Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "mean_frag_len", "std_frag_len", "num_reads"], low_memory=False)
         Cov.loc[Cov['chr'] == 'chrM', 'chr'] = 'chrMT' #change mitocondrial contigs to follow mut conventions
         Cov["chr"] = mut.convert_chr(Cov["chr"])
         Cov = Cov.loc[Cov["chr"] != 0]
         Cov=Cov.reset_index(drop=True)
         Cov["start_g"] = seq.chrpos2gpos(Cov["chr"], Cov["start"])
         Cov["end_g"] = seq.chrpos2gpos(Cov["chr"], Cov["end"])
-
+        
         return Cov
 
     def load_SNPs(self, f_snps):
@@ -112,18 +113,22 @@ class CoverageMCMCRunner:
         self.full_cov_df['C_GC'] = np.nan
         
         #this indexing assumes 0-indexed start and end cols
-        for (i, chrm, start, end, _, _, _) in self.full_cov_df.itertuples():
+        for (i, chrm, start, end) in self.full_cov_df[['chr', 'start','end']].itertuples():
             self.full_cov_df.iat[i, -1] = F[chrm-1][start:end+1].gc
         
 
     def load_covariates(self):
         #check if we are doing wgs, in which case we will have uniform 200 bp bins
-        wgs = True if self.f_GC is not None else False
+        wgs = True if self.f_GC is not None or len(self.full_cov_df) > 100000 else False
         
         #we only need bin size if doing exomes
         if not wgs:
-            self.full_cov_df["C_len"] = self.full_cov_df["end"] - self.full_cov_df["start"] + 1
-        
+            self.full_cov_df["C_log_len"] = np.log(self.full_cov_df["end"] - self.full_cov_df["start"] + 1)
+            
+            #this is a safety in case we are doing wgs but have few bins
+            if (np.diff(self.full_cov_df["C_log_len"]) == 0).all():
+                #remove the len col since it will ruin beta fitting
+                self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
         # load repl timing
         F = pd.read_pickle(self.f_repl)
         # map targets to RT intervals
@@ -136,7 +141,7 @@ class CoverageMCMCRunner:
             np.log(self.full_cov_df["C_RT"] + 1e-20))
 
         # load GC content if we have it precomputed, otherwise generate it
-        if wgs and os.path.exists(self.f_GC):
+        if wgs and self.f_GC is not None and os.path.exists(self.f_GC):
             print("Using precomputed GC content")
             B = pd.read_pickle(self.f_GC)
             
@@ -148,6 +153,17 @@ class CoverageMCMCRunner:
         
         self.full_cov_df["C_GC_z"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(
             np.log(self.full_cov_df["C_GC"] + 1e-20))
+        
+        #set zero coverage bins to nan
+        self.full_cov_df.loc[(self.full_cov_df.mean_frag_len == 0) | (self.full_cov_df.std_frag_len == 0), ['mean_frag_len', 'std_frag_len']] = (np.nan, np.nan)
+        
+        # add fragment based covars
+        self.full_cov_df["C_frag_len"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(np.log(self.full_cov_df["mean_frag_len"] + 1e-20))
+        self.full_cov_df["C_frag_std"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(np.log(self.full_cov_df["std_frag_len"] + 1e-20))
+
+        # drop non z-cetered cols
+        self.full_cov_df = self.full_cov_df.drop(['C_GC', 'C_RT'], axis=1)
+        
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
     # clusters with snps from different clusters are probabliztically assigned
@@ -194,6 +210,12 @@ class CoverageMCMCRunner:
         # update with assigned values
         Cov_clust_probs_overlap[amb_mask, :] = new_onehot
 
+        #downsampling for wgs
+        if len(Cov_clust_probs_overlap) > 20000:
+            downsample_mask = np.random.rand(Cov_clust_probs_overlap.shape[0]) < 0.2
+            Cov_clust_probs_overlap = Cov_clust_probs_overlap[downsample_mask]
+            Cov_overlap = Cov_overlap.iloc[downsample_mask]
+    
         # remove clusters with fewer than 4 assigned coverage bins (remove these coverage bins as well)
         bad_clusters = Cov_clust_probs_overlap.sum(0) < 4
         bad_bins = Cov_clust_probs_overlap[:, bad_clusters].any(1) == 1
@@ -204,18 +226,12 @@ class CoverageMCMCRunner:
        
         r = np.c_[Cov_overlap["covcorr"]]
         
+        covar_columns = sorted([c for c in Cov_overlap.columns if 'C_' in c])
         # making covariate matrix
-        if self.f_GC is None:
-            #for exomes we include bin size
-            C = np.c_[np.log(Cov_overlap["C_len"]), Cov_overlap["C_RT_z"], Cov_overlap["C_GC_z"]]
-            repl_idx=1
-        else:
-            #otherwise we do not
-            C = np.c_[ Cov_overlap["C_RT_z"], Cov_overlap["C_GC_z"]]
-            repl_idx=0
-        
+        C = np.c_[Cov_overlap[covar_columns]]
+
         # dropping Nans
-        naidx = np.isnan(C[:, repl_idx])
+        naidx = np.isnan(C).any(axis=1)
         # drop zero coverage bins as well (this is to account for a bug in coverage collector) TODO: remove need for this
         naidx = np.logical_or(naidx, (r==0).flatten())
         r = r[~naidx]
@@ -223,19 +239,52 @@ class CoverageMCMCRunner:
         Pi = Pi[~naidx]
 
         Cov_overlap = Cov_overlap.iloc[~naidx]
-
-        #temporary downsampling for wgs
-        if len(r) > 20000:
-            downsample_mask = np.random.rand(Pi.shape[0]) < 0.1
-            Pi = Pi[downsample_mask,:]
-            r = r[downsample_mask]
-            C = C[downsample_mask]
-            Cov_overlap = Cov_overlap.iloc[downsample_mask]
+        
+        #removing outliers
+        outlier_mask = find_outliers(r)
+        r = r[~outlier_mask]
+        C = C[~outlier_mask]
+        Pi = Pi[~outlier_mask]
+        Cov_overlap = Cov_overlap.iloc[~outlier_mask]
         
         Cov_overlap['allelic_cluster'] = np.argmax(Pi, axis=1)
 
         return Pi, r, C, Cov_overlap
 
+# function for fitting nb model without covariates
+def fit_nb(r):
+    endog = r.flatten()
+    exog = np.ones(r.shape[0])
+    sNB = statsNB(endog, exog)
+    res = sNB.fit(disp=0)
+    mu = res.params[0]; lepsi = -np.log(res.params[1])
+    return mu, lepsi
+
+# function for computing log survivial function values
+def scipy_sf(r, mu, epsi):
+    r = r.flatten()
+    mu= mu.flatten()
+    epsi = epsi.flatten()
+    exp = np.exp(mu).flatten()
+    return stats.nbinom.logsf(r, epsi, (1-(exp / (exp + epsi))))
+
+# function for computing log cdf values
+def scipy_cdf(r, mu, epsi):
+    r = r.flatten()
+    mu= mu.flatten()
+    epsi = epsi.flatten()
+    exp = np.exp(mu).flatten()
+    return stats.nbinom.logcdf(r, epsi, (1-(exp / (exp + epsi))))
+
+# function for finding nb outliers based on input log threshold
+def find_outliers(r, thresh=-25):
+    mu, lepsi = fit_nb(r)
+    logsf = scipy_sf(r, mu, np.exp(lepsi))
+    logcdf = scipy_cdf(r, mu, np.exp(lepsi))
+    outliers = np.logical_or(logcdf < thresh, logsf < thresh)
+    if outliers.sum() > len(r) * 0.05:
+        raise ValueError("greater than 5% of bins considered outliers")
+    return outliers
 
 # function for sorting file strings by the cluster number rather than alphanumeric
 def nat_sort(lst): 
@@ -245,7 +294,7 @@ def nat_sort(lst):
 
 
 # function for collecting coverage mcmc results from each ADP cluster
-def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None):
+def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None, bin_width=1):
     if coverage_dir is None and f_file_list is None:
         raise ValueError("need to pass in either coverage_dir or file_list txt file!")
     if coverage_dir is not None and f_file_list is not None:
@@ -271,29 +320,46 @@ def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None):
         cov_df = pd.read_pickle(cov_df_pickle)
     
     clust_assignments = cov_df['allelic_cluster'].values
+    
     seg_results = []
     mu_i_results = []
+    
+    # load data from each cluster
     for data_path in cluster_files:
         cluster_data = np.load(data_path)
         seg_results.append(cluster_data['seg_samples'])
         mu_i_results.append(cluster_data['mu_i_samples'])
-        num_draws = seg_results[0].shape[1]
-        num_clusters = len(seg_results)
+    
+    num_draws = seg_results[0].shape[1]
+    num_clusters = len(seg_results)
 
-        coverage_segmentation = np.zeros((len(cov_df), num_draws))
-        mu_i_values = np.zeros((len(cov_df), num_draws))
+    # now we use these data to fill an overall coverage segmentation array
+    coverage_segmentation = np.zeros((len(cov_df), num_draws))
+    mu_i_values = np.zeros((len(cov_df), num_draws))
 
-        for d in range(num_draws):
-            global_counter = 0
-            for c in range(num_clusters):
-                cluster_mask = (clust_assignments == c)
-                coverage_segmentation[cluster_mask, d] = seg_results[c][:,d] + global_counter
-                mu_i_values[cluster_mask, d] = mu_i_results[c][:, d]
-                global_counter += len(np.unique(seg_results[c][:,d]))
-        #TODO decide wheter we need to refit a global beta
-        #r = np.c_[cov_df["covcorr"]]
-        #C = np.c_[np.log(cov_df["C_len"]), cov_df["C_RT_z"], cov_df["C_GC_z"]]
-    return coverage_segmentation
+    for d in range(num_draws):
+        global_counter = 0
+        for c in range(num_clusters):
+            cluster_mask = (clust_assignments == c)
+            coverage_segmentation[cluster_mask, d] = seg_results[c][:,d] + global_counter
+            mu_i_values[cluster_mask, d] = mu_i_results[c][:, d]
+            global_counter += len(np.unique(seg_results[c][:,d]))
+    
+    # generate data to re-compute global beta
+    r = np.c_[cov_df["covcorr"]]
+    # we'll use the mu_is from the last segmentation sample
+    mu_is = mu_i_values[:,-1]
+    # compute new edogenous targets by subtracking out the mu_i values of the segments
+    # along with the bin exposure
+    endog = np.exp(np.log(r).flatten() - np.log(bin_width) - mu_is).reshape(-1,1)
+    # generate covars
+    covar_columns = sorted([c for c in cov_df.columns if 'C_' in c])
+    C = np.c_[cov_df[covar_columns]]
+    # do regression
+    pois_regr = PoissonRegression(endog, C, np.ones(endog.shape))
+    mu_refit, beta_refit = pois_regr.fit()
+    
+    return coverage_segmentation, beta_refit
 
 def aggregate_burnin_files(file_list, cluster_num):
     file_captures = []
