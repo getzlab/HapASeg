@@ -831,8 +831,6 @@ class DPinstance:
         self.phase_orientations = []
 
         burned_in = False
-        all_touched = False
-        seg_touch_idx = np.zeros(len(self.S), dtype = bool)
 
         # likelihood trace
         self.lik_trace = []
@@ -840,13 +838,17 @@ class DPinstance:
 
         n_it = 0
         n_it_last = 0
+
+        brk = 0
+        touch90 = False
+
         while True:
             if not n_it % 1000:
                 if len(self.clust_counts) > 20:
                     print(pd.Series(self.clust_counts.values()).value_counts().sort_index())
                 else:
                     print("\n".join([str(self.clust_counts[k]) + ": " + str(x/(x + y)) for k, (x, y) in self.clust_sums.items() if k != -1]))
-                print(self.lik_tmp[-1])
+                print(brk % (len(self.breakpoints) - 1))
                 #print(self.S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
                 #print("n unassigned: {}".format((self.S["clust"] == -1).sum()))
 
@@ -860,14 +862,14 @@ class DPinstance:
 
             # poll every 100 iterations for burnin status
             if not n_it % 100:
+                # have >90% of segments been touched?
+                if (1 - (1 - 1/len(self.breakpoints))**n_it) > 0.9:
+                    touch90 = True
+
                 # have most segments been adjacency corrected?
                 # if so, has the overall likelihood stabilized enough that we're burned in?
                 if not burned_in:
-                    # 1. have >90% of segments been adjacency corrected?
-                    # print(seg_touch_idx.mean())
-                    if seg_touch_idx.mean() > 0.9:
-                        all_touched = True
-
+                    pass
                     # 2. if >90% of segments have been adjacency corrected, check for burnin
                     # does the smoothed derivative of the posterior numerator go below zero? this would indicate that we've solidly reached an optimum
                     # TODO: make this check more efficient?
@@ -877,19 +879,33 @@ class DPinstance:
 #                        n_it_last = n_it
 #                        seg_touch_idx[:] = False
 
-                if burned_in and seg_touch_idx.mean() > 0.3:
+                # start computing likelihoods
+                if touch90:
+                    print(self.compute_overall_lik_simple())
+                    print(self.compute_overall_lik_simple().sum())
+                    self.lik_trace.append(self.compute_overall_lik_simple())
+
+                # save cluster assignments and phase orientations once burned in
+                if burned_in:
                     self.segs_to_clusters.append(self.S["clust"].copy())
                     self.phase_orientations.append(self.S["flipped"].copy())
-                    seg_touch_idx[:] = False
 
             #
             # pick either a segment or a cluster at random (50:50 prob.)
             move_clust = False
 
-            # pick a segment at random
-            if True or np.random.rand() < 0.5:
+            # move a segment
+            #if not touch90 or np.random.rand() < 0.9:
+            if True or np.random.rand() < 0.9:
+                # >90% of segments have been moved; we are iterating over segments sequentially
+                if touch90:
+                    break_idx = sc.SortedSet({brk % (len(self.breakpoints) - 1)})
+                    brk += 1
+                # we are picking segments at random
+                else:
+                    break_idx = sc.SortedSet({np.random.choice(len(self.breakpoints) - 1)})
+
                 # get all SNPs within this segment
-                break_idx = sc.SortedSet({np.random.choice(len(self.breakpoints) - 1)})
                 seg_st = self.breakpoints[break_idx[0]]
                 seg_en = self.breakpoints[break_idx[0] + 1]
                 seg_idx = np.r_[seg_st:seg_en]
