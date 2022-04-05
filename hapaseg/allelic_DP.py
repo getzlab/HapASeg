@@ -601,7 +601,7 @@ class DPinstance:
             maj_cs = self._Scumsum_ph(seg_idx_sp, min = False)
             maj_csr = self._Ssum_ph(seg_idx_sp, min = False) - maj_cs
 
-            split_lik = ss.betaln(min_cs[:-1] + 1 + self.betahyp, maj_cs[:-1] + 1 + self.betahyp) + ss.betaln(min_csr[1:] + 1 + self.betahyp, maj_csr[1:] + 1 + self.betahyp)
+            split_lik = ss.betaln(min_cs + 1 + self.betahyp, maj_cs + 1 + self.betahyp) + ss.betaln(min_csr + 1 + self.betahyp, maj_csr + 1 + self.betahyp)
             # split_lprob = split_lik - split_lik.max() - np.log(np.exp(split_lik - split_lik.max()).sum())
             # NOTE: instead of argmax, probabilistically choose? will this make a difference?
 
@@ -637,7 +637,7 @@ class DPinstance:
 
             i += 1
 
-        bdy = np.unique(np.r_[0, spl, len(seg_idx)])
+        bdy = seg_idx[np.unique(np.r_[0, spl, len(seg_idx) - 1])]
         bdy = np.c_[bdy[:-1], bdy[1:]]
 
         return bdy
