@@ -645,26 +645,28 @@ class DPinstance:
     def compute_overall_lik_simple(self):
         ## overall clustering likelihood
         # p({a_i, b_i} | {c_k}, {phase_i})
-        clust_lik = np.r_[[ss.betaln(v[0] + 1 + self.betahyp, v[1] + 1 + self.betahyp) + self.betahyp for k, v in self.clust_sums.items() if k >= 0]].sum()
+        clust_lik = np.r_[[ss.betaln(v[0] + 1 + self.betahyp, v[1] + 1 + self.betahyp) for k, v in self.clust_sums.items() if k >= 0]].sum()
 
-        ## overall phasing likelihood
-        # p({phase_i} | {a_i, b_i})
-        phase_lik = 1 - self.S["rephase_prob"].copy()
-        phase_lik[self.S["flipped"]] = 1 - phase_lik[self.S["flipped"]]
-        phase_lik = np.log(phase_lik).sum()
+#        ## overall phasing likelihood
+#        # p({phase_i} | {a_i, b_i})
+# TODO: memoize
+#        phase_lik = 1 - self.S["rephase_prob"].copy()
+#        phase_lik[self.S["flipped"]] = 1 - phase_lik[self.S["flipped"]]
+#        phase_lik = np.log(phase_lik).sum()
+        phase_lik = 0
 
         ## Dirichlet count prior (Dirichlet-categorical marginal likelihood)
         # p({c_k})
-        dirvec = np.r_[self.clust_counts.values()].astype(float)
+        dirvec = np.r_[self.clust_counts.values()].astype(float)/self.dp_count_scale_factor
         k = len(dirvec)
         count_prior = k*np.log(self.alpha) + ss.gammaln(dirvec).sum() + ss.gammaln(self.alpha) - ss.gammaln(dirvec.sum() + self.alpha)
 
         ## segmentation likelihood
         # p({a_i, b_i} | {s}, {phase_i})
-        seg_lik = np.r_[self.seg_liks].sum()
+        # TODO: memoize
+        seg_lik = np.r_[self.seg_liks.values()].sum()
 
         # p({c_k}, {s}, {phase_i} | {a_i, b_i})
-        #return clust_lik + phase_lik + count_prior + seg_lik
         return np.r_[clust_lik, phase_lik, count_prior, seg_lik]
 
     # {{{
@@ -833,7 +835,7 @@ class DPinstance:
         seg_touch_idx = np.zeros(len(self.S), dtype = bool)
 
         # likelihood trace
-        self.lik_tmp = [-np.inf]
+        self.lik_trace = []
         self.post = 0
 
         n_it = 0
