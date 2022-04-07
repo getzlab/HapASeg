@@ -642,6 +642,24 @@ class DPinstance:
 
         return bdy
 
+    def add_breakpoint(self, start, mid, end, clust_idx):
+        """
+        Add breakpoint at mid belonging to clust_idx, between start and end
+        """
+        self.breakpoints.add(mid)
+        self.clust_members_bps[clust_idx].add(mid)
+        
+        A = self._Ssum_ph(np.r_[mid:end], min = True)
+        B = self._Ssum_ph(np.r_[mid:end], min = False)
+
+        self.seg_sums[mid] = np.r_[A, B]
+        self.seg_sums[st] -= self.seg_sums[mid]
+
+        self.seg_liks[mid] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
+        A = self._Ssum_ph(np.r_[start:mid], min = True)
+        B = self._Ssum_ph(np.r_[start:mid], min = False)
+        self.seg_liks[start] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
+
     def compute_overall_lik_simple(self):
         ## overall clustering likelihood
         # p({a_i, b_i} | {c_k}, {phase_i})
@@ -934,20 +952,7 @@ class DPinstance:
                     # add breakpoint (can be erased subsequently if segment rejoins original cluster)
                     new_bp = seg_idx[-1] + 1
                     if len(seg_idx) < seg_en - seg_st: # don't add breakpoint if we're not splitting segment
-                        self.breakpoints.add(new_bp)
-
-                        A = self._Ssum_ph(np.r_[new_bp:seg_en], min = True)
-                        B = self._Ssum_ph(np.r_[new_bp:seg_en], min = False)
-
-                        self.seg_sums[new_bp] = np.r_[A, B]
-                        self.seg_sums[seg_idx[0]] -= self.seg_sums[new_bp]
-
-                        self.seg_liks[new_bp] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
-                        A = self._Ssum_ph(np.r_[seg_idx[0]:new_bp], min = True)
-                        B = self._Ssum_ph(np.r_[seg_idx[0]:new_bp], min = False)
-                        self.seg_liks[seg_idx[0]] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
-
-                        self.clust_members_bps[cur_clust].add(new_bp)
+                        self.add_breakpoint(start = seg_idx[0], mid = new_bp, end = seg_en, clust_idx = cur_clust)
 
                 # propose splitting out a contiguous interval of segments within the current cluster {{{
                 split_clust = False
@@ -991,6 +996,16 @@ class DPinstance:
                     seg_idx = clust_segs[slice(*split_bdy[split_idx])]
 
                     split_clust = True
+
+                    # add breakpoints
+                    for si in [seg_idx[0], seg_idx[-1]]:
+                        if si not in self.breakpoints:
+                            seg_st_idx = self.breakpoints.bisect_left(si) - 1
+                            seg_st = self.breakpoints[seg_st_idx]
+                            seg_en_idx = self.breakpoints.bisect_left(si)
+                            seg_en = self.breakpoints[seg_en_idx]
+
+                            self.add_breakpoint(start = seg_st, mid = si, end = seg_en, clust_idx = cur_clust)
 
                 # }}}
 
