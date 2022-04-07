@@ -637,7 +637,7 @@ class DPinstance:
 
             i += 1
 
-        bdy = seg_idx[np.unique(np.r_[0, spl, len(seg_idx) - 1])]
+        bdy = np.unique(np.r_[0, spl, len(seg_idx)])
         bdy = np.c_[bdy[:-1], bdy[1:]]
 
         return bdy
