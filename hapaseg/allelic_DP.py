@@ -943,7 +943,9 @@ class DPinstance:
                         self.seg_sums[seg_idx[0]] -= self.seg_sums[new_bp]
 
                         self.seg_liks[new_bp] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
-                        self.seg_liks[seg_idx[0]] -= self.seg_liks[new_bp]
+                        A = self._Ssum_ph(np.r_[seg_idx[0]:new_bp], min = True)
+                        B = self._Ssum_ph(np.r_[seg_idx[0]:new_bp], min = False)
+                        self.seg_liks[seg_idx[0]] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
 
                         self.clust_members_bps[cur_clust].add(new_bp)
 
