@@ -958,14 +958,14 @@ class DPinstance:
                 split_clust = False
                 if np.random.rand() < 0.1:
                     # TODO: if we use cur_clust, this will be biased towards larger clusters. is this desireable?
-                    clust_segs = np.sort(np.r_[list(self.clust_members[cur_clust])])
+                    clust_snps = np.sort(np.r_[list(self.clust_members[cur_clust])])
 
                     # can't split clusters of length 1
-                    if len(clust_segs) == 1:
+                    if len(clust_snps) == 1:
                         n_it += 1
                         continue
 
-                    split_bdy = self.compute_cluster_splitpoints(clust_segs)
+                    split_bdy = self.compute_cluster_splitpoints(clust_snps)
 
                     A_tot, B_tot = self.clust_sums[cur_clust]
 
@@ -976,8 +976,8 @@ class DPinstance:
 
                     # likelihood ratios for splitting each region into a new cluster
                     for i, (st, en) in enumerate(split_bdy):
-                        A = self._Ssum_ph(clust_segs[st:en], min = True)
-                        B = self._Ssum_ph(clust_segs[st:en], min = False)
+                        A = self._Ssum_ph(clust_snps[st:en], min = True)
+                        B = self._Ssum_ph(clust_snps[st:en], min = False)
 
                         liks[i] = ss.betaln(A_tot - A + 1 + self.betahyp, B_tot - B + 1 + self.betahyp) + ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
 
@@ -992,8 +992,8 @@ class DPinstance:
                         n_it += 1
                         continue
 
-                    # seg_idx == segments to propose to split off
-                    seg_idx = clust_segs[slice(*split_bdy[split_idx])]
+                    # seg_idx == SNPs to propose to split off
+                    seg_idx = clust_snps[slice(*split_bdy[split_idx])]
 
                     split_clust = True
 
