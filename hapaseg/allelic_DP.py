@@ -1007,6 +1007,11 @@ class DPinstance:
 
                             self.add_breakpoint(start = seg_st, mid = si, end = seg_en, clust_idx = cur_clust)
 
+                    # get all breakpoints within this cluster/interval
+                    left_idx = self.clust_members_bps[cur_clust].bisect_left(seg_idx[0])
+                    right_idx = self.clust_members_bps[cur_clust].bisect_right(seg_idx[-1])
+                    break_idx = sc.SortedSet([self.breakpoints.index(x) for x in self.clust_members_bps[cur_clust][left_idx:right_idx]])
+
                 # }}}
 
                 n_move = len(seg_idx)
@@ -1022,7 +1027,8 @@ class DPinstance:
                     else:
                         self.clust_sums[cur_clust] -= np.r_[self._Ssum_ph(seg_idx, min = True), self._Ssum_ph(seg_idx, min = False)]
                         self.clust_members[cur_clust] -= set(seg_idx)
-                        self.clust_members_bps[cur_clust].remove(self.breakpoints[break_idx[0]])
+                        for b in break_idx:
+                            self.clust_members_bps[cur_clust].remove(self.breakpoints[b])
 
                     self.clusts[seg_idx] = -1
 
