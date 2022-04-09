@@ -653,7 +653,7 @@ class DPinstance:
         B = self._Ssum_ph(np.r_[mid:end], min = False)
 
         self.seg_sums[mid] = np.r_[A, B]
-        self.seg_sums[st] -= self.seg_sums[mid]
+        self.seg_sums[start] -= self.seg_sums[mid]
 
         self.seg_liks[mid] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
         A = self._Ssum_ph(np.r_[start:mid], min = True)
