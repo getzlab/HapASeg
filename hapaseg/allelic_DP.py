@@ -660,6 +660,9 @@ class DPinstance:
         B = self._Ssum_ph(np.r_[start:mid], min = False)
         self.seg_liks[start] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
 
+        self.seg_phase_probs[start] = self.compute_rephase_prob(np.r_[start:mid])
+        self.seg_phase_probs[mid] = self.compute_rephase_prob(np.r_[mid:end])
+
     def compute_overall_lik_simple(self):
         ## overall clustering likelihood
         # p({a_i, b_i} | {c_k}, {phase_i})
@@ -843,6 +846,9 @@ class DPinstance:
           k : sc.SortedSet(v) for k, v in \
             self.S.loc[self.breakpoints[:-1], ["clust"]].groupby("clust").groups.items()
         })
+
+        # misphase probabilities for each segment
+        self.seg_phase_probs = sc.SortedDict({ k : np.nan for k in self.breakpoints })
 
         # containers for saving the MCMC trace
         self.segs_to_clusters = []
@@ -1063,7 +1069,7 @@ class DPinstance:
             #
             # perform phase correction on segment/cluster
             # flip min/maj with probability that alleles are oriented the "wrong" way
-            rephase_prob = self.compute_rephase_prob(seg_idx)
+            rephase_prob = self.seg_phase_probs[seg_idx[0]] if not np.isnan(self.seg_phase_probs[seg_idx[0]]) else self.compute_rephase_prob(seg_idx)
 
             #
             # choose to join a cluster or make a new one
@@ -1237,6 +1243,13 @@ class DPinstance:
 
                 self.clust_members[choice].update(set(seg_idx))
 
+            # if segment was rephased, update saved phasing probabilities
+            if choice_idx & 1:
+                for bp_idx in break_idx:
+                    st = self.breakpoints[bp_idx]
+                    en = self.breakpoints[bp_idx + 1]
+                    self.seg_phase_probs[st] = self.compute_rephase_prob(np.r_[st:en])
+
             # update breakpoints
 
             # B->A
@@ -1255,6 +1268,7 @@ class DPinstance:
                     self.breakpoints.remove(snp)
                     self.seg_sums.pop(snp)
                     self.seg_liks.pop(snp)
+                    self.seg_phase_probs.pop(snp)
                     self.clust_members_bps[self.clusts[snp]].discard(snp) # discard rather than remove since this breakpoint could be in break_idx + 1, which would belong to another cluster
                     update_idx.add(self.breakpoints.bisect_left(snp) - 1)
                     snp_idx.add(self.breakpoints[self.breakpoints.bisect_left(snp) - 1])
@@ -1265,6 +1279,7 @@ class DPinstance:
                 B = self._Ssum_ph(np.r_[st:en], min = False)
                 self.seg_sums[st] = np.r_[A, B]
                 self.seg_liks[st] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
+                self.seg_phase_probs[st] = self.compute_rephase_prob(np.r_[st:en])
 
             if choice < 0:
                 self.clust_members_bps[new_clust_idx] = snp_idx
