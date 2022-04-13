@@ -848,7 +848,7 @@ class DPinstance:
         })
 
         # misphase probabilities for each segment
-        self.seg_phase_probs = sc.SortedDict({ k : np.nan for k in self.breakpoints })
+        self.seg_phase_probs = sc.SortedDict({ k : np.nan for k in self.breakpoints[:-1] })
 
         # containers for saving the MCMC trace
         self.segs_to_clusters = []
@@ -1069,7 +1069,9 @@ class DPinstance:
             #
             # perform phase correction on segment/cluster
             # flip min/maj with probability that alleles are oriented the "wrong" way
-            rephase_prob = self.seg_phase_probs[seg_idx[0]] if not np.isnan(self.seg_phase_probs[seg_idx[0]]) else self.compute_rephase_prob(seg_idx)
+            if np.isnan(self.seg_phase_probs[seg_idx[0]]):
+                self.seg_phase_probs[seg_idx[0]] = self.compute_rephase_prob(seg_idx)
+            rephase_prob = self.seg_phase_probs[seg_idx[0]]
 
             #
             # choose to join a cluster or make a new one
