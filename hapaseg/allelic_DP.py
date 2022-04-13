@@ -668,13 +668,9 @@ class DPinstance:
         # p({a_i, b_i} | {c_k}, {phase_i})
         clust_lik = np.r_[[ss.betaln(v[0] + 1 + self.betahyp, v[1] + 1 + self.betahyp) for k, v in self.clust_sums.items() if k >= 0]].sum()
 
-#        ## overall phasing likelihood
-#        # p({phase_i} | {a_i, b_i})
-# TODO: memoize
-#        phase_lik = 1 - self.S["rephase_prob"].copy()
-#        phase_lik[self.S["flipped"]] = 1 - phase_lik[self.S["flipped"]]
-#        phase_lik = np.log(phase_lik).sum()
-        phase_lik = 0
+        ## overall phasing likelihood
+        # p({phase_i} | {a_i, b_i})
+        phase_lik = np.log1p(-np.r_[self.seg_phase_probs.values()]).sum()
 
         ## Dirichlet count prior (Dirichlet-categorical marginal likelihood)
         # p({c_k})
