@@ -1243,7 +1243,7 @@ class DPinstance:
             #    .   .     .   break_idx + 1
             # A B A B A C B A
             #  +   +     +     break_idx
-            #  *         *     update_idx
+            #*           *     update_idx
 
             break_idx_bi = break_idx | { x + 1 for x in break_idx }
             snp_idx_bi = sc.SortedSet([self.breakpoints[b] for b in break_idx_bi])
