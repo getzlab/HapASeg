@@ -189,7 +189,9 @@ def workflow(
           refFastaIdx = localization_task["ref_fasta_idx"],
           refFastaDict = localization_task["ref_fasta_dict"],
 
-          intervals = split_intervals_task["interval_files"]
+          intervals = split_intervals_task["interval_files"],
+
+          exclude_chimeric = True
         ))
 
         hp_scatter = het_pulldown.get_het_coverage_from_callstats(
