@@ -162,8 +162,8 @@ class A_MCMC:
 
             # check if we've burned in
             # TODO: use a faster method of computing rolling average
-            if not self.burned_in and self.iter > 500:
-                if np.diff(self.marg_lik[(self.iter - 500):self.iter]).mean() < 0:
+            if not self.burned_in and self.iter > 1000:
+                if np.diff(self.marg_lik[(self.iter - 1000):self.iter]).mean() < 0:
                     self.burned_in = True
 
             self.iter += 1 
