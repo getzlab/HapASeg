@@ -769,9 +769,9 @@ class DPinstance:
             if n_iter > 0 and n_it > n_iter:
                 return
 
-#            # stop after a number of samples have been taken
-#            if n_samps > 0 and len() > n_samps:
-#                break
+            # stop after a number of samples have been taken
+            if n_samps > 0 and len(self.segs_to_clusters) > n_samps:
+                break
 
             # poll every 100 iterations for various statuses
             if not n_it % 100:
@@ -792,7 +792,6 @@ class DPinstance:
                 if likelihood_ready and not burned_in and len(self.lik_trace) > 100:
                     lt = np.vstack(self.lik_trace).sum(1)
                     if (np.convolve(np.diff(lt), np.ones(50)/50, mode = "same") < 0).sum() > 2:
-                        breakpoint()
                         burned_in = True
                         n_it_last = n_it
 
@@ -1172,9 +1171,8 @@ class DPinstance:
             else:
                 self.clust_members_bps[choice] |= snp_idx
 
-            # track global state of cluster assignments
-            # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
-            if burned_in and n_it - n_it_last > len(self.S)/(len(self.clust_counts)*2):
+            # save a sample from the MCMC when >95% of segments have been touched since the last iteration
+            if burned_in and (1 - (1 - 1/len(self.breakpoints))**(n_it - n_it_last)) > 0.95:
                 self.segs_to_clusters.append(self.S["clust"].copy())
                 self.phase_orientations.append(self.S["flipped"].copy())
                 n_it_last = n_it
