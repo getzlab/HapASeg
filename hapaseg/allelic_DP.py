@@ -739,7 +739,7 @@ class DPinstance:
         self.seg_phase_probs = sc.SortedDict({ k : np.nan for k in self.breakpoints[:-1] })
 
         # containers for saving the MCMC trace
-        self.segs_to_clusters = []
+        self.snps_to_clusters = []
         self.phase_orientations = []
 
         burned_in = False
@@ -770,7 +770,7 @@ class DPinstance:
                 return
 
             # stop after a number of samples have been taken
-            if n_samps > 0 and len(self.segs_to_clusters) > n_samps:
+            if n_samps > 0 and len(self.snps_to_clusters) > n_samps:
                 break
 
             # poll every 100 iterations for various statuses
@@ -794,11 +794,6 @@ class DPinstance:
                     if (np.convolve(np.diff(lt), np.ones(50)/50, mode = "same") < 0).sum() > 2:
                         burned_in = True
                         n_it_last = n_it
-
-                # save cluster assignments and phase orientations once burned in
-                if burned_in:
-                    self.segs_to_clusters.append(self.S["clust"].copy())
-                    self.phase_orientations.append(self.S["flipped"].copy())
 
             #
             # pick either a segment or a cluster at random (50:50 prob.)
@@ -1173,13 +1168,13 @@ class DPinstance:
 
             # save a sample from the MCMC when >95% of segments have been touched since the last iteration
             if burned_in and (1 - (1 - 1/len(self.breakpoints))**(n_it - n_it_last)) > 0.95:
-                self.segs_to_clusters.append(self.S["clust"].copy())
+                self.snps_to_clusters.append(self.S["clust"].copy())
                 self.phase_orientations.append(self.S["flipped"].copy())
                 n_it_last = n_it
 
             n_it += 1
 
-        return np.r_[self.segs_to_clusters], np.r_[self.phase_orientations]
+        return np.r_[self.snps_to_clusters], np.r_[self.phase_orientations]
 
     #_colors = mpl.cm.get_cmap("tab10").colors
     _colors = ((np.c_[1:7] & np.r_[4, 2, 1]) > 0).astype(int)
@@ -1191,11 +1186,11 @@ class DPinstance:
 #   np.c_[0, 23, 204],
 #   np.c_[75, 172, 227]]/255
 
-    def get_unique_clust_idxs(self, segs_to_clusters = None):
-        if segs_to_clusters is None:
-            segs_to_clusters = np.r_[self.segs_to_clusters]
-        s2cu, s2cu_j = np.unique(segs_to_clusters, return_inverse = True)
-        return s2cu, s2cu_j.reshape(segs_to_clusters.shape)
+    def get_unique_clust_idxs(self, snps_to_clusters = None):
+        if snps_to_clusters is None:
+            snps_to_clusters = np.r_[self.snps_to_clusters]
+        s2cu, s2cu_j = np.unique(snps_to_clusters, return_inverse = True)
+        return s2cu, s2cu_j.reshape(snps_to_clusters.shape)
 
     def get_colors(self):
         s2cu, s2cu_j = self.get_unique_clust_idxs()
@@ -1223,7 +1218,7 @@ class DPinstance:
         colors = self.get_colors()
         s2cu, s2cu_j = self.get_unique_clust_idxs()
 
-        n_samp = len(self.segs_to_clusters)
+        n_samp = len(self.snps_to_clusters)
 
         for s2c, s2ph in zip(s2cu_j, self.phase_orientations):
             # rephase segments according to phase orientation sample
@@ -1244,7 +1239,7 @@ class DPinstance:
         colors = self.get_colors()
         s2cu, s2cu_j = self.get_unique_clust_idxs()
 
-        n_samp = len(self.segs_to_clusters) if n_samp is None else n_samp
+        n_samp = len(self.snps_to_clusters) if n_samp is None else n_samp
 
         for s2c, s2ph in zip(s2cu_j, self.phase_orientations):
             # rephase segments according to phase orientation sample
