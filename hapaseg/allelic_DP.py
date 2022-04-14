@@ -670,7 +670,8 @@ class DPinstance:
 
         ## overall phasing likelihood
         # p({phase_i} | {a_i, b_i})
-        phase_lik = np.log1p(-np.r_[self.seg_phase_probs.values()]).sum()
+        phase_probs = np.r_[self.seg_phase_probs.values()]
+        phase_lik = np.log1p(phase_probs).sum() if not np.isnan(phase_probs).any() else np.nan
 
         ## Dirichlet count prior (Dirichlet-categorical marginal likelihood)
         # p({c_k})
@@ -752,6 +753,7 @@ class DPinstance:
 
         brk = 0
         touch90 = False
+        likelihood_ready = False
 
         while True:
             if not n_it % 1000:
@@ -771,30 +773,28 @@ class DPinstance:
 #            if n_samps > 0 and len() > n_samps:
 #                break
 
-            # poll every 100 iterations for burnin status
+            # poll every 100 iterations for various statuses
             if not n_it % 100:
                 # have >90% of segments been touched?
                 if (1 - (1 - 1/len(self.breakpoints))**n_it) > 0.9:
                     touch90 = True
 
-                # have most segments been adjacency corrected?
-                # if so, has the overall likelihood stabilized enough that we're burned in?
-                if not burned_in:
-                    pass
-                    # 2. if >90% of segments have been adjacency corrected, check for burnin
-                    # does the smoothed derivative of the posterior numerator go below zero? this would indicate that we've solidly reached an optimum
-                    # TODO: make this check more efficient?
-#                    if all_touched and (np.convolve(np.diff(self.lik_tmp), np.ones(50)/50, mode = "same") < 0).sum() > 2:
-#                        pass
-#                        burned_in = True
-#                        n_it_last = n_it
-#                        seg_touch_idx[:] = False
-
                 # start computing likelihoods
                 if touch90:
-                    print(self.compute_overall_lik_simple())
-                    print(self.compute_overall_lik_simple().sum())
-                    self.lik_trace.append(self.compute_overall_lik_simple())
+                    lik = self.compute_overall_lik_simple()
+                    # phasing likelihood will be NaN until we've touched every singlesegment
+                    if not np.isnan(lik).any():
+                        self.lik_trace.append(lik)
+                        self.seg_track.append({ snp : self.S.iloc[snp, self.clust_col] for snp in self.breakpoints[:-1]})
+                        likelihood_ready = True
+
+                # check if likelihood has stabilized enough to consider us "burned in"
+                if likelihood_ready and not burned_in and len(self.lik_trace) > 100:
+                    lt = np.vstack(self.lik_trace).sum(1)
+                    if (np.convolve(np.diff(lt), np.ones(50)/50, mode = "same") < 0).sum() > 2:
+                        breakpoint()
+                        burned_in = True
+                        n_it_last = n_it
 
                 # save cluster assignments and phase orientations once burned in
                 if burned_in:
