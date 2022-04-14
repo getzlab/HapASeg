@@ -24,8 +24,6 @@ class A_MCMC:
       quit_after_burnin = False,
       n_iter = 100000,
       ref_bias = 1.0,
-      misphase_prior = 0.001,
-      phase_correct = False
     ):
         #
         # dataframe stuff
@@ -59,21 +57,10 @@ class A_MCMC:
 
         self.quit_after_burnin = quit_after_burnin
 
-        self.misphase_prior = misphase_prior
-
-        # whether to perform phasing correction iterations
-        self.phase_correct = phase_correct
-
-        # how many post-burnin samples to use to infer phase switches
-        self.n_phase_correct_samples = 40
-
         #
         # chain state
         self.iter = 1
         self.burned_in = False
-
-        # whether phase correction has been performed
-        self.phase_correction_ready = False
 
         #
         # breakpoint storage
@@ -89,17 +76,6 @@ class A_MCMC:
         # list of all breakpoints at nth iteration
         self.breakpoint_list = []
 
-        #
-        # misphase interval storage
-
-        # candidate intervals that were misphased
-        self.B_ct = sp.dok_matrix((len(self.P), len(self.P)), dtype = np.int)
-
-        # current state of interval assignments (relative to B_ct)
-        self.F = MySortedList()
-
-        # state of interval assignments at nth iteration
-        self.phase_interval_list = []
 
         #
         # cumsum arrays for each segment
@@ -141,24 +117,13 @@ class A_MCMC:
 
     def run(self):
         while self.iter < self.n_iter:
-            # perform a split, combine, phase correct, or prune operation
-            op = np.random.choice(4)
+            # perform a split or combine
+            op = np.random.choice(2)
             if op == 0:
                 if self.combine(np.random.choice(self.breakpoints[:-1]), force = False) == -1:
                     continue
             elif op == 1:
                 if self.split(b_idx = np.random.choice(len(self.breakpoints))) == -1:
-                    continue
-            elif op == 2:
-                if self.phase_correct and self.phase_correction_ready:
-                    self.rephase()
-                else:
-                    continue
-            elif op == 3:
-                continue
-                if np.random.rand() < 0.01:
-                    self.prune()
-                else:
                     continue
 
             # if we're only running up to burnin, bail
@@ -172,27 +137,11 @@ class A_MCMC:
                 ) + colorama.Fore.RESET)
                 return self
 
-            # correct phases after some post-burnin iterations
-            if not self.phase_correction_ready and self.phase_correct and \
-              self.burned_in and len(self.breakpoint_list) >= 2*self.n_phase_correct_samples:
-                self.correct_phases()
-                self.phase_correction_ready = True
-
-                # breakpoint/prune lists are liable to change after phase correction, so clear them 
-                self.breakpoint_list = []
-                self.include = []
-
-            # save set of breakpoints, phase intervals, and prune states if burned in 
-            if self.burned_in and not self.iter % 100:
-                self.breakpoint_list.append(self.breakpoints.copy())
-                self.include.append(self.P["include"].copy())
-                if self.phase_correction_ready:
-                    self.phase_interval_list.append(self.F.copy())
 
             # print status
             if not self.iter % 100:
                 if self.burned_in:
-                    color = colorama.Fore.MAGENTA if not self.phase_correction_ready else colorama.Fore.RESET
+                    color = colorama.Fore.RESET
                 else:
                     color = colorama.Fore.YELLOW
                 print("{color}[{st},{en}]\t{n}/{tot}\tn_bp = {n_bp}\tlik = {lik}".format(
@@ -275,294 +224,6 @@ class A_MCMC:
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
 
             return mid
-
-    def flip_hap(self, st, en):
-        """
-        Flips the SNPs from st to en
-        """
-
-        x = self.P.iloc[st:en, self.maj_idx].copy()
-        self.P.iloc[st:en, self.maj_idx] = self.P.iloc[st:en, self.min_idx]
-        self.P.iloc[st:en, self.min_idx] = x
-
-    def prob_misphase(self, bdy1, bdy2):
-        """
-        Compute probability of misphase
-        """
-        # TODO: change invocation to st, mid, en -- we don't need to correct
-        #       phasing of noncontiguous segments
-
-        # prior on misphasing probability
-        p_mis = self.misphase_prior if np.isnan(self.P.loc[bdy1[1] - 1, "misphase_prob"]) else self.P.loc[bdy1[1] - 1, "misphase_prob"]
-        if p_mis == 0:
-            return -np.inf, 0
-
-        # haps = x/y, segs = 1/2, beta params. = A/B
-
-        # seg 1
-        rng_idx = (self.P.index >= bdy1[0]) & (self.P.index < bdy1[1])
-
-        idx = rng_idx & self.P["aidx"] & self.P["include"]
-        x1_A = self.P.loc[idx, "ALT_COUNT"].sum()
-        x1_B = self.P.loc[idx, "REF_COUNT"].sum()
-
-        idx = rng_idx & ~self.P["aidx"] & self.P["include"]
-        y1_A = self.P.loc[idx, "ALT_COUNT"].sum()
-        y1_B = self.P.loc[idx, "REF_COUNT"].sum()
-
-        # seg 2
-        rng_idx = (self.P.index >= bdy2[0]) & (self.P.index < bdy2[1])
-
-        idx = rng_idx & self.P["aidx"] & self.P["include"]
-        x2_A = self.P.loc[idx, "ALT_COUNT"].sum()
-        x2_B = self.P.loc[idx, "REF_COUNT"].sum()
-
-        idx = rng_idx & ~self.P["aidx"] & self.P["include"]
-        y2_A = self.P.loc[idx, "ALT_COUNT"].sum()
-        y2_B = self.P.loc[idx, "REF_COUNT"].sum()
-
-        lik_mis   = ss.betaln(x1_A + y1_B + y2_A + x2_B + 1, y1_A + x1_B + x2_A + y2_B + 1)
-        lik_nomis = ss.betaln(x1_A + y1_B + x2_A + y2_B + 1, y1_A + x1_B + y2_A + x2_B + 1)
-
-        # logsumexp
-        m = np.maximum(lik_mis, lik_nomis)
-        denom = m + np.log(np.exp(lik_mis - m)*p_mis + np.exp(lik_nomis - m)*(1 - p_mis))
-
-        return lik_mis + np.log(p_mis) - denom, lik_nomis + np.log(1 - p_mis) - denom
-
-    def correct_phases(self):
-        """
-        Compute potentially misphased intervals, given some segmentation samples
-        """
-        if not self.burned_in or len(self.breakpoint_list) == 0:
-            raise RuntimeError("Breakpoint sample list must be populated (chain must be burned in)")
-
-        #A_ct = sp.dok_matrix((len(self.P), len(self.P)), dtype = np.int)
-        #B_ct = sp.dok_matrix((len(self.P), len(self.P)), dtype = np.int)
-
-        for bp_idx in np.random.choice(len(self.breakpoint_list), self.n_phase_correct_samples, replace = False):
-            bpl = np.array(self.breakpoint_list[bp_idx]); bpl = np.c_[bpl[:-1], bpl[1:]]
-
-            p_mis = np.full(len(bpl) - 1, np.nan)
-            p_A = np.full(len(bpl) - 1, np.nan)
-            p_B = np.full(len(bpl) - 1, np.nan)
-
-            V = np.full([len(bpl) - 1, 2], np.nan)
-            B = np.zeros([len(bpl) - 1, 2], dtype = np.uint8)
-
-            for i, (st, mid, _, en) in enumerate(np.c_[bpl[:-1], bpl[1:]]):
-                p_mis, p_nomis = self.prob_misphase([st, mid], [mid, en])
-
-                # TODO: memoize partial sums
-
-                # prob. that left segment is on hap. A
-                p_A1 = s.beta.logsf(0.5, self._Piloc(st, mid, self.min_idx).sum() + 1, self._Piloc(st, mid, self.maj_idx).sum() + 1)
-                # prob. that right segment is on hap. A
-                p_A2 = s.beta.logsf(0.5, self._Piloc(mid, en, self.min_idx).sum() + 1, self._Piloc(mid, en, self.maj_idx).sum() + 1)
-
-                # prob. that left segment is on hap. B
-                p_B1 = s.beta.logcdf(0.5, self._Piloc(st, mid, self.min_idx).sum() + 1, self._Piloc(st, mid, self.maj_idx).sum() + 1)
-                # prob. that right segment is on hap. B
-                p_B2 = s.beta.logcdf(0.5, self._Piloc(mid, en, self.min_idx).sum() + 1, self._Piloc(mid, en, self.maj_idx).sum() + 1)
-
-                if i == 0:
-                    V[i, :] = [p_A1, p_B1]
-                    continue
-
-                p_AB = p_mis + p_A1 + p_B2
-                p_BA = p_mis + p_B1 + p_A2
-                p_AA = p_nomis + p_A1 + p_A2
-                p_BB = p_nomis + p_B1 + p_B2
-
-                V[i, 0] = np.max(np.r_[p_AA + V[i - 1, 0], p_BA + V[i - 1, 1]])
-                V[i, 1] = np.max(np.r_[p_AB + V[i - 1, 0], p_BB + V[i - 1, 1]])
-
-                B[i, 0] = np.argmax(np.r_[p_AA + V[i - 1, 0], p_BA + V[i - 1, 1]])
-                B[i, 1] = np.argmax(np.r_[p_AB + V[i - 1, 0], p_BB + V[i - 1, 1]])
-
-            # backtrace
-            BT = np.full(len(B), -1, dtype = np.uint8)
-            ix = np.argmax(V[-1])
-            BT[-1] = ix
-            for i, b in reversed(list(enumerate(B[:-1]))):
-                ix = b[ix]
-                BT[i] = ix
-
-            # join contiguous segments assigned to hap. B
-            d = np.diff(BT, append = 0, prepend = 0)
-            ctg_idx = np.c_[np.flatnonzero(d == 1), np.flatnonzero(d == -1) - 1]
-            b_segs_j = np.c_[bpl[ctg_idx[:, 0], 0], bpl[ctg_idx[:, 1], 1]]
-
-#            # join contiguous segments assigned to hap. A
-#            d = np.diff(1 - BT, append = 0, prepend = 0)
-#            ctg_idx = np.c_[np.flatnonzero(d == 1), np.flatnonzero(d == -1) - 1]
-#            a_segs_j = np.c_[bpl[ctg_idx[:, 0], 0], bpl[ctg_idx[:, 1], 1]]
-
-            # plot
-            #for x in np.flatnonzero(BT):
-            #    plt.plot(self.P.loc[bpl[x], "pos"], np.r_[j + 1, j + 1]*0.01)
-
-            # record
-            for x in b_segs_j:
-                self.B_ct[x[0], x[1]] += 1
-#            for x in a_segs_j:
-#                A_ct[x[0], x[1]] += 1
-
-#        # plot
-#        for k, v in B_ct.items():
-#            for _ in range(0, v):
-#                plt.plot(self.P.iloc[np.r_[k], self.P.columns.get_loc("pos")], 0.2*np.random.rand()*np.r_[1, 1])
-
-    # MCMC iteration that corrects a phase
-    def rephase(self): # TODO: add parameters to force an interval?
-        # TODO: prerequisite checks; has correct_phases() been run?
-        choice = list(self.B_ct.keys())
-        probs = np.r_[list(self.B_ct.values())]
-
-        #
-        # propose an interval to flip from B->A
-        st, en = choice[np.random.choice(np.r_[0:len(choice)], p = probs/probs.sum())]
-
-        #
-        # check if this overlaps any other regions that were already flipped B->A.
-
-        # any previously flipped regions contained within will be left alone
-
-        # return range of flipped region array that [st, en) overlaps
-        # TODO: rename this; f_o is a terrible name
-        def f_o(st = st, en = en):
-            st_idx = self.F.bisect_left(st + 1); st_idx -= st_idx % 2
-            en_idx = self.F.bisect_right(en - 1); en_idx += en_idx % 2
-            return slice(st_idx, en_idx)
-
-        overlaps = np.array(self.F[f_o()]).reshape(-1, 2)
-        o_S = sc.SortedSet({st, en})
-        for o in overlaps:
-            o_S.add(o[0])
-            o_S.add(o[1])
-
-        # somewhere we ought to assert that the length of self.F is even
-
-        # get list of regions to flip
-        flip_candidates = np.r_[o_S] # all possible regions to flip
-        flip_idx = np.zeros(len(flip_candidates) - 1, dtype = np.bool) # index of regions that haven't been flipped yet
-        A_flag = True # whether st:en consists entirely of regions that were flipped to A
-        for i, (st_seg, en_seg) in enumerate(np.c_[flip_candidates[:-1], flip_candidates[1:]]):
-            # this region was not already flipped B->A
-            if not self.F[f_o(st_seg, en_seg)]:
-                flip_idx[i] = True
-                A_flag = False
-
-        flips = np.c_[flip_candidates[:-1], flip_candidates[1:]][flip_idx, :]
-
-        #
-        # get full range of CNV breakpoints this region spans
-        st_reg = self.breakpoints.bisect_left(o_S[0])
-        en_reg = self.breakpoints.bisect_right(o_S[-1])
-        breakpoints0 = sc.SortedSet(self.breakpoints[(st_reg - 1):(en_reg + 1)])
-
-        #
-        # get initial marginal likelihood of this configuration
-        ML_orig = 0
-        for b in breakpoints0[:-1]:
-            ML_orig += self.seg_marg_liks[b]
-
-        #
-        # perform flips; update breakpoint list accordingly
-        for st_seg, en_seg in flips:
-            # if flip boundary corresponds to an extant breakpoint, remove it
-            # (we will propose joining these segments after flip)
-            if st_seg in breakpoints0:
-                breakpoints0 -= {st_seg}
-            # otherwise, add the flip boundary as a new breakpoint
-            # (we will propose introducing a new segment after flip)
-            else:
-                breakpoints0.add(st_seg)
-            if en_seg in breakpoints0:
-                breakpoints0 -= {en_seg}
-            else:
-                breakpoints0.add(en_seg)
-
-            self.flip_hap(st_seg, en_seg)
-
-        #
-        # if st:en is entirely assigned to A, try to flip it back to B (i.e. it was a false flip)
-        if A_flag:
-            if flip_candidates[0] in breakpoints0:
-                breakpoints0 -= {flip_candidates[0]}
-            else:
-                breakpoints0.add(flip_candidates[0])
-            if en_reg in breakpoints0:
-                breakpoints0 -= {flip_candidates[-1]}
-            else:
-                breakpoints0.add(flip_candidates[-1])
-
-            self.flip_hap(flip_candidates[0], flip_candidates[-1])
-
-        #
-        # get marginal likelihood post-flip and breakpoint adjustment
-        bps = np.r_[breakpoints0]
-        ML = 0
-        for st_bp, en_bp in np.c_[bps[:-1], bps[1:]]:
-            ML += ss.betaln(
-              self._Piloc(st_bp, en_bp, self.min_idx).sum() + 1,
-              self._Piloc(st_bp, en_bp, self.maj_idx).sum() + 1
-            )
-
-        #
-        # probabilistically accept new configuration
-        if np.log(np.random.rand()) < np.minimum(0, ML - ML_orig):
-            #
-            # update F array
-
-            # we could have either flipped a region from B->A ...
-            if not A_flag:
-                for st_seg, en_seg in flips:
-                    self.F.update([st_seg, en_seg])
-
-            # ... or reverted a flip
-            else:
-                for p in self.F[f_o(flip_candidates[0], flip_candidates[-1])]:
-                    self.F.remove(p)
-
-            #
-            # combine contiguous intervals in F array
-            # TODO
-
-            #
-            # update breakpoint list and seg. marg. liks
-            bps_to_del = list(self.breakpoints.islice(
-              self.breakpoints.bisect_left(breakpoints0[0]),
-              self.breakpoints.bisect_right(breakpoints0[-1])
-            ))
-            for x in bps_to_del:
-                self.breakpoints.remove(x)
-            self.breakpoints.update(breakpoints0)
-
-            #
-            # update seg. marg. liks
-            # TODO: recomputing each sum (even if in the future we use memoization)
-            #       is wasteful. intelligently pick which seg_marg_liks keys to update.
-            for x in bps_to_del[:-1]:
-                self.seg_marg_liks.__delitem__(x)
-            for st_bp, en_bp in np.c_[bps[:-1], bps[1:]]:
-                self.seg_marg_liks[st_bp] = ss.betaln(
-                  self._Piloc(st_bp, en_bp, self.min_idx).sum() + 1,
-                  self._Piloc(st_bp, en_bp, self.maj_idx).sum() + 1
-                )
-
-            self.marg_lik[self.iter] = self.marg_lik[self.iter - 1] - ML_orig + ML
-
-        #
-        # revert
-        else:
-            # flip each region back
-            for st_seg, en_seg in flips:
-                self.flip_hap(st_seg, en_seg)
-            if A_flag:
-                self.flip_hap(flip_candidates[0], flip_candidates[-1])
-
-            self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
 
     def compute_all_cumsums(self):
         bpl = np.array(self.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
