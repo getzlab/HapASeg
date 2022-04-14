@@ -91,7 +91,7 @@ class A_MCMC:
         #
         # marginal likelihoods
 
-        self.betahyp = 1
+        self.betahyp = (self.P["REF_COUNT"] + self.P["ALT_COUNT"]).mean()/4
 
         # log marginal likelihoods for each segment
         # initialize with each SNP comprising its own segment.
