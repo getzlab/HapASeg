@@ -76,6 +76,8 @@ class A_MCMC:
         # list of all breakpoints at nth iteration
         self.breakpoint_list = []
 
+        # MLE breakpoint
+        self.breakpoints_MLE = None
 
         #
         # cumsum arrays for each segment
@@ -137,6 +139,10 @@ class A_MCMC:
                 ) + colorama.Fore.RESET)
                 return self
 
+            # save MLE breakpoint if we've burned in
+            if self.burned_in:
+                if self.marg_lik[self.iter] > self.marg_lik[self.iter - 1]:
+                    self.breakpoints_MLE = self.breakpoints.copy()
 
             # print status
             if not self.iter % 100:
