@@ -139,7 +139,7 @@ class A_MCMC:
                 return self
 
             # save MLE breakpoint if we've burned in
-            if self.burned_in:
+            if self.burned_in or self.iter >= self.n_iter - 100: # contingency in case we've converged on an optimum early and the chain hasn't moved at all
                 if self.marg_lik[self.iter] > self.marg_lik[self.iter - 1]:
                     self.breakpoints_MLE = self.breakpoints.copy()
 
