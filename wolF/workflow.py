@@ -351,7 +351,7 @@ def workflow(
     )
 
     # concat arm level results
-    @prefect.task(nout = 2)
+    @prefect.task
     def concat_arm_level_results(arm_results):
         A = []
         for arm_file in arm_results:
@@ -366,12 +366,9 @@ def workflow(
         _, tmpfile = tempfile.mkstemp(  )
         A.to_pickle(tmpfile)
 
-        # get number of MCMC samples
-        n_samps = int(np.minimum(np.inf, A.loc[~A["results"].isna(), "results"].apply(lambda x : len(x.breakpoint_list))).min())
+        return tmpfile
 
-        return tmpfile, list(range(0, n_samps))
-
-    arm_concat, n_samps_range = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
+    arm_concat = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
 
     ## run DP
 
