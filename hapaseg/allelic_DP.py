@@ -686,116 +686,7 @@ class DPinstance:
         # p({c_k}, {s}, {phase_i} | {a_i, b_i})
         return np.r_[clust_lik, phase_lik, count_prior, seg_lik]
 
-    # {{{
-    def compute_overall_lik(self, segs_to_clusters = None, phase_orientations = None, debug = False):
-        if segs_to_clusters is None:
-            su, segs_to_clusters = self.get_unique_clust_idxs()
-        else:
-            su, segs_to_clusters = self.get_unique_clust_idxs(segs_to_clusters)
-        if phase_orientations is None:
-            phase_orientations = np.r_[self.phase_orientations]
-
-        # account for unassigned clusters
-        min_clust_idx = 1 if (su == -1).any() else 0
-
-        max_clust_idx = segs_to_clusters.max() + 1
-
-        liks = np.full([segs_to_clusters.shape[0], 2], np.nan)
-
-        for i, (cl_samp, ph_samp) in enumerate(zip(segs_to_clusters, phase_orientations)):
-            ## overall clustering likelihood
-            clust_lik = np.r_[[ss.betaln(v[0] + 1, v[1] + 1) for k, v in self.clust_sums.items() if k >= 0]].sum()
-
-            A1 = npg.aggregate(cl_samp[ph_samp], self.S.loc[ph_samp, "maj"], size = max_clust_idx)
-            A2 = npg.aggregate(cl_samp[~ph_samp], self.S.loc[~ph_samp, "maj"], size = max_clust_idx)
-
-            B1 = npg.aggregate(cl_samp[ph_samp], self.S.loc[ph_samp, "min"], size = max_clust_idx)
-            B2 = npg.aggregate(cl_samp[~ph_samp], self.S.loc[~ph_samp, "min"], size = max_clust_idx)
-
-            # print(A1[1:].sum(), B1[1:].sum(), A2[1:].sum(), B2[1:].sum())
-
-            count_prior = np.bincount(cl_samp, minlength = max_clust_idx).astype(np.double)[min_clust_idx:]
-            count_prior /= count_prior.sum()
-
-            #breakpoint()
-
-            clust_lik = ((ss.betaln(A1 + 1, B1 + 1) + ss.betaln(A2 + 1, B2 + 1))[min_clust_idx:] + np.log(count_prior)).sum()
-            # account for unassigned clusters, if present
-            if min_clust_idx == 1:
-                clust_lik += ss.betaln(self.S.loc[cl_samp == 0, "maj"] + 1, self.S.loc[cl_samp == 0, "min"] + 1).sum()
-
-            if debug:
-                breakpoint()
-
-            ## segmentation likelihood
-
-            seg_lik = np.nan
-#            if min_clust_idx == 0:
-#                # get segment boundaries
-#                bdy = np.flatnonzero(np.r_[1, np.diff(cl_samp) != 0, 1])
-#                bdy = np.c_[bdy[:-1], bdy[1:]]
-#
-#                # sum log-likelihoods of each segment
-#                seg_lik = 0
-#                for st, en in bdy:
-#                   A1 = self.S["maj"].iloc[st:en].loc[ph_samp[st:en]].sum()
-#                   A2 = self.S["maj"].iloc[st:en].loc[~ph_samp[st:en]].sum()
-#                   B1 = self.S["min"].iloc[st:en].loc[ph_samp[st:en]].sum()
-#                   B2 = self.S["min"].iloc[st:en].loc[~ph_samp[st:en]].sum()
-#
-#                   seg_lik += ss.betaln(A1 + 1, B1 + 1) + ss.betaln(A2 + 1, B2 + 1)
-#            else:
-#                seg_lik = np.nan
-
-            liks[i, :] = np.r_[clust_lik, seg_lik]
-
-        return liks
-# }}}
-
     def run(self, n_iter = 0, n_samps = 0):
-        #
-        # assign segments to likeliest prior component {{{
-
-        if len(self.clust_prior) > 1:
-            for seg_idx in range(len(self.S)):
-                seg_idx = np.r_[seg_idx] 
-
-                # compute probability that segment belongs to each cluster prior element
-                S_a = self._Siat_ph(seg_idx[0], min = True)
-                S_b = self._Siat_ph(seg_idx[0], min = False)
-                P_a = self.clust_prior_mat[1:, 0]
-                P_b = self.clust_prior_mat[1:, 1]
-
-                # prior likelihood ratios for both phase orientations
-                P_l = np.c_[
-                  ss.betaln(S_a + P_a + 1, S_b + P_b + 1) - (ss.betaln(S_a + 1, S_b + 1) + ss.betaln(P_a + 1, P_b + 1)),
-                  ss.betaln(S_b + P_a + 1, S_a + P_b + 1) - (ss.betaln(S_b + 1, S_a + 1) + ss.betaln(P_a + 1, P_b + 1)),
-                ]
-
-                # get count prior
-                ccp = np.c_[[v for k, v in self.clust_count_prior.items() if k != -1]]
-
-                # posterior numerator
-                num = P_l + np.log(ccp)
-                num -= num.max()
-
-                # probabilistically choose a cluster
-                probs = np.exp(num)/np.exp(num).sum()
-                idx = np.tile(np.r_[self.clust_prior.keys()][1:], [2, 1]).T*[1, -1]
-                choice = np.random.choice(
-                  idx.ravel(),
-                  p = probs.ravel()
-                )
-
-                # rephase
-                if choice < 0:
-                    self.S.iloc[seg_idx, self.flip_col] = ~self.S.iloc[seg_idx, self.flip_col]
-                    choice = -choice
-
-                self.S.iloc[seg_idx, self.clust_col] = choice
-
-        # }}}
-
         #
         # initialize cluster tracking hash tables
         self.clust_counts = sc.SortedDict(self.S["clust"].value_counts().drop(-1, errors = "ignore"))
@@ -1163,7 +1054,6 @@ class DPinstance:
             log_adj_lik = 0
             if not move_clust: # or (move_clust and np.random.rand() < 0.01):
                 log_adj_lik = self.compute_adj_prob(break_idx[0])
-                #seg_touch_idx[seg_idx] = True
  
             # p(X|clust,phase)p(X|seg,phase)p(clust)p(phase)
             num = (MLs               # p({a_i, b_i}_{i\in B} | {a_i, b_i}_{i\in clust}, phase_{i\in B})
