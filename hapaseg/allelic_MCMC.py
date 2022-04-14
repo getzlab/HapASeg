@@ -91,13 +91,15 @@ class A_MCMC:
         #
         # marginal likelihoods
 
+        self.betahyp = 1
+
         # log marginal likelihoods for each segment
         # initialize with each SNP comprising its own segment.
         self.seg_marg_liks = sc.SortedDict(zip(
           range(0, len(self.P)),
           ss.betaln(
-            self.P.iloc[0:len(self.P), self.min_idx] + 1,
-            self.P.iloc[0:len(self.P), self.maj_idx] + 1
+            self.P.iloc[0:len(self.P), self.min_idx] + 1 + self.betahyp,
+            self.P.iloc[0:len(self.P), self.maj_idx] + 1 + self.betahyp
           )
         ))
 
@@ -197,8 +199,8 @@ class A_MCMC:
         ML_split = self.seg_marg_liks[st] + self.seg_marg_liks[mid]
 
         ML_join = ss.betaln(
-          self._Piloc(st, en, self.min_idx).sum() + 1,
-          self._Piloc(st, en, self.maj_idx).sum() + 1
+          self._Piloc(st, en, self.min_idx).sum() + 1 + self.betahyp,
+          self._Piloc(st, en, self.maj_idx).sum() + 1 + self.betahyp
         )
 
         # proposal dist. ratio
@@ -241,7 +243,7 @@ class A_MCMC:
             cs_MIN[i - st] = cs_MIN[i - st - 1] + (self.P.iat[i, self.min_idx] if self.P.iat[i, self.P.columns.get_loc("include")] else 0)
 
         # marginal likelihoods
-        ml = ss.betaln(cs_MAJ + 1, cs_MIN + 1) + ss.betaln(cs_MAJ[-1] - cs_MAJ + 1, cs_MIN[-1] - cs_MIN + 1)
+        ml = ss.betaln(cs_MAJ + 1 + self.betahyp, cs_MIN + 1 + self.betahyp) + ss.betaln(cs_MAJ[-1] - cs_MAJ + 1 + self.betahyp, cs_MIN[-1] - cs_MIN + 1 + self.betahyp)
 
         # prior
         # TODO: allow user to specify
@@ -290,12 +292,12 @@ class A_MCMC:
 
         # M-H acceptance
         seg_lik_1 = ss.betaln(
-          self._Piloc(st, mid, self.min_idx).sum() + 1,
-          self._Piloc(st, mid, self.maj_idx).sum() + 1
+          self._Piloc(st, mid, self.min_idx).sum() + 1 + self.betahyp,
+          self._Piloc(st, mid, self.maj_idx).sum() + 1 + self.betahyp
         )
         seg_lik_2 = ss.betaln(
-          self._Piloc(mid, en, self.min_idx).sum() + 1,
-          self._Piloc(mid, en, self.maj_idx).sum() + 1
+          self._Piloc(mid, en, self.min_idx).sum() + 1 + self.betahyp,
+          self._Piloc(mid, en, self.maj_idx).sum() + 1 + self.betahyp
         )
 
         ML_split = seg_lik_1 + seg_lik_2
@@ -350,21 +352,21 @@ class A_MCMC:
             # q_i = seg(A - A_i, B - B_i) + garbage(A_i, B_i) + (1 - include prior_i)
             #       - (seg(A, B) + (include prior_i))
             r_exc = ss.betaln(
-              A_inc_s - I["MIN_COUNT"] + 1,
-              B_inc_s - I["MAJ_COUNT"] + 1
-            ) + ss.betaln(I["MIN_COUNT"] + 1, I["MAJ_COUNT"] + 1) \
+              A_inc_s - I["MIN_COUNT"] + 1 + self.betahyp,
+              B_inc_s - I["MAJ_COUNT"] + 1 + self.betahyp
+            ) + ss.betaln(I["MIN_COUNT"] + 1 + self.betahyp, I["MAJ_COUNT"] + 1 + self.betahyp) \
               + np.log(1 - I["include_prior"]) \
-              - (ss.betaln(A_inc_s + 1, B_inc_s + 1) + np.log(I["include_prior"]))
+              - (ss.betaln(A_inc_s + 1 + self.betahyp, B_inc_s + 1 + self.betahyp) + np.log(I["include_prior"]))
 
             # 2. probability to include SNPs (that were previously excluded)
             # q_i = seg(A + A_i, B + B_i) + (include prior_i)
             #       - (seg(A, B) + garbage(A_i, B_i) + (1 - include prior_i))
             r_inc = ss.betaln(
-              A_inc_s + E["MIN_COUNT"] + 1,
-              B_inc_s + E["MAJ_COUNT"] + 1
+              A_inc_s + E["MIN_COUNT"] + 1 + self.betahyp,
+              B_inc_s + E["MAJ_COUNT"] + 1 + self.betahyp
             ) + np.log(E["include_prior"]) \
-              - (ss.betaln(A_inc_s + 1, B_inc_s + 1) + \
-                ss.betaln(E["MIN_COUNT"] + 1, E["MAJ_COUNT"] + 1) + \
+              - (ss.betaln(A_inc_s + 1 + self.betahyp, B_inc_s + 1 + self.betahyp) + \
+                ss.betaln(E["MIN_COUNT"] + 1 + self.betahyp, E["MAJ_COUNT"] + 1 + self.betahyp) + \
                 np.log(1 - E["include_prior"]))
 
             r_cat = pd.concat([r_inc, r_exc]).sort_index()
@@ -398,18 +400,18 @@ class A_MCMC:
 
             # regardless, code for computing q_star is the same
             r_exc_star = ss.betaln(
-              A_inc_s_star - I_star["MIN_COUNT"] + 1,
-              B_inc_s_star - I_star["MAJ_COUNT"] + 1
-            ) + ss.betaln(I_star["MIN_COUNT"] + 1, I_star["MAJ_COUNT"] + 1) \
+              A_inc_s_star - I_star["MIN_COUNT"] + 1 + self.betahyp,
+              B_inc_s_star - I_star["MAJ_COUNT"] + 1 + self.betahyp
+            ) + ss.betaln(I_star["MIN_COUNT"] + 1 + self.betahyp, I_star["MAJ_COUNT"] + 1 + self.betahyp) \
               + np.log(1 - I_star["include_prior"]) \
-              - (ss.betaln(A_inc_s_star + 1, B_inc_s_star + 1) + np.log(I_star["include_prior"]))
+              - (ss.betaln(A_inc_s_star + 1 + self.betahyp, B_inc_s_star + 1 + self.betahyp) + np.log(I_star["include_prior"]))
 
             r_inc_star = ss.betaln(
-              A_inc_s_star + E_star["MIN_COUNT"] + 1,
-              B_inc_s_star + E_star["MAJ_COUNT"] + 1
+              A_inc_s_star + E_star["MIN_COUNT"] + 1 + self.betahyp,
+              B_inc_s_star + E_star["MAJ_COUNT"] + 1 + self.betahyp
             ) + np.log(E_star["include_prior"]) \
-              - (ss.betaln(A_inc_s_star + 1, B_inc_s_star + 1) + \
-                ss.betaln(E_star["MIN_COUNT"] + 1, E_star["MAJ_COUNT"] + 1) + \
+              - (ss.betaln(A_inc_s_star + 1 + self.betahyp, B_inc_s_star + 1 + self.betahyp) + \
+                ss.betaln(E_star["MIN_COUNT"] + 1 + self.betahyp, E_star["MAJ_COUNT"] + 1 + self.betahyp) + \
                 np.log(1 - E_star["include_prior"]))
 
             r_cat_star = pd.concat([r_inc_star, r_exc_star]).sort_index()
@@ -430,8 +432,8 @@ class A_MCMC:
 
                 self.marg_lik[self.iter] -= self.seg_marg_liks[st]
                 self.seg_marg_liks[st] = ss.betaln(
-                  T.loc[T["include"], "MIN_COUNT"].sum() + 1,
-                  T.loc[T["include"], "MAJ_COUNT"].sum() + 1,
+                  T.loc[T["include"], "MIN_COUNT"].sum() + 1 + self.betahyp,
+                  T.loc[T["include"], "MAJ_COUNT"].sum() + 1 + self.betahyp,
                 )
                 self.marg_lik[self.iter] += self.seg_marg_liks[st]
 
@@ -439,8 +441,8 @@ class A_MCMC:
                 # effectively their own segments)
                 self.marg_lik[self.iter] += (1 if ~self.P.at[choice_idx, "include"] else -1)* \
                   ss.betaln(
-                    self.P.at[choice_idx, "MIN_COUNT"] + 1,
-                    self.P.at[choice_idx, "MAJ_COUNT"] + 1
+                    self.P.at[choice_idx, "MIN_COUNT"] + 1 + self.betahyp,
+                    self.P.at[choice_idx, "MAJ_COUNT"] + 1 + self.betahyp
                   )
 
                 # TODO: update segment partial sums (when we actually use these)
