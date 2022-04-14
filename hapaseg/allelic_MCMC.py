@@ -473,20 +473,16 @@ class A_MCMC:
             self.breakpoint_counter[(mid + 1):en] += np.r_[0, 1]
 
     def visualize(self, show_CIs = False):
-        Ph = self.P.copy()
-        CI = s.beta.ppf([0.05, 0.5, 0.95], Ph["MIN_COUNT"][:, None] + 1, Ph["MAJ_COUNT"][:, None] + 1)
-        Ph[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
-
-        plt.figure(); plt.clf()
+        plt.figure(figsize = [16, 4]); plt.clf()
         ax = plt.gca()
 
         # SNPs
-        ax.scatter(Ph["pos"], Ph["median_hap"], color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx"].astype(np.int)], alpha = 0.5, s = 4)
+        ax.scatter(self.P["pos"], self.P["median_hap"], color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][self.P["aidx"].astype(np.int)], alpha = 0.5, s = 4, marker = '.')
         if show_CIs:
-            ax.errorbar(Ph["pos"], y = Ph["median_hap"], yerr = np.c_[Ph["median_hap"] - Ph["CI_lo_hap"], Ph["CI_hi_hap"] - Ph["median_hap"]].T, fmt = 'none', alpha = 0.5, color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx"].astype(np.int)])
+            ax.errorbar(self.P["pos"], y = self.P["median_hap"], yerr = np.c_[self.P["median_hap"] - self.P["CI_lo_hap"], self.P["CI_hi_hap"] - self.P["median_hap"]].T, fmt = 'none', alpha = 0.1, ecolor = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][self.P["aidx"].astype(np.int)])
 
         # mask excluded SNPs
-        ax.scatter(Ph["pos"], Ph["median_hap"], color = 'k', alpha = 1 - pd.concat(self.include, axis = 1).mean(1).values)
+        # ax.scatter(Ph["pos"], Ph["median_hap"], color = 'k', alpha = 1 - pd.concat(self.include, axis = 1).mean(1).values)
 
         # breakpoints 
 #        bp_prob = self.breakpoint_counter[:, 0]/self.breakpoint_counter[:, 1]
@@ -501,47 +497,20 @@ class A_MCMC:
 #        ax2.set_xlim(ax.get_xlim());
 #        ax2.set_xlabel("Breakpoint number in current MCMC iteration")
 
-        # beta CI's weighted by breakpoints
-        # flip current rephases back to baseline
-        for st, en in self.F.intervals():
-            # code excised from flip_hap
-            x = Ph.iloc[st:en, self.maj_idx].copy()
-            Ph.iloc[st:en, self.maj_idx] = Ph.iloc[st:en, self.min_idx]
-            Ph.iloc[st:en, self.min_idx] = x
+        bpl = self.breakpoints if self.breakpoints_MLE is None else self.breakpoints_MLE
+        bpl = np.array(bpl); bpl = np.c_[bpl[0:-1], bpl[1:]]
 
-        pos_col = Ph.columns.get_loc("pos")
-        for bp_samp, pi_samp, inc_samp in itertools.zip_longest(self.breakpoint_list, self.phase_interval_list, self.include):
-            # flip everything according to sample
-            # if we did not perform phase correction, pi_samp will be none (hence
-            # the use of zip_longest above)
-            if pi_samp is not None:
-                for st, en in pi_samp.intervals():
-                    # TODO: can replace with flip_hap()?
-                    x = Ph.iloc[st:en, self.maj_idx].copy()
-                    Ph.iloc[st:en, self.maj_idx] = Ph.iloc[st:en, self.min_idx]
-                    Ph.iloc[st:en, self.min_idx] = x
-
-            # SNPs TODO: plot only those that flipped, in a diff. color?
-            #ax.scatter(Ph["pos"], Ph["median_hap"], color = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]][Ph["aidx"].astype(np.int)], alpha = 0.5, s = 4)
-
-            bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
-            for st, en in bpl:
-                Phi = Ph.iloc[st:en]; Phi = Phi.loc[inc_samp]
-                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], Phi.iloc[:, self.min_idx].sum() + 1, Phi.iloc[:, self.maj_idx].sum() + 1)
-                ax.add_patch(mpl.patches.Rectangle((Ph.iloc[st, pos_col], ci_lo), Ph.iloc[en, pos_col] - Ph.iloc[st, pos_col], ci_hi - ci_lo, fill = True, facecolor = 'k', alpha = 1/len(self.breakpoint_list), zorder = 1000))
-
-            # flip everything back
-            if pi_samp is not None:
-                for st, en in pi_samp.intervals():
-                    # TODO: can replace with flip_hap()?
-                    x = Ph.iloc[st:en, self.maj_idx].copy()
-                    Ph.iloc[st:en, self.maj_idx] = Ph.iloc[st:en, self.min_idx]
-                    Ph.iloc[st:en, self.min_idx] = x
+        pos_col = self.P.columns.get_loc("pos")
+        for st, en in bpl:
+            ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], self.P.iloc[st:en, self.maj_idx].sum() + 1, self.P.iloc[st:en, self.min_idx].sum() + 1)
+            ax.add_patch(mpl.patches.Rectangle((self.P.iloc[st, pos_col], ci_lo), self.P.iloc[en, pos_col] - self.P.iloc[st, pos_col], ci_hi - ci_lo, fill = True, facecolor = 'lime', alpha = 0.4, zorder = 1000))
 
         # 50:50 line
         ax.axhline(0.5, color = 'k', linestyle = ":")
 
         ax.set_xticks(np.linspace(*plt.xlim(), 20));
-        ax.set_xticklabels(Ph["pos"].searchsorted(np.linspace(*plt.xlim(), 20)));
+        ax.set_xticklabels(self.P["pos"].searchsorted(np.linspace(*plt.xlim(), 20)));
         ax.set_xlabel("SNP index")
         ax.set_ylim([0, 1])
+
+        plt.tight_layout()
