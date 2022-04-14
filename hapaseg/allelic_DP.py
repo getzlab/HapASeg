@@ -1151,6 +1151,9 @@ class DPinstance:
             # probability of opening a new cluster
             log_count_prior[0] = ss.gammaln(M) + np.log(self.alpha) + ss.gammaln(N + self.alpha - M) - ss.gammaln(N + self.alpha)
 
+            # p(phase|X)
+            log_phase_prob = np.log(np.maximum(1e-300, np.r_[1 - rephase_prob, rephase_prob]))
+
             #
             # adjacent segment likelihood
 
@@ -1162,23 +1165,18 @@ class DPinstance:
                 log_adj_lik = self.compute_adj_prob(break_idx[0])
                 #seg_touch_idx[seg_idx] = True
  
-            # p(X|clust,phase)p(X|seg,phase)p(clust)
+            # p(X|clust,phase)p(X|seg,phase)p(clust)p(phase)
             num = (MLs               # p({a_i, b_i}_{i\in B} | {a_i, b_i}_{i\in clust}, phase_{i\in B})
                   + log_adj_lik      # p({a_i, b_i}_{i\in B} | U, D, phase_{i\in B})
-                  + log_count_prior) # p(clust) (DP prior on clust counts)
+                  + log_count_prior  # p(clust) (DP prior on clust counts)
+                  + log_phase_prob)  # p(phase)
 
             num /= self.temperature # scale by temperature for replica-exchange
 
-            num -= num.max(0) # avoid underflow in sum-exp
+            num -= num.max() # avoid underflow in sum-exp
 
-            # p(clust|X,phase)
-            log_clust_post = num - np.log(np.exp(num).sum(0))
-
-            # p(phase|X)
-            log_phase_prob = np.log(np.maximum(1e-300, np.r_[1 - rephase_prob, rephase_prob]))
-
-            # p(clust,phase|X) = p(clust|X,phase)p(phase|X)
-            choice_p = np.exp(log_clust_post + log_phase_prob)
+            # p(clust,phase|X)
+            choice_p = np.exp(num - np.log(np.exp(num).sum()))
 
             # row major indexing: choice_idx//2 = cluster index, choice_idx & 1 = rephase true
             choice_idx = np.random.choice(
