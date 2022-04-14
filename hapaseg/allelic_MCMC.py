@@ -88,9 +88,6 @@ class A_MCMC:
         self.cs_MAJ = sc.SortedDict()
         self.cs_MIN = sc.SortedDict()
 
-        # probability of picking a breakpoint
-        self.split_prob = sc.SortedDict()
-
         #
         # marginal likelihoods
 
@@ -230,11 +227,6 @@ class A_MCMC:
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
 
             return mid
-
-    def compute_all_cumsums(self):
-        bpl = np.array(self.breakpoints); bpl = np.c_[bpl[0:-1], bpl[1:]]
-        for st, en in bpl:
-            self.cs_MAJ[st], self.cs_MIN[st], self.split_prob[st] = self.compute_cumsum(st, en)
 
     def compute_cumsum(self, st, en):
         # major
