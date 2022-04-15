@@ -974,6 +974,7 @@ class DPinstance:
             #AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
             # C is likelihood of target cluster pre-join
             C = ss.betaln(C_ab[:, 0] + 1 + self.betahyp, C_ab[:, 1] + 1 + self.betahyp)
+            C[0] = 0 # don't count prior twice when opening a new cluster
             # A is likelihood cluster B is part of, minus B
             #A = ss.betaln(A_a + 1, A_b + 1)
             # B+C is likelihood of target cluster post-join, with both phase orientations
