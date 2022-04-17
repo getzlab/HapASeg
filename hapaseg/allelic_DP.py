@@ -746,6 +746,7 @@ class DPinstance:
 
         # likelihood trace
         self.lik_trace = []
+        self.segment_trace = []
         self.post = 0
 
         n_it = 0
@@ -785,7 +786,6 @@ class DPinstance:
                     # phasing likelihood will be NaN until we've touched every singlesegment
                     if not np.isnan(lik).any():
                         self.lik_trace.append(lik)
-                        self.seg_track.append({ snp : self.S.iloc[snp, self.clust_col] for snp in self.breakpoints[:-1]})
                         likelihood_ready = True
 
                 # check if likelihood has stabilized enough to consider us "burned in"
@@ -1171,6 +1171,7 @@ class DPinstance:
             if burned_in and (1 - (1 - 1/len(self.breakpoints))**(n_it - n_it_last)) > 0.95:
                 self.snps_to_clusters.append(self.S["clust"].copy())
                 self.phase_orientations.append(self.S["flipped"].copy())
+                self.segment_trace.append({ snp : self.S.iloc[snp, self.clust_col] for snp in self.breakpoints[:-1]})
                 n_it_last = n_it
 
             n_it += 1
@@ -1196,24 +1197,24 @@ class DPinstance:
     def get_colors(self):
         s2cu, s2cu_j = self.get_unique_clust_idxs()
 
-        seg_terr = self.S["end_gp"] - self.S["start_gp"]
-        tot_terr = np.zeros(len(s2cu))
-        for r in s2cu_j:
-           tot_terr += npg.aggregate(r, seg_terr, size = len(tot_terr))
+        T = pd.DataFrame(np.c_[np.r_[self.breakpoints[:-2]], np.r_[self.breakpoints[1:-1]]], columns = ["snp_st", "snp_end"])
+        T["gp_st"] = self.S.loc[T["snp_st"], "pos_gp"].values
+        T["gp_end"] = self.S.loc[T["snp_end"], "pos_gp"].values
+        T["terr"] = T["gp_end"] - T["gp_st"]
+        T["clust"] = self.S.loc[T["snp_st"], "clust"].values
 
-        si = np.argsort(tot_terr)[::-1]
-        terr_cs = np.cumsum(tot_terr[si])/tot_terr.sum()
+        clust_terr = T.groupby("clust")["terr"].sum().sort_values(ascending = False)
 
-        colors_to_use = np.array([mpl.cm.get_cmap("gist_rainbow")(x) for x in np.linspace(0, 1, (terr_cs < 0.99).sum())])
-        colors = np.zeros([len(s2cu), 4])
-        n_distinct = colors_to_use.shape[0] 
-        colors[si[:n_distinct], :] = colors_to_use
-        colors[si[n_distinct:], :] = colors_to_use[:(len(si) - n_distinct), :]
+        # color any cluster larger than 10Mb (~0.003 of total genomic territory)
+        return np.array([mpl.cm.get_cmap("gist_rainbow")(x) for x in np.linspace(0, 1, (clust_terr/clust_terr.sum() >= 0.003).sum())])
 
-    def visualize_segs(self):
-        plt.figure()
+    def visualize_snps(self, f = None):
+        pass
+
+    def visualize_segs(self, f = None):
+        f = plt.figure(figsize = [16, 4]) if f is None else f
         ax = plt.gca()
-        ax.set_xlim([0, self.S["end_gp"].max()])
+        ax.set_xlim([0, self.S["pos_gp"].max()])
         ax.set_ylim([0, 1])
 
         colors = self.get_colors()
@@ -1221,46 +1222,31 @@ class DPinstance:
 
         n_samp = len(self.snps_to_clusters)
 
-        for s2c, s2ph in zip(s2cu_j, self.phase_orientations):
+        selff = copy.deepcopy(self)
+
+        for seg2c, s2ph in zip(self.segment_trace, self.phase_orientations):
+            # get uniqued clust indices for each segment start
+            seg_cu = np.searchsorted(s2cu, np.r_[list(seg2c.values())])
+
             # rephase segments according to phase orientation sample
-            S_ph = self.S.copy()
-            flip_idx = np.flatnonzero(s2ph != S_ph["flipped"])
-            S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
+            selff.S["flipped"] = s2ph
 
-            for i, r in enumerate(S_ph.itertuples()):
-                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], r.min + 1, r.maj + 1)
-                ax.add_patch(mpl.patches.Rectangle((r.start_gp, ci_lo), r.end_gp - r.start_gp, ci_hi - ci_lo, facecolor = colors[s2c[i] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
+            seg_bdy = np.r_[list(seg2c.keys()), len(selff.S)]
+            seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
 
-    def visualize_adjacent_segs(self, f = None, n_samp = None):
-        plt.figure(num = f, figsize = [17.56, 5.67])
-        ax = plt.gca()
-        ax.set_xlim([0, self.S["end_gp"].max()])
-        ax.set_ylim([0, 1])
-
-        colors = self.get_colors()
-        s2cu, s2cu_j = self.get_unique_clust_idxs()
-
-        n_samp = len(self.snps_to_clusters) if n_samp is None else n_samp
-
-        for s2c, s2ph in zip(s2cu_j, self.phase_orientations):
-            # rephase segments according to phase orientation sample
-            S_ph = self.S.copy()
-            flip_idx = np.flatnonzero(s2ph != S_ph["flipped"])
-            S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
-
-            bdy = np.flatnonzero(np.r_[1, np.diff(s2c) != 0, 1])
-            bdy = np.c_[bdy[:-1], bdy[1:]]
-
-#            s2c_nz = s2c.copy()
-#            zidx = np.flatnonzero(s2c[bdy[:, 0]] == 0)
-#            for z in zidx:
-#                s2c_nz[bdy[z, 0]:bdy[z, 1]] = s2c_nz[bdy[z - 1, 0]]
-#            bdy_nz = np.flatnonzero(np.r_[1, np.diff(s2c_nz) != 0, 1])
-#            bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
-
-            for st, en in bdy:
-                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], S_ph.iloc[st:en, self.min_col].sum() + 1, S_ph.iloc[st:en, self.maj_col].sum() + 1)
-                ax.add_patch(mpl.patches.Rectangle((S_ph.iloc[st]["start_gp"], ci_lo), S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"], np.maximum(0, ci_hi - ci_lo), facecolor = colors[s2c[st] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
+            for i, (st, en) in enumerate(seg_bdy):
+                ci_lo, med, ci_hi = s.beta.ppf(
+                  [0.05, 0.5, 0.95],
+                  selff._Ssum_ph(np.r_[st:en], min = True) + 1 + self.betahyp,
+                  selff._Ssum_ph(np.r_[st:en], min = False) + 1 + self.betahyp,
+                )
+                ax.add_patch(mpl.patches.Rectangle(
+                  (selff.S.iloc[st]["pos_gp"], ci_lo),
+                  selff.S.iloc[en - 1]["pos_gp"] - selff.S.iloc[st]["pos_gp"],
+                  np.maximum(0, ci_hi - ci_lo),
+                  facecolor = colors[seg_cu[i] % len(colors)],
+                  fill = True, alpha = 1/n_samp, zorder = 1000
+                ))
 
     def visualize_clusts(self, f = None, n_samp = None, thick = False, nocolor = False):
         plt.figure(num = f, figsize = [17.56, 5.67])
