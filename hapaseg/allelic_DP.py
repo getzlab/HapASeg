@@ -1208,10 +1208,7 @@ class DPinstance:
         # color any cluster larger than 10Mb (~0.003 of total genomic territory)
         return np.array([mpl.cm.get_cmap("gist_rainbow")(x) for x in np.linspace(0, 1, (clust_terr/clust_terr.sum() >= 0.003).sum())])
 
-    def visualize_snps(self, f = None):
-        pass
-
-    def visualize_segs(self, f = None, use_clust = False):
+    def visualize_segs(self, f = None, use_clust = False, show_snps = False):
         f = plt.figure(figsize = [16, 4]) if f is None else f
         ax = plt.gca()
         ax.set_xlim([0, self.S["pos_gp"].max()])
@@ -1223,6 +1220,36 @@ class DPinstance:
         n_samp = len(self.snps_to_clusters)
 
         selff = copy.deepcopy(self)
+
+        if show_snps:
+            # set SNP alpha based on number of SNPs
+            logistic = lambda A, K, B, M, x : A + (K - A)/(1 + np.exp(-B*(x - M)))
+            default_alpha = logistic(A = 0.4, K = 0.01, B = 0.00001, M = 120000, x = len(self.S))
+
+            ph_prob = np.r_[self.phase_orientations].mean(0)
+
+            # only plot unambiguous SNPs once
+            uidx = np.flatnonzero((ph_prob == 0) | (ph_prob == 1))
+            selff.S["flipped"] = ph_prob == 1
+            ax.scatter(
+              selff.S.loc[uidx, "pos_gp"],
+              selff._Sloc_ph(uidx)/(selff._Sloc_ph(uidx) + selff._Sloc_ph(uidx, min = False)),
+              color = 'k', marker = '.', alpha = default_alpha, s = 1
+            )
+
+            # plot ambiguous SNPs with opacity weighted by phase probability
+            selff.S["flipped"] = True
+            nuidx = np.flatnonzero(~((ph_prob == 0) | (ph_prob == 1)))
+            ax.scatter(
+              selff.S.loc[nuidx, "pos_gp"],
+              selff._Sloc_ph(nuidx)/(selff._Sloc_ph(nuidx) + selff._Sloc_ph(nuidx, min = False)),
+              color = 'k', marker = '.', alpha = default_alpha*ph_prob[nuidx], s = 1
+            )
+            ax.scatter(
+              selff.S.loc[nuidx, "pos_gp"],
+              selff._Sloc_ph(nuidx, min = False)/(selff._Sloc_ph(nuidx) + selff._Sloc_ph(nuidx, min = False)),
+              color = 'k', marker = '.', alpha = default_alpha*(1 - ph_prob[nuidx]), s = 1
+            )
 
         for seg2c, s2ph in zip(self.segment_trace, self.phase_orientations):
             # get uniqued clust indices for each segment start
@@ -1261,5 +1288,5 @@ class DPinstance:
                   marker = '.', s = 1, alpha = 1/n_samp
                 )
 
-    def visualize_clusts(self, f = None):
-        self.visualize_segs(f = f, use_clust = True)
+    def visualize_clusts(self, **kwargs):
+        self.visualize_segs(use_clust = True, **kwargs)
