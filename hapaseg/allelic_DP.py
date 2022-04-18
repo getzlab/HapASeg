@@ -17,36 +17,16 @@ from capy import seq
 class A_DP:
     def __init__(self, allelic_segs_pickle, ref_fasta = None):
         # dataframe of allelic imbalance segmentation samples for each chromosome arm
-        self.allelic_segs = pd.read_pickle(allelic_segs_pickle).dropna(0)
-        self.allelic_segs = self.allelic_segs.loc[self.allelic_segs["results"].apply(lambda x : len(x.breakpoint_list)) > 0]
+        self.allelic_segs = pd.read_pickle(allelic_segs_pickle).dropna(axis = 0)
+        # if some chromsome arms couldn't find the MLE, just use current state of chain
+        none_idx = self.allelic_segs["results"].apply(lambda x : x.breakpoints_MLE is None)
+        for i in none_idx[none_idx].index:
+            self.allelic_segs.iloc[i]["results"].breakpoints_MLE = self.allelic_segs.iloc[i]["results"].breakpoints
 
-        # number of total segmentation samples
-        self.n_samp = self.allelic_segs["results"].apply(lambda x : len(x.breakpoint_list)).min()
-        self.ref_fasta = ref_fasta
-
-        # DP run objects for each segmentation sample
-        self.DP_runs = None
-
-        # dataframe of SNPs
-        self.SNPs = None
-
-        # number of segmentation samples used for DP run
-        self.N_seg_samps = None
-        # number of DP samples per segmentation sample
-        self.N_clust_samps = None
-
-        # assignment of SNPs to DP clusters for each MCMC sample
-        self.snps_to_clusters = None
-        # phase correction of SNPs for each MCMC sample
-        self.snps_to_phases = None
-
-    def load_seg_samp(self, samp_idx):
-        if samp_idx > self.n_samp:
-            raise ValueError(f"Only {self.n_samp} MCMC samples were taken!")
-
-        SNPs = []
+        # load SNPs
+        self.SNPs = []
         clust_offset = 0
-        for _, H in self.allelic_segs.dropna(subset = ["results"]).iterrows():
+        for _, H in self.allelic_segs.iterrows():
             S = copy.deepcopy(H["results"].P)
             S["A_alt"] = 0
             S.loc[S["aidx"], "A_alt"] = S.loc[S["aidx"], "ALT_COUNT"]
@@ -62,8 +42,7 @@ class A_DP:
 
             # set initial cluster assignments based on segmentation
             S["clust"] = -1
-            # TODO: use ML segmentation
-            bpl = np.array(H["results"].breakpoint_list[samp_idx]); bpl = np.c_[bpl[0:-1], bpl[1:]]
+            bpl = np.array(H["results"].breakpoints_MLE); bpl = np.c_[bpl[0:-1], bpl[1:]]
             for i, (st, en) in enumerate(bpl):
                 S.iloc[st:en, S.columns.get_loc("clust")] = i + clust_offset
             clust_offset += i
@@ -72,217 +51,35 @@ class A_DP:
             S = S.iloc[:-1]
             assert (S["clust"] != -1).all()
 
-            SNPs.append(S)
+            self.SNPs.append(S)
 
-        SNPs = pd.concat(SNPs, ignore_index = True)
+        self.SNPs = pd.concat(self.SNPs, ignore_index = True)
 
         # convert chr-relative positions to absolute genomic coordinates
-        SNPs["pos_gp"] = seq.chrpos2gpos(SNPs["chr"], SNPs["pos"], ref = self.ref_fasta)
+        self.ref_fasta = ref_fasta
+        self.SNPs["pos_gp"] = seq.chrpos2gpos(self.SNPs["chr"], self.SNPs["pos"], ref = self.ref_fasta)
 
         # initial phasing orientation
-        SNPs["flipped"] = False
+        self.SNPs["flipped"] = False
 
-        return SNPs, None
+        self.N_clust_samps = 100
 
-    # map trace of segment cluster assignments to the SNPs within
-    @staticmethod
-    def map_seg_clust_assignments_to_SNPs(segs_to_clusters, S):
-        st_col = S.columns.get_loc("SNP_st")
-        en_col = S.columns.get_loc("SNP_en")
-        snps_to_clusters = np.zeros((segs_to_clusters.shape[0], S.iloc[-1, en_col] + 1), dtype = int)
-        for i, seg_assign in enumerate(segs_to_clusters):
-            for j, seg in enumerate(seg_assign):
-                snps_to_clusters[i, S.iloc[j, st_col]:S.iloc[j, en_col]] = seg
+        # assignment of SNPs to DP clusters for each MCMC sample
+        self.snps_to_clusters = None
+        # phase correction of SNPs for each MCMC sample
+        self.snps_to_phases = None
 
-        return snps_to_clusters
+    def run(self):
+        self.DP_run = DPinstance(
+          self.SNPs,
+          dp_count_scale_factor = self.SNPs["clust"].value_counts().mean()
+        )
+        self.snps_to_clusters, self.snps_to_phases = self.DP_run.run(n_samps = self.N_clust_samps)
 
-    @staticmethod
-    def map_seg_phases_to_SNPs(phase, S):
-        st_col = S.columns.get_loc("SNP_st")
-        en_col = S.columns.get_loc("SNP_en")
-        snps_to_phase = np.zeros((phase.shape[0], S.iloc[-1, en_col] + 1), dtype = int)
-        for i, phase_orient in enumerate(phase):
-            for j, ph in enumerate(phase_orient):
-                snps_to_phase[i, S.iloc[j, st_col]:S.iloc[j, en_col]] = ph
-
-        return snps_to_phase
-
-    def run(self, N_seg_samps = 50, N_clust_samps = 5, seg_sample_idx = None):
-        self.N_seg_samps = N_seg_samps if seg_sample_idx is None else 1
-        self.N_clust_samps = N_clust_samps
-
-        seg_sample_idx = np.random.choice(self.n_samp - 1, self.N_seg_samps, replace = False) if seg_sample_idx is None else [seg_sample_idx]
-        S, SNPs = self.load_seg_samp(seg_sample_idx[0])
-        N_SNPs = len(SNPs)
-        
-        self.snps_to_clusters = -1*np.ones((self.N_clust_samps*self.N_seg_samps, N_SNPs), dtype = np.int16)
-        self.snps_to_phases = np.zeros((self.N_clust_samps*self.N_seg_samps, N_SNPs), dtype = bool)
-        self.DP_likelihoods = np.zeros((self.N_clust_samps*self.N_seg_samps, 2))
-
-        self.DP_runs = [None]*self.N_seg_samps
-
-        clust_prior = sc.SortedDict()
-        clust_count_prior = sc.SortedDict()
-        n_iter_clust_exist = sc.SortedDict()
-        cur_samp_iter = 0
-
-        for n_it in range(self.N_seg_samps):
-            if n_it > 0:
-                S, SNPs = self.load_seg_samp(seg_sample_idx[n_it])
-
-            # run clustering
-            self.DP_runs[n_it] = DPinstance(S, clust_prior = clust_prior, clust_count_prior = clust_count_prior)
-            segs_to_clusters, segs_to_phases = self.DP_runs[n_it].run(n_iter = self.N_clust_samps)
-
-            # compute likelihoods for each clustering
-            self.DP_likelihoods[self.N_clust_samps*n_it:self.N_clust_samps*(n_it + 1), :] = self.DP_runs[n_it].compute_overall_lik()
-
-            # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
-            self.snps_to_clusters[self.N_clust_samps*n_it:self.N_clust_samps*(n_it + 1), :] = self.map_seg_clust_assignments_to_SNPs(segs_to_clusters, S)
-
-            # assign phase orientations to individual SNPs
-            self.snps_to_phases[self.N_clust_samps*n_it:self.N_clust_samps*(n_it + 1), :] = self.map_seg_phases_to_SNPs(segs_to_phases, S)
-
-            # compute prior on cluster locations/counts
-            max_clust_idx = segs_to_clusters.max()
-            for seg_assignments, seg_phases in zip(segs_to_clusters, segs_to_phases):
-                # reset phases
-                S2 = S.copy()
-                S2.loc[S2["flipped"], ["min", "maj"]] = S2.loc[S2["flipped"], ["min", "maj"]].values[:, ::-1]
-
-                # match phases to current sample
-                S2.loc[seg_phases, ["min", "maj"]] = S2.loc[seg_phases, ["min", "maj"]].values[:, ::-1]
-
-                # minor/major counts for each cluster in this iteration
-                S_a = npg.aggregate(seg_assignments, S2["min"], size = max_clust_idx + 1)
-                S_b = npg.aggregate(seg_assignments, S2["maj"], size = max_clust_idx + 1)
-                c = np.c_[S_a, S_b]
-
-                # total numer of SNPs for each cluster in this iteration
-                #N_c = npg.aggregate(seg_assignments, S2["SNP_en"] - S2["SNP_st"], size = max_clust_idx + 1)
-                N_c = npg.aggregate(seg_assignments, 1, size = max_clust_idx + 1)
-
-                # iteratively update priors
-                next_clust_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), c[c.sum(1) > 0]))
-                next_clust_count_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), N_c[N_c > 0]))
-
-                for cl in np.unique(seg_assignments):
-                    if cl in n_iter_clust_exist:
-                        n_iter_clust_exist[cl] += 1
-                    else:
-                        n_iter_clust_exist[cl] = 1
-                cur_samp_iter += 1
-
-                for k, v in next_clust_prior.items():
-                    nccp = next_clust_count_prior[k]
-                    if k in clust_prior:
-                        clust_prior[k] += (v - clust_prior[k])/n_iter_clust_exist[k]
-                        clust_count_prior[k] += (nccp - clust_count_prior[k])/cur_samp_iter
-                    else:
-                        clust_prior[k] = v
-                        clust_count_prior[k] = nccp/cur_samp_iter
-                # for clusters that don't exist in this iteration, average counts with zero
-                for k, v in clust_prior.items():
-                    if k != -1 and k not in next_clust_prior:
-                        clust_count_prior[k] -= clust_count_prior[k]/cur_samp_iter
-
-            # remove improbable clusters from prior
-            for kk in [k for k, v in clust_count_prior.items() if v < 1]:
-                del clust_prior[kk]
-                del clust_count_prior[kk]
-
-        return self.snps_to_clusters, self.snps_to_phases, self.DP_likelihoods
-
-    def visualize_segs(self, snps_to_clusters = None, f = None, n_vis_samp = None):
-        f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
-
-        snps_to_clusters = snps_to_clusters if snps_to_clusters is not None else self.snps_to_clusters
-
-        # plot all samples from DP
-        if n_vis_samp is None:
-            run_idx = np.r_[0:self.N_seg_samps]
-            N_seg_samps = self.N_seg_samps
-
-        # only plot up to n_vis_samp _segmentation samples_ from DP
-        # (all DP samples for a given segmentation sample will be plotted)
-        else:
-            run_idx = np.random.choice(self.N_seg_samps, n_vis_samp, replace = False)
-            N_seg_samps = n_vis_samp
-
-        for d in [self.DP_runs[x] for x in run_idx]:
-            d.visualize_adjacent_segs(f = f.number, n_samp = N_seg_samps*self.N_clust_samps)
-
-    def visualize_clusts(self, snps_to_clusters = None, f = None, thick = False, nocolor = False, n_vis_samp = None):
-        f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
-
-        snps_to_clusters = snps_to_clusters if snps_to_clusters is not None else self.snps_to_clusters
-
-        # plot all samples from DP
-        if n_vis_samp is None:
-            run_idx = np.r_[0:self.N_seg_samps]
-            N_seg_samps = self.N_seg_samps
-
-        # only plot up to n_vis_samp _segmentation samples_ from DP
-        # (all DP samples for a given segmentation sample will be plotted)
-        else:
-            run_idx = np.random.choice(self.N_seg_samps, n_vis_samp, replace = False)
-            N_seg_samps = n_vis_samp
-
-        for d in [self.DP_runs[x] for x in run_idx]:
-            d.visualize_clusts(f = f.number, n_samp = N_seg_samps*self.N_clust_samps, thick = thick, nocolor = nocolor)
-
-    def visualize_SNPs(self, snps_to_phases = None, color = True, f = None):
-        snps_to_phases = snps_to_phases if snps_to_phases is not None else self.snps_to_phases
-        ph_prob = snps_to_phases.mean(0)
-
-        if color:
-            rb = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]]
-        else:
-            rb = np.full([2, 3], 0)
-
-        logistic = lambda A, K, B, M, x : A + (K - A)/(1 + np.exp(-B*(x - M)))
-
-        def scerrorbar(idx, rev = False, alpha = 1, show_CI = True):
-            if rev:
-                f = 1 - self.SNPs.loc[idx, "f"]
-                eb_bot = self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_hi"]
-                eb_top = self.SNPs.loc[idx, "f_CI_lo"] - self.SNPs.loc[idx, "f"]
-            else:
-                f = self.SNPs.loc[idx, "f"]
-                eb_bot = self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_lo"]
-                eb_top = self.SNPs.loc[idx, "f_CI_hi"] - self.SNPs.loc[idx, "f"]
-
-            if show_CI:
-                plt.errorbar(
-                  x = self.SNPs.loc[idx, "gpos"],
-                  y = f,
-                  yerr = np.c_[
-                    eb_bot,
-                    eb_top
-                  ].T,
-                  fmt = 'none', ecolor = np.c_[rb[self.SNPs.loc[idx, "allele"]], (alpha if isinstance(alpha, np.ndarray) else alpha*np.ones(idx.sum()))**2]
-                )
-
-            plt.scatter(
-              self.SNPs.loc[idx, "gpos"],
-              f,
-              color = rb[self.SNPs.loc[idx, "allele"]],
-              marker = '.',
-              s = 1,
-              alpha = alpha if show_CI else alpha
-            )
-
-        default_alpha = logistic(A = 0.4, K = 0.01, B = 0.00001, M = 120000, x = len(self.SNPs))
-
-        f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
-        scerrorbar(ph_prob == 0, alpha = default_alpha, show_CI = color)
-        scerrorbar(ph_prob == 1, rev = True, alpha = default_alpha, show_CI = color)
-        idx = (ph_prob > 0) & (ph_prob < 1)
-        scerrorbar(idx, alpha = (1 - ph_prob[idx])*default_alpha, show_CI = color)
-        scerrorbar(idx, rev = True, alpha = ph_prob[idx]*default_alpha, show_CI = color)
+        return self.snps_to_clusters, self.snps_to_phases
 
 class DPinstance:
-    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 1, temperature = 1, dp_count_scale_factor = 1):
+    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), alpha = 1, temperature = 1, dp_count_scale_factor = 1):
         self.S = S
         self.clust_prior = clust_prior.copy()
         self.clust_count_prior = clust_count_prior.copy()
