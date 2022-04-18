@@ -1211,7 +1211,7 @@ class DPinstance:
     def visualize_snps(self, f = None):
         pass
 
-    def visualize_segs(self, f = None):
+    def visualize_segs(self, f = None, use_clust = False):
         f = plt.figure(figsize = [16, 4]) if f is None else f
         ax = plt.gca()
         ax.set_xlim([0, self.S["pos_gp"].max()])
@@ -1235,72 +1235,31 @@ class DPinstance:
             seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
 
             for i, (st, en) in enumerate(seg_bdy):
-                ci_lo, med, ci_hi = s.beta.ppf(
-                  [0.05, 0.5, 0.95],
-                  selff._Ssum_ph(np.r_[st:en], min = True) + 1 + self.betahyp,
-                  selff._Ssum_ph(np.r_[st:en], min = False) + 1 + self.betahyp,
-                )
-                ax.add_patch(mpl.patches.Rectangle(
-                  (selff.S.iloc[st]["pos_gp"], ci_lo),
+                if use_clust:
+                    ci_lo, med, ci_hi = s.beta.ppf(
+                      [0.05, 0.5, 0.95],
+                      selff.clust_sums[seg2c[st]][0] + 1 + self.betahyp,
+                      selff.clust_sums[seg2c[st]][1] + 1 + self.betahyp,
+                    )
+                else:
+                    ci_lo, med, ci_hi = s.beta.ppf(
+                      [0.05, 0.5, 0.95],
+                      selff._Ssum_ph(np.r_[st:en], min = True) + 1 + self.betahyp,
+                      selff._Ssum_ph(np.r_[st:en], min = False) + 1 + self.betahyp,
+                    )
+                ax.add_patch(mpl.patches.Rectangle((
+                  selff.S.iloc[st]["pos_gp"], ci_lo),
                   selff.S.iloc[en - 1]["pos_gp"] - selff.S.iloc[st]["pos_gp"],
                   np.maximum(0, ci_hi - ci_lo),
                   facecolor = colors[seg_cu[i] % len(colors)],
                   fill = True, alpha = 1/n_samp, zorder = 1000
                 ))
-
-    def visualize_clusts(self, f = None, n_samp = None, thick = False, nocolor = False):
-        plt.figure(num = f, figsize = [17.56, 5.67])
-        ax = plt.gca()
-        ax.set_xlim([0, self.S["end_gp"].max()])
-        ax.set_ylim([0, 1])
-
-        colors = self.get_colors()
-        s2cu, s2cu_j = self.get_unique_clust_idxs()
-
-        n_samp = len(self.segs_to_clusters) if n_samp is None else n_samp
-
-        for s2c, s2ph in zip(s2cu_j, self.phase_orientations):
-            # rephase segments according to phase orientation sample
-            S_ph = self.S.copy()
-            flip_idx = np.flatnonzero(s2ph != S_ph["flipped"])
-            S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
-
-            # get overall cluster sums
-            clust_min = npg.aggregate(s2c, S_ph["min"])
-            clust_maj = npg.aggregate(s2c, S_ph["maj"])
-            CIs = s.beta.ppf([0.05, 0.5, 0.95], clust_min[:, None] + 1, clust_maj[:, None] + 1)
-
-            # get boundaries of contiguous segments
-            bdy = np.flatnonzero(np.r_[1, np.diff(s2c) != 0, 1])
-            bdy = np.c_[bdy[:-1], bdy[1:]]
-
-#            s2c_nz = s2c.copy()
-#            zidx = np.flatnonzero(s2c[bdy[:, 0]] == 0)
-#            for z in zidx:
-#                s2c_nz[bdy[z, 0]:bdy[z, 1]] = s2c_nz[bdy[z - 1, 0]]
-#            bdy_nz = np.flatnonzero(np.r_[1, np.diff(s2c_nz) != 0, 1])
-#            bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
-
-            for st, en in bdy:
-                if thick:
-                    b = CIs[s2c[st], 1] - 0.01
-                    t = CIs[s2c[st], 1] + 0.01
-                else:
-                    color = colors[s2c[st] % len(colors)]
-                    b = CIs[s2c[st], 0]
-                    t = CIs[s2c[st], 2]
-
-                if nocolor:
-                    color = [0, 1, 0]
-                else:
-                    color = colors[s2c[st] % len(colors)]
-
-                ax.add_patch(mpl.patches.Rectangle(
-                  xy = (S_ph.iloc[st]["start_gp"], b),
-                  width = S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"],
-                  height = t - b,
-                  facecolor = color,
-                  fill = True,
-                  alpha = 1/n_samp,
-                  zorder = 1000)
+                plt.scatter(
+                  (selff.S.iloc[en - 1]["pos_gp"] + selff.S.iloc[st]["pos_gp"])/2,
+                  med,
+                  color = colors[seg_cu[i] % len(colors)],
+                  marker = '.', s = 1, alpha = 1/n_samp
                 )
+
+    def visualize_clusts(self, f = None):
+        self.visualize_segs(f = f, use_clust = True)
