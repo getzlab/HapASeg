@@ -1,5 +1,6 @@
 import colorama
 import copy
+import distinctipy
 import itertools
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -1005,9 +1006,16 @@ class DPinstance:
         T["clust"] = self.S.loc[T["snp_st"], "clust"].values
 
         clust_terr = T.groupby("clust")["terr"].sum().sort_values(ascending = False)
+        si = clust_terr.index.argsort()
 
         # color any cluster larger than 10Mb (~0.003 of total genomic territory)
-        return np.array([mpl.cm.get_cmap("gist_rainbow")(x) for x in np.linspace(0, 1, (clust_terr/clust_terr.sum() >= 0.003).sum())])
+        extra_colors = np.array(
+          distinctipy.distinctipy.get_colors(
+            (clust_terr/clust_terr.sum() >= 0.003).sum() - _colors.shape[0],
+            exclude_colors = [list(x) for x in np.r_[np.c_[0, 0, 0], np.c_[1, 1, 1], _colors]])
+        )
+
+        return np.r_[_colors, extra_colors][si]
 
     def visualize_segs(self, f = None, use_clust = False, show_snps = False):
         f = plt.figure(figsize = [16, 4]) if f is None else f
@@ -1029,18 +1037,20 @@ class DPinstance:
 
             ph_prob = np.r_[self.phase_orientations].mean(0)
 
+            cu = np.searchsorted(s2cu, self.S["clust"])
+
             # only plot unambiguous SNPs once
             uidx = ph_prob == 0
             ax.scatter(
               self.S.loc[uidx, "pos_gp"],
               self.S.loc[uidx, "min"]/self.S.loc[uidx, ["min", "maj"]].sum(1),
-              color = 'k', marker = '.', alpha = default_alpha, s = 1
+              color = colors[cu[uidx] % len(colors)], marker = '.', alpha = default_alpha, s = 1
             )
             uidx = ph_prob == 1
             ax.scatter(
               self.S.loc[uidx, "pos_gp"],
               self.S.loc[uidx, "maj"]/self.S.loc[uidx, ["min", "maj"]].sum(1),
-              color = 'k', marker = '.', alpha = default_alpha, s = 1
+              color = colors[cu[uidx] % len(colors)], marker = '.', alpha = default_alpha, s = 1
             )
 
             # plot ambiguous SNPs with opacity weighted by phase probability
@@ -1048,15 +1058,20 @@ class DPinstance:
             ax.scatter(
               selff.S.loc[nuidx, "pos_gp"],
               self.S.loc[nuidx, "min"]/self.S.loc[nuidx, ["min", "maj"]].sum(1),
-              color = 'k', marker = '.', alpha = default_alpha*(1 - ph_prob[nuidx]), s = 1
+              color = colors[cu[nuidx] % len(colors)], marker = '.', alpha = default_alpha*(1 - ph_prob[nuidx]), s = 1
             )
             ax.scatter(
               selff.S.loc[nuidx, "pos_gp"],
               self.S.loc[nuidx, "maj"]/self.S.loc[nuidx, ["min", "maj"]].sum(1),
-              color = 'k', marker = '.', alpha = default_alpha*ph_prob[nuidx], s = 1
+              color = colors[cu[nuidx] % len(colors)], marker = '.', alpha = default_alpha*ph_prob[nuidx], s = 1
             )
 
         for seg2c, s2ph in zip(self.segment_trace, self.phase_orientations):
+            # only show maximum likelihood if we're overlaying SNPs
+            if show_snps:
+                mlidx = np.r_[self.likelihood_trace].argmax()
+                seg2c, s2ph = self.segment_trace[mlidx], self.phase_orientations[mlidx]
+
             # get uniqued clust indices for each segment start
             seg_cu = np.searchsorted(s2cu, np.r_[list(seg2c.values())])
 
@@ -1084,6 +1099,7 @@ class DPinstance:
                   selff.S.iloc[en - 1]["pos_gp"] - selff.S.iloc[st]["pos_gp"],
                   np.maximum(0, ci_hi - ci_lo),
                   facecolor = colors[seg_cu[i] % len(colors)],
+                  edgecolor = 'k' if show_snps else None, linewidth = 0.5 if show_snps else None,
                   fill = True, alpha = 1 if show_snps else 1/n_samp, zorder = 1000
                 ))
                 ax.scatter(
