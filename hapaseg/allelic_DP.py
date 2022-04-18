@@ -1229,26 +1229,30 @@ class DPinstance:
             ph_prob = np.r_[self.phase_orientations].mean(0)
 
             # only plot unambiguous SNPs once
-            uidx = np.flatnonzero((ph_prob == 0) | (ph_prob == 1))
-            selff.S["flipped"] = ph_prob == 1
+            uidx = ph_prob == 0
             ax.scatter(
-              selff.S.loc[uidx, "pos_gp"],
-              selff._Sloc_ph(uidx)/(selff._Sloc_ph(uidx) + selff._Sloc_ph(uidx, min = False)),
+              self.S.loc[uidx, "pos_gp"],
+              self.S.loc[uidx, "min"]/self.S.loc[uidx, ["min", "maj"]].sum(1),
+              color = 'k', marker = '.', alpha = default_alpha, s = 1
+            )
+            uidx = ph_prob == 1
+            ax.scatter(
+              self.S.loc[uidx, "pos_gp"],
+              self.S.loc[uidx, "maj"]/self.S.loc[uidx, ["min", "maj"]].sum(1),
               color = 'k', marker = '.', alpha = default_alpha, s = 1
             )
 
             # plot ambiguous SNPs with opacity weighted by phase probability
-            selff.S["flipped"] = True
-            nuidx = np.flatnonzero(~((ph_prob == 0) | (ph_prob == 1)))
+            nuidx = (ph_prob != 0) & (ph_prob != 1)
             ax.scatter(
               selff.S.loc[nuidx, "pos_gp"],
-              selff._Sloc_ph(nuidx)/(selff._Sloc_ph(nuidx) + selff._Sloc_ph(nuidx, min = False)),
-              color = 'k', marker = '.', alpha = default_alpha*ph_prob[nuidx], s = 1
+              self.S.loc[nuidx, "min"]/self.S.loc[nuidx, ["min", "maj"]].sum(1),
+              color = 'k', marker = '.', alpha = default_alpha*(1 - ph_prob[nuidx]), s = 1
             )
             ax.scatter(
               selff.S.loc[nuidx, "pos_gp"],
-              selff._Sloc_ph(nuidx, min = False)/(selff._Sloc_ph(nuidx) + selff._Sloc_ph(nuidx, min = False)),
-              color = 'k', marker = '.', alpha = default_alpha*(1 - ph_prob[nuidx]), s = 1
+              self.S.loc[nuidx, "maj"]/self.S.loc[nuidx, ["min", "maj"]].sum(1),
+              color = 'k', marker = '.', alpha = default_alpha*ph_prob[nuidx], s = 1
             )
 
         for seg2c, s2ph in zip(self.segment_trace, self.phase_orientations):
@@ -1274,19 +1278,22 @@ class DPinstance:
                       selff._Ssum_ph(np.r_[st:en], min = True) + 1 + self.betahyp,
                       selff._Ssum_ph(np.r_[st:en], min = False) + 1 + self.betahyp,
                     )
-                ax.add_patch(mpl.patches.Rectangle((
-                  selff.S.iloc[st]["pos_gp"], ci_lo),
+                ax.add_patch(mpl.patches.Rectangle(
+                  (selff.S.iloc[st]["pos_gp"], ci_lo),
                   selff.S.iloc[en - 1]["pos_gp"] - selff.S.iloc[st]["pos_gp"],
                   np.maximum(0, ci_hi - ci_lo),
                   facecolor = colors[seg_cu[i] % len(colors)],
-                  fill = True, alpha = 1/n_samp, zorder = 1000
+                  fill = True, alpha = 1 if show_snps else 1/n_samp, zorder = 1000
                 ))
-                plt.scatter(
+                ax.scatter(
                   (selff.S.iloc[en - 1]["pos_gp"] + selff.S.iloc[st]["pos_gp"])/2,
                   med,
                   color = colors[seg_cu[i] % len(colors)],
-                  marker = '.', s = 1, alpha = 1/n_samp
+                  marker = '.', s = 1, alpha = 1 if show_snps else 1/n_samp
                 )
+
+            if show_snps:
+                break
 
     def visualize_clusts(self, **kwargs):
         self.visualize_segs(use_clust = True, **kwargs)
