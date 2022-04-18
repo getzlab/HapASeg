@@ -68,15 +68,17 @@ class A_DP:
         self.snps_to_clusters = None
         # phase correction of SNPs for each MCMC sample
         self.snps_to_phases = None
+        # likelihoods of each clustering
+        self.likelihoods = None
 
     def run(self):
         self.DP_run = DPinstance(
           self.SNPs,
           dp_count_scale_factor = self.SNPs["clust"].value_counts().mean()
         )
-        self.snps_to_clusters, self.snps_to_phases = self.DP_run.run(n_samps = self.N_clust_samps)
+        self.snps_to_clusters, self.snps_to_phases, self.likelihoods = self.DP_run.run(n_samps = self.N_clust_samps)
 
-        return self.snps_to_clusters, self.snps_to_phases
+        return self.snps_to_clusters, self.snps_to_phases, self.likelihoods
 
 class DPinstance:
     def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), alpha = 1, temperature = 1, dp_count_scale_factor = 1):
@@ -538,20 +540,20 @@ class DPinstance:
         # containers for saving the MCMC trace
         self.snps_to_clusters = []
         self.phase_orientations = []
-
-        burned_in = False
-
-        # likelihood trace
-        self.lik_trace = []
         self.segment_trace = []
-        self.post = 0
+        self.likelihood_trace = []
+
+        # likelihood trace for checking burnin status
+        self.lik_trace = []
+        burned_in = False
+        self.burnin_iteration = -1
+        touch90 = False
+        likelihood_ready = False
 
         n_it = 0
         n_it_last = 0
 
         brk = 0
-        touch90 = False
-        likelihood_ready = False
 
         while True:
             if not n_it % 1000:
@@ -559,9 +561,8 @@ class DPinstance:
                     print(pd.Series(self.clust_counts.values()).value_counts().sort_index())
                 else:
                     print("\n".join([str(self.clust_counts[k]) + ": " + str(x/(x + y)) for k, (x, y) in self.clust_sums.items() if k != -1]))
-                print(brk % (len(self.breakpoints) - 1))
-                #print(self.S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
-                #print("n unassigned: {}".format((self.S["clust"] == -1).sum()))
+                if likelihood_ready:
+                    print("[{}] Likelihood: {}".format("*" if burned_in else " ", self.lik_trace[-1].sum()))
 
             # stop after a raw number of iterations
             if n_iter > 0 and n_it > n_iter:
@@ -588,8 +589,10 @@ class DPinstance:
                 # check if likelihood has stabilized enough to consider us "burned in"
                 if likelihood_ready and not burned_in and len(self.lik_trace) > 100:
                     lt = np.vstack(self.lik_trace).sum(1)
-                    if (np.convolve(np.diff(lt), np.ones(50)/50, mode = "same") < 0).sum() > 2:
+                    if (np.convolve(np.diff(lt), np.ones(100)/100, mode = "same") < 0).sum() > 2:
+                        print("BURNED IN")
                         burned_in = True
+                        self.burnin_iteration = len(self.lik_trace)
                         n_it_last = n_it
 
             #
@@ -969,11 +972,12 @@ class DPinstance:
                 self.snps_to_clusters.append(self.S["clust"].copy())
                 self.phase_orientations.append(self.S["flipped"].copy())
                 self.segment_trace.append({ snp : self.S.iloc[snp, self.clust_col] for snp in self.breakpoints[:-1]})
+                self.likelihood_trace.append(self.compute_overall_lik_simple().sum())
                 n_it_last = n_it
 
             n_it += 1
 
-        return np.r_[self.snps_to_clusters], np.r_[self.phase_orientations]
+        return np.r_[self.snps_to_clusters], np.r_[self.phase_orientations], np.r_[self.likelihood_trace]
 
     #_colors = mpl.cm.get_cmap("tab10").colors
     _colors = ((np.c_[1:7] & np.r_[4, 2, 1]) > 0).astype(int)
@@ -1094,3 +1098,19 @@ class DPinstance:
 
     def visualize_clusts(self, **kwargs):
         self.visualize_segs(use_clust = True, **kwargs)
+
+    def plot_likelihood_trace(self):
+        lt = np.vstack(self.lik_trace)
+        lt = lt[np.isnan(lt).sum(1) == 0, :]
+
+        lt = lt[self.burnin_iteration:, :]
+
+        plt.figure(); plt.clf()
+        plt.scatter(np.r_[0:len(lt)], lt[:, 0] - lt[:, 0].max())
+        #plt.scatter(np.r_[0:len(lt)], lt[:, 1] - lt[:, 1].max())
+        plt.scatter(np.r_[0:len(lt)], lt[:, 2] - lt[:, 2].max())
+        plt.scatter(np.r_[0:len(lt)], lt[:, 3] - lt[:, 3].max())
+        plt.scatter(np.r_[0:len(lt)], lt.sum(1) - lt.sum(1).max(), marker = '+', color = 'k')
+        plt.legend(["Clust", "DP", "Seg", "Total"])
+        plt.xlabel(r"Post-burnin iteration ($\times 100$)")
+        plt.ylabel(r"$\Delta$ likelihood")
