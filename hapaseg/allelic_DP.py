@@ -588,9 +588,9 @@ class DPinstance:
                         likelihood_ready = True
 
                 # check if likelihood has stabilized enough to consider us "burned in"
-                if likelihood_ready and not burned_in and len(self.lik_trace) > 100:
+                if likelihood_ready and not burned_in and len(self.lik_trace) > 500:
                     lt = np.vstack(self.lik_trace).sum(1)
-                    if (np.convolve(np.diff(lt), np.ones(100)/100, mode = "same") < 0).sum() > 2:
+                    if (np.convolve(np.diff(lt), np.ones(500)/500, mode = "same") < 0).sum() > 2:
                         print("BURNED IN")
                         burned_in = True
                         self.burnin_iteration = len(self.lik_trace)
