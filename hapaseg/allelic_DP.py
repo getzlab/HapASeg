@@ -986,8 +986,6 @@ class DPinstance:
         s2cu, s2cu_j = np.unique(snps_to_clusters, return_inverse = True)
         return s2cu, s2cu_j.reshape(snps_to_clusters.shape)
 
-    _colors = ((np.r_[np.c_[1:5], np.c_[6:7]] & np.r_[4, 2, 1]) > 0).astype(int)
-
     def get_colors(self):
         s2cu, s2cu_j = self.get_unique_clust_idxs()
 
@@ -1001,15 +999,32 @@ class DPinstance:
         si = clust_terr.index.argsort()
 
         # color any cluster larger than 10Mb (~0.003 of total genomic territory)
+        base_colors = np.array([
+          [0.368417, 0.506779, 0.709798],
+          [0.880722, 0.611041, 0.142051],
+          [0.560181, 0.691569, 0.194885],
+          [0.922526, 0.385626, 0.209179],
+          [0.528488, 0.470624, 0.701351],
+          [0.772079, 0.431554, 0.102387],
+          [0.363898, 0.618501, 0.782349],
+          [1, 0.75, 0],
+          [0.647624, 0.37816, 0.614037],
+          [0.571589, 0.586483, 0.],
+          [0.915, 0.3325, 0.2125],
+          [0.400822, 0.522007, 0.85],
+          [0.972829, 0.621644, 0.073362],
+          [0.736783, 0.358, 0.503027],
+          [0.280264, 0.715, 0.429209]
+        ])
         extra_colors = np.array(
           distinctipy.distinctipy.get_colors(
-            (clust_terr/clust_terr.sum() >= 0.003).sum() - _colors.shape[0],
-            exclude_colors = [list(x) for x in np.r_[np.c_[0, 0, 0], np.c_[1, 1, 1], np.c_[0.5, 0.5, 0.5], np.c_[1, 0, 1], _colors]],
+            (clust_terr/clust_terr.sum() >= 0.003).sum() - base_colors.shape[0],
+            exclude_colors = [list(x) for x in np.r_[np.c_[0, 0, 0], np.c_[1, 1, 1], np.c_[0.5, 0.5, 0.5], np.c_[1, 0, 1], base_colors]],
             rng = 1234
           )
         )
 
-        return np.r_[_colors, extra_colors][si]
+        return np.r_[base_colors, extra_colors if extra_colors.size > 0 else np.empty([0, 3])][si]
 
     def visualize_segs(self, f = None, use_clust = False, show_snps = False):
         f = plt.figure(figsize = [16, 4]) if f is None else f
