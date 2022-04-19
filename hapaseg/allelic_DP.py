@@ -94,7 +94,7 @@ class DPinstance:
         self.ref_mat = self.S.loc[:, ["A_ref", "B_ref"]].values.reshape(-1, order = "F")
         self.alt_mat = self.S.loc[:, ["A_alt", "B_alt"]].values.reshape(-1, order = "F")
 
-        self.betahyp = 1
+        self.betahyp = 10
 
         #
         # define column indices
