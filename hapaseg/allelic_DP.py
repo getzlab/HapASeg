@@ -889,13 +889,11 @@ class DPinstance:
             if choice < 0:
                 # if we are moving an entire cluster, give it the same index it used to have
                 # otherwise, cluster indices will be inconsistent
-                if move_clust:
-                    new_clust_idx = cl_idx
-                elif choice == -1: # totally new cluster
+                if cur_clust not in self.clust_counts:
+                    new_clust_idx = cur_clust
+                else: # totally new cluster
                     max_clust_idx += 1
                     new_clust_idx = max_clust_idx
-                else: # match index of cluster in prior
-                    new_clust_idx = -choice - 2
 
                 self.clust_counts[new_clust_idx] = n_move
                 self.S.iloc[seg_idx, self.clust_col] = new_clust_idx
