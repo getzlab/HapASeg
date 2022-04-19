@@ -597,156 +597,124 @@ class DPinstance:
                         n_it_last = n_it
 
             #
-            # pick either a segment or a cluster at random (50:50 prob.)
-            move_clust = False
+            # pick  a segment to move
 
-            # move a segment
-            #if not touch90 or np.random.rand() < 0.9:
-            if True or np.random.rand() < 0.9:
-                # >90% of segments have been moved; we are iterating over segments sequentially
-                if touch90:
-                    break_idx = sc.SortedSet({brk % (len(self.breakpoints) - 1)})
-                    brk += 1
-                # we are picking segments at random
-                else:
-                    break_idx = sc.SortedSet({np.random.choice(len(self.breakpoints) - 1)})
-
-                # get all SNPs within this segment
-                seg_st = self.breakpoints[break_idx[0]]
-                seg_en = self.breakpoints[break_idx[0] + 1]
-                seg_idx = np.r_[seg_st:seg_en]
-
-                cur_clust = int(self.clusts[seg_idx[0]])
-
-                # propose breaking this segment
-                if np.random.rand() < 0.1:
-                    # can't split segments of length 1
-                    if len(seg_idx) == 1:
-                        n_it += 1
-                        continue
-
-                    # TODO: memoize cumsums?
-                    min_cs = self._Scumsum_ph(seg_idx, min = True)
-                    min_csr = self.seg_sums[seg_idx[0]][0] - min_cs
-                    maj_cs = self._Scumsum_ph(seg_idx, min = False)
-                    maj_csr = self.seg_sums[seg_idx[0]][1] - maj_cs
-
-                    split_lik = ss.betaln(min_cs + 1 + self.betahyp, maj_cs + 1 + self.betahyp) + ss.betaln(min_csr + 1 + self.betahyp, maj_csr + 1 + self.betahyp)
-                    split_lik[-1] = ss.betaln(min_cs[-1] + 1 + self.betahyp, maj_cs[-1] + 1 + self.betahyp)
-                    split_lik -= split_lik.max()
-                    split_point = np.random.choice(np.r_[0:len(seg_idx)], p = np.exp(split_lik)/np.exp(split_lik).sum())
-                    seg_idx = seg_idx[:(split_point + 1)]
-
-                    # add breakpoint (can be erased subsequently if segment rejoins original cluster)
-                    new_bp = seg_idx[-1] + 1
-                    if len(seg_idx) < seg_en - seg_st: # don't add breakpoint if we're not splitting segment
-                        self.add_breakpoint(start = seg_idx[0], mid = new_bp, end = seg_en, clust_idx = cur_clust)
-
-                # propose splitting out a contiguous interval of segments within the current cluster {{{
-                split_clust = False
-                if np.random.rand() < 0.1:
-                    # TODO: if we use cur_clust, this will be biased towards larger clusters. is this desireable?
-                    clust_snps = np.sort(np.r_[list(self.clust_members[cur_clust])])
-
-                    # can't split clusters of length 1
-                    if len(clust_snps) == 1:
-                        n_it += 1
-                        continue
-
-                    split_bdy = self.compute_cluster_splitpoints(clust_snps)
-
-                    A_tot, B_tot = self.clust_sums[cur_clust]
-
-                    lik0 = ss.betaln(A_tot + 1 + self.betahyp, B_tot + 1 + self.betahyp)
-
-                    liks = np.zeros(len(split_bdy) + 1)
-                    liks[-1] = lik0 # don't split at all
-
-                    # likelihood ratios for splitting each region into a new cluster
-                    for i, (st, en) in enumerate(split_bdy):
-                        A = self._Ssum_ph(clust_snps[st:en], min = True)
-                        B = self._Ssum_ph(clust_snps[st:en], min = False)
-
-                        liks[i] = ss.betaln(A_tot - A + 1 + self.betahyp, B_tot - B + 1 + self.betahyp) + ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
-
-                    # pick a region to split
-                    split_idx = np.random.choice(
-                      len(split_bdy) + 1,
-                      p = np.exp(liks - liks.max())/np.exp(liks - liks.max()).sum()
-                    )
-
-                    # don't split at all
-                    if split_idx == len(split_bdy):
-                        n_it += 1
-                        continue
-
-                    # seg_idx == SNPs to propose to split off
-                    seg_idx = clust_snps[slice(*split_bdy[split_idx])]
-
-                    split_clust = True
-
-                    # add breakpoints
-                    for si in [seg_idx[0], seg_idx[-1]]:
-                        if si not in self.breakpoints:
-                            seg_st_idx = self.breakpoints.bisect_left(si) - 1
-                            seg_st = self.breakpoints[seg_st_idx]
-                            seg_en_idx = self.breakpoints.bisect_left(si)
-                            seg_en = self.breakpoints[seg_en_idx]
-
-                            self.add_breakpoint(start = seg_st, mid = si, end = seg_en, clust_idx = cur_clust)
-
-                    # get all breakpoints within this cluster/interval
-                    left_idx = self.clust_members_bps[cur_clust].bisect_left(seg_idx[0])
-                    right_idx = self.clust_members_bps[cur_clust].bisect_right(seg_idx[-1])
-                    break_idx = sc.SortedSet([self.breakpoints.index(x) for x in self.clust_members_bps[cur_clust][left_idx:right_idx]])
-
-                # }}}
-
-                n_move = len(seg_idx)
-
-                # if segment was already assigned to a cluster, unassign it
-                if cur_clust >= 0:
-                    self.clust_counts[cur_clust] -= n_move
-                    if self.clust_counts[cur_clust] == 0:
-                        del self.clust_counts[cur_clust]
-                        del self.clust_sums[cur_clust]
-                        del self.clust_members[cur_clust]
-                        del self.clust_members_bps[cur_clust]
-                    else:
-                        self.clust_sums[cur_clust] -= np.r_[self._Ssum_ph(seg_idx, min = True), self._Ssum_ph(seg_idx, min = False)]
-                        self.clust_members[cur_clust] -= set(seg_idx)
-                        for b in break_idx:
-                            self.clust_members_bps[cur_clust].remove(self.breakpoints[b])
-
-                    self.clusts[seg_idx] = -1
-
-            # pick a cluster at random
+            # >90% of segments have been moved; we are iterating over segments sequentially
+            if touch90:
+                break_idx = sc.SortedSet({brk % (len(self.breakpoints) - 1)})
+                brk += 1
+            # we are picking segments at random
             else:
-                # it only makes sense to try joining two clusters if there are at least two of them!
-                if len(self.clust_counts) < 2:
+                break_idx = sc.SortedSet({np.random.choice(len(self.breakpoints) - 1)})
+
+            # get all SNPs within this segment
+            seg_st = self.breakpoints[break_idx[0]]
+            seg_en = self.breakpoints[break_idx[0] + 1]
+            seg_idx = np.r_[seg_st:seg_en]
+
+            cur_clust = int(self.clusts[seg_idx[0]])
+
+            # propose breaking this segment
+            if np.random.rand() < 0.1:
+                # can't split segments of length 1
+                if len(seg_idx) == 1:
                     n_it += 1
                     continue
 
-                cl_idx = np.random.choice(self.clust_counts.keys())
-                seg_idx = np.r_[list(self.clust_members[cl_idx])]
+                # TODO: memoize cumsums?
+                min_cs = self._Scumsum_ph(seg_idx, min = True)
+                min_csr = self.seg_sums[seg_idx[0]][0] - min_cs
+                maj_cs = self._Scumsum_ph(seg_idx, min = False)
+                maj_csr = self.seg_sums[seg_idx[0]][1] - maj_cs
 
-                # get all breakpoints corresponding to this cluster
-                break_idx = sc.SortedSet([self.breakpoints.index(x) for x in self.clust_members_bps[cl_idx]])
+                split_lik = ss.betaln(min_cs + 1 + self.betahyp, maj_cs + 1 + self.betahyp) + ss.betaln(min_csr + 1 + self.betahyp, maj_csr + 1 + self.betahyp)
+                split_lik[-1] = ss.betaln(min_cs[-1] + 1 + self.betahyp, maj_cs[-1] + 1 + self.betahyp)
+                split_lik -= split_lik.max()
+                split_point = np.random.choice(np.r_[0:len(seg_idx)], p = np.exp(split_lik)/np.exp(split_lik).sum())
+                seg_idx = seg_idx[:(split_point + 1)]
 
-                n_move = len(seg_idx)
-                cur_clust = -1 # only applicable for individual segments, so we set to -1 here
-                               # (this is so that subsequent references to clust_sums[cur_clust]
-                               # will return (0, 0))
+                # add breakpoint (can be erased subsequently if segment rejoins original cluster)
+                new_bp = seg_idx[-1] + 1
+                if len(seg_idx) < seg_en - seg_st: # don't add breakpoint if we're not splitting segment
+                    self.add_breakpoint(start = seg_idx[0], mid = new_bp, end = seg_en, clust_idx = cur_clust)
 
-                # unassign all segments within this cluster
-                # (it will either be joined with a new cluster, or remade again into its own cluster)
-                del self.clust_counts[cl_idx]
-                del self.clust_sums[cl_idx]
-                del self.clust_members[cl_idx]
-                del self.clust_members_bps[cl_idx]
+            # propose splitting out a contiguous interval of segments within the current cluster {{{
+            split_clust = False
+            if False and touch90 and np.random.rand() < 0.1:
+                # TODO: if we use cur_clust, this will be biased towards larger clusters. is this desireable?
+                clust_snps = np.sort(np.r_[list(self.clust_members[cur_clust])])
+
+                # can't split clusters of length 1
+                if len(clust_snps) == 1:
+                    n_it += 1
+                    continue
+
+                split_bdy = self.compute_cluster_splitpoints(clust_snps)
+
+                A_tot, B_tot = self.clust_sums[cur_clust]
+
+                lik0 = ss.betaln(A_tot + 1 + self.betahyp, B_tot + 1 + self.betahyp)
+
+                liks = np.zeros(len(split_bdy) + 1)
+                liks[-1] = lik0 # don't split at all
+
+                # likelihood ratios for splitting each region into a new cluster
+                for i, (st, en) in enumerate(split_bdy):
+                    A = self._Ssum_ph(clust_snps[st:en], min = True)
+                    B = self._Ssum_ph(clust_snps[st:en], min = False)
+
+                    liks[i] = ss.betaln(A_tot - A + 1 + self.betahyp, B_tot - B + 1 + self.betahyp) + ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
+
+                # pick a region to split
+                split_idx = np.random.choice(
+                  len(split_bdy) + 1,
+                  p = np.exp(liks - liks.max())/np.exp(liks - liks.max()).sum()
+                )
+
+                # don't split at all
+                if split_idx == len(split_bdy):
+                    n_it += 1
+                    continue
+
+                # seg_idx == SNPs to propose to split off
+                seg_idx = clust_snps[slice(*split_bdy[split_idx])]
+
+                split_clust = True
+
+                # add breakpoints
+                for si in [seg_idx[0], seg_idx[-1]]:
+                    if si not in self.breakpoints:
+                        seg_st_idx = self.breakpoints.bisect_left(si) - 1
+                        seg_st = self.breakpoints[seg_st_idx]
+                        seg_en_idx = self.breakpoints.bisect_left(si)
+                        seg_en = self.breakpoints[seg_en_idx]
+
+                        self.add_breakpoint(start = seg_st, mid = si, end = seg_en, clust_idx = cur_clust)
+
+                # get all breakpoints within this cluster/interval
+                left_idx = self.clust_members_bps[cur_clust].bisect_left(seg_idx[0])
+                right_idx = self.clust_members_bps[cur_clust].bisect_right(seg_idx[-1])
+                break_idx = sc.SortedSet([self.breakpoints.index(x) for x in self.clust_members_bps[cur_clust][left_idx:right_idx]])
+
+            # }}}
+
+            n_move = len(seg_idx)
+
+            # if segment was already assigned to a cluster, unassign it
+            if cur_clust >= 0:
+                self.clust_counts[cur_clust] -= n_move
+                if self.clust_counts[cur_clust] == 0:
+                    del self.clust_counts[cur_clust]
+                    del self.clust_sums[cur_clust]
+                    del self.clust_members[cur_clust]
+                    del self.clust_members_bps[cur_clust]
+                else:
+                    self.clust_sums[cur_clust] -= np.r_[self._Ssum_ph(seg_idx, min = True), self._Ssum_ph(seg_idx, min = False)]
+                    self.clust_members[cur_clust] -= set(seg_idx)
+                    for b in break_idx:
+                        self.clust_members_bps[cur_clust].remove(self.breakpoints[b])
+
                 self.clusts[seg_idx] = -1
-
-                move_clust = True
 
             #
             # perform phase correction on segment/cluster
@@ -844,12 +812,7 @@ class DPinstance:
             #
             # adjacent segment likelihood
 
-            #adj_AB = 0
-            #adj_BC = np.zeros([len(self.clust_sums), 2])
-
-            log_adj_lik = 0
-            if not move_clust: # or (move_clust and np.random.rand() < 0.01):
-                log_adj_lik = self.compute_adj_prob(break_idx[0])
+            log_adj_lik = self.compute_adj_prob(break_idx[0])
  
             # p(X|clust,phase)p(X|seg,phase)p(clust)p(phase)
             num = (MLs               # p({a_i, b_i}_{i\in B} | {a_i, b_i}_{i\in clust}, phase_{i\in B})
@@ -880,11 +843,6 @@ class DPinstance:
                     en = self.breakpoints[b + 1]
                     self.seg_sums[st] = self.seg_sums[st][::-1]
 
-            if not move_clust:
-                print(f"{cur_clust}->{choice} ({len(seg_idx)}, s, [{seg_idx[0]}, {seg_idx[-1]}])")
-            else:
-                print(f"{cl_idx}->{choice} ({len(seg_idx)}, c, [{seg_idx[0]}, {seg_idx[-1]}])")
-
             # create new cluster
             if choice < 0:
                 # if we are moving an entire cluster, give it the same index it used to have
@@ -904,18 +862,6 @@ class DPinstance:
 
             # join existing cluster
             else:
-                # if we are combining two clusters, take the index of the bigger one
-                # this helps to keep cluster indices consistent
-                if move_clust and self.clust_counts[choice] < n_move:
-                    self.clust_counts[cl_idx] = self.clust_counts[choice]
-                    self.clust_sums[cl_idx] = self.clust_sums[choice]
-                    self.clust_members[cl_idx] = self.clust_members[choice]
-                    self.S.iloc[np.flatnonzero(self.S["clust"] == choice), self.clust_col] = cl_idx
-                    del self.clust_counts[choice]
-                    del self.clust_sums[choice]
-                    del self.clust_members[choice]
-                    choice = cl_idx
-
                 self.clust_counts[choice] += n_move 
                 self.clust_sums[choice] += np.r_[B_a, B_b] if not choice_idx & 1 else np.r_[B_b, B_a]
                 self.S.iloc[seg_idx, self.clust_col] = choice
