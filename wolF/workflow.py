@@ -376,8 +376,6 @@ def workflow(
     hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
      inputs = {
        "seg_dataframe" : arm_concat,
-       "n_dp_iter" : 10,   # TODO: allow to be specified?
-       "seg_samp_idx" : n_samps_range,
        "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt", # TODO: allow to be specified
        "ref_fasta" : localization_task["ref_fasta"],
        "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink

@@ -101,9 +101,9 @@ class Hapaseg_allelic_DP(wolf.Task):
     output_patterns = {
       "cluster_and_phase_assignments" : "allelic_DP_SNP_clusts_and_phase_assignments.npz",
       "all_SNPs" : "all_SNPs.pickle",
+      "likelihood_trace_plot" : "figures/likelihood_trace.png",
       "SNP_plot" : "figures/SNPs.png",
-      "seg_plot" : "figures/allelic_imbalance_preDP.png",
-      "clust_plot" : "figures/allelic_imbalance_postDP.png",
+      "seg_plot" : "figures/segs_only.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v499"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v608"
     resources = { "mem" : "5G" }
