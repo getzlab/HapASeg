@@ -575,8 +575,8 @@ class DPinstance:
 
             # poll every 100 iterations for various statuses
             if not n_it % 100:
-                # have >90% of segments been touched?
-                if (1 - (1 - 1/len(self.breakpoints))**n_it) > 0.9:
+                # have >95% of segments been touched?
+                if (1 - (1 - 1/len(self.breakpoints))**n_it) > 0.95:
                     touch90 = True
 
                 # start computing likelihoods
