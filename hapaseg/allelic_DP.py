@@ -599,6 +599,13 @@ class DPinstance:
             #
             # pick  a segment to move
 
+# diagnostic code to compute overall likelihood before move
+#            compute_lik = False
+#            lik_before = np.nan
+#            if touch90 and np.random.rand() < 0.1:
+#                compute_lik = True
+#                lik_before = self.compute_overall_lik_simple()
+
             # >90% of segments have been moved; we are iterating over segments sequentially
             if touch90:
                 break_idx = sc.SortedSet({brk % (len(self.breakpoints) - 1)})
@@ -719,6 +726,12 @@ class DPinstance:
             #
             # perform phase correction on segment/cluster
             # flip min/maj with probability that alleles are oriented the "wrong" way
+#            if not np.isnan(self.seg_phase_probs[seg_idx[0]]):
+#                rfp = self.compute_rephase_prob(seg_idx)
+#                rfp_mem = self.seg_phase_probs[seg_idx[0]]
+#                if np.abs(rfp - rfp_mem) > 0.05:
+#                    print(rfp_mem, rfp)
+#                    breakpoint()
             if np.isnan(self.seg_phase_probs[seg_idx[0]]):
                 self.seg_phase_probs[seg_idx[0]] = self.compute_rephase_prob(seg_idx)
             rephase_prob = self.seg_phase_probs[seg_idx[0]]
@@ -898,6 +911,14 @@ class DPinstance:
                     self.clust_members_bps[self.clusts[snp]].discard(snp) # discard rather than remove since this breakpoint could be in break_idx + 1, which would belong to another cluster
                     update_idx.add(self.breakpoints.bisect_left(snp) - 1)
                     snp_idx.add(self.breakpoints[self.breakpoints.bisect_left(snp) - 1])
+#            if len(update_idx):
+#                usnp = self.breakpoints[self.breakpoints.bisect_left(seg_idx[0]) - 1]
+#                print(f"{usnp}: {self.clusts[usnp]}")
+#                print(f"{snp_idx[0]}: {self.clusts[snp_idx[0]]} <")
+#                print(f"{snp_idx[1]}: {self.clusts[snp_idx[1]]} <")
+#                dsnp = self.breakpoints[self.breakpoints.bisect_right(seg_idx[0])]
+#                print(f"{dsnp}: {self.clusts[dsnp]}")
+#                print(f"Update: {self.breakpoints[update_idx[0]]}")
             for bp_idx in update_idx:
                 st = self.breakpoints[bp_idx]
                 en = self.breakpoints[bp_idx + 1]
@@ -911,6 +932,24 @@ class DPinstance:
                 self.clust_members_bps[new_clust_idx] = snp_idx
             else:
                 self.clust_members_bps[choice] |= snp_idx
+
+# diagnostic code to check if breakpoint list is properly updated
+#            if touch90:
+#                x = sc.SortedSet()
+#                for y in self.clust_members_bps.values():
+#                    x |= y
+#                if len(x) != len(self.breakpoints) - 1:
+#                    breakpoint()
+
+# diagnostic code to compute overall likelihood delta for iteration
+#            if compute_lik:
+#                lik_after = self.compute_overall_lik_simple()
+#                lik_delta = lik_after.sum() - lik_before.sum()
+#                ML_choice = num.ravel()[choice_idx]
+#                if not np.isnan(lik_delta) and (lik_delta != 0 or ML_choice != 0):
+#                    print("lik: {}; MLs: {}".format(lik_delta, ML_choice))
+##                if lik_delta < 0 and ML_choice == 0:
+##                    breakpoint()
 
             # save a sample from the MCMC when >95% of segments have been touched since the last iteration
             if burned_in and (1 - (1 - 1/len(self.breakpoints))**(n_it - n_it_last)) > 0.95:
