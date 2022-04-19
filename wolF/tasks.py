@@ -50,7 +50,7 @@ class Hapaseg_burnin(wolf.Task):
     output_patterns = {
       "burnin_MCMC" : "amcmc_results.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v581"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v617"
 
 class Hapaseg_concat(wolf.Task):
     inputs = {
@@ -65,7 +65,7 @@ class Hapaseg_concat(wolf.Task):
       "arms" : "AMCMC-arm*.pickle",
       "ref_bias" : ("ref_bias.txt", wolf.read_file)
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v581"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v617"
 
 class Hapaseg_amcmc(wolf.Task):
     inputs = {
@@ -79,9 +79,10 @@ class Hapaseg_amcmc(wolf.Task):
             --n_iter ${n_iter}
     """
     output_patterns = {
-      "arm_level_MCMC" : "amcmc_results.pickle"
+      "arm_level_MCMC" : "amcmc_results.pickle",
+      "segmentation_plot" : "figures/MLE_segmentation.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v581"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v617"
 
 class Hapaseg_allelic_DP(wolf.Task):
     inputs = {
@@ -105,5 +106,5 @@ class Hapaseg_allelic_DP(wolf.Task):
       "SNP_plot" : "figures/SNPs.png",
       "seg_plot" : "figures/segs_only.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v611"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v617"
     resources = { "mem" : "5G" }
