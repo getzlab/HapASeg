@@ -139,7 +139,7 @@ class A_MCMC:
                 return self
 
             # save MLE breakpoint if we've burned in
-            if self.burned_in or self.iter >= self.n_iter - 100: # contingency in case we've converged on an optimum early and the chain hasn't moved at all
+            if self.burned_in:
                 if self.marg_lik[self.iter] > self.marg_lik[self.iter - 1]:
                     self.breakpoints_MLE = self.breakpoints.copy()
 
@@ -159,11 +159,23 @@ class A_MCMC:
                   color = color
                 ))
 
-            # check if we've burned in
+            # check if we've burned in -- chain is oscillating around some
+            # optimium (and thus mean differences between marginal likelihoods might
+            # be slightly negative)
             # TODO: use a faster method of computing rolling average
             if not self.burned_in and self.iter > 1000:
                 if np.diff(self.marg_lik[(self.iter - 1000):self.iter]).mean() < 0:
                     self.burned_in = True
+                # contingency if we've unambiguously converged on an optimum and chain has not moved at all
+                # exit early to save time
+                if (np.diff(self.marg_lik[(self.iter - 1000):self.iter]) == 0).all():
+                    self.breakpoints_MLE = self.breakpoints.copy()
+                    print(colorama.Fore.GREEN + "Chain has unambiguously converged on an optimum; stopping early in {n} iterations. n_bp = {n_bp}, lik = {lik}".format(
+                      n = self.iter,
+                      n_bp = len(self.breakpoints),
+                      lik = self.marg_lik[self.iter]
+                    ) + colorama.Fore.RESET)
+                    return self
 
             self.iter += 1 
 
