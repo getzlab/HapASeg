@@ -287,8 +287,10 @@ def workflow(
         vcf_idx_in = F["bcf_idx_path"],
         vcf_ref = F["ref_bcf"],
         vcf_ref_idx = F["ref_bcf_idx"],
-        output_file_prefix = "foo"
-      )
+        output_file_prefix = "foo",
+        num_threads = 4,
+      ),
+      resources = { "cpus-per-task" : 4 }
     )
 
     # TODO: run whatshap
