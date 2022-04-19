@@ -168,7 +168,7 @@ def workflow(
           ref_fasta = localization_task["ref_fasta"],
           ref_fasta_idx = localization_task["ref_fasta_idx"],
           ref_fasta_dict = localization_task["ref_fasta_dict"],
-          dens_cutoff = 0.58 # TODO: set dynamically
+          use_pod_genotyper = True
         )
 
     # otherwise, run M1 and get it from the BAM
@@ -200,7 +200,7 @@ def workflow(
           ref_fasta = localization_task["ref_fasta"],
           ref_fasta_idx = localization_task["ref_fasta_idx"],
           ref_fasta_dict = localization_task["ref_fasta_dict"],
-          dens_cutoff = 0.58 # TODO: set dynamically
+          use_pod_genotyper = True
         )
 
         # gather het pulldown
