@@ -145,6 +145,7 @@ class DPinstance:
             return self.mm_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]][si].cumsum()
 
     def compute_rephase_prob(self, seg_idx):
+        # TODO: compute logcdf/logsf directly
         flip = self.S.iloc[seg_idx, self.flip_col]
         flip_n = ~flip
 
