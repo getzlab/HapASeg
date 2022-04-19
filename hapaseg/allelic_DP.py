@@ -980,21 +980,13 @@ class DPinstance:
 
         return np.r_[self.snps_to_clusters], np.r_[self.phase_orientations], np.r_[self.likelihood_trace]
 
-    #_colors = mpl.cm.get_cmap("tab10").colors
-    _colors = ((np.c_[1:7] & np.r_[4, 2, 1]) > 0).astype(int)
-#   _colors = np.r_[np.c_[87, 182, 55],
-#   np.c_[253, 245, 81],
-#   np.c_[238, 109, 45],
-#   np.c_[204, 43, 30],
-#   np.c_[221, 50, 132],
-#   np.c_[0, 23, 204],
-#   np.c_[75, 172, 227]]/255
-
     def get_unique_clust_idxs(self, snps_to_clusters = None):
         if snps_to_clusters is None:
             snps_to_clusters = np.r_[self.snps_to_clusters]
         s2cu, s2cu_j = np.unique(snps_to_clusters, return_inverse = True)
         return s2cu, s2cu_j.reshape(snps_to_clusters.shape)
+
+    _colors = ((np.r_[np.c_[1:5], np.c_[6:7]] & np.r_[4, 2, 1]) > 0).astype(int)
 
     def get_colors(self):
         s2cu, s2cu_j = self.get_unique_clust_idxs()
@@ -1012,7 +1004,9 @@ class DPinstance:
         extra_colors = np.array(
           distinctipy.distinctipy.get_colors(
             (clust_terr/clust_terr.sum() >= 0.003).sum() - _colors.shape[0],
-            exclude_colors = [list(x) for x in np.r_[np.c_[0, 0, 0], np.c_[1, 1, 1], _colors]])
+            exclude_colors = [list(x) for x in np.r_[np.c_[0, 0, 0], np.c_[1, 1, 1], np.c_[0.5, 0.5, 0.5], np.c_[1, 0, 1], _colors]],
+            rng = 1234
+          )
         )
 
         return np.r_[_colors, extra_colors][si]
