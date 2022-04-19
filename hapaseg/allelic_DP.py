@@ -565,6 +565,8 @@ class DPinstance:
                     print("\n".join([str(self.clust_counts[k]) + ": " + str(x/(x + y)) for k, (x, y) in self.clust_sums.items() if k != -1]))
                 if likelihood_ready:
                     print("[{}] Likelihood: {}".format("*" if burned_in else " ", self.lik_trace[-1].sum()))
+                if burned_in:
+                    print("{}/{} MCMC samples collected".format(len(self.snps_to_clusters), n_samps))
 
             # stop after a raw number of iterations
             if n_iter > 0 and n_it > n_iter:
