@@ -525,4 +525,6 @@ class A_MCMC:
         ax.set_xlabel("SNP index")
         ax.set_ylim([0, 1])
 
+        ax.set_title(f"{self.P.iloc[0]['chr']}:{self.P.iloc[0]['pos']}-{self.P.iloc[-1]['pos']}")
+
         plt.tight_layout()

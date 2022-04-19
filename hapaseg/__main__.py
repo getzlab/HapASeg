@@ -9,6 +9,7 @@ import pickle
 import scipy.stats as s
 import scipy.special as ss
 import sortedcontainers as sc
+import traceback
 
 from capy import mut
 
@@ -218,6 +219,13 @@ def main():
 
         with open(output_dir + "/amcmc_results.pickle", "wb") as f:
             pickle.dump(H.run(), f)
+
+        try:
+            H.visualize()
+            plt.savefig(output_dir + "/figures/MLE_segmentation.png", dpi = 300)
+        except Exception:
+            print("Error plotting segments; see stack trace for details:")
+            print(traceback.format_exc())
 
     elif args.command == "concat":
         #
