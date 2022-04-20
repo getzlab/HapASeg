@@ -53,7 +53,7 @@ class Hapaseg_burnin(wolf.Task):
     output_patterns = {
       "burnin_MCMC" : "amcmc_results.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v617"
 
 class Hapaseg_concat(wolf.Task):
     inputs = {
@@ -68,7 +68,7 @@ class Hapaseg_concat(wolf.Task):
       "arms" : "AMCMC-arm*.pickle",
       "ref_bias" : ("ref_bias.txt", wolf.read_file)
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v617"
 
 class Hapaseg_amcmc(wolf.Task):
     inputs = {
@@ -82,10 +82,10 @@ class Hapaseg_amcmc(wolf.Task):
             --n_iter ${n_iter}
     """
     output_patterns = {
-      "arm_level_MCMC" : "amcmc_results.pickle"
+      "arm_level_MCMC" : "amcmc_results.pickle",
+      "segmentation_plot" : "figures/MLE_segmentation.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
-
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v617"
 
 class Hapaseg_concat_arms(wolf.Task):
     inputs = {
@@ -103,32 +103,28 @@ class Hapaseg_concat_arms(wolf.Task):
     }
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
 
-
 class Hapaseg_allelic_DP(wolf.Task):
     inputs = {
       "seg_dataframe" : None,
-      "n_dp_iter" : 10,
-      "seg_samp_idx" : 0,
       "ref_fasta" : None,
       "cytoband_file" : None
     }
     script = """
     export CAPY_REF_FA=${ref_fasta}
     hapaseg dp --seg_dataframe ${seg_dataframe} \
-            --n_dp_iter ${n_dp_iter} \
-            --seg_samp_idx ${seg_samp_idx} \
             --ref_fasta ${ref_fasta} \
             --cytoband_file ${cytoband_file}
     """
     output_patterns = {
       "cluster_and_phase_assignments" : "allelic_DP_SNP_clusts_and_phase_assignments.npz",
       "all_SNPs" : "all_SNPs.pickle",
+      "likelihood_trace_plot" : "figures/likelihood_trace.png",
       "SNP_plot" : "figures/SNPs.png",
-      "seg_plot" : "figures/allelic_imbalance_preDP.png",
-      "clust_plot" : "figures/allelic_imbalance_postDP.png",
+      "seg_plot" : "figures/segs_only.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v623"
     resources = { "mem" : "5G" }
+
 class Hapaseg_collect_adp(wolf.Task):
     inputs = {
         "dp_results":None

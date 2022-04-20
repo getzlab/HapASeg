@@ -248,7 +248,7 @@ def workflow(
           ref_fasta = localization_task["ref_fasta"],
           ref_fasta_idx = localization_task["ref_fasta_idx"],
           ref_fasta_dict = localization_task["ref_fasta_dict"],
-          dens_cutoff = 0.58 # TODO: set dynamically
+          use_pod_genotyper = True
         )
 
     # otherwise, run M1 and get it from the BAM
@@ -269,7 +269,9 @@ def workflow(
           refFastaIdx = localization_task["ref_fasta_idx"],
           refFastaDict = localization_task["ref_fasta_dict"],
 
-          intervals = split_intervals_task["interval_files"]
+          intervals = split_intervals_task["interval_files"],
+
+          exclude_chimeric = True
         ))
 
         hp_scatter = het_pulldown.get_het_coverage_from_callstats(
@@ -278,7 +280,7 @@ def workflow(
           ref_fasta = localization_task["ref_fasta"],
           ref_fasta_idx = localization_task["ref_fasta_idx"],
           ref_fasta_dict = localization_task["ref_fasta_dict"],
-          dens_cutoff = 0.58 # TODO: set dynamically
+          use_pod_genotyper = True
         )
 
         # gather het pulldown
@@ -365,8 +367,10 @@ def workflow(
         vcf_idx_in = F["bcf_idx_path"],
         vcf_ref = F["ref_bcf"],
         vcf_ref_idx = F["ref_bcf_idx"],
-        output_file_prefix = "foo"
-      )
+        output_file_prefix = "foo",
+        num_threads = 4,
+      ),
+      resources = { "cpus-per-task" : 4 }
     )
 
     # TODO: run whatshap
@@ -429,29 +433,47 @@ def workflow(
      }
     )
     
-    hapaseg_arm_concat_task = hapaseg.Hapaseg_concat_arms(
-        inputs={
-        "arm_results":[hapaseg_arm_AMCMC_task["arm_level_MCMC"]],
-        "ref_fasta":localization_task["ref_fasta"] #pickle load will import capy
-        }
-    )
+#    hapaseg_arm_concat_task = hapaseg.Hapaseg_concat_arms(
+#        inputs={
+#        "arm_results":[hapaseg_arm_AMCMC_task["arm_level_MCMC"]],
+#        "ref_fasta":localization_task["ref_fasta"] #pickle load will import capy
+#        }
+#    )
+#    @prefect.task
+#    def get_arm_samples_range(arm_concat_object):
+#        obj = np.load(arm_concat_object)
+#        n_samples_range = list(range(int(obj["n_samps"])))
+#        return n_samples_range
+#    
+#    n_samps_range = get_arm_samples_range(hapaseg_arm_concat_task["num_samples_obj"])
+
+    # concat arm level results
     @prefect.task
-    def get_arm_samples_range(arm_concat_object):
-        obj = np.load(arm_concat_object)
-        n_samples_range = list(range(int(obj["n_samps"])))
-        return n_samples_range
-    
-    n_samps_range = get_arm_samples_range(hapaseg_arm_concat_task["num_samples_obj"])
-    
+    def concat_arm_level_results(arm_results):
+        A = []
+        for arm_file in arm_results:
+            with open(arm_file, "rb") as f:
+                H = pickle.load(f)
+                A.append(pd.Series({ "chr" : H.P["chr"].iloc[0], "start" : H.P["pos"].iloc[0], "end" : H.P["pos"].iloc[-1], "results" : H }))
+
+        # get into order
+        A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(drop = True)
+
+        # save
+        _, tmpfile = tempfile.mkstemp(  )
+        A.to_pickle(tmpfile)
+
+        return tmpfile
+
+    arm_concat = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
+
     ## run DP
 
-    # scatter DP
     hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
      inputs = {
-       "seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
-       "n_dp_iter" : 10,   # TODO: allow to be specified?
-       "seg_samp_idx" : n_samps_range,
-       "cytoband_file" : localization_task["cytoband_file"], # TODO: allow to be specified
+       "seg_dataframe" : arm_concat,
+       #"seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
+       "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt", # TODO: allow to be specified
        "ref_fasta" : localization_task["ref_fasta"],
        "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
        "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink

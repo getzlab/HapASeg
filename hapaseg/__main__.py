@@ -9,6 +9,7 @@ import pickle
 import scipy.stats as s
 import scipy.special as ss
 import sortedcontainers as sc
+import traceback
 
 from capy import mut
 
@@ -112,13 +113,9 @@ def parse_args():
                             required=True)
     ## DP
     dp = subparsers.add_parser("dp", help="Run DP clustering on allelic imbalance segments")
-    dp.add_argument("--seg_dataframe", required=True)
-    dp.add_argument("--n_dp_iter", default=10)
-    dp.add_argument("--seg_samp_idx", default=0)
-    dp.add_argument("--ref_fasta",
-                    required=True)  # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
-    dp.add_argument("--cytoband_file",
-                    required=True)  # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
+    dp.add_argument("--seg_dataframe", required = True)
+    dp.add_argument("--ref_fasta", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
+    dp.add_argument("--cytoband_file", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
   
     ## coverage MCMC
     coverage_mcmc = subparsers.add_parser("coverage_mcmc",
@@ -208,6 +205,7 @@ def parse_args():
     ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
     ac_dp.add_argument("--cytoband_file", help="path to cytoband txt file")
     ac_dp.add_argument("--warmstart", type=bool, default=True, help="run clustering with warmstart")
+
     args = parser.parse_args()
 
     # validate arguments
@@ -324,6 +322,13 @@ def main():
         with open(output_dir + "/amcmc_results.pickle", "wb") as f:
             pickle.dump(H.run(), f)
 
+        try:
+            H.visualize()
+            plt.savefig(output_dir + "/figures/MLE_segmentation.png", dpi = 300)
+        except Exception:
+            print("Error plotting segments; see stack trace for details:")
+            print(traceback.format_exc())
+
     elif args.command == "concat":
         #
         # load scatter intervals
@@ -436,14 +441,7 @@ def main():
         A = A_DP(args.seg_dataframe, ref_fasta=args.ref_fasta)
 
         # run DP
-        # TODO: when we have better type checking, drop the int coersion here
-        # N_seg_samps = A.n_samp - 1 if int(args.n_seg_samps) == 0 else int(args.n_seg_samps)
-        # TODO: if we decide to drop support for chained sampling altogether, remove N_seg_samps logic altogether
-        snps_to_clusters, snps_to_phases, likelihoods = A.run(
-            seg_sample_idx=int(args.seg_samp_idx),
-            # N_seg_samps = N_seg_samps,
-            N_clust_samps=int(args.n_dp_iter)
-        )
+        snps_to_clusters, snps_to_phases, likelihoods = A.run()
 
         # save DP results
         np.savez(output_dir + "/allelic_DP_SNP_clusts_and_phase_assignments.npz",
@@ -457,34 +455,26 @@ def main():
         #
         # plot DP results
 
-        # 1. phased SNP visualization
-        f = plt.figure(figsize=[17.56, 5.67])
+        # 0. likelihood trace
+        A.DP_run.plot_likelihood_trace()
+        plt.savefig(output_dir + "/figures/likelihood_trace.png", dpi = 300)
+
+        # 1. SNPs + segments
+        f = plt.figure(figsize = [17.56, 5.67])
         hs_utils.plot_chrbdy(args.cytoband_file)
-        A.visualize_SNPs(snps_to_phases, color=True, f=f)
-        A.visualize_clusts(snps_to_clusters, f=f, thick=True, nocolor=True)
+        A.DP_run.visualize_segs(f = f, show_snps = True)
         plt.ylabel("Haplotypic imbalance")
-        plt.title("SNP phasing/segmentation")
-        plt.savefig(output_dir + "/figures/SNPs.png", dpi=300)
+        plt.title("SNPs + allelic segmentation (MAP)")
+        plt.savefig(output_dir + "/figures/SNPs.png", dpi = 300)
         plt.close()
 
-        # 2. pre-clustering segments
-        f = plt.figure(figsize=[17.56, 5.67])
+        # 2. segments alone
+        f = plt.figure(figsize = [17.56, 5.67])
         hs_utils.plot_chrbdy(args.cytoband_file)
-        A.visualize_SNPs(snps_to_phases, color=False, f=f)
-        A.visualize_segs(snps_to_clusters, f=f)
+        A.DP_run.visualize_segs(f = f, show_snps = False)
         plt.ylabel("Haplotypic imbalance")
-        plt.title("Allelic segmentation, pre-DP clustering")
-        plt.savefig(output_dir + "/figures/allelic_imbalance_preDP.png", dpi=300)
-        plt.close()
-
-        # 3. post-clustering segments
-        f = plt.figure(figsize=[17.56, 5.67])
-        hs_utils.plot_chrbdy(args.cytoband_file)
-        A.visualize_SNPs(snps_to_phases, color=False, f=f)
-        A.visualize_clusts(snps_to_clusters, f=f, thick=True)
-        plt.ylabel("Haplotypic imbalance")
-        plt.title("Allelic segmentation, post-DP clustering")
-        plt.savefig(output_dir + "/figures/allelic_imbalance_postDP.png", dpi=300)
+        plt.title("Allelic segmentation (posterior)")
+        plt.savefig(output_dir + "/figures/segs_only.png", dpi = 300)
         plt.close()
     
     #collect adp run data
