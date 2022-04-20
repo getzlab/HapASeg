@@ -19,6 +19,7 @@ cut20_dens = {}
 cut20_lod = {}
 cut80_dens = {}
 cut80_lod = {}
+leg = []
 for depth in [15, 20, 30, 60, 80, 200]:
     # simulate good hets
     cov = s.poisson.rvs(depth, size = 10000)
@@ -57,6 +58,8 @@ for depth in [15, 20, 30, 60, 80, 200]:
     color = st[0].get_color()
     plt.step(lod_cdf[:, 1], lod_cdf[:, 0], color = color, linestyle = ":")
 
+    leg.append(st)
+
     cut20_dens[depth] = np.linspace(0, 1, 1000)[np.flatnonzero(dens_cdf[:, 1] <= 0.2)[0]]
     cut80_dens[depth] = np.linspace(0, 1, 1000)[np.flatnonzero(dens_cdf[:, 0] <= 0.8)[0]]
     cut20_lod[depth] = np.linspace(0, np.abs(np.r_[betalod_bad, betalod]).max(), 1000)[np.flatnonzero(lod_cdf[:, 1] >= 0.2)[0]]
@@ -77,3 +80,6 @@ for depth in [15, 20, 30, 60, 80, 200]:
 
     plt.figure(2)
     plt.scatter(cov_range, cov_cum)
+
+plt.figure(3)
+plt.legend([x[0] for x in leg], ["15x", "20x", "30x", "60x", "80x", "200x"])
