@@ -168,7 +168,7 @@ def workflow(
           ref_fasta = localization_task["ref_fasta"],
           ref_fasta_idx = localization_task["ref_fasta_idx"],
           ref_fasta_dict = localization_task["ref_fasta_dict"],
-          dens_cutoff = 0.58 # TODO: set dynamically
+          use_pod_genotyper = True
         )
 
     # otherwise, run M1 and get it from the BAM
@@ -189,7 +189,9 @@ def workflow(
           refFastaIdx = localization_task["ref_fasta_idx"],
           refFastaDict = localization_task["ref_fasta_dict"],
 
-          intervals = split_intervals_task["interval_files"]
+          intervals = split_intervals_task["interval_files"],
+
+          exclude_chimeric = True
         ))
 
         hp_scatter = het_pulldown.get_het_coverage_from_callstats(
@@ -198,7 +200,7 @@ def workflow(
           ref_fasta = localization_task["ref_fasta"],
           ref_fasta_idx = localization_task["ref_fasta_idx"],
           ref_fasta_dict = localization_task["ref_fasta_dict"],
-          dens_cutoff = 0.58 # TODO: set dynamically
+          use_pod_genotyper = True
         )
 
         # gather het pulldown
@@ -285,8 +287,10 @@ def workflow(
         vcf_idx_in = F["bcf_idx_path"],
         vcf_ref = F["ref_bcf"],
         vcf_ref_idx = F["ref_bcf_idx"],
-        output_file_prefix = "foo"
-      )
+        output_file_prefix = "foo",
+        num_threads = 4,
+      ),
+      resources = { "cpus-per-task" : 4 }
     )
 
     # TODO: run whatshap
@@ -349,7 +353,7 @@ def workflow(
     )
 
     # concat arm level results
-    @prefect.task(nout = 2)
+    @prefect.task
     def concat_arm_level_results(arm_results):
         A = []
         for arm_file in arm_results:
@@ -364,12 +368,9 @@ def workflow(
         _, tmpfile = tempfile.mkstemp(  )
         A.to_pickle(tmpfile)
 
-        # get number of MCMC samples
-        n_samps = int(np.minimum(np.inf, A.loc[~A["results"].isna(), "results"].apply(lambda x : len(x.breakpoint_list))).min())
+        return tmpfile
 
-        return tmpfile, list(range(0, n_samps))
-
-    arm_concat, n_samps_range = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
+    arm_concat = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
 
     ## run DP
 
@@ -377,8 +378,6 @@ def workflow(
     hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
      inputs = {
        "seg_dataframe" : arm_concat,
-       "n_dp_iter" : 10,   # TODO: allow to be specified?
-       "seg_samp_idx" : n_samps_range,
        "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt", # TODO: allow to be specified
        "ref_fasta" : localization_task["ref_fasta"],
        "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
