@@ -87,15 +87,11 @@ class Hapaseg_amcmc(wolf.Task):
 class Hapaseg_allelic_DP(wolf.Task):
     inputs = {
       "seg_dataframe" : None,
-      "n_dp_iter" : 10,
-      "seg_samp_idx" : 0,
       "ref_fasta" : None,
       "cytoband_file" : None
     }
     script = """
     hapaseg dp --seg_dataframe ${seg_dataframe} \
-            --n_dp_iter ${n_dp_iter} \
-            --seg_samp_idx ${seg_samp_idx} \
             --ref_fasta ${ref_fasta} \
             --cytoband_file ${cytoband_file}
     """
