@@ -1012,10 +1012,13 @@ class DPinstance:
 
         return np.r_[base_colors, extra_colors if extra_colors.size > 0 else np.empty([0, 3])][si]
 
-    def visualize_segs(self, f = None, use_clust = False, show_snps = False):
+    def visualize_segs(self, f = None, use_clust = False, show_snps = False, chrom = None):
         f = plt.figure(figsize = [16, 4]) if f is None else f
         ax = plt.gca()
-        ax.set_xlim([0, self.S["pos_gp"].max()])
+        if chrom is None:
+            ax.set_xlim([0, self.S["pos_gp"].max()])
+        else:
+            ax.set_xlim([*self.S.loc[self.S["chr"] == chrom, "pos_gp"].iloc[[0, -1]]])
         ax.set_ylim([0, 1])
 
         colors = self.get_colors()
@@ -1028,7 +1031,7 @@ class DPinstance:
         if show_snps:
             # set SNP alpha based on number of SNPs
             logistic = lambda A, K, B, M, x : A + (K - A)/(1 + np.exp(-B*(x - M)))
-            default_alpha = logistic(A = 0.4, K = 0.025, B = 0.00001, M = 120000, x = len(self.S))
+            default_alpha = logistic(A = 0.4, K = 0.025, B = 0.00001, M = 120000, x = len(self.S) if chrom is None else (self.S["chr"] == chrom).sum())
 
             ph_prob = np.r_[self.phase_orientations].mean(0)
 
