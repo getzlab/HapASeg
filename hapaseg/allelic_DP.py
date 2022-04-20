@@ -1028,7 +1028,7 @@ class DPinstance:
         if show_snps:
             # set SNP alpha based on number of SNPs
             logistic = lambda A, K, B, M, x : A + (K - A)/(1 + np.exp(-B*(x - M)))
-            default_alpha = logistic(A = 0.4, K = 0.01, B = 0.00001, M = 120000, x = len(self.S))
+            default_alpha = logistic(A = 0.4, K = 0.025, B = 0.00001, M = 120000, x = len(self.S))
 
             ph_prob = np.r_[self.phase_orientations].mean(0)
 
