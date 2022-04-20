@@ -102,5 +102,5 @@ class Hapaseg_allelic_DP(wolf.Task):
       "SNP_plot" : "figures/SNPs.png",
       "seg_plot" : "figures/segs_only.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v621"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v623"
     resources = { "mem" : "5G" }
