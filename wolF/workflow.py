@@ -192,8 +192,13 @@ def workflow(
     # collect or load coverage
     # tumor
     if collect_tumor_coverage:
-        primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
-        primary_contigs.extend(['chrX','chrY','chrM'])
+        # FIXME: hack to account for "chr" in hg38 but not in hg19
+        if ref_genome_build == "hg38":
+            primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
+            primary_contigs.extend(['chrX','chrY','chrM'])
+        else:
+            primary_contigs = [str(x) for x in range(1, 23)] + ["X", "Y", "M"]
+
         # create scatter intervals
         split_intervals_task = split_intervals.split_intervals(
           bam = tumor_bam_localization_task["t_bam"],
@@ -204,18 +209,19 @@ def workflow(
 
         # shim task to transform split_intervals files into subset parameters for covcollect task
         @prefect.task
-        def interval_gather(interval_files):
+        def interval_gather(interval_files, primary_contigs):
             ints = []
             for f in interval_files:
                 ints.append(pd.read_csv(f, sep = "\t", header = None, names = ["chr", "start", "end"]))
             #filter non-primary contigs
-            primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
-            primary_contigs.extend(['chrX','chrY','chrM'])
-            full_bed = pd.concat(ints).sort_values(["chr", "start", "end"])
+            full_bed = pd.concat(ints).sort_values(["chr", "start", "end"]).astype({ "chr" : str })
             filtered_bed = full_bed.loc[full_bed.chr.isin(primary_contigs)]
             return filtered_bed
 
-        subset_intervals = interval_gather(split_intervals_task["interval_files"])
+        subset_intervals = interval_gather(
+          split_intervals_task["interval_files"],
+          primary_contigs
+        )
 
         # dispatch coverage scatter
         tumor_cov_collect_task = cov_collect.Covcollect(
@@ -348,6 +354,13 @@ def workflow(
         F2 = F2.set_index(F2["bcf_idx_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
 
         F = F.join(F2)
+
+        # prepend "chr" to F's index if it's missing
+        idx = ~F.index.str.contains("^chr")
+        if idx.any():
+            new_index = F.index.values
+            new_index[idx] = "chr" + F.index[idx]
+            F = F.set_index(new_index)
 
         # reference panel BCFs
         R = pd.DataFrame({ "path" : localization_task } ).reset_index()
