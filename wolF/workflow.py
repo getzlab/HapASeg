@@ -609,6 +609,7 @@ def workflow(
           inputs = {
             "disk" : [tumor_bam_localization_task["t_bam"], tumor_bam_localization_task["t_bai"]],
             "upstream" : m1_task["mutect1_cs"] if callstats_file is None else tumor_cov_gather_task["coverage"] 
+          }
      )
      
     if not persistent_dry_run and n_bam is not None and n_bai is not None:
@@ -616,6 +617,7 @@ def workflow(
           inputs = {
             "disk" : [normal_bam_localization_task["n_bam"], normal_bam_localization_task["n_bai"]],
             "upstream" : m1_task["mutect1_cs"]
+          }
     )
     #also delete the cached files disk
     delete_file_disk_task = DeleteDisk(
