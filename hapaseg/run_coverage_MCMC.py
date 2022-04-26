@@ -37,7 +37,7 @@ class CoverageMCMCRunner:
         if allelic_sample is not None:
             self.allelic_sample = allelic_sample
         else:
-            self.allelic_sample = self.select_ADP_cluster()
+            self.allelic_sample = np.argmax(self.allelic_clusters["likelihoods"])
 
         self.model = None
 
@@ -68,25 +68,6 @@ class CoverageMCMCRunner:
         N = cluster_counts_arr.sum()
         m = len(cluster_counts_arr)
         return m * np.log(alpha) + ss.gammaln(cluster_counts_arr).sum() + ss.gammaln(alpha) - ss.gammaln(N+alpha)
-    
-    # method for selecting ADP clustering based on likelihoods
-    def select_ADP_cluster(self):
-        ADP_draws = self.allelic_clusters["snps_to_clusters"]
-        tmp_snps = self.SNPs.copy()
-        lls = []
-        for ADP_draw in ADP_draws:
-            tmp_snps['cluster_assignment'] = ADP_draw
-            count_arr = tmp_snps.groupby(by='cluster_assignment').agg({"maj":sum, "min":sum}).values
-            count_arr += 1
-            beta_ll = ss.betaln(count_arr[:, 0], count_arr[:, 1]).sum()
-            cluster_counts = tmp_snps['cluster_assignment'].value_counts().values
-            dp_ll = self.dp_prior(cluster_counts, 0.5)
-            lls.append(beta_ll + dp_ll)
-        lls = np.array(lls)
-        lls_max = np.max(lls)
-        choice_p = np.exp(lls - lls_max) / np.exp(lls - lls_max).sum()
-        return np.random.choice(len(ADP_draws), p=choice_p)
-
 
     @staticmethod
     def load_coverage(coverage_csv):
