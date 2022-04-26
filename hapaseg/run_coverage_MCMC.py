@@ -65,13 +65,6 @@ class CoverageMCMCRunner:
         # save these results to a numpy object
         return Pi, r, C, all_mu, global_beta, filtered_cov_df, self.allelic_sample
 
-    # method for calculating DP prior likelihood of an ADP cluster    
-    @staticmethod    
-    def dp_prior(cluster_counts_arr, alpha):
-        N = cluster_counts_arr.sum()
-        m = len(cluster_counts_arr)
-        return m * np.log(alpha) + ss.gammaln(cluster_counts_arr).sum() + ss.gammaln(alpha) - ss.gammaln(N+alpha)
-
     def load_coverage(self, coverage_csv):
         Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "mean_frag_len", "std_frag_len", "num_reads"], low_memory=False)
         Cov.loc[Cov['chr'] == 'chrM', 'chr'] = 'chrMT' #change mitocondrial contigs to follow mut conventions
