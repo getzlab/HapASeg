@@ -84,8 +84,6 @@ class CoverageMCMCRunner:
 
     def load_SNPs(self, f_snps):
         SNPs = pd.read_pickle(f_snps)
-        SNPs["chr"], SNPs["pos"] = seq.gpos2chrpos(SNPs["gpos"], ref = self.ref_fasta)
-
         SNPs["tidx"] = mut.map_mutations_to_targets(SNPs, self.full_cov_df, inplace=False)
         return SNPs
 
