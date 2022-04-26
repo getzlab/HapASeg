@@ -17,6 +17,7 @@ class CoverageMCMCRunner:
                  f_allelic_clusters,
                  f_SNPs,
                  f_repl,
+                 ref_fasta,
                  f_GC=None,
                  num_draws=50,
                  cluster_num=None,
@@ -27,6 +28,7 @@ class CoverageMCMCRunner:
         self.cluster_num = cluster_num
         self.f_repl = f_repl
         self.f_GC = f_GC
+        self.ref_fasta = ref_fasta
 
         self.allelic_clusters = np.load(f_allelic_clusters)
         # coverage input is expected to be a df file with columns: ["chr", "start", "end", "covcorr", "covraw"]
@@ -69,27 +71,27 @@ class CoverageMCMCRunner:
         m = len(cluster_counts_arr)
         return m * np.log(alpha) + ss.gammaln(cluster_counts_arr).sum() + ss.gammaln(alpha) - ss.gammaln(N+alpha)
 
-    @staticmethod
-    def load_coverage(coverage_csv):
+    def load_coverage(self, coverage_csv):
         Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "mean_frag_len", "std_frag_len", "num_reads"], low_memory=False)
         Cov.loc[Cov['chr'] == 'chrM', 'chr'] = 'chrMT' #change mitocondrial contigs to follow mut conventions
         Cov["chr"] = mut.convert_chr(Cov["chr"])
         Cov = Cov.loc[Cov["chr"] != 0]
         Cov=Cov.reset_index(drop=True)
-        Cov["start_g"] = seq.chrpos2gpos(Cov["chr"], Cov["start"])
-        Cov["end_g"] = seq.chrpos2gpos(Cov["chr"], Cov["end"])
+        Cov["start_g"] = seq.chrpos2gpos(Cov["chr"], Cov["start"], ref = self.ref_fasta)
+        Cov["end_g"] = seq.chrpos2gpos(Cov["chr"], Cov["end"], ref = self.ref_fasta)
         
         return Cov
 
     def load_SNPs(self, f_snps):
         SNPs = pd.read_pickle(f_snps)
-        SNPs["chr"], SNPs["pos"] = seq.gpos2chrpos(SNPs["gpos"])
+        SNPs["chr"], SNPs["pos"] = seq.gpos2chrpos(SNPs["gpos"], ref = self.ref_fasta)
 
         SNPs["tidx"] = mut.map_mutations_to_targets(SNPs, self.full_cov_df, inplace=False)
         return SNPs
 
     def generate_GC(self):
         #grab fasta object from seq to avoid rebuilding
+        seq.set_reference(self.ref_fasta)
         F = seq._fa.ref_fa_obj
         self.full_cov_df['C_GC'] = np.nan
         

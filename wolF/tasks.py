@@ -133,11 +133,11 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "repl_pickle": None,
         "gc_pickle":"",
         "allelic_sample":"",
-        "ref_file_path": None
+        "ref_fasta": None
     }
     script = """
-    export CAPY_REF_FA=${ref_file_path}
     hapaseg coverage_mcmc_preprocess --coverage_csv ${coverage_csv} \
+    --ref_fasta ${ref_fasta} \
     --allelic_clusters_object ${allelic_clusters_object} \
     --SNPs_pickle ${SNPs_pickle} \
     --repl_pickle ${repl_pickle}"""

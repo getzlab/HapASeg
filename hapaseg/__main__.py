@@ -501,6 +501,7 @@ def main():
         cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
                                              args.allelic_clusters_object,
                                              args.SNPs_pickle,
+                                             args.ref_fasta,
                                              f_repl=args.repl_pickle,
                                              f_GC=args.gc_pickle,
                                              allelic_sample=args.allelic_sample)

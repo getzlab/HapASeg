@@ -492,7 +492,7 @@ def workflow(
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "repl_pickle":ref_config["repl_file"],
         "gc_pickle":ref_config["gc_file"],
-        "ref_file_path":localization_task["ref_fasta"]
+        "ref_fasta":localization_task["ref_fasta"]
         }
     )
     
