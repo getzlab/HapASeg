@@ -4,6 +4,7 @@ import glob
 import re
 import os
 import scipy.special as ss
+import tqdm
 from capy import mut, seq
 import scipy.stats as stats
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
@@ -94,7 +95,7 @@ class CoverageMCMCRunner:
         self.full_cov_df['C_GC'] = np.nan
         
         #this indexing assumes 0-indexed start and end cols
-        for (i, chrm, start, end) in self.full_cov_df[['chr', 'start','end']].itertuples():
+        for (i, chrm, start, end) in tqdm.tqdm(self.full_cov_df[['chr', 'start','end']].itertuples(), total = len(self.full_cov_df)):
             self.full_cov_df.iat[i, -1] = F[chrm-1][start:end+1].gc
         
 
