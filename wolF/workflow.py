@@ -473,7 +473,7 @@ def workflow(
      inputs = {
        "seg_dataframe" : arm_concat,
        #"seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
-       "cytoband_file" : "/mnt/j/db/hg38/ref/cytoBand_primary.txt", # TODO: allow to be specified
+       "cytoband_file" : localization_task["cytoband_file"],
        "ref_fasta" : localization_task["ref_fasta"],
        "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
        "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink
