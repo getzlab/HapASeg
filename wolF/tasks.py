@@ -125,21 +125,6 @@ class Hapaseg_allelic_DP(wolf.Task):
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v623"
     resources = { "mem" : "5G" }
 
-class Hapaseg_collect_adp(wolf.Task):
-    inputs = {
-        "dp_results":None
-    }
-    
-    script = """
-    hapaseg collect_adp --dp_results ${dp_results}
-    """
-    output_patterns = {
-        "full_dp_results":"full_dp_results.npz"
-    }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
-    resources = { "mem" : "5G" }
-
-
 class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     inputs = {
         "coverage_csv": None,

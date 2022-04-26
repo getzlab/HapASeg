@@ -480,20 +480,16 @@ def workflow(
      }
     )
 
-    ##collect DP results
-    collect_adp_task = hapaseg.Hapaseg_collect_adp(
-        inputs={"dp_results":[hapaseg_allelic_DP_task["cluster_and_phase_assignments"]]
-               }
-    )
-    
-    ### coverage tasks ####
+    #
+    # coverage tasks
+    #
 
     # prepare coverage MCMC
     prep_cov_mcmc_task = hapaseg.Hapaseg_prepare_coverage_mcmc(
     inputs={
         "coverage_csv":tumor_cov_gather_task["coverage"], #each scatter result is the same
-        "allelic_clusters_object":collect_adp_task["full_dp_results"],
-        "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'][0], #each scatter result is the same
+        "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+        "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "repl_pickle":ref_config["repl_file"],
         "gc_pickle":ref_config["gc_file"],
         "ref_file_path":localization_task["ref_fasta"]
@@ -585,7 +581,7 @@ def workflow(
     gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
     inputs = {
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'][0], #each scatter result is the same
-        "allelic_clusters_object":collect_adp_task["full_dp_results"],
+        "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
         "cdp_filepaths":[cov_dp_task["cov_dp_object"]],
         "allelic_draw_index":adp_draw_num,
         "ref_file_path":localization_task["ref_fasta"],

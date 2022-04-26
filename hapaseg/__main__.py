@@ -476,29 +476,8 @@ def main():
         plt.title("Allelic segmentation (posterior)")
         plt.savefig(output_dir + "/figures/segs_only.png", dpi = 300)
         plt.close()
-    
-    #collect adp run data
-    elif args.command == "collect_adp":
-        with open(args.dp_results, 'r') as f:
-	        dp_results = f.readlines()
-        accum_clusts = []
-        accum_phases = []
-        accum_liks = []
-        
-        for dp_shard in dp_results:
-            obj = np.load(dp_shard.rstrip('\n'))
-            accum_clusts.append(obj['snps_to_clusters'])
-            accum_phases.append(obj['snps_to_phases'])
-            accum_liks.append(obj['likelihoods'])
-        all_clusts = np.vstack(accum_clusts)
-        all_phases = np.vstack(accum_phases)
-        all_liks = np.vstack(accum_liks)
-        # save
-        np.savez(os.path.join(output_dir, "full_dp_results"), snps_to_clusters=all_clusts, snps_to_phases=all_phases, likelihoods=all_liks)
-
 
     ## running coverage mcmc on all clusters
-
     elif args.command == "coverage_mcmc":
         cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
                                              args.allelic_clusters_object,
