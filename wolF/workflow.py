@@ -112,10 +112,10 @@ def workflow(
 
   num_cov_seg_samples=5,
 
-  persistant_dry_run = False
+  persistent_dry_run = False
 ):
-    # alert for persistant dry run
-    if persistant_dry_run:
+    # alert for persistent dry run
+    if persistent_dry_run:
         #TODO push this message to canine
         print("WARNING: Skipping file localization in dry run!")
     
@@ -160,7 +160,7 @@ def workflow(
             "t_bai" : tumor_bai,
           },
         token=localization_token,
-        persistent_disk_dry_run = persistant_dry_run
+        persistent_disk_dry_run = persistent_dry_run
         )
         collect_tumor_coverage = True
     elif tumor_coverage_bed is not None:
@@ -176,7 +176,7 @@ def workflow(
             "n_bai" : normal_bai
           },
         token=localization_token,
-        persistent_disk_dry_run = persistant_dry_run
+        persistent_disk_dry_run = persistent_dry_run
         )
         collect_normal_coverage = True
     elif normal_coverage_bed is not None:
@@ -604,14 +604,14 @@ def workflow(
     )
 
     #cleanup by deleting bam disks. we make seperate tasks for the bams
-    if not persistant_dry_run and t_bam is not None and t_bai is not None:
+    if not persistent_dry_run and t_bam is not None and t_bai is not None:
         delete_tbams_task = DeleteDisk(
           inputs = {
             "disk" : [tumor_bam_localization_task["t_bam"], tumor_bam_localization_task["t_bai"]],
             "upstream" : m1_task["mutect1_cs"] if callstats_file is None else tumor_cov_gather_task["coverage"] 
      )
      
-    if not persistant_dry_run and n_bam is not None and n_bai is not None:
+    if not persistent_dry_run and n_bam is not None and n_bai is not None:
         delete_nbams_task = DeleteDisk(
           inputs = {
             "disk" : [normal_bam_localization_task["n_bam"], normal_bam_localization_task["n_bai"]],
