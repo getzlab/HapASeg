@@ -82,12 +82,11 @@ class A_DP:
         return self.snps_to_clusters, self.snps_to_phases, self.likelihoods
 
 class DPinstance:
-    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), alpha = 1, temperature = 1, dp_count_scale_factor = 1):
+    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), alpha = 1, dp_count_scale_factor = 1):
         self.S = S
         self.clust_prior = clust_prior.copy()
         self.clust_count_prior = clust_count_prior.copy()
         self.alpha = alpha
-        self.temperature = temperature
         self.dp_count_scale_factor = dp_count_scale_factor
 
         self.mm_mat = self.S.loc[:, ["min", "maj"]].values.reshape(-1, order = "F") # numpy for speed
@@ -835,8 +834,6 @@ class DPinstance:
                   + log_adj_lik      # p({a_i, b_i}_{i\in B} | U, D, phase_{i\in B})
                   + log_count_prior  # p(clust) (DP prior on clust counts)
                   + log_phase_prob)  # p(phase)
-
-            num /= self.temperature # scale by temperature for replica-exchange
 
             num -= num.max() # avoid underflow in sum-exp
 
