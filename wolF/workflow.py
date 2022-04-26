@@ -479,7 +479,7 @@ def workflow(
        "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink
      }
     )
-    
+
     ##collect DP results
     collect_adp_task = hapaseg.Hapaseg_collect_adp(
         inputs={"dp_results":[hapaseg_allelic_DP_task["cluster_and_phase_assignments"]]
@@ -528,9 +528,9 @@ def workflow(
         cluster_idxs = [i for i in np.arange(num_clusters)]
         print(cluster_idxs, cluster_list, range_list) 
         return len(cluster_idxs), cluster_idxs, cluster_list, range_list
-    
+
     num_clusters, cluster_idxs, cluster_list, range_list = _get_ADP_cluster_list(prep_cov_mcmc_task["preprocess_data"])
-    
+
     # coverage MCMC burnin
     cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc_burnin(
         inputs={
@@ -541,7 +541,7 @@ def workflow(
             "range":range_list
         }
     )
-    
+
     # coverage MCMC scatter post-burnin
     cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc(
         inputs={
@@ -552,7 +552,7 @@ def workflow(
             "burnin_files":[cov_mcmc_burnin_task["burnin_data"]] * num_clusters # this is to account for a wolf input len bug
         }
     )
-    
+
     # collect coverage MCMC
     cov_mcmc_gather_task = hapaseg.Hapaseg_collect_coverage_mcmc(
     inputs = {
@@ -561,6 +561,7 @@ def workflow(
         "bin_width":bin_width
         }
     )
+
     # coverage DP
     cov_dp_task = hapaseg.Hapaseg_coverage_dp(
     inputs = {
@@ -572,16 +573,15 @@ def workflow(
         "bin_width":bin_width
         }
     )
-    
+
     #get the adp draw number from the preprocess data object
     @prefect.task
     def _get_ADP_draw_num(preprocess_data_obj):
         return int(np.load(preprocess_data_obj)["adp_cluster"])
     
     adp_draw_num = _get_ADP_draw_num(prep_cov_mcmc_task["preprocess_data"])
-    
-    # generate acdp dataframe
 
+    # generate acdp dataframe 
     gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
     inputs = {
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'][0], #each scatter result is the same
@@ -592,7 +592,7 @@ def workflow(
         "bin_width":bin_width
         }
     )
-    
+
     # run acdp
     acdp_task = hapaseg.Hapaseg_run_acdp(
     inputs = {
