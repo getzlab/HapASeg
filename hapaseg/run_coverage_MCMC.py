@@ -148,15 +148,19 @@ class CoverageMCMCRunner:
         clust_choice = self.allelic_clusters["snps_to_clusters"][self.allelic_sample]
         clust_u, clust_uj = np.unique(clust_choice, return_inverse=True)
         clust_uj = clust_uj.reshape(clust_choice.shape)
+        cuj_max = clust_uj.max() + 1
+        self.SNPs["clust_choice"] = clust_uj
 
         # assign coverage intervals to clusters
         Cov_clust_probs = np.zeros([len(self.full_cov_df), clust_uj.max()+1])
 
         # first compute assignment probabilities based on the SNPs within each bin
-        for targ, snp_idx in self.SNPs.groupby("tidx").indices.items():
-            targ_clust_hist = np.bincount(clust_uj[snp_idx].ravel(), minlength=clust_uj.max()+1)
-
-            Cov_clust_probs[int(targ), :] = targ_clust_hist / targ_clust_hist.sum()
+        for targ, snp_idx in tqdm.tqdm(self.SNPs.groupby("tidx")["clust_choice"]):
+            if len(snp_idx) == 1:
+                Cov_clust_probs[int(targ), snp_idx] = 1.0
+            else: 
+                targ_clust_hist = np.bincount(snp_idx, minlength = cuj_max) 
+                Cov_clust_probs[int(targ), :] = targ_clust_hist / targ_clust_hist.sum()
 
         # subset intervals containing SNPs
         overlap_idx = Cov_clust_probs.sum(1) > 0
