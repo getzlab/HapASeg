@@ -5,8 +5,13 @@ import pandas as pd
 _chrmap = dict(zip(["chr" + str(x) for x in list(range(1, 23)) + ["X", "Y"]], range(1, 25)))
 
 def parse_cytoband(cytoband):
-    # TODO: do some cytoband files have a header? check if so!
-    cband = pd.read_csv(cytoband, sep = "\t", names = ["chr", "start", "end", "band", "stain"])
+    # some cytoband files have a header, some don't; we need to check
+    has_header = False
+    with open(cytoband, "r") as f:
+        if f.readline().startswith("chr\t"):
+            has_header = True
+
+    cband = pd.read_csv(cytoband, sep = "\t", names = ["chr", "start", "end", "band", "stain"] if not has_header else None)
     cband["chr"] = cband["chr"].apply(lambda x : _chrmap[x])
 
     chrs = cband["chr"].unique()
