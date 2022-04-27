@@ -136,16 +136,16 @@ class CoverageMCMCRunner:
         
         self.full_cov_df["C_GC_z"] = zt(np.log(self.full_cov_df["C_GC"] + 0.01))
         
-        #set zero coverage bins to nan
+        ## Fragment length
+
+        # some bins have zero mean fragment length(!?); NaN these out
         self.full_cov_df.loc[(self.full_cov_df.mean_frag_len == 0) | (self.full_cov_df.std_frag_len == 0), ['mean_frag_len', 'std_frag_len']] = (np.nan, np.nan)
-        
-        # add fragment based covars
-        self.full_cov_df["C_frag_len"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(np.log(self.full_cov_df["mean_frag_len"] + 1e-20))
-        self.full_cov_df["C_frag_std"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(np.log(self.full_cov_df["std_frag_len"] + 1e-20))
+
+        self.full_cov_df = self.full_cov_df.rename(columns = { "mean_frag_len" : "C_frag_len" })
+        self.full_cov_df["C_frag_len_z"] = zt(self.full_cov_df["C_frag_len"])
 
         # drop non z-cetered cols
-        self.full_cov_df = self.full_cov_df.drop(['C_GC', 'C_RT'], axis=1)
-        
+        self.full_cov_df = self.full_cov_df.drop(columns = self.full_cov_df.columns[self.full_cov_df.columns.str.contains("C_.*[^z]$")], axis=1)
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
     # clusters with snps from different clusters are probabliztically assigned
