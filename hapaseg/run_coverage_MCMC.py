@@ -4,6 +4,7 @@ import glob
 import re
 import os
 import scipy.special as ss
+import sys
 import tqdm
 from capy import mut, seq
 import scipy.stats as stats
@@ -117,13 +118,13 @@ class CoverageMCMCRunner:
 
         # load GC content if we have it precomputed, otherwise generate it
         if wgs and self.f_GC is not None and os.path.exists(self.f_GC):
-            print("Using precomputed GC content")
+            print("Using precomputed GC content", file = sys.stderr)
             B = pd.read_pickle(self.f_GC)
             
             self.full_cov_df = self.full_cov_df.merge(B.rename(columns={"gc": "C_GC"}), left_on=["chr", "start", "end"],
                                                   right_on=["chr", "start", "end"], how="left")
         else:
-            print("Computing GC content")
+            print("Computing GC content", file = sys.stderr)
             self.generate_GC()
         
         self.full_cov_df["C_GC_z"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(
@@ -155,6 +156,7 @@ class CoverageMCMCRunner:
         Cov_clust_probs = np.zeros([len(self.full_cov_df), clust_uj.max()+1])
 
         # first compute assignment probabilities based on the SNPs within each bin
+        print("Mapping SNPs to targets ...", file = sys.stderr)
         for targ, snp_idx in tqdm.tqdm(self.SNPs.groupby("tidx")["clust_choice"]):
             if len(snp_idx) == 1:
                 Cov_clust_probs[int(targ), snp_idx] = 1.0
