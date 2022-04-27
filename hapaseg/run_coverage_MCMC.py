@@ -151,7 +151,7 @@ class CoverageMCMCRunner:
     # clusters with snps from different clusters are probabliztically assigned
     # method returns coverage df with only bins that overlap snps
     def assign_clusters(self):
-        # generate unique clust assignments
+        ## generate unique clust assignments
         clust_choice = self.allelic_clusters["snps_to_clusters"][self.allelic_sample]
         clust_u, clust_uj = np.unique(clust_choice, return_inverse=True)
         clust_uj = clust_uj.reshape(clust_choice.shape)
@@ -177,14 +177,15 @@ class CoverageMCMCRunner:
         # zero out improbable assignments and re-normalilze
         Cov_clust_probs_overlap[Cov_clust_probs_overlap < 0.05] = 0
         Cov_clust_probs_overlap /= Cov_clust_probs_overlap.sum(1)[:, None]
-        # prune garbage clusters
+        # prune empty clusters
         prune_idx = Cov_clust_probs_overlap.sum(0) > 0
         Cov_clust_probs_overlap = Cov_clust_probs_overlap[:, prune_idx]
         num_pruned_clusters = Cov_clust_probs_overlap.shape[1]
-        # subsetting to only targets that overlap SNPs
+
+        ## subsetting to only targets that overlap SNPs
         Cov_overlap = self.full_cov_df.loc[overlap_idx, :]
 
-        # probabilistically assign each ambiguous coverage bin to a cluster
+        ## probabilistically assign each ambiguous coverage bin to a cluster
         # for now we will take maximum instead
         amb_mask = np.max(Cov_clust_probs_overlap, 1) != 1
         amb_assgn_probs = Cov_clust_probs_overlap[amb_mask, :]
@@ -197,7 +198,7 @@ class CoverageMCMCRunner:
         # update with assigned values
         Cov_clust_probs_overlap[amb_mask, :] = new_onehot
 
-        #downsampling for wgs
+        ## downsampling for wgs
         if len(Cov_clust_probs_overlap) > 20000:
             downsample_mask = np.random.rand(Cov_clust_probs_overlap.shape[0]) < 0.2
             Cov_clust_probs_overlap = Cov_clust_probs_overlap[downsample_mask]
@@ -210,14 +211,16 @@ class CoverageMCMCRunner:
 
         Cov_overlap = Cov_overlap.loc[~bad_bins, :]
         Pi = filtered.copy()
+        Cov_overlap['allelic_cluster'] = np.argmax(Pi, axis=1)
        
         r = np.c_[Cov_overlap["covcorr"]]
         
         covar_columns = sorted([c for c in Cov_overlap.columns if 'C_' in c])
-        # making covariate matrix
+
+        ## making covariate matrix
         C = np.c_[Cov_overlap[covar_columns]]
 
-        # dropping Nans
+        ## dropping Nans
         naidx = np.isnan(C).any(axis=1)
         # drop zero coverage bins as well (this is to account for a bug in coverage collector) TODO: remove need for this
         naidx = np.logical_or(naidx, (r==0).flatten())
@@ -227,14 +230,22 @@ class CoverageMCMCRunner:
 
         Cov_overlap = Cov_overlap.iloc[~naidx]
         
-        #removing outliers
+        ## removing coverage outliers
         outlier_mask = find_outliers(r)
         r = r[~outlier_mask]
         C = C[~outlier_mask]
         Pi = Pi[~outlier_mask]
         Cov_overlap = Cov_overlap.iloc[~outlier_mask]
-        
-        Cov_overlap['allelic_cluster'] = np.argmax(Pi, axis=1)
+
+        # some clusters may have been eliminated by this point; prune them from Pi
+        Pi = Pi[:, Pi.sum(0) > 0]
+ 
+        ## remove covariate outliers (+- 6 sigma)
+        covar_outlier_idx = (Cov_overlap.loc[:, covar_columns].abs() < 6).all(axis = 1)
+        Cov_overlap = Cov_overlap.loc[covar_outlier_idx]
+        Pi = Pi[covar_outlier_idx, :]
+        r = r[covar_outlier_idx]
+        C = C[covar_outlier_idx, :]
 
         return Pi, r, C, Cov_overlap
 
