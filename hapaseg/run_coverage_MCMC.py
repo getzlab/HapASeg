@@ -94,6 +94,8 @@ class CoverageMCMCRunner:
         
 
     def load_covariates(self):
+        ## Target size
+
         #check if we are doing wgs, in which case we will have uniform 200 bp bins
         wgs = True if self.f_GC is not None or len(self.full_cov_df) > 100000 else False
         
@@ -105,6 +107,10 @@ class CoverageMCMCRunner:
             if (np.diff(self.full_cov_df["C_log_len"]) == 0).all():
                 #remove the len col since it will ruin beta fitting
                 self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
+
+        ## Replication timing
+        zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
+
         # load repl timing
         F = pd.read_pickle(self.f_repl)
         # map targets to RT intervals
@@ -113,8 +119,9 @@ class CoverageMCMCRunner:
         self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, 3:].mean(1).values
 
         # z-transform
-        self.full_cov_df["C_RT_z"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(
-            np.log(self.full_cov_df["C_RT"] + 1e-20))
+        self.full_cov_df["C_RT_z"] = zt(np.log(self.full_cov_df["C_RT"] + 0.01))
+
+        ## GC content
 
         # load GC content if we have it precomputed, otherwise generate it
         if wgs and self.f_GC is not None and os.path.exists(self.f_GC):
@@ -127,8 +134,7 @@ class CoverageMCMCRunner:
             print("Computing GC content", file = sys.stderr)
             self.generate_GC()
         
-        self.full_cov_df["C_GC_z"] = (lambda x: (x - np.nanmean(x)) / np.nanstd(x))(
-            np.log(self.full_cov_df["C_GC"] + 1e-20))
+        self.full_cov_df["C_GC_z"] = zt(np.log(self.full_cov_df["C_GC"] + 0.01))
         
         #set zero coverage bins to nan
         self.full_cov_df.loc[(self.full_cov_df.mean_frag_len == 0) | (self.full_cov_df.std_frag_len == 0), ['mean_frag_len', 'std_frag_len']] = (np.nan, np.nan)
