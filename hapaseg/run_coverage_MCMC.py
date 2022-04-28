@@ -157,7 +157,7 @@ class CoverageMCMCRunner:
         self.SNPs["clust_choice"] = clust_uj
 
         # assign coverage intervals to clusters
-        Cov_clust_probs = np.zeros([len(self.full_cov_df), clust_uj.max()+1])
+        Cov_clust_probs = np.zeros([len(self.full_cov_df), cuj_max])
 
         # first compute assignment probabilities based on the SNPs within each bin
         print("Mapping SNPs to targets ...", file = sys.stderr)
