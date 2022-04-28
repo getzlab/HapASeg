@@ -118,6 +118,7 @@ class Hapaseg_allelic_DP(wolf.Task):
     output_patterns = {
       "cluster_and_phase_assignments" : "allelic_DP_SNP_clusts_and_phase_assignments.npz",
       "all_SNPs" : "all_SNPs.pickle",
+      "segmentation_breakpoints" : "segmentations.pickle",
       "likelihood_trace_plot" : "figures/likelihood_trace.png",
       "SNP_plot" : "figures/SNPs.png",
       "seg_plot" : "figures/segs_only.png",

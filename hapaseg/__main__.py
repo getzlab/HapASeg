@@ -444,12 +444,18 @@ def main():
         snps_to_clusters, snps_to_phases, likelihoods = A.run()
 
         # save DP results
+        # SNP assignment/phasing samples, likelihoods of each sample
         np.savez(output_dir + "/allelic_DP_SNP_clusts_and_phase_assignments.npz",
                  snps_to_clusters=snps_to_clusters,
                  snps_to_phases=snps_to_phases,
                  likelihoods=likelihoods
                  )
 
+        # segmentation breakpoints for each sample
+        with open(output_dir + "/segmentations.pickle", "wb") as f:
+            pickle.dump(A.DP_run.segment_trace, f)
+
+        # full SNP dataframe
         A.SNPs.to_pickle(output_dir + "/all_SNPs.pickle")
 
         #
