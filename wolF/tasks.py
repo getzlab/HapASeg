@@ -124,7 +124,7 @@ class Hapaseg_allelic_DP(wolf.Task):
       "seg_plot" : "figures/segs_only.png",
     }
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v789"
-    resources = { "mem" : "5G" }
+    resources = { "mem" : "8G" }
 
 class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     inputs = {
