@@ -119,7 +119,7 @@ class CoverageMCMCRunner:
         self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, 3:].mean(1).values
 
         # z-transform
-        self.full_cov_df["C_RT_z"] = zt(np.log(self.full_cov_df["C_RT"] + 0.01))
+        self.full_cov_df["C_RT_z"] = zt(self.full_cov_df["C_RT"])
 
         ## GC content
 
@@ -134,7 +134,7 @@ class CoverageMCMCRunner:
             print("Computing GC content", file = sys.stderr)
             self.generate_GC()
         
-        self.full_cov_df["C_GC_z"] = zt(np.log(self.full_cov_df["C_GC"] + 0.01))
+        self.full_cov_df["C_GC_z"] = zt(self.full_cov_df["C_GC"])
         
         ## Fragment length
 
