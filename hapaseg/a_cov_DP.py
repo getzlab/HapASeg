@@ -63,7 +63,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         print('concatenating dp run ', draw_num)
         a_cov_seg_df = dp_run.cov_df.copy()
 
-        covar_cols = sorted([c for c in a_cov_seg_df.columns if "C_" in c])
+        covar_cols = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")])
         # add minor and major allele counts for each bin to the cov_seg_df here to allow for beta draws on the fly for each segment
         a_cov_seg_df['min_count'] = 0
         a_cov_seg_df['maj_count'] = 0

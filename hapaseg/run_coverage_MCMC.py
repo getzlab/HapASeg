@@ -120,7 +120,7 @@ class CoverageMCMCRunner:
         ## GC content
 
         # load GC content if we have it precomputed, otherwise generate it
-        if wgs and self.f_GC is not None and os.path.exists(self.f_GC):
+        if self.f_GC is not None and os.path.exists(self.f_GC):
             print("Using precomputed GC content", file = sys.stderr)
             B = pd.read_pickle(self.f_GC)
             
@@ -140,9 +140,6 @@ class CoverageMCMCRunner:
         self.full_cov_df = self.full_cov_df.rename(columns = { "mean_frag_len" : "C_frag_len" })
         self.full_cov_df["C_frag_len_z"] = zt(self.full_cov_df["C_frag_len"])
         
-        #rename non z-centered columns so that they arent pulled in as covariates
-        self.full_cov_df.rename({'C_frag_len':'frag_len', 'C_RT':'RT', 'C_GC':'GC'}, axis=1)
-
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
     # clusters with snps from different clusters are probabliztically assigned
     # method returns coverage df with only bins that overlap snps
@@ -348,7 +345,7 @@ def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None, 
     # along with the bin exposure
     endog = np.exp(np.log(r).flatten() - np.log(bin_width) - mu_is).reshape(-1,1)
     # generate covars
-    covar_columns = sorted([c for c in cov_df.columns if 'C_' in c])
+    covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")])
     C = np.c_[cov_df[covar_columns]]
     # do regression
     pois_regr = PoissonRegression(endog, C, np.ones(endog.shape))
