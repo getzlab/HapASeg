@@ -144,8 +144,6 @@ class CoverageMCMCRunner:
         self.full_cov_df = self.full_cov_df.rename(columns = { "mean_frag_len" : "C_frag_len" })
         self.full_cov_df["C_frag_len_z"] = zt(self.full_cov_df["C_frag_len"])
 
-        # drop non z-cetered cols
-        self.full_cov_df = self.full_cov_df.drop(columns = self.full_cov_df.columns[self.full_cov_df.columns.str.contains("C_.*[^z]$")], axis=1)
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
     # clusters with snps from different clusters are probabliztically assigned
@@ -215,7 +213,7 @@ class CoverageMCMCRunner:
        
         r = np.c_[Cov_overlap["covcorr"]]
         
-        covar_columns = sorted([c for c in Cov_overlap.columns if 'C_' in c])
+        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")])
 
         ## making covariate matrix
         C = np.c_[Cov_overlap[covar_columns]]
