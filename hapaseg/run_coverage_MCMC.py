@@ -96,17 +96,13 @@ class CoverageMCMCRunner:
     def load_covariates(self):
         ## Target size
 
-        #check if we are doing wgs, in which case we will have uniform 200 bp bins
-        wgs = True if self.f_GC is not None or len(self.full_cov_df) > 100000 else False
-        
-        #we only need bin size if doing exomes
-        if not wgs:
-            self.full_cov_df["C_log_len"] = np.log(self.full_cov_df["end"] - self.full_cov_df["start"] + 1)
+        # we only need bin size if doing exomes but we can check by looking at the bin lengths
+        self.full_cov_df["C_log_len"] = np.log(self.full_cov_df["end"] - self.full_cov_df["start"] + 1)
             
-            #this is a safety in case we are doing wgs but have few bins
-            if (np.diff(self.full_cov_df["C_log_len"]) == 0).all():
-                #remove the len col since it will ruin beta fitting
-                self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
+        # in case we are doing wgs these will all be the same and we must remove
+        if (np.diff(self.full_cov_df["C_log_len"]) == 0).all():
+            #remove the len col since it will ruin beta fitting
+            self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
 
         ## Replication timing
         zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
@@ -124,7 +120,7 @@ class CoverageMCMCRunner:
         ## GC content
 
         # load GC content if we have it precomputed, otherwise generate it
-        if wgs and self.f_GC is not None and os.path.exists(self.f_GC):
+        if self.f_GC is not None and os.path.exists(self.f_GC):
             print("Using precomputed GC content", file = sys.stderr)
             B = pd.read_pickle(self.f_GC)
             
@@ -225,14 +221,15 @@ class CoverageMCMCRunner:
         # for now we will take maximum instead
         amb_mask = np.max(Cov_clust_probs_overlap, 1) != 1
         amb_assgn_probs = Cov_clust_probs_overlap[amb_mask, :]
-        #new_assgn = np.array([np.random.choice(np.r_[:num_pruned_clusters],
-        #                                       p=amb_assgn_probs[i]) for i in range(len(amb_assgn_probs))])
-        new_assgn = np.array([np.argmax(amb_assgn_probs[i]) for i in range(len(amb_assgn_probs))])
-        new_onehot = np.zeros((new_assgn.size, num_pruned_clusters))
-        new_onehot[np.arange(new_assgn.size), new_assgn] = 1
-
-        # update with assigned values
-        Cov_clust_probs_overlap[amb_mask, :] = new_onehot
+        if amb_mask.sum() > 0:
+            #new_assgn = np.array([np.random.choice(np.r_[:num_pruned_clusters],
+            #                                       p=amb_assgn_probs[i]) for i in range(len(amb_assgn_probs))])
+            new_assgn = np.array([np.argmax(amb_assgn_probs[i]) for i in range(len(amb_assgn_probs))])
+            new_onehot = np.zeros((new_assgn.size, num_pruned_clusters))
+            new_onehot[np.arange(new_assgn.size), new_assgn] = 1
+    
+            # update with assigned values
+            Cov_clust_probs_overlap[amb_mask, :] = new_onehot
 
         ## downsampling for wgs
 #        if len(Cov_clust_probs_overlap) > 20000:
@@ -387,7 +384,7 @@ def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None, 
     # along with the bin exposure
     endog = np.exp(np.log(r).flatten() - np.log(bin_width) - mu_is).reshape(-1,1)
     # generate covars
-    covar_columns = sorted([c for c in cov_df.columns if 'C_' in c])
+    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("^C_.*_z$")])
     C = np.c_[cov_df[covar_columns]]
     # do regression
     pois_regr = PoissonRegression(endog, C, np.ones(endog.shape))
