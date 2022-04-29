@@ -235,10 +235,10 @@ class CoverageMCMCRunner:
         Cov_clust_probs_overlap[amb_mask, :] = new_onehot
 
         ## downsampling for wgs
-        if len(Cov_clust_probs_overlap) > 20000:
-            downsample_mask = np.random.rand(Cov_clust_probs_overlap.shape[0]) < 0.2
-            Cov_clust_probs_overlap = Cov_clust_probs_overlap[downsample_mask]
-            Cov_overlap = Cov_overlap.iloc[downsample_mask]
+#        if len(Cov_clust_probs_overlap) > 20000:
+#            downsample_mask = np.random.rand(Cov_clust_probs_overlap.shape[0]) < 0.2
+#            Cov_clust_probs_overlap = Cov_clust_probs_overlap[downsample_mask]
+#            Cov_overlap = Cov_overlap.iloc[downsample_mask]
     
         # remove clusters with fewer than 4 assigned coverage bins (remove these coverage bins as well)
         bad_clusters = Cov_clust_probs_overlap.sum(0) < 4
