@@ -181,8 +181,33 @@ class CoverageMCMCRunner:
                 targ_clust_hist = np.bincount(snp_idx, minlength = cuj_max) 
                 Cov_clust_probs[int(targ), :] = targ_clust_hist / targ_clust_hist.sum()
 
-        # subset intervals containing SNPs
+#        # assign coverage intervals to allelic segments
+#        # TODO: segmentation boundary will be passed directly in, so we don't have to recompute it
+#        seg_bdy = np.flatnonzero(np.r_[1, np.diff(self.SNPs["clust_choice"]), 1] != 0)
+#        seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
+#        self.SNPs["seg_idx"] = 0
+#        for i, (st, en) in enumerate(seg_bdy):
+#            self.SNPs.iloc[st:en, self.SNPs.columns.get_loc("seg_idx")] = i
+#        seg_idx_max = self.SNPs["seg_idx"].max() + 1
+#
+#        Cov_clust_probs_seg = np.zeros([len(self.full_cov_df), seg_idx_max])
+#
+#        for targ, snp_idx in tqdm.tqdm(self.SNPs.groupby("tidx")["seg_idx"]):
+#            if len(snp_idx) == 1:
+#                Cov_clust_probs_seg[int(targ), snp_idx] = 1.0
+#            else: 
+#                targ_clust_hist = np.bincount(snp_idx, minlength = seg_idx_max) 
+#                Cov_clust_probs_seg[int(targ), :] = targ_clust_hist / targ_clust_hist.sum()
+#
+#        # XXX: temporary
+#        Cov_clust_probs = Cov_clust_probs_seg
+
+        ## subset to targets containing SNPs
         overlap_idx = Cov_clust_probs.sum(1) > 0
+#        # add targets within a 2 targ radius
+#        overlap_idx = np.flatnonzero(Cov_clust_probs.sum(1) > 0)[:, None]
+#        overlap_idx = overlap_idx + np.c_[-2:3].T
+#        overlap_idx = np.sort(np.unique((overlap_idx + np.c_[-2:3].T).ravel()))
         Cov_clust_probs_overlap = Cov_clust_probs[overlap_idx, :]
 
         # zero out improbable assignments and re-normalilze
