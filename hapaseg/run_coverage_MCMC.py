@@ -345,7 +345,7 @@ def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None, 
     # along with the bin exposure
     endog = np.exp(np.log(r).flatten() - np.log(bin_width) - mu_is).reshape(-1,1)
     # generate covars
-    covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")])
+    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("^C_.*_z$")])
     C = np.c_[cov_df[covar_columns]]
     # do regression
     pois_regr = PoissonRegression(endog, C, np.ones(endog.shape))
