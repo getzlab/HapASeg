@@ -125,7 +125,7 @@ def parse_args():
     coverage_mcmc.add_argument("--allelic_clusters_object",
                                help="npy file containing allelic dp segs-to-clusters results")
     coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs")
-    coverage_mcmc.add_argument("--segmentations", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
+    coverage_mcmc.add_argument("--segmentations_pickle", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
     coverage_mcmc.add_argument("--covariate_dir",
                                help="path to covariate directory with covariates all in pickled files")
     coverage_mcmc.add_argument("--num_draws", type=int,
@@ -146,7 +146,7 @@ def parse_args():
     preprocess_coverage_mcmc.add_argument("--allelic_clusters_object",
                                           help="npy file containing allelic dp segs-to-clusters results", required=True)
     preprocess_coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs", required=True)
-    preprocess_coverage_mcmc.add_argument("--segmentations", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
+    preprocess_coverage_mcmc.add_argument("--segmentations_pickle", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
     preprocess_coverage_mcmc.add_argument("--repl_pickle", help="pickled dataframe containing replication timing data", required=True)
     preprocess_coverage_mcmc.add_argument("--gc_pickle", help="pickled dataframe containing precomputed gc content. This is not required but will speed up runtime if passed", default=None)
     preprocess_coverage_mcmc.add_argument("--allelic_sample", type=int,
@@ -510,7 +510,7 @@ def main():
         cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
                                              args.allelic_clusters_object,
                                              args.SNPs_pickle,
-                                             args.segmentations,
+                                             args.segmentations_pickle,
                                              args.ref_fasta,
                                              f_repl=args.repl_pickle,
                                              f_GC=args.gc_pickle,

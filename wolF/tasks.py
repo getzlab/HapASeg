@@ -131,6 +131,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "coverage_csv": None,
         "allelic_clusters_object": None,
         "SNPs_pickle": None,
+        "segmentations_pickle": None,
         "repl_pickle": None,
         "gc_pickle":"",
         "allelic_sample":"",
@@ -141,6 +142,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     --ref_fasta ${ref_fasta} \
     --allelic_clusters_object ${allelic_clusters_object} \
     --SNPs_pickle ${SNPs_pickle} \
+    --segmentations_pickle ${segmentations_pickle} \
     --repl_pickle ${repl_pickle}"""
     
     def prolog(self):

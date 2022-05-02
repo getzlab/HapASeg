@@ -503,6 +503,7 @@ def workflow(
         "coverage_csv":tumor_cov_gather_task["coverage"], #each scatter result is the same
         "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
+        "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":ref_config["repl_file"],
         "gc_pickle":ref_config["gc_file"],
         "ref_fasta":localization_task["ref_fasta"]
