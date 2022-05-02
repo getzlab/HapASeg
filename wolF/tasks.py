@@ -151,7 +151,8 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
 
     output_patterns = {
         "preprocess_data": "preprocess_data.npz",
-        "cov_df_pickle": "cov_df.pickle"
+        "cov_df_pickle": "cov_df.pickle",
+        "allelic_seg_groups": "allelic_seg_groups.pickle"
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"

@@ -125,6 +125,7 @@ def parse_args():
     coverage_mcmc.add_argument("--allelic_clusters_object",
                                help="npy file containing allelic dp segs-to-clusters results")
     coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs")
+    coverage_mcmc.add_argument("--segmentations", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
     coverage_mcmc.add_argument("--covariate_dir",
                                help="path to covariate directory with covariates all in pickled files")
     coverage_mcmc.add_argument("--num_draws", type=int,
@@ -145,6 +146,7 @@ def parse_args():
     preprocess_coverage_mcmc.add_argument("--allelic_clusters_object",
                                           help="npy file containing allelic dp segs-to-clusters results", required=True)
     preprocess_coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs", required=True)
+    preprocess_coverage_mcmc.add_argument("--segmentations", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
     preprocess_coverage_mcmc.add_argument("--repl_pickle", help="pickled dataframe containing replication timing data", required=True)
     preprocess_coverage_mcmc.add_argument("--gc_pickle", help="pickled dataframe containing precomputed gc content. This is not required but will speed up runtime if passed", default=None)
     preprocess_coverage_mcmc.add_argument("--allelic_sample", type=int,
@@ -504,17 +506,34 @@ def main():
 
     ## preprocess ADP data to run scattered coverage mcmc jobs on each ADP cluster
     elif args.command == "coverage_mcmc_preprocess":
+        ## perform initial Poisson regression
         cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
                                              args.allelic_clusters_object,
                                              args.SNPs_pickle,
+                                             args.segmentations,
                                              args.ref_fasta,
                                              f_repl=args.repl_pickle,
                                              f_GC=args.gc_pickle,
                                              allelic_sample=args.allelic_sample)
         Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
+
+        ## create chunks for both burnin and scatter
+        cov_df = cov_df.sort_values("start_g", ignore_index = True)
+
+        # indices of coverage bins 
+        seg_g = cov_df.groupby("seg_idx")
+        seg_g_idx = pd.Series(seg_g.indices).to_frame(name = "indices")
+        seg_g_idx["allelic_cluster"] = seg_g["allelic_cluster"].first()
+        seg_g_idx["n_cov_bins"] = seg_g.size()
+
+        ## save
+        # regression matrices
         np.savez(os.path.join(output_dir, 'preprocess_data'), Pi=Pi, r=r, C=C, all_mu=all_mu,
                  global_beta=global_beta, adp_cluster=adp_cluster)
+        # coverage dataframe mapped 
         cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
+        # allelic segment indices into coverage dataframe
+        seg_g_idx.to_pickle(os.path.join(output_dir, 'allelic_seg_groups.pickle'))
 
     ## run scattered coverage mcmc job using preprocessed data
     elif args.command == "coverage_mcmc_shard":
