@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import pickle
 import glob
 import re
 import os
@@ -18,6 +19,7 @@ class CoverageMCMCRunner:
                  coverage_csv,
                  f_allelic_clusters,
                  f_SNPs,
+                 f_segs,
                  f_repl,
                  ref_fasta,
                  f_GC=None,
@@ -33,6 +35,8 @@ class CoverageMCMCRunner:
         self.ref_fasta = ref_fasta
 
         self.allelic_clusters = np.load(f_allelic_clusters)
+        with open(f_segs, "rb") as f:
+            self.segmentations = pickle.load(f)
         # coverage input is expected to be a df file with columns: ["chr", "start", "end", "covcorr", "covraw"]
         self.full_cov_df = self.load_coverage(coverage_csv)
         self.load_covariates()
@@ -165,38 +169,31 @@ class CoverageMCMCRunner:
         cuj_max = clust_uj.max() + 1
         self.SNPs["clust_choice"] = clust_uj
 
-        # assign coverage intervals to clusters
+        ## assign coverage intervals to allelic clusters and segments
+        # assignment probabilities of each coverage interval -> allelic cluster
         Cov_clust_probs = np.zeros([len(self.full_cov_df), cuj_max])
 
-        # first compute assignment probabilities based on the SNPs within each bin
-        print("Mapping SNPs to targets ...", file = sys.stderr)
-        for targ, snp_idx in tqdm.tqdm(self.SNPs.groupby("tidx")["clust_choice"]):
-            if len(snp_idx) == 1:
-                Cov_clust_probs[int(targ), snp_idx] = 1.0
-            else: 
-                targ_clust_hist = np.bincount(snp_idx, minlength = cuj_max) 
-                Cov_clust_probs[int(targ), :] = targ_clust_hist / targ_clust_hist.sum()
+        # get allelic segment boundaries
+        seg_bdy = np.r_[list(self.segmentations[self.allelic_sample].keys()), len(self.SNPs)]
+        seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
+        self.SNPs["seg_idx"] = 0
+        for i, (st, en) in enumerate(seg_bdy):
+            self.SNPs.iloc[st:en, self.SNPs.columns.get_loc("seg_idx")] = i
 
-#        # assign coverage intervals to allelic segments
-#        # TODO: segmentation boundary will be passed directly in, so we don't have to recompute it
-#        seg_bdy = np.flatnonzero(np.r_[1, np.diff(self.SNPs["clust_choice"]), 1] != 0)
-#        seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
-#        self.SNPs["seg_idx"] = 0
-#        for i, (st, en) in enumerate(seg_bdy):
-#            self.SNPs.iloc[st:en, self.SNPs.columns.get_loc("seg_idx")] = i
-#        seg_idx_max = self.SNPs["seg_idx"].max() + 1
-#
-#        Cov_clust_probs_seg = np.zeros([len(self.full_cov_df), seg_idx_max])
-#
-#        for targ, snp_idx in tqdm.tqdm(self.SNPs.groupby("tidx")["seg_idx"]):
-#            if len(snp_idx) == 1:
-#                Cov_clust_probs_seg[int(targ), snp_idx] = 1.0
-#            else: 
-#                targ_clust_hist = np.bincount(snp_idx, minlength = seg_idx_max) 
-#                Cov_clust_probs_seg[int(targ), :] = targ_clust_hist / targ_clust_hist.sum()
-#
-#        # XXX: temporary
-#        Cov_clust_probs = Cov_clust_probs_seg
+        # first compute assignment probabilities based on the SNPs within each bin
+        # segments just get assigned to the maximum probability
+        self.full_cov_df["seg_idx"] = -1
+        print("Mapping SNPs to targets ...", file = sys.stderr)
+        for targ, D in tqdm.tqdm(self.SNPs.groupby("tidx")[["clust_choice", "seg_idx"]]):
+            clust_idx = D["clust_choice"].values
+            seg_idx = D["seg_idx"].values
+            if len(clust_idx) == 1:
+                Cov_clust_probs[int(targ), clust_idx] = 1.0
+                self.full_cov_df.at[int(targ), "seg_idx"] = seg_idx[0]
+            else: 
+                targ_clust_hist = np.bincount(clust_idx, minlength = cuj_max) 
+                Cov_clust_probs[int(targ), :] = targ_clust_hist / targ_clust_hist.sum()
+                self.full_cov_df.at[int(targ), "seg_idx"] = np.bincount(seg_idx).argmax()
 
         ## subset to targets containing SNPs
         overlap_idx = Cov_clust_probs.sum(1) > 0
