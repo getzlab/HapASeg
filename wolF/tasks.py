@@ -190,16 +190,18 @@ class Hapaseg_coverage_mcmc_burnin(wolf.Task):
 
 class Hapaseg_coverage_mcmc(wolf.Task):
     inputs = {
-        "preprocess_data": None,
+        "preprocess_data": None,      # npz of covariate matrix (C), global beta, ADP cluster mu's, covbin ADP cluster assignments (all_mu), covbin raw coverage values (r)
+        "allelic_seg_indices": None,  # dataframe containing indicies into C/r/all_mu for each allelic segment
+        "allelic_seg_scatter_idx": None,      # allelic segment to operate on (for scatter)
         "num_draws": 50,
-        "cluster_num": None,
         "bin_width":None,
         "burnin_files":""
     }
     script = """
     hapaseg coverage_mcmc_shard --preprocess_data ${preprocess_data} \
+    --allelic_seg_indices ${allelic_seg_idx} \
+    --allelic_seg_idx ${allelic_seg_scatter_idx} \
     --num_draws ${num_draws} \
-    --cluster_num ${cluster_num} \
     --bin_width ${bin_width}"""
      
     def prolog(self):
