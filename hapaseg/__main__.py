@@ -152,6 +152,7 @@ def parse_args():
     preprocess_coverage_mcmc.add_argument("--allelic_sample", type=int,
                                           help="index of sample clustering from allelic DP to use as seed for segmentation. Will use most likely clustering by default",
                                           default=None)
+    preprocess_coverage_mcmc.add_argument("--ref_fasta", required = True)
 
     ## running coverage mcmc on single cluster for scatter task
     coverage_mcmc_shard = subparsers.add_parser("coverage_mcmc_shard",
