@@ -451,7 +451,7 @@ class AllelicCluster:
 
     # computes ML component from hessian approximation for two split segments
     def _get_log_ML_split(self, H1, H2):
-        return np.log(2 * np.pi) - (np.log(np.linalg.det(-H1) * np.linalg.det(-H2))) / 2
+        return 2*np.log(2 * np.pi) - (np.log(np.linalg.det(-H1) * np.linalg.det(-H2))) / 2
 
     # computes the log ML of joining two segments
     def _log_ML_join(self, ind, ret_opt_params=False):
