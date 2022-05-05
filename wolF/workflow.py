@@ -38,7 +38,8 @@ hapaseg = wolf.ImportTask(
 # for coverage collection
 split_intervals = wolf.ImportTask(
   task_path = "git@github.com:getzlab/split_intervals_TOOL.git",
-  task_name = "split_intervals"
+  task_name = "split_intervals",
+  commit = "dc102d8"
 )
 
 cov_collect = wolf.ImportTask(
