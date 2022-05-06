@@ -116,7 +116,7 @@ class Run_Cov_DP:
         self.seg_id_col = self.cov_df.columns.get_loc('segment_ID')
         self.beta = beta
         self.bin_exposure=bin_exposure
-        self.covar_cols = sorted(self.cov_df.columns[self.cov_df.columns.str.contains("^C_.*_z$")])
+        self.covar_cols = sorted(self.cov_df.columns[self.cov_df.columns.str.contains("^C_.*_z$|^C_log_len$")])
         
         self.num_segments = self.cov_df.iloc[:, self.seg_id_col].max() + 1
         self.segment_r_list = [None] * self.num_segments

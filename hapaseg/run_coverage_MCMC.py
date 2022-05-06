@@ -94,8 +94,8 @@ class CoverageMCMCRunner:
         
 
     def load_covariates(self):
-        ## Target size
-
+        zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
+        
         # we only need bin size if doing exomes but we can check by looking at the bin lengths
         self.full_cov_df["C_log_len"] = np.log(self.full_cov_df["end"] - self.full_cov_df["start"] + 1)
             
@@ -105,7 +105,6 @@ class CoverageMCMCRunner:
             self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
 
         ## Replication timing
-        zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
 
         # load repl timing
         F = pd.read_pickle(self.f_repl)
@@ -209,7 +208,7 @@ class CoverageMCMCRunner:
        
         r = np.c_[Cov_overlap["covcorr"]]
         
-        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")])
+        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$|^C_log_len$")])
 
         ## making covariate matrix
         C = np.c_[Cov_overlap[covar_columns]]
@@ -345,7 +344,7 @@ def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None, 
     # along with the bin exposure
     endog = np.exp(np.log(r).flatten() - np.log(bin_width) - mu_is).reshape(-1,1)
     # generate covars
-    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("^C_.*_z$")])
+    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("^C_.*_z$|^C_log_len$")])
     C = np.c_[cov_df[covar_columns]]
     # do regression
     pois_regr = PoissonRegression(endog, C, np.ones(endog.shape))
