@@ -145,7 +145,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         draw_dfs.append(a_cov_seg_df)
 
     print('completed ACDP dataframe generation')
-    return pd.concat(draw_dfs), dp_run.beta
+    return pd.concat(draw_dfs), dp_run.beta, np.argmax([dp.ll_history[-1] for dp in DP_runs])
 
 class AllelicCoverage_DP:
     def __init__(self, cov_df, beta, cytoband_file, seed_all_clusters=True):
