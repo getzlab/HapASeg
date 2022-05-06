@@ -12,6 +12,7 @@ import scipy.special as ss
 import sortedcontainers as sc
 import pickle
 import os
+import distinctipy
 
 from capy import seq, mut
 
@@ -26,6 +27,15 @@ def LSE(x):
     lmax = np.max(x)
     return lmax + np.log(np.exp(x - lmax).sum())
 
+# quick allele counting using phasing
+def _Ssum_ph(S, mm_mat, seg_idx, flip_col, min = True):
+        flip = S.iloc[seg_idx, flip_col]
+        flip_n = ~flip
+        if min:
+            return mm_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(S)]].sum()
+        else:
+            return mm_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(S)]].sum()
+
 # method for concatenating dp draws into a single large df to be used by the acdp
 def generate_acdp_df(SNP_path, # path to SNP df
                  ADP_path, # path to npz ADP result
@@ -35,11 +45,17 @@ def generate_acdp_df(SNP_path, # path to SNP df
                  ADP_draw_index=-1): # index of ADP draw used in Coverage MCMC
 
     SNPs = pd.read_pickle(SNP_path)
-    SNPs["chr"], SNPs["pos"] = seq.gpos2chrpos(SNPs["gpos"])
     ADP_clusters = np.load(ADP_path)
     phases = ADP_clusters["snps_to_phases"][ADP_draw_index]
-    SNPs.iloc[phases, [0, 1]] = SNPs.iloc[phases, [1, 0]]
     
+    S_flip_col = SNPs.columns.get_loc('flipped')
+    S_min_col = SNPs.columns.get_loc('min')
+    S_maj_col = SNPs.columns.get_loc('maj')
+    
+    # update phases with those from the selected draw
+    SNPs.iloc[:, S_flip_col] = phases
+    mm_mat = SNPs.loc[:, ["min", "maj"]].values.reshape(-1, order = "F")
+
     if cdp_object_path is not None:
         with open(CDP_path, 'rb') as f:
             dp_pickle = pickle.load(f)
@@ -63,7 +79,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         print('concatenating dp run ', draw_num)
         a_cov_seg_df = dp_run.cov_df.copy()
 
-        covar_cols = sorted(a_cov_seg_df.columns[a_cov_seg_df.columns.str.contains("^C_.*_z$")])
+        covar_cols = sorted(a_cov_seg_df.columns[a_cov_seg_df.columns.str.contains("^C_.*_z$|^C_log_len$")])
         # add minor and major allele counts for each bin to the cov_seg_df here to allow for beta draws on the fly for each segment
         a_cov_seg_df['min_count'] = 0
         a_cov_seg_df['maj_count'] = 0
@@ -73,7 +89,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         SNPs["cov_tidx"] = mut.map_mutations_to_targets(SNPs, a_cov_seg_df, inplace=False)
 
         for idx, group in SNPs.groupby('cov_tidx').indices.items():
-            minor, major = SNPs.iloc[group, [0, 1]].sum()
+            minor, major = _Ssum_ph(SNPs, mm_mat, group, S_flip_col, min = True), _Ssum_ph(SNPs, mm_mat, group, S_flip_col, min = False)
             a_cov_seg_df.iloc[int(idx), [min_col_idx, maj_col_idx]] = minor, major
 
         # add dp cluster annotations
@@ -811,64 +827,309 @@ class AllelicCoverage_DP:
 
         # return the clusters from the last draw and the counts
         return self.clusters_to_segs
+    
+    #helper functions for plotting
+    def _get_tuple_intervals(self, x_ind, min_len=5):
+        """Find runs of consecutive indices of length at least min_len"""
+        run_intervals = []
+        prev_idx = None
+        prev_val = 0
+        run_len = 0
+        
+        for i, v in enumerate(x_ind):
+            if v == prev_val + 1:
+                run_len += 1
+            else:
+                if run_len >= min_len:
+                    run_intervals += [prev_idx, i-1]
+                prev_idx = i
+                run_len = 1
+        
+            prev_val = v
+        return np.array(run_intervals).reshape(-1,2)
+    
+    def _get_seg_terr(self, df):
+        # find the genomic territory spanned by some coverage bins
+        return (df.end_g - df.start_g).sum()
+    
+    def _get_clust_terr(self, seg_list, full_df):
+        # find the genomic territory spanned by a acdp cluster
+        return sum([self._get_seg_terr(full_df[seg][1]) for seg in seg_list])
+    
+    def _get_color_palette(self, num_colors):
+        base_colors = np.array([
+              [0.368417, 0.506779, 0.709798],
+              [0.880722, 0.611041, 0.142051],
+              [0.560181, 0.691569, 0.194885],
+              [0.922526, 0.385626, 0.209179],
+              [0.528488, 0.470624, 0.701351],
+              [0.772079, 0.431554, 0.102387],
+              [0.363898, 0.618501, 0.782349],
+              [1, 0.75, 0],
+              [0.647624, 0.37816, 0.614037],
+              [0.571589, 0.586483, 0.],
+              [0.915, 0.3325, 0.2125],
+              [0.400822, 0.522007, 0.85],
+              [0.972829, 0.621644, 0.073362],
+              [0.736783, 0.358, 0.503027],
+              [0.280264, 0.715, 0.429209]
+            ])
+        extra_colors = np.array(
+              distinctipy.distinctipy.get_colors(
+                num_colors - base_colors.shape[0],
+                exclude_colors = [list(x) for x in np.r_[np.c_[0, 0, 0], np.c_[1, 1, 1], np.c_[0.5, 0.5, 0.5], np.c_[1, 0, 1], base_colors]],
+            rng = 1234
+              )
+            )
+        return np.r_[base_colors, extra_colors if extra_colors.size > 0 else np.empty([0, 3])]
+
+    def _get_cluster_colors(self):
+        num_clusters = len(self.cluster_dict.keys())
+        
+        full_df = list(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
+        #get argsorting in descending order (hence the negative sign)
+        si = np.argsort([- self._get_clust_terr(self.cluster_dict[c], full_df) for c in self.cluster_dict.keys()])
+        palette = self._get_color_palette(num_clusters)
+        
+        return palette[si]
+    
+    def _get_cdp_colors(self, cdp_draw=0):
+        chosen_draw = self.cov_df.loc[(self.cov_df.dp_draw == cdp_draw) & (self.cov_df.allele==1)]
+        num_clusters = len(chosen_draw.cov_DP_cluster.unique())
+        palette = self._get_color_palette(num_clusters)
+        
+        return {c : palette[i] for i, c in enumerate(chosen_draw.cov_DP_cluster.value_counts().index)}
+
+    def _get_adp_colors(self):
+        chosen_draw = self.cov_df.loc[(self.cov_df.dp_draw == 0) & (self.cov_df.allele==1)]
+        num_clusters = len(chosen_draw.allelic_cluster.unique())
+        palette = self._get_color_palette(num_clusters)
+        
+        return {c : palette[i] for i, c in enumerate(chosen_draw.allelic_cluster.value_counts().index)}
+    
+    # helper function for plotting coverage bins at their centers
+    def _scatter_apply(self, x, _minor, _major):
+        _f = np.zeros(len(x))
+        _f[x.allele == -1] = _minor / (_minor + _major)
+        _f[x.allele == 1] = _major / (_minor + _major)
+        centers = x.start_g.values + (x.end_g.values - x.start_g.values) / 2
+        return centers, _f
+    
+    def _get_real_cov(self, df):
+        covar_cols = sorted(df.columns[df.columns.str.contains("^C_.*_z$|^C_log_len$")])
+        C = np.c_[df[covar_cols]]
+        return np.exp(np.log(df.covcorr.values) - (C @ self.beta).flatten())
+
+    def precompute_cluster_params(self, cdp_draw=None):
+        
+        clust_data = {}
+        if cdp_draw is None:
+            full_df = list(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
+        else:
+            full_df = list(self.cov_df.loc[self.cov_df.dp_draw==cdp_draw].groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
+        for i, c in enumerate(self.cluster_dict.keys()):
+            clust_r = []
+            clust_terr = 0
+            for tup in self.cluster_dict[c]:
+                clust_r.append(self.segment_r_list[tup])
+                clust_terr += self._get_seg_terr(full_df[tup][1])
+            clust_r_arr = np.concatenate(clust_r)
+            clust_data[c] = {'mean': clust_r_arr.mean(), 'std': clust_r_arr.std(), 'terr':clust_terr, 'datapoints':clust_r_arr}
+        clust_terrs = np.array([clust_data[c]['terr'] for c in clust_data.keys()])
+        clust_ratios = clust_terrs / clust_terrs.sum()
+        for i, c in enumerate(clust_data.keys()):
+            clust_data[c]['terr_fraction'] = clust_ratios[i]
+        return clust_data
 
     # by default uses last sample
-    def visualize_ACDP(self, save_path):
-        # precompute the fallback ACDP numbers
+    def visualize_ACDP(self, 
+                   save_path, 
+                   use_cluster_stats = False, 
+                   plot_hist=True, 
+                   plot_real_cov=False, 
+                   plot_SNP_imbalance=False,
+                   cdp_draw=None):
+    
+        # precompute the fallback ADP counts
         ADP_dict = {}
         for ADP, group in self.cov_df.loc[self.cov_df.dp_draw == 0].groupby('allelic_cluster'):
             ADP_dict[ADP] = (group['maj_count'].sum(), group['min_count'].sum())
-
-        # compute chr ends for plotting
-        allelic_segs = parse_cytoband(self.cytoband_file)
-        chrbdy = allelic_segs.dropna().loc[:, ["start", "end"]]
-        chr_ends = chrbdy.loc[chrbdy["start"] != 0, "end"].cumsum()
-
-        # helper function for plotting
-        def _scatter_apply(_x, _minor, _major):
-            _f = np.zeros(len(x))
-            _f[x.allele == -1] = _minor / (_minor + _major)
-            _f[x.allele == 1] = _major / (_minor + _major)
-            centers = x.start_g.values + (x.end_g.values - x.start_g.values) / 2
-            return centers, _f
-
-        plt.figure(6, figsize=[19.2, 5.39])
-        plt.clf()
+        
+        # set up canvas according to options
+        if plot_hist:
+            fig = plt.figure(6, figsize=[22, 7])
+            plt.clf()
+            ax_g = fig.add_axes([0,0,0.85,1])
+            ax_hist = fig.add_axes([0.855,0,0.145,1])
+            ax_hist.tick_params(axis="y", labelleft=False, left=False, right=True, labelright=True)
+        else:
+            fig = plt.figure(6, figsize=[22,7])
+            plt.clf()
+            ax_g = plt.gca()
+        
+        # to plot the cdp colors agnostic of yscale we create a new transform
+        cdp_trans = mpl.transforms.blended_transform_factory(ax_g.transData, ax_g.transAxes)
+        
+        if plot_SNP_imbalance:
+            #make a twin axis for the allelic imbalance
+            ax_g2 = ax_g.twinx()
+            ax_g2.set_ylabel('allelic imbalance')
+        
+        cluster_stats = self.precompute_cluster_params()
+        
+        cluster_colors = self._get_cluster_colors()
+        cdp_colors = self._get_cdp_colors() if cdp_draw is None else self._get_cdp_colors(cdp_draw)
+        if plot_SNP_imbalance:
+            adp_colors = self._get_adp_colors()
+        
         full_df = list(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
+
         max_acov = 0
         for i, c in enumerate(self.cluster_dict.keys()):
-            for seg in self.cluster_dict[c]:
-                x = full_df[seg][1].loc[:,
-                    ["start_g", "end_g", 'allelic_cluster', 'cov_DP_mu', 'allele', 'maj_count', 'min_count']]
+            cluster_real_data = []
+            for tup in self.cluster_dict[c]:
+                tup_data = full_df[tup]
+                
+                quad = tup_data[0]
+                x = tup_data[1]
+                
+                # if we're only plotting a single cdp cluster we can skip irrelevant tuples
+                if cdp_draw is not None and quad[3] != cdp_draw:
+                    continue
+
                 adp = x['allelic_cluster'].values[0]
                 if len(x) > 10:
                     major, minor = x['maj_count'].sum(), x['min_count'].sum()
                 else:
                     major, minor = ADP_dict[adp]
 
-                locs, f = _scatter_apply(x, minor, major)
+                # scatter plot for each of the coverage bins in the segment
+                locs, f = self._scatter_apply(x, minor, major)
                 y = np.exp(x.cov_DP_mu)
                 acov_levels = f*y
-                max_acov = max(max_acov, max(acov_levels))
-                plt.scatter(
+                
+                 #plot shrinkage estimates in order to see small segments
+                ax_g.scatter(
                     locs,
                     acov_levels,
-                    color=np.array(colors)[i % len(colors)],
+                    color=np.array(cluster_colors)[i],
                     marker='.',
-                    alpha=0.03,
-                    s=4
+                    alpha=0.15,
+                    s=8
                 )
-        for chrbdy in chr_ends[:-1]:
-            plt.axvline(chrbdy, color='k')
+                
+                #keep track of the largest allelic coverage level seen so far
+                max_acov = max(max_acov, max(acov_levels))
+                
+                #save real coverage values from the first cdp draw or chosen draw if given
+                if quad[3] == 0 or (cdp_draw is not None and quad[3]==cdp_draw):
+                    real_data = f * self._get_real_cov(x)
+                    cluster_real_data.append(real_data)
+                    
+                    # plot real coverage data as a grey scatter
+                    if plot_real_cov:
+                        ax_g.scatter(
+                            locs,
+                            real_data,
+                            color='gray',
+                        marker='.',
+                        alpha=0.1,
+                        s=4
+                        )
+                    # plot the allelic imbalance of each coverage bin
+                    if plot_SNP_imbalance:
+                        ax_g2.scatter(
+                            locs,
+                            x['min_count']/ (x['min_count'] + x['maj_count']),
+                            color=adp_colors[quad[0]],
+                            marker='.',
+                            alpha=0.1,
+                            s=8
+                        )
+                    
+                    #plot CDP cluster assignments
+                    lc = mpl.collections.LineCollection([[(l, 0), (l, 0.01)] for l in locs], color = cdp_colors[quad[1]], transform=cdp_trans)
+                    ax_g.add_collection(lc)
+                
+                #plot patches for each segment within the tuple
+                seg_intervals = self._get_tuple_intervals(x.index)
+                for intv in seg_intervals:
+                    #plot patch with centered at cluster mean with height equal to cluster 95% CI
+                    if use_cluster_stats:
+                        # use overall cluster statistics
+                        tup_mean = cluster_stats[c]['mean']
+                        tup_std = cluster_stats[c]['std']
+                    else:
+                        # use statistics from the tuple only
+                        tup_mean = self.segment_r_list[tup].mean()
+                        tup_std = np.sqrt(self.segment_V_list[tup])
+                    
+                    tup_width = x.iloc[intv[1]].end_g - x.iloc[intv[0]].start_g
+                    tup_allele = x.iloc[0].allele
+                    
+                    # draw the acdp segment
+                    ax_g.add_patch(mpl.patches.Rectangle(
+                      (x.iloc[intv[0]].start_g, tup_mean - 1.95 * tup_std),
+                      tup_width,
+                      np.maximum(0, 2 * 1.95 * tup_std),
+                      facecolor = cluster_colors[i],
+                      fill = True, alpha=0.5 if cdp_draw is None else 0.8,
+                      edgecolor = 'b' if tup_allele > 0 else 'r', # color edges according to allele
+                      linewidth = 1 if tup_width > 1000000 else 0.5,
+                      ls = (0, (0,5,5,0)) if tup_allele > 0 else (0, (5,0,0,5)) # color edges with alternating pattern according to allele
+                    ))
+                    
+                    # show cdp cluster at bottom of plot
+                    if quad[3] == 0 or (cdp_draw is not None and quad[3]==cdp_draw):
+                        ax_g.add_patch(mpl.patches.Rectangle(
+                          (x.iloc[intv[0]].start_g, 0),
+                          tup_width,
+                          0.01,
+                          transform=cdp_trans,
+                          facecolor = cdp_colors[quad[1]],
+                          fill = True, alpha=1,
+                        ))
+            
+            #save real data for histogram
+            cluster_stats[c]['real_data'] = np.concatenate(cluster_real_data)
+            
+            # draw cluster average coverage level for large clusters
+            if cluster_stats[c]['terr_fraction'] > 0.05:
+                ax_g.axhline(cluster_stats[c]['mean'], color=cluster_colors[i], alpha=0.3, linewidth=2)
+    
+        round_max_acov = 25*int(np.ceil(max_acov / 25))
+        
+        #now that we know the maximum allelic coverage value we can set our bins and plot the histogram
+        if plot_hist:
+            real = []
+            hist_bin_width = min(5* int(np.ceil(max_acov / 100)), 250)
+            for i, c in enumerate(self.cluster_dict.keys()):
+                ax_hist.hist(cluster_stats[c]['datapoints'], bins = np.r_[:round_max_acov:hist_bin_width], alpha = 0.5, orientation='horizontal', color= cluster_colors[i])
+                real.append(cluster_stats[c]['real_data'])
+            ax_hist2=ax_hist.twiny()
+            ax_hist2.hist(np.concatenate(real), bins = np.r_[:round_max_acov:hist_bin_width], alpha = 0.1, orientation='horizontal', color= 'k')
+        
+        plt.sca(ax_g)
+        plot_chrbdy(self.cytoband_file)
 
         plt.xlabel("Genomic position")
         plt.ylabel("Coverage of major/minor alleles")
-        round_max_acov = 25*int(np.ceil(max_acov / 25))
-        plt.xlim((0.0, 2879000000.0))
-        plt.ylim([0, round_max_acov])
+        
+        # find last chrom to plot using cytoband file
+        cb = parse_cytoband(self.cytoband_file)
+        ends = cb.loc[cb.start!=0]
+        last_chr_idx = np.searchsorted(np.cumsum(ends.end), self.cov_df.end_g.max()) + 1
+        last_g = ends.end[:last_chr_idx].sum()
 
-        plt.savefig(os.path.join(save_path, 'acdp_genome_plot.png'), dpi=300)
-
+        ax_g.set_xlim((0.0, last_g))
+        ax_g.set_ylim([0, round_max_acov])
+        
+        if plot_hist:
+            ax_hist.set_ylim([0, round_max_acov])
+        
+        plt.savefig(save_path, bbox_inches='tight', dpi=500)
+ 
+    def visualize_ACDP_clusters(self):
         #plot individual tuples within clusters
         rs = []
         for c in self.cluster_dict:
