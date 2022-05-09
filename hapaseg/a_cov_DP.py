@@ -145,7 +145,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         draw_dfs.append(a_cov_seg_df)
 
     print('completed ACDP dataframe generation')
-    return pd.concat(draw_dfs), dp_run.beta, np.argmax([dp.ll_history[-1] for dp in DP_runs])
+    return pd.concat(draw_dfs),  np.argmax([dp.ll_history[-1] for dp in DP_runs])
 
 class AllelicCoverage_DP:
     def __init__(self, cov_df, beta, cytoband_file, seed_all_clusters=True):
@@ -246,7 +246,7 @@ class AllelicCoverage_DP:
         # go back through segments and greylist ones with high variance
         greylist_mask = np.ones(self.num_segments, dtype=bool)
         greylist_mask[self.greylist_segments] = False
-        cutoff = np.quantile(self.segment_V_list[greylist_mask], 0.80)
+        cutoff = np.quantile(self.segment_V_list[greylist_mask], 0.95)
         self.alpha_0 = self.segment_counts[greylist_mask].mean()
         self.beta_0 = self.alpha_0 / 2 * self.segment_V_list[greylist_mask].mean()
         self.loggamma_alpha_0 = ss.loggamma(self.alpha_0)
@@ -1090,8 +1090,8 @@ class AllelicCoverage_DP:
                           fill = True, alpha=1,
                         ))
             
-            #save real data for histogram
-            cluster_stats[c]['real_data'] = np.concatenate(cluster_real_data)
+            #save real data for histogram if there were any in the draw(s) of interest
+            cluster_stats[c]['real_data'] = np.concatenate(cluster_real_data) if len(cluster_real_data) > 0 else []
             
             # draw cluster average coverage level for large clusters
             if cluster_stats[c]['terr_fraction'] > 0.05:
@@ -1102,7 +1102,7 @@ class AllelicCoverage_DP:
         #now that we know the maximum allelic coverage value we can set our bins and plot the histogram
         if plot_hist:
             real = []
-            hist_bin_width = min(5* int(np.ceil(max_acov / 100)), 250)
+            hist_bin_width = 1
             for i, c in enumerate(self.cluster_dict.keys()):
                 ax_hist.hist(cluster_stats[c]['datapoints'], bins = np.r_[:round_max_acov:hist_bin_width], alpha = 0.5, orientation='horizontal', color= cluster_colors[i])
                 real.append(cluster_stats[c]['real_data'])
@@ -1129,7 +1129,7 @@ class AllelicCoverage_DP:
         
         plt.savefig(save_path, bbox_inches='tight', dpi=500)
  
-    def visualize_ACDP_clusters(self):
+    def visualize_ACDP_clusters(self, save_path):
         #plot individual tuples within clusters
         rs = []
         for c in self.cluster_dict:
@@ -1162,7 +1162,8 @@ class AllelicCoverage_DP:
         counter = 0
         for c in [t[1] for t in sorted(rs)]:
             vals = [np.array(self.segment_r_list[i]).mean() for i in self.cluster_dict[c]]
-            ax.scatter(np.r_[counter:counter + len(vals)], vals)
+            ax.scatter(np.r_[counter:counter + len(vals)], vals, 
+                    alpha = [0.3 if s in self.greylist_segments else 1 for s in self.cluster_dict[c]])
             counter += len(vals)
 
         plt.savefig(os.path.join(save_path, 'acdp_clusters_plot.png'), dpi=300)

@@ -205,6 +205,7 @@ def parse_args():
     ac_dp.add_argument("--acdp_df_path", help="path to acdp dataframe")
     ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
     ac_dp.add_argument("--cytoband_file", help="path to cytoband txt file")
+    ac_dp.add_argument("--opt_cdp_idx", help="index of best cdp run")
     ac_dp.add_argument("--warmstart", type=bool, default=True, help="run clustering with warmstart")
 
     args = parser.parse_args()
@@ -627,7 +628,7 @@ def main():
     elif args.command == "generate_acdp_df":
         if args.cdp_object is not None:
             #all of our dp runs are in one object
-            acdp_df, beta = generate_acdp_df(args.snp_dataframe,
+            acdp_df, opt_cdp_idx = generate_acdp_df(args.snp_dataframe,
                                              args.allelic_clusters_object,
                                              cdp_object_path=args.cdp_object,
                                              bin_width=args.bin_width,
@@ -635,25 +636,32 @@ def main():
         
         if args.cdp_filepaths is not None:
             #all of our dp runs are in one object
-            acdp_df, beta = generate_acdp_df(args.snp_dataframe,
+            acdp_df, opt_cdp_idx = generate_acdp_df(args.snp_dataframe,
                                              args.allelic_clusters_object,
                                              cdp_scatter_files=args.cdp_filepaths,
                                              bin_width=args.bin_width,
                                              ADP_draw_index=args.allelic_draw_index)
         
         acdp_df.to_pickle(os.path.join(output_dir, "acdp_df.pickle"))
-
+        with open('./opt_cdp_draw.txt', 'w') as f:
+            f.write(str(opt_cdp_idx))
+       
     elif args.command == "allelic_coverage_dp":
         acdp_df = pd.read_pickle(args.acdp_df_path)
         # may want to switch this to a preferred method of beta loading
         with open(args.coverage_dp_object, "rb") as f:
             cdp_pickle = pickle.load(f)
+        
         beta = cdp_pickle.beta
         acdp = AllelicCoverage_DP(acdp_df, beta, args.cytoband_file, args.warmstart)
         acdp.run(args.num_samples)
         print("visualizing run")
-        acdp.visualize_ACDP(output_dir)
-
+        
+        acdp.visualize_ACDP('./acdp_all_draws.png')
+        acdp.visualize_ACDP('./acdp_agg_draws.png', plot_real_cov=True, use_cluster_stats=True)
+        acdp.visualize_ACDP('./acdp_best_cdp_draw.png', use_cluster_stats=True, cdp_draw=int(args.opt_cdp_idx))
+        
+        acdp.visualize_ACDP_clusters(output_dir)
         with open(os.path.join(output_dir, "acdp_model.pickle"), "wb") as f:
             pickle.dump(acdp, f)
 
