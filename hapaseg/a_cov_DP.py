@@ -1163,7 +1163,7 @@ class AllelicCoverage_DP:
         for c in [t[1] for t in sorted(rs)]:
             vals = [np.array(self.segment_r_list[i]).mean() for i in self.cluster_dict[c]]
             ax.scatter(np.r_[counter:counter + len(vals)], vals, 
-                    alpha = [0.3 if s in self.greylist_segments else 1 for s in self.cluster_dict[c]])
+                    alpha = [0.6 if s in self.greylist_segments else 1 for s in self.cluster_dict[c]])
             counter += len(vals)
 
         plt.savefig(os.path.join(save_path, 'acdp_clusters_plot.png'), dpi=300)
