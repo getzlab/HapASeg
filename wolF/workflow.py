@@ -38,7 +38,8 @@ hapaseg = wolf.ImportTask(
 # for coverage collection
 split_intervals = wolf.ImportTask(
   task_path = "git@github.com:getzlab/split_intervals_TOOL.git",
-  task_name = "split_intervals"
+  task_name = "split_intervals",
+  commit = "dc102d8"
 )
 
 cov_collect = wolf.ImportTask(
@@ -593,7 +594,7 @@ def workflow(
     # generate acdp dataframe 
     gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
     inputs = {
-        "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'][0], #each scatter result is the same
+        "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'], #each scatter result is the same
         "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
         "cdp_filepaths":[cov_dp_task["cov_dp_object"]],
         "allelic_draw_index":adp_draw_num,
@@ -608,7 +609,8 @@ def workflow(
         "coverage_dp_object":cov_dp_task["cov_dp_object"][0],
         "acdp_df":gen_acdp_task["acdp_df_pickle"],
         "num_samples":num_cov_seg_samples,
-        "cytoband_file": localization_task["cytoband_file"]
+        "cytoband_file": localization_task["cytoband_file"],
+        "opt_cdp_idx" : gen_acdp_task["opt_cdp_idx"]
         }
     )
 
