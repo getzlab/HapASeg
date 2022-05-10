@@ -131,13 +131,13 @@ for i, chrname in enumerate(["chr" + str(x) for x in list(range(1, 23)) + ["X", 
 # bigWig2FWB/bigWig2FWB covars/wgEncodeOpenChromFaireGm12878BaseOverlapSignal.bigWig covars/wgEncodeOpenChromFaireGm12878BaseOverlapSignal
 
 ## WGS
-from capy import fwb
+from capy import fwb, mut
 
 F = fwb.FWB("covars/wgEncodeOpenChromFaireGm12878BaseOverlapSignal.fwb");
 
 clen = seq.get_chrlens()
 C = []
-for i, chrname in enumerate(["chr" + str(x) for x in list(range(1, 23)) + ["X", "Y"]]):
+for i, chrname in enumerate(["chr" + str(x) for x in list(range(1, 23)) + ["X"]]):
     bins = np.r_[0:clen[i]:2000, clen[i]]; bins = np.c_[bins[:-1], bins[1:]]
     tmp = pd.DataFrame({ "chr" : chrname, "start" : bins[:, 0], "end" : bins[:, 1], "FAIRE" : 0 })
     for j, (st, en) in enumerate(tqdm.tqdm(bins)):
@@ -145,6 +145,7 @@ for i, chrname in enumerate(["chr" + str(x) for x in list(range(1, 23)) + ["X", 
     C.append(tmp)
 
 FAIRE = pd.concat(C, ignore_index = True)
+FAIRE["chr"] = mut.convert_chr(FAIRE["chr"])
 FAIRE.to_pickle("covars/FAIRE_GM12878.hg19.pickle")
 
 # }}}
