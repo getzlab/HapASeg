@@ -139,24 +139,22 @@ class CoverageMCMCRunner:
         
         ## Fragment length
 
-        # some bins have zero mean fragment length(!?); NaN these out
-        self.full_cov_df.loc[(self.full_cov_df.mean_frag_len == 0) | (self.full_cov_df.std_frag_len == 0), ['mean_frag_len', 'std_frag_len']] = (np.nan, np.nan)
+        # some bins have zero mean fragment length; these bins are bad and should be removed
+        self.full_cov_df = self.full_cov_df.loc[(self.full_cov_df.mean_frag_len > 0) & (self.full_cov_df.std_frag_len > 0)].reset_index(drop = True)
 
         self.full_cov_df = self.full_cov_df.rename(columns = { "mean_frag_len" : "C_frag_len" })
         self.full_cov_df["C_frag_len_z"] = zt(self.full_cov_df["C_frag_len"])
 
-        # generate on 10x and 50x scales
-        # TODO: use rolling window rather than disjoint bins
-        for scale in [10, 50]:
-            fl = self.full_cov_df["C_frag_len"].values; fl[np.isnan(fl)] = 0
-            wt = self.full_cov_df["num_reads"].values
-            fl = np.pad(fl, (0, scale - (len(fl) % scale))).reshape(-1, scale)
-            wt = np.pad(wt, (0, scale - (len(wt) % scale))).reshape(-1, scale)
-            wt = wt/wt.sum(1, keepdims = True)
-            self.full_cov_df[f"C_frag_len_{scale}x"] = np.tile(
-              np.einsum('ij,ij->i', wt, fl),
-              [scale, 1]
-            ).T.ravel()[:len(self.full_cov_df)]
+        # generate on 5x and 11x scales
+        swv = np.lib.stride_tricks.sliding_window_view
+        fl = self.full_cov_df["C_frag_len"].values; fl[np.isnan(fl)] = 0
+        wt = self.full_cov_df["num_reads"].values
+        for scale in [5, 11]:
+            fl_sw = swv(np.pad(fl, scale//2), scale)
+            wt_sw = swv(np.pad(wt, scale//2), scale)
+            conv = np.einsum('ij,ij->i', wt_sw, fl_sw)
+
+            self.full_cov_df[f"C_frag_len_{scale}x"] = conv/wt_sw.sum(1)
             self.full_cov_df[f"C_frag_len_{scale}x_z"] = zt(self.full_cov_df[f"C_frag_len_{scale}x"])
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
