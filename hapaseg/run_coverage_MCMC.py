@@ -108,13 +108,14 @@ class CoverageMCMCRunner:
             #remove the len col since it will ruin beta fitting
             self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
 
-        ## Replication timing
         zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
+
+        ## Replication timing
 
         # load repl timing
         F = pd.read_pickle(self.f_repl)
         # map targets to RT intervals
-        tidx = mut.map_mutations_to_targets(self.full_cov_df.rename(columns={"start": "pos"}), F, inplace=False)
+        tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "start")
         self.full_cov_df['C_RT'] = np.nan
         self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, 3:].mean(1).values
 
