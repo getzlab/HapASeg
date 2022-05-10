@@ -112,6 +112,26 @@ class CoverageMCMCRunner:
 
         zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
 
+        ## Fragment length
+
+        # some bins have zero mean fragment length; these bins are bad and should be removed
+        self.full_cov_df = self.full_cov_df.loc[(self.full_cov_df.mean_frag_len > 0) & (self.full_cov_df.std_frag_len > 0)].reset_index(drop = True)
+
+        self.full_cov_df = self.full_cov_df.rename(columns = { "mean_frag_len" : "C_frag_len" })
+        self.full_cov_df["C_frag_len_z"] = zt(self.full_cov_df["C_frag_len"])
+
+        # generate on 5x and 11x scales
+        swv = np.lib.stride_tricks.sliding_window_view
+        fl = self.full_cov_df["C_frag_len"].values; fl[np.isnan(fl)] = 0
+        wt = self.full_cov_df["num_reads"].values
+        for scale in [5, 11]:
+            fl_sw = swv(np.pad(fl, scale//2), scale)
+            wt_sw = swv(np.pad(wt, scale//2), scale)
+            conv = np.einsum('ij,ij->i', wt_sw, fl_sw)
+
+            self.full_cov_df[f"C_frag_len_{scale}x"] = conv/wt_sw.sum(1)
+            self.full_cov_df[f"C_frag_len_{scale}x_z"] = zt(self.full_cov_df[f"C_frag_len_{scale}x"])
+
         ## Replication timing
 
         # load repl timing
@@ -149,26 +169,6 @@ class CoverageMCMCRunner:
 
         # z-transform
         self.full_cov_df["C_FAIRE_z"] = zt(self.full_cov_df["C_FAIRE"])
-
-        ## Fragment length
-
-        # some bins have zero mean fragment length; these bins are bad and should be removed
-        self.full_cov_df = self.full_cov_df.loc[(self.full_cov_df.mean_frag_len > 0) & (self.full_cov_df.std_frag_len > 0)].reset_index(drop = True)
-
-        self.full_cov_df = self.full_cov_df.rename(columns = { "mean_frag_len" : "C_frag_len" })
-        self.full_cov_df["C_frag_len_z"] = zt(self.full_cov_df["C_frag_len"])
-
-        # generate on 5x and 11x scales
-        swv = np.lib.stride_tricks.sliding_window_view
-        fl = self.full_cov_df["C_frag_len"].values; fl[np.isnan(fl)] = 0
-        wt = self.full_cov_df["num_reads"].values
-        for scale in [5, 11]:
-            fl_sw = swv(np.pad(fl, scale//2), scale)
-            wt_sw = swv(np.pad(wt, scale//2), scale)
-            conv = np.einsum('ij,ij->i', wt_sw, fl_sw)
-
-            self.full_cov_df[f"C_frag_len_{scale}x"] = conv/wt_sw.sum(1)
-            self.full_cov_df[f"C_frag_len_{scale}x_z"] = zt(self.full_cov_df[f"C_frag_len_{scale}x"])
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
     # clusters with snps from different clusters are probabliztically assigned
