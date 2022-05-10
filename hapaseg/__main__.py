@@ -148,6 +148,7 @@ def parse_args():
     preprocess_coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs", required=True)
     preprocess_coverage_mcmc.add_argument("--segmentations_pickle", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
     preprocess_coverage_mcmc.add_argument("--repl_pickle", help="pickled dataframe containing replication timing data", required=True)
+    preprocess_coverage_mcmc.add_argument("--faire_pickle", help="pickled dataframe containing FAIRE data", required=True)
     preprocess_coverage_mcmc.add_argument("--gc_pickle", help="pickled dataframe containing precomputed gc content. This is not required but will speed up runtime if passed", default=None)
     preprocess_coverage_mcmc.add_argument("--allelic_sample", type=int,
                                           help="index of sample clustering from allelic DP to use as seed for segmentation. Will use most likely clustering by default",

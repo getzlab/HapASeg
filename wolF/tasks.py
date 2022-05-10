@@ -133,6 +133,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "SNPs_pickle": None,
         "segmentations_pickle": None,
         "repl_pickle": None,
+        "faire_pickle": "/mnt/j/proj/cnv/20201018_hapseg2/covars/FAIRE_GM12878.hg19.pickle", # TODO: make remote
         "gc_pickle":"",
         "allelic_sample":"",
         "ref_fasta": None
@@ -143,7 +144,8 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     --allelic_clusters_object ${allelic_clusters_object} \
     --SNPs_pickle ${SNPs_pickle} \
     --segmentations_pickle ${segmentations_pickle} \
-    --repl_pickle ${repl_pickle}"""
+    --repl_pickle ${repl_pickle} \
+    --faire_pickle ${faire_pickle}"""
     
     def prolog(self):
         if self.conf["inputs"]["gc_pickle"] != "":

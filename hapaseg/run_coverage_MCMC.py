@@ -22,6 +22,7 @@ class CoverageMCMCRunner:
                  f_segs,
                  ref_fasta,
                  f_repl,
+                 f_faire,
                  f_GC=None,
                  num_draws=50,
                  cluster_num=None,
@@ -31,6 +32,7 @@ class CoverageMCMCRunner:
         self.num_draws = num_draws
         self.cluster_num = cluster_num
         self.f_repl = f_repl
+        self.f_faire = f_faire
         self.f_GC = f_GC
         self.ref_fasta = ref_fasta
 
@@ -136,7 +138,18 @@ class CoverageMCMCRunner:
             self.generate_GC()
         
         self.full_cov_df["C_GC_z"] = zt(self.full_cov_df["C_GC"])
-        
+
+        ## FAIRE
+
+        F = pd.read_pickle(self.f_faire)
+        # map targets to FAIRE intervals
+        tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "start")
+        self.full_cov_df['C_FAIRE'] = np.nan
+        self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, -1].values
+
+        # z-transform
+        self.full_cov_df["C_FAIRE_z"] = zt(self.full_cov_df["C_FAIRE"])
+
         ## Fragment length
 
         # some bins have zero mean fragment length; these bins are bad and should be removed
