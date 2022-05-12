@@ -155,15 +155,27 @@ class Run_Cov_DP:
             self.segment_r_list[ID] = seg_df['covcorr'].values
             self.segment_C_list[ID] = np.c_[seg_df[self.covar_cols]]
     
-    def _init_clusters(self, prior_run, count_prior_sum):
+    def _init_clusters(self, prior_run, count_prior_sum, warm_start=True):
         # if first iteration then add first segment to first cluster
         if prior_run is None:
-            self.cluster_counts[0] = 1
-            self.unassigned_segs.discard(0)
-            self.cluster_dict[0] = sc.SortedSet([0])
-            self.cluster_MLs[0] = self._ML_cluster([0])
-            # next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
-            self.next_cluster_index = 1
+            if not warm_start:
+                self.cluster_counts[0] = 1
+                self.cluster_assignments[0] = 0
+                self.unassigned_segs.discard(0)
+                self.cluster_dict[0] = sc.SortedSet([0])
+                self.cluster_MLs[0] = self._ML_cluster([0])
+                # next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
+                self.next_cluster_index = 1
+            else:
+                #initialize each segment to its own cluster
+                for ID in range(self.num_segments):
+                    self.cluster_counts[ID] = 1
+                    self.unassigned_segs.discard(ID)
+                    self.cluster_dict[ID] = sc.SortedSet([ID])
+                    self.cluster_MLs[ID] = self._ML_cluster([ID])
+                    self.cluster_assignments[ID] = ID
+ 
+                self.next_cluster_index = ID + 1
         else:
             #otherwise we initialize the prior clusters
             self.prior_clusters = prior_run.cluster_dict.copy()
