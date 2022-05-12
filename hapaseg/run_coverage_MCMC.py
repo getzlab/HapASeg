@@ -132,12 +132,16 @@ class CoverageMCMCRunner:
             self.full_cov_df[f"C_frag_len_{scale}x"] = conv/wt_sw.sum(1)
             self.full_cov_df[f"C_frag_len_{scale}x_z"] = zt(self.full_cov_df[f"C_frag_len_{scale}x"])
 
+        ### track-based covariates
+        # use midpoint of coverage bins to map to intervals
+        self.full_cov_df["midpoint"] = ((self.full_cov_df["end"] + self.full_cov_df["start"])/2).astype(int)
+
         ## Replication timing
 
         # load repl timing
         F = pd.read_pickle(self.f_repl)
         # map targets to RT intervals
-        tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "start")
+        tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "midpoint")
         self.full_cov_df['C_RT'] = np.nan
         self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, 3:].mean(1).values
 
@@ -163,7 +167,7 @@ class CoverageMCMCRunner:
 
         F = pd.read_pickle(self.f_faire)
         # map targets to FAIRE intervals
-        tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "start")
+        tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "midpoint")
         self.full_cov_df['C_FAIRE'] = np.nan
         self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, -1].values
 
