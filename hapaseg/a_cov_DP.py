@@ -888,7 +888,7 @@ class AllelicCoverage_DP:
         
         full_df = list(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
         #get argsorting in descending order (hence the negative sign)
-        si = np.argsort([- self._get_clust_terr(self.cluster_dict[c], full_df) for c in self.cluster_dict.keys()])
+        si = np.argsort(np.argsort([- self._get_clust_terr(self.cluster_dict[c], full_df) for c in self.cluster_dict.keys()]))
         palette = self._get_color_palette(num_clusters)
         
         return palette[si]
