@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.special as ss
 import sortedcontainers as sc
+import sys
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 import warnings
 from statsmodels.tools.sm_exceptions import ConvergenceWarning, HessianInversionWarning
@@ -450,7 +451,7 @@ class AllelicCluster:
 
     # computes ML component from hessian approximation for two split segments
     def _get_log_ML_split(self, H1, H2):
-        return np.log(2 * np.pi) - (np.log(np.linalg.det(-H1) * np.linalg.det(-H2))) / 2
+        return 2*np.log(2 * np.pi) - (np.log(np.linalg.det(-H1) * np.linalg.det(-H2))) / 2
 
     # computes the log ML of joining two segments
     def _log_ML_join(self, ind, ret_opt_params=False):
@@ -738,13 +739,12 @@ class NB_MCMC_AllClusters:
     """
 class NB_MCMC_SingleCluster:
 
-    def __init__(self, n_iter, r, C, mu, beta, cluster_num, bin_width=1):
+    def __init__(self, n_iter, r, C, mu, beta, bin_width=1):
         self.n_iter = n_iter
         self.r = r
         self.C = C
         self.beta = beta
         self.mu = mu
-        self.cluster_num = cluster_num
         self.bin_width = bin_width
         # for now assume that the Pi vector assigns each bin to exactly one cluster
         
@@ -788,7 +788,7 @@ class NB_MCMC_SingleCluster:
     def run(self,
             debug=False,
             stop_after_burnin=False):
-        print("starting MCMC coverage segmentation for cluster {}...".format(self.cluster_num), flush=True)
+        print("Starting MCMC coverage segmentation ...", flush=True, file=sys.stderr)
 
         past_it = 0
         n_it = 0

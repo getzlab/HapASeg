@@ -125,6 +125,7 @@ def parse_args():
     coverage_mcmc.add_argument("--allelic_clusters_object",
                                help="npy file containing allelic dp segs-to-clusters results")
     coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs")
+    coverage_mcmc.add_argument("--segmentations_pickle", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
     coverage_mcmc.add_argument("--covariate_dir",
                                help="path to covariate directory with covariates all in pickled files")
     coverage_mcmc.add_argument("--num_draws", type=int,
@@ -145,7 +146,9 @@ def parse_args():
     preprocess_coverage_mcmc.add_argument("--allelic_clusters_object",
                                           help="npy file containing allelic dp segs-to-clusters results", required=True)
     preprocess_coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs", required=True)
+    preprocess_coverage_mcmc.add_argument("--segmentations_pickle", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
     preprocess_coverage_mcmc.add_argument("--repl_pickle", help="pickled dataframe containing replication timing data", required=True)
+    preprocess_coverage_mcmc.add_argument("--faire_pickle", help="pickled dataframe containing FAIRE data", required=False)
     preprocess_coverage_mcmc.add_argument("--gc_pickle", help="pickled dataframe containing precomputed gc content. This is not required but will speed up runtime if passed", default=None)
     preprocess_coverage_mcmc.add_argument("--allelic_sample", type=int,
                                           help="index of sample clustering from allelic DP to use as seed for segmentation. Will use most likely clustering by default",
@@ -155,15 +158,15 @@ def parse_args():
     ## running coverage mcmc on single cluster for scatter task
     coverage_mcmc_shard = subparsers.add_parser("coverage_mcmc_shard",
                                                 help="run coverage mcmc on single ADP cluster")
-    coverage_mcmc_shard.add_argument("--preprocess_data", help='path to numpy object containing preprocessed data',
+    coverage_mcmc_shard.add_argument("--preprocess_data", help='path to numpy object containing preprocessed data: covariate matrix (C), global beta, ADP cluster mu\'s, covbin ADP cluster assignments (all_mu), covbin raw coverage values (r)',
                                      required=True)
+    coverage_mcmc_shard.add_argument("--allelic_seg_indices", help='path to pickled pandas dataframe containing coverage bin indices for each alleic segment',
+                                     required=True)
+    coverage_mcmc_shard.add_argument("--allelic_seg_idx", help='which allelic segment to perform coverage segmentation on.',
+                                     required=True, type=int)
     coverage_mcmc_shard.add_argument("--num_draws", type=int,
                                help="number of draws to take from coverage segmentation MCMC", default=50)
-    coverage_mcmc_shard.add_argument("--cluster_num", type=int,
-                               help="cluster index for this worker to run on. If unspecified method will simulate "
-                                    "all clusters on the same machine", default=None)
     coverage_mcmc_shard.add_argument("--bin_width", type=int, default=1, help="size of uniform bins if using. Otherwise 1.")
-    coverage_mcmc_shard.add_argument("--range", type=str, help="range of coverage bins within the cluster to burnin. should be in start-end form. Note that this will cause num draws to be overridden to 1")
     coverage_mcmc_shard.add_argument("--burnin_files", type=str, help="txt file containing burnt in segment assignments")
 
     ## collect coverage MCMC shards
@@ -446,12 +449,18 @@ def main():
         snps_to_clusters, snps_to_phases, likelihoods = A.run()
 
         # save DP results
+        # SNP assignment/phasing samples, likelihoods of each sample
         np.savez(output_dir + "/allelic_DP_SNP_clusts_and_phase_assignments.npz",
                  snps_to_clusters=snps_to_clusters,
                  snps_to_phases=snps_to_phases,
                  likelihoods=likelihoods
                  )
 
+        # segmentation breakpoints for each sample
+        with open(output_dir + "/segmentations.pickle", "wb") as f:
+            pickle.dump(A.DP_run.segment_trace, f)
+
+        # full SNP dataframe
         A.SNPs.to_pickle(output_dir + "/all_SNPs.pickle")
 
         #
@@ -500,71 +509,104 @@ def main():
 
     ## preprocess ADP data to run scattered coverage mcmc jobs on each ADP cluster
     elif args.command == "coverage_mcmc_preprocess":
+        ## perform initial Poisson regression
         cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
                                              args.allelic_clusters_object,
                                              args.SNPs_pickle,
-                                             args.repl_pickle,
+                                             args.segmentations_pickle,
                                              args.ref_fasta,
+                                             args.faire_pickle,
+                                             args.repl_pickle,
                                              f_GC=args.gc_pickle,
                                              allelic_sample=args.allelic_sample)
         Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
+
+        ## create chunks for both burnin and scatter
+        cov_df = cov_df.sort_values("start_g", ignore_index = True)
+
+        # indices of coverage bins 
+        seg_g = cov_df.groupby("seg_idx")
+        seg_g_idx = pd.Series(seg_g.indices).to_frame(name = "indices")
+        seg_g_idx["allelic_cluster"] = seg_g["allelic_cluster"].first()
+        seg_g_idx["n_cov_bins"] = seg_g.size()
+
+        ## save
+        # regression matrices
         np.savez(os.path.join(output_dir, 'preprocess_data'), Pi=Pi, r=r, C=C, all_mu=all_mu,
                  global_beta=global_beta, adp_cluster=adp_cluster)
+        # coverage dataframe mapped 
         cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
+        # allelic segment indices into coverage dataframe
+        seg_g_idx.to_pickle(os.path.join(output_dir, 'allelic_seg_groups.pickle'))
 
     ## run scattered coverage mcmc job using preprocessed data
     elif args.command == "coverage_mcmc_shard":
         # load preprocessed data
         preprocess_data = np.load(args.preprocess_data)
-        # check to make sure that the cluster index is within the range
-        Pi = preprocess_data['Pi']
-        if args.cluster_num > Pi.shape[1] - 1:
-            raise ValueError("Received cluster number {}, which is out of range".format(args.cluster_num))
-        
+
         # extract preprocessed data from this cluster
-        mu = preprocess_data["all_mu"][args.cluster_num]
+        Pi = preprocess_data['Pi']
+        mu = preprocess_data["all_mu"]#[args.cluster_num]
         beta = preprocess_data["global_beta"]
         c_assignments = np.argmax(Pi, axis=1)
-        cluster_mask = (c_assignments == args.cluster_num)
-        r = preprocess_data['r'][cluster_mask]
-        C = preprocess_data['C'][cluster_mask]
+        #cluster_mask = (c_assignments == args.cluster_num)
+        r = preprocess_data['r']#[cluster_mask]
+        C = preprocess_data['C']#[cluster_mask]
+
+        # load and (weakly) verify allelic segment indices
+        seg_g_idx = pd.read_pickle(args.allelic_seg_indices)
+        if len(np.hstack(seg_g_idx["indices"])) != C.shape[0]:
+            raise ValueError("Size mismatch between allelic segment assignments and coverage bin data!")
+
+        # subset to a single allelic segment
+        if args.allelic_seg_idx > len(seg_g_idx) - 1:
+            raise ValueError("Allelic segment index out of bounds!")
+
+        seg_indices = seg_g_idx.iloc[args.allelic_seg_idx]
+
+        mu = mu[seg_indices["allelic_cluster"]]
+        C = C[seg_indices["indices"], :]
+        r = r[seg_indices["indices"], :]
         
-        # if we get a range argument well be doing burnin on a subset of the coverage bins
-        if args.range is not None:
-            #parse range from string
-            range_lst = args.range.split('-')
-            st,en = int(range_lst[0]), int(range_lst[1]) 
-            if st > en or st < 0 or en > len(r):
-                raise ValueError("invalid range! got range {} for cluster {} with size {}".format(args.range, args.cluster_num, len(r)))
-            
-            #trim data to our desired range
-            r = r[st:en]
-            C = C[st:en]
-            num_draws = 1
-            
-            # if we're just burning in a subset use different save strings
-            model_save_str = 'cov_mcmc_model_cluster_{}_{}.pickle'.format(args.cluster_num, args.range)
-            data_save_str = 'cov_mcmc_data_cluster_{}_{}'.format(args.cluster_num, args.range)
-            figure_save_str = 'cov_mcmc_cluster_{}_{}_visual'.format(args.cluster_num, args.range)
-            
-        else:
-            #if not in burnin use the specified number of draws
-            num_draws = args.num_draws
-            
-            
-            model_save_str = 'cov_mcmc_model_cluster_{}.pickle'.format(args.cluster_num)
-            data_save_str = 'cov_mcmc_data_cluster_{}'.format(args.cluster_num)
-            figure_save_str = 'cov_mcmc_cluster_{}_visual'.format(args.cluster_num)
-        
-        # run on the specified cluster
-        cov_mcmc = NB_MCMC_SingleCluster(num_draws, r, C, mu, beta, args.cluster_num, args.bin_width)
-        
-        # if we're using burnin results load them now
-        if args.burnin_files is not None:
-            with open(args.burnin_files, 'r') as f:
-                file_list = f.read().splitlines()
-            assignments_arr = aggregate_burnin_files(file_list, args.cluster_num)
-            cov_mcmc.init_burnin(assignments_arr)
+        # run cov MCMC
+        cov_mcmc = NB_MCMC_SingleCluster(num_draws, r, C, mu, beta, args.bin_width)
+
+#        # if we get a range argument well be doing burnin on a subset of the coverage bins
+#        if args.range is not None:
+#            #parse range from string
+#            range_lst = args.range.split('-')
+#            st,en = int(range_lst[0]), int(range_lst[1]) 
+#            if st > en or st < 0 or en > len(r):
+#                raise ValueError("invalid range! got range {} for cluster {} with size {}".format(args.range, args.cluster_num, len(r)))
+#            
+#            #trim data to our desired range
+#            r = r[st:en]
+#            C = C[st:en]
+#            num_draws = 1
+#            
+#            # if we're just burning in a subset use different save strings
+#            model_save_str = 'cov_mcmc_model_cluster_{}_{}.pickle'.format(args.cluster_num, args.range)
+#            data_save_str = 'cov_mcmc_data_cluster_{}_{}'.format(args.cluster_num, args.range)
+#            figure_save_str = 'cov_mcmc_cluster_{}_{}_visual'.format(args.cluster_num, args.range)
+#            
+#        else:
+#            #if not in burnin use the specified number of draws
+#            num_draws = args.num_draws
+#            
+#            
+#            model_save_str = 'cov_mcmc_model_cluster_{}.pickle'.format(args.cluster_num)
+#            data_save_str = 'cov_mcmc_data_cluster_{}'.format(args.cluster_num)
+#            figure_save_str = 'cov_mcmc_cluster_{}_visual'.format(args.cluster_num)
+#        
+#        # run on the specified cluster
+#        cov_mcmc = NB_MCMC_SingleCluster(num_draws, r, C, mu, beta, args.cluster_num, args.bin_width)
+#        
+#        # if we're using burnin results load them now
+#        if args.burnin_files is not None:
+#            with open(args.burnin_files, 'r') as f:
+#                file_list = f.read().splitlines()
+#            assignments_arr = aggregate_burnin_files(file_list, args.cluster_num)
+#            cov_mcmc.init_burnin(assignments_arr)
 
         cov_mcmc.run()
 

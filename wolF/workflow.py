@@ -504,12 +504,34 @@ def workflow(
         "coverage_csv":tumor_cov_gather_task["coverage"], #each scatter result is the same
         "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
+        "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":ref_config["repl_file"],
         "gc_pickle":ref_config["gc_file"],
         "ref_fasta":localization_task["ref_fasta"]
         }
     )
-    
+
+    # shim task to get number of allelic segments
+    #   (coverage MCMC will be scattered over each allelic segment)
+    @prefect.task
+    def get_N_seg_groups(S):
+        return len(S)
+
+    N_cov_mcmc_shards = get_N_seg_groups(prep_cov_mcmc_task["allelic_seg_groups"])
+
+    # TODO: modify burnin task to subset to these indices
+
+    # coverage MCMC burnin(?) <- do we still need to burnin separately?
+    cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc_burnin(
+        inputs={
+            "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
+            "allelic_seg_indices":prep_cov_mcmc_task["allelic_seg_groups"],
+            "allelic_seg_scatter_idx":range(0, N_cov_mcmc_shards),
+            "num_draws":50,
+            "bin_width":bin_width,
+        }
+    )
+ 
     #get the cluster indices from the preprocess data and generate the burnin indices
     @prefect.task(nout=4)
     def _get_ADP_cluster_list(preprocess_data_obj):

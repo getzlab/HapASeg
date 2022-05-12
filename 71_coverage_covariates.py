@@ -1,11 +1,13 @@
 import liftover
+import numpy as np
 import pandas as pd
 import pyfaidx
+import pyBigWig
 import tqdm
-from capy import mut
+from capy import mut, seq
 
 #
-# replication timing
+# replication timing {{{
 
 F = pd.read_csv("/mnt/j/proj/cnv/20201018_hapseg2/covars/GSE137764_H1_GaussiansGSE137764_mooth_scaled_autosome.mat", sep = "\t", header = None).T.rename(columns = { 0 : "chr", 1 : "start", 2 : "end" })
 F.iloc[:, 3:] = F.loc[:, 3:].astype(float)
@@ -13,7 +15,7 @@ F.loc[:, ["start", "end"]] = F.loc[:, ["start", "end"]].astype(int)
 F["chr"] = mut.convert_chr(F["chr"])
 F.to_pickle("covars/GSE137764_H1.hg38.pickle")
 
-# liftover to hg19
+# liftover to hg19 {{{
 F["chr_start_lift"] = 0
 F["chr_end_lift"] = 0
 F["start_lift"] = 0
@@ -63,8 +65,14 @@ bad_idx = (F["chr_start_lift"] != F["chr"]) | \
 (F["start_strand_lift"].notin(["+", "?"])) | \
 (F["start_lift"] > F["end_lift"])
 
+# }}}
+
+# }}}
+
 #
-# GC content
+# GC content {{{
+
+# note: this is obsolete; GC content is now computed on the fly
 
 B = pd.read_csv("/mnt/j/proj/cnv/20210326_coverage_collector/targets.bed", sep = "\t", header = None, names = ["chr", "start", "end"])
 B["chr"] = mut.convert_chr(B["chr"])
@@ -78,3 +86,68 @@ for (i, chrm, start, end, _) in B.itertuples():
 
 B.to_pickle("covars/GC.pickle")
 
+# }}}
+
+#
+# DNAse HS/FAIRE {{{
+
+## DNAse {{{
+
+bw = pyBigWig.open("covars/wgEncodeUwDnaseGm12878RawRep1.bigWig")
+
+# WGS (2kb chunks)
+clen = seq.get_chrlens()
+C = []
+for i, chrname in enumerate(["chr" + str(x) for x in list(range(1, 23)) + ["X", "Y"]]):
+    bins = np.r_[0:clen[i]:2000, clen[i]]; bins = np.c_[bins[:-1], bins[1:]]
+    tmp = pd.DataFrame({ "chr" : chrname, "start" : bins[:, 0], "end" : bins[:, 1], "DNAse" : 0 })
+    for j, (st, en) in enumerate(tqdm.tqdm(bins)):
+        tmp.loc[j, "DNAse"] = np.nanmean(np.r_[bw.values(chrname, st, en)])
+    C.append(tmp)
+
+# preliminary results not so great; stick with FAIRE for now
+
+# TODO: liftover to hg38
+
+# WES
+
+# }}}
+
+## FAIRE {{{
+
+## convert bigWig to FWB
+
+# for some reason pyBigWig can't process this file
+# bw = pyBigWig.open("covars/wgEncodeOpenChromFaireGm12878BaseOverlapSignal.bigwig")
+
+# use bigWig2FWB instead
+# git clone git@github.com:getzlab/bigWig2FWB.git
+
+# figure out range of file
+# bigWig2FWB/bigWig2FWB covars/wgEncodeOpenChromFaireGm12878BaseOverlapSignal.bigWig covars/bwtest
+# ./getmax
+# -> max = 5478
+# set scale factor to 11
+# bigWig2FWB/bigWig2FWB covars/wgEncodeOpenChromFaireGm12878BaseOverlapSignal.bigWig covars/wgEncodeOpenChromFaireGm12878BaseOverlapSignal
+
+## WGS
+from capy import fwb, mut
+
+F = fwb.FWB("covars/wgEncodeOpenChromFaireGm12878BaseOverlapSignal.fwb");
+
+clen = seq.get_chrlens()
+C = []
+for i, chrname in enumerate(["chr" + str(x) for x in list(range(1, 23)) + ["X"]]):
+    bins = np.r_[0:clen[i]:2000, clen[i]]; bins = np.c_[bins[:-1], bins[1:]]
+    tmp = pd.DataFrame({ "chr" : chrname, "start" : bins[:, 0], "end" : bins[:, 1], "FAIRE" : 0 })
+    for j, (st, en) in enumerate(tqdm.tqdm(bins)):
+        tmp.loc[j, "FAIRE"] = F.get(chrname, np.r_[st:en] + 1).mean()
+    C.append(tmp)
+
+FAIRE = pd.concat(C, ignore_index = True)
+FAIRE["chr"] = mut.convert_chr(FAIRE["chr"])
+FAIRE.to_pickle("covars/FAIRE_GM12878.hg19.pickle")
+
+# }}}
+
+# }}}
