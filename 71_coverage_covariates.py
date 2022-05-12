@@ -148,6 +148,11 @@ FAIRE = pd.concat(C, ignore_index = True)
 FAIRE["chr"] = mut.convert_chr(FAIRE["chr"])
 FAIRE.to_pickle("covars/FAIRE_GM12878.hg19.pickle")
 
+# smoothed version
+FAIRE_smooth = FAIRE.copy()
+FAIRE_smooth["FAIRE"] = np.convolve(FAIRE["FAIRE"], np.ones(5), mode = "same")/5
+FAIRE_smooth.to_pickle("covars/FAIRE_GM12878.smooth5.hg19.pickle")
+
 # }}}
 
 # }}}
