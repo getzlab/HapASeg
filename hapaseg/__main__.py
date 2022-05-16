@@ -569,7 +569,7 @@ def main():
         r = r[seg_indices["indices"], :]
         
         # run cov MCMC
-        cov_mcmc = NB_MCMC_SingleCluster(num_draws, r, C, mu, beta, args.bin_width)
+        cov_mcmc = NB_MCMC_SingleCluster(args.num_draws, r, C, mu, beta, args.bin_width)
 
 #        # if we get a range argument well be doing burnin on a subset of the coverage bins
 #        if args.range is not None:
