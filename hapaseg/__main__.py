@@ -154,6 +154,7 @@ def parse_args():
                                           help="index of sample clustering from allelic DP to use as seed for segmentation. Will use most likely clustering by default",
                                           default=None)
     preprocess_coverage_mcmc.add_argument("--ref_fasta", required = True)
+    preprocess_coverage_mcmc.add_argument("--bin_width", help = "Coverage bin width (for WGS only)", default = 1, type = int)
 
     ## running coverage mcmc on single cluster for scatter task
     coverage_mcmc_shard = subparsers.add_parser("coverage_mcmc_shard",
@@ -515,6 +516,7 @@ def main():
                                              args.segmentations_pickle,
                                              args.ref_fasta,
                                              f_repl=args.repl_pickle,
+                                             f_faire=args.faire_pickle,
                                              f_GC=args.gc_pickle,
                                              allelic_sample=args.allelic_sample)
         Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()

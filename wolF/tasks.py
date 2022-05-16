@@ -136,22 +136,27 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "faire_pickle": "/mnt/j/proj/cnv/20201018_hapseg2/covars/FAIRE_GM12878.hg19.pickle", # TODO: make remote
         "gc_pickle":"",
         "allelic_sample":"",
-        "ref_fasta": None
+        "ref_fasta": None,
+        "bin_width" : 1 # only for whole genomes; for exomes, target lengths are passed as a covariate via the coverage CSV
     }
-    script = """
-    hapaseg coverage_mcmc_preprocess --coverage_csv ${coverage_csv} \
-    --ref_fasta ${ref_fasta} \
-    --allelic_clusters_object ${allelic_clusters_object} \
-    --SNPs_pickle ${SNPs_pickle} \
-    --segmentations_pickle ${segmentations_pickle} \
-    --repl_pickle ${repl_pickle} \
-    --faire_pickle ${faire_pickle}"""
+    def script(self):
+        script = """
+        hapaseg coverage_mcmc_preprocess --coverage_csv ${coverage_csv} \
+        --ref_fasta ${ref_fasta} \
+        --allelic_clusters_object ${allelic_clusters_object} \
+        --SNPs_pickle ${SNPs_pickle} \
+        --segmentations_pickle ${segmentations_pickle} \
+        --repl_pickle ${repl_pickle} \
+        --faire_pickle ${faire_pickle} \
+        --bin_width ${bin_width}
+        """
     
-    def prolog(self):
         if self.conf["inputs"]["gc_pickle"] != "":
-            self.conf["script"][-1] += " --gc_pickle ${gc_pickle}"
+            script += " --gc_pickle ${gc_pickle} "
         if self.conf["inputs"]["allelic_sample"] != "":
-            self.conf["script"][-1] += " --allelic_sample ${allelic_sample}"
+            script += " --allelic_sample ${allelic_sample}"
+
+        return script
 
     output_patterns = {
         "preprocess_data": "preprocess_data.npz",
@@ -159,7 +164,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "allelic_seg_groups": "allelic_seg_groups.pickle"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v815"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v828"
     resources = { "mem" : "15G" }
 
 

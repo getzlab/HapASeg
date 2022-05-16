@@ -26,7 +26,8 @@ class CoverageMCMCRunner:
                  f_GC=None,
                  num_draws=50,
                  cluster_num=None,
-                 allelic_sample=None
+                 allelic_sample=None,
+                 bin_width=1,
                  ):
 
         self.num_draws = num_draws
@@ -35,6 +36,7 @@ class CoverageMCMCRunner:
         self.f_faire = f_faire
         self.f_GC = f_GC
         self.ref_fasta = ref_fasta
+        self.bin_width = bin_width
 
         self.allelic_clusters = np.load(f_allelic_clusters)
         with open(f_segs, "rb") as f:
@@ -66,7 +68,7 @@ class CoverageMCMCRunner:
     # Do preprocessing for running on each ADP cluster individually
     def prepare_single_cluster(self):
         Pi, r, C, filtered_cov_df = self.assign_clusters()
-        pois_regr = PoissonRegression(r, C, Pi)
+        pois_regr = PoissonRegression(r, C, Pi, log_exposure = np.log(self.bin_width))
         all_mu, global_beta = pois_regr.fit()
 
         # save these results to a numpy object

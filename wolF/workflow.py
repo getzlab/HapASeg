@@ -507,7 +507,8 @@ def workflow(
         "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":ref_config["repl_file"],
         "gc_pickle":ref_config["gc_file"],
-        "ref_fasta":localization_task["ref_fasta"]
+        "ref_fasta":localization_task["ref_fasta"],
+        "bin_width":bin_width if wgs else 1
         }
     )
 
