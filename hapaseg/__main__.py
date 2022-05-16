@@ -620,9 +620,9 @@ def main():
         np.savez(os.path.join(output_dir, f"cov_mcmc_data_seg_{args.allelic_seg_idx}.npz"),
                  seg_samples=segment_samples, beta=global_beta, mu_i_samples=mu_i_samples)
 
-        # save visualization
-        cov_mcmc.visualize_cluster_samples(
-            os.path.join(output_dir, f"cov_mcmc_seg_{args.allelic_seg_idx}_visual.png"))
+#        # save visualization
+#        cov_mcmc.visualize_cluster_samples(
+#            os.path.join(output_dir, f"cov_mcmc_seg_{args.allelic_seg_idx}_visual.png"))
 
     elif args.command == "collect_cov_mcmc":
         if args.coverage_dir:
