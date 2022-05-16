@@ -216,9 +216,9 @@ class Hapaseg_coverage_mcmc(wolf.Task):
             self.conf["script"][-1] += " --burnin_files ${burnin_files}"
     
     output_patterns = {
-        "cov_segmentation_model": 'cov_mcmc_model_cluster_*.pickle',
-        "cov_segmentation_data": 'cov_mcmc_data_cluster_*.npz',
-        "cov_seg_figure": 'cov_mcmc_cluster_*_visual.png'
+        "cov_segmentation_model": 'cov_mcmc_model_*.pickle',
+        "cov_segmentation_data": 'cov_mcmc_data_*.npz',
+        "cov_seg_figure": 'cov_mcmc_*_visual.png'
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v830"

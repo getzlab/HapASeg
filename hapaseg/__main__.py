@@ -614,15 +614,15 @@ def main():
         segment_samples, global_beta, mu_i_samples = cov_mcmc.prepare_results()
         
         # save samples
-        with open(os.path.join(output_dir, model_save_str), 'wb') as f:
+        with open(os.path.join(output_dir, f"cov_mcmc_model_seg_{args.allelic_seg_idx}.pickle"), 'wb') as f:
             pickle.dump(cov_mcmc, f)
 
-        np.savez(os.path.join(output_dir, data_save_str),
+        np.savez(os.path.join(output_dir, f"cov_mcmc_data_seg_{args.allelic_seg_idx}.npz"),
                  seg_samples=segment_samples, beta=global_beta, mu_i_samples=mu_i_samples)
 
         # save visualization
         cov_mcmc.visualize_cluster_samples(
-            os.path.join(output_dir, figure_save_str))
+            os.path.join(output_dir, f"cov_mcmc_seg_{args.allelic_seg_idx}_visual.png"))
 
     elif args.command == "collect_cov_mcmc":
         if args.coverage_dir:
