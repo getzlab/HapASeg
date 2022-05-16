@@ -164,7 +164,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "allelic_seg_groups": "allelic_seg_groups.pickle"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v828"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v832"
     resources = { "mem" : "15G" }
 
 
@@ -206,7 +206,7 @@ class Hapaseg_coverage_mcmc(wolf.Task):
     }
     script = """
     hapaseg coverage_mcmc_shard --preprocess_data ${preprocess_data} \
-    --allelic_seg_indices ${allelic_seg_idx} \
+    --allelic_seg_indices ${allelic_seg_indices} \
     --allelic_seg_idx ${allelic_seg_scatter_idx} \
     --num_draws ${num_draws} \
     --bin_width ${bin_width}"""
@@ -221,8 +221,8 @@ class Hapaseg_coverage_mcmc(wolf.Task):
         "cov_seg_figure": 'cov_mcmc_cluster_*_visual.png'
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v815"
-    resources = {"mem" : "5G"}
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v830"
+    resources = {"mem" : "10G"}
 
 class Hapaseg_collect_coverage_mcmc(wolf.Task):
     inputs = {

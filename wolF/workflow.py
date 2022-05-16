@@ -516,18 +516,16 @@ def workflow(
     #   (coverage MCMC will be scattered over each allelic segment)
     @prefect.task
     def get_N_seg_groups(S):
-        return len(S)
+        return list(range(len(pd.read_pickle(S))))
 
-    N_cov_mcmc_shards = get_N_seg_groups(prep_cov_mcmc_task["allelic_seg_groups"])
-
-    # TODO: modify burnin task to subset to these indices
+    cov_mcmc_shard_range = get_N_seg_groups(prep_cov_mcmc_task["allelic_seg_groups"])
 
     # coverage MCMC burnin(?) <- do we still need to burnin separately?
-    cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc_burnin(
+    cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc(
         inputs={
             "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
             "allelic_seg_indices":prep_cov_mcmc_task["allelic_seg_groups"],
-            "allelic_seg_scatter_idx":range(0, N_cov_mcmc_shards),
+            "allelic_seg_scatter_idx":cov_mcmc_shard_range,
             "num_draws":50,
             "bin_width":bin_width,
         }
