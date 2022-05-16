@@ -4,6 +4,7 @@ WORKDIR /build
 
 # install dependencies
 RUN pip install sortedcontainers
+ARG cache_invalidate=xxx
 RUN git clone https://github.com/getzlab/CApy.git && pip install ./CApy
 RUN pip install dask distributed
 RUN pip install distinctipy
