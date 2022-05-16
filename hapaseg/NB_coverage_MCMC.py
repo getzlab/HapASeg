@@ -413,7 +413,7 @@ class AllelicCluster:
     def _lls_to_MLs(self, lls, Hs):
         MLs = np.zeros(len(lls))
         for i, (ll, Hs) in enumerate(zip(lls, Hs)):
-            laplacian = self._get_log_ML_split(Hs[0], Hs[1])
+            laplacian = self._get_log_ML_gaussint_split(Hs[0], Hs[1])
             # the split results in a nan make it impossible to split there
             if np.isnan(laplacian):
                 laplacian = -1e50
@@ -445,12 +445,12 @@ class AllelicCluster:
 
         return split_indices, MLs, mus, lepsis
 
-    # computes ML component from hessian approximation for a single segment
-    def _get_log_ML_approx_join(self, Hess):
+    # computes Gaussian integral for ML Laplace approximation for a single segment
+    def _get_log_ML_gaussint_join(self, Hess):
         return np.log(2 * np.pi) - (np.log(np.linalg.det(-Hess))) / 2
 
-    # computes ML component from hessian approximation for two split segments
-    def _get_log_ML_split(self, H1, H2):
+    # computes Gaussian integral for ML Laplace approximation for two split segments
+    def _get_log_ML_gaussint_split(self, H1, H2):
         return 2*np.log(2 * np.pi) - (np.log(np.linalg.det(-H1) * np.linalg.det(-H2))) / 2
 
     # computes the log ML of joining two segments
@@ -461,9 +461,7 @@ class AllelicCluster:
         tmp_lepsi = self.lepsi_i_arr.copy()
         tmp_lepsi[ind[0]:ind[1]] = lepsi_share
         ll_join = self.ll_cluster(tmp_mui, tmp_lepsi)
-        if ret_opt_params:
-            return mu_share, lepsi_share, self._get_log_ML_join(H_share) + ll_join
-        return mu_share, lepsi_share, self._get_log_ML_approx_join(H_share) + ll_join
+        return mu_share, lepsi_share, self._get_log_ML_gaussint_join(H_share) + ll_join
 
     """
     Split segment method. This method chooses a segment at random
@@ -546,7 +544,7 @@ class AllelicCluster:
         ind = self.get_join_seg_ind(seg_l, seg_r)
 
         lls_split, _, _, Hs = self._calculate_splits(ind, [seg_r])
-        log_split_ML = lls_split[0] + self._get_log_ML_split(Hs[0][0], Hs[0][1])
+        log_split_ML = lls_split[0] + self._get_log_ML_gaussint_split(Hs[0][0], Hs[0][1])
         mu_share, lepsi_share, log_join_ML = self._log_ML_join(ind)
 
         log_MLs = np.r_[log_split_ML, log_join_ML]
