@@ -193,7 +193,7 @@ class CoverageMCMCRunner:
         Cov_clust_probs = np.zeros([len(self.full_cov_df), cuj_max])
 
         # get allelic segment boundaries
-        seg_bdy = np.r_[list(self.segmentations[self.allelic_sample].keys()), len(self.SNPs)]
+        seg_bdy = np.r_[0, list(self.segmentations[self.allelic_sample].keys()), len(self.SNPs)]
         seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
         self.SNPs["seg_idx"] = 0
         for i, (st, en) in enumerate(seg_bdy):

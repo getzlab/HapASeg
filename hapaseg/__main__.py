@@ -525,7 +525,7 @@ def main():
         cov_df = cov_df.sort_values("start_g", ignore_index = True)
 
         # indices of coverage bins 
-        seg_g = cov_df.groupby("seg_idx")
+        seg_g = cov_df.groupby("seg_idx") # NOTE: seg_idx may not be contiguous if any allelic segments were dropped 
         seg_g_idx = pd.Series(seg_g.indices).to_frame(name = "indices")
         seg_g_idx["allelic_cluster"] = seg_g["allelic_cluster"].first()
         seg_g_idx["n_cov_bins"] = seg_g.size()
