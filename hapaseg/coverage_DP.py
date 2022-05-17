@@ -83,32 +83,25 @@ class Coverage_DP:
             self.bins_to_clusters.append(draws)
             prior_run = DP_runner
 
-    def visualize_DP_run(self, run_idx, save_path, show_greylisted=True):
+    def visualize_DP_run(self, run_idx, save_path):
         if run_idx > len(self.DP_runs):
             raise ValueError('DP run index out of range')
         
         cov_dp = self.DP_runs[run_idx]
         cur = 0
         
-        # show assigned greylisted segments
-        # these are in the sample draw data but not the object cluster dict
-        if show_greylisted:
-            plotting_cluster_dict = cov_dp.clusters_to_segs[-1]
-        else:
-            plotting_cluster_dict = cov_dp.cluster_dict
-        
         # get residuals to compute ylim
         # could save these results to not compute residuals twice but it costs ~2ms
         max_resid = 0
-        for c in plotting_cluster_dict:
-            for seg in plotting_cluster_dict[c]:
+        for c in cov_dp.cluster_dict:
+            for seg in cov_dp.cluster_dict[c]:
                 resids = np.exp(np.log(cov_dp.segment_r_list[seg]) - (cov_dp.segment_C_list[seg] @ cov_dp.beta + np.log(self.bin_exposure)).flatten())
                 max_resid = max(max_resid, resids.max())
         
         f, axs = plt.subplots(1, figsize = (25,10))
-        for i, c in enumerate(plotting_cluster_dict.keys()):
+        for i, c in enumerate(cov_dp.cluster_dict.keys()):
             clust_start = cur
-            for seg in plotting_cluster_dict[c]:
+            for seg in cov_dp.cluster_dict[c]:
                 len_seg = len(cov_dp.segment_r_list[seg])
                 residuals = np.exp(np.log(cov_dp.segment_r_list[seg]) - (cov_dp.segment_C_list[seg] @ cov_dp.beta + np.log(self.bin_exposure)).flatten())
                 axs.scatter(np.r_[cur:len_seg+cur], residuals)
@@ -138,7 +131,11 @@ class Run_Cov_DP:
         self.unassigned_segs = sc.SortedList(np.r_[0:self.num_segments])
         self.cluster_dict = sc.SortedDict({})
         self.cluster_MLs = sc.SortedDict({})
+
+        self.segment_idxs = sc.SortedSet({})
+        self.blacklisted_segments = sc.SortedSet({})
         self.greylist_segments = sc.SortedSet({})
+
         self.cluster_LLs = sc.SortedDict({})
         self.cluster_ml_cache={}
         self.cluster_prior_ml_cache={}
@@ -162,31 +159,50 @@ class Run_Cov_DP:
         
     # initialize each segment object with its data
     def _init_segments(self):
+        num_segments = 0
         for ID, seg_df in self.cov_df.groupby('segment_ID'):
-            self.segment_r_list[ID] = seg_df['covcorr'].values
+            seg = seg_df['covcorr'].values
+            seg_len = len(seg)
+            self.segment_r_list[ID] = seg
+            
+            if seg_len < 3:
+                # this is too few coverage bins to confidently fit NB to
+                # we will throw these segments out for now
+                self.blacklisted_segments.add(ID)
+                self.unassigned_segs.discard(ID)
+                continue     
+            
             self.segment_C_list[ID] = np.c_[seg_df[self.covar_cols]]
-            self.segment_sizes[ID] = len(self.segment_r_list[ID])
-            if self.segment_sizes[ID] < 5:
+            self.segment_sizes[ID] = seg_len
+            num_segments += 1
+            
+            # if we don't have many bins in a segment we'll greylist them to
+            # establish clusters from larger segments
+            if seg_len < 10:
                 self.greylist_segments.add(ID)
                 self.unassigned_segs.discard(ID)
         
+        self.segment_idxs = set(range(self.num_segments)) - self.blacklisted_segments
+
         # set dp scale factor such that the average segment count is set to one
-        self.dp_count_scale_factor =  self.segment_sizes.mean()
+        self.dp_count_scale_factor =  self.segment_sizes[self.segment_idxs].mean()
 
     def _init_clusters(self, prior_run, count_prior_sum, warm_start=True):
         # if first iteration then add first segment to first cluster
         if prior_run is None:
             if not warm_start:
-                self.cluster_counts[0] = self.segment_sizes[0]
-                self.cluster_assignments[0] = 0
-                self.unassigned_segs.discard(0)
-                self.cluster_dict[0] = sc.SortedSet([0])
-                self.cluster_MLs[0] = self._ML_cluster([0])
+                # get first cluster ID since 0 may be blacklisted
+                first_seg = self.segment_idxs[0] 
+                self.cluster_counts[0] = self.segment_sizes[first_seg]
+                self.cluster_assignments[first_seg] = 0
+                self.unassigned_segs.discard(first_seg)
+                self.cluster_dict[0] = sc.SortedSet([first_seg])
+                self.cluster_MLs[0] = self._ML_cluster([first_seg])
                 # next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
                 self.next_cluster_index = 1
             else:
                 #initialize each segment to its own cluster
-                for ID in range(self.num_segments):
+                for ID in self.segment_idxs:
                     # dont seed clusters from greylisted segments
                     if ID in self.greylist_segments:
                         continue
@@ -294,7 +310,7 @@ class Run_Cov_DP:
         
         greylist_added_dict = sc.SortedDict({k: v.copy() for k, v in self.cluster_dict.items()})
         greylist_cluster_assignments = self.cluster_assignments.copy()
-
+        greylist_cluster_counts = self.cluster_counts.copy()
         ML_C = np.array([ML for (ID, ML) in self.cluster_MLs.items()])
 
         for segID in self.greylist_segments:
@@ -314,8 +330,14 @@ class Run_Cov_DP:
             
             greylist_added_dict[choice].add(segID)        
             greylist_cluster_assignments[segID] = choice          
+            greylist_cluster_counts[choice] += self.segment_sizes[segID]
             
-        return greylist_added_dict, greylist_cluster_assignments 
+        # with all greylist segments assigned we can now update our clustering data fields
+        self.cluster_dict = greylist_added_dict
+        self.cluster_assignments = greylist_cluster_assignments
+        for clust in self.cluster_dict.keys():
+            self.cluster_MLs[clust] = self._ML_cluster(self.cluster_dict[clust])
+            self.cluster_LLs[choice] = self._LL_cluster(self.cluster_dict[clust])
                 
     # if we have prior assignments from the last iteration we can use those clusters to probalistically assign
     # each segment into a old cluster
@@ -411,6 +433,7 @@ class Run_Cov_DP:
 
         burned_in = False
         all_assigned = False
+        greylist_added = False
 
         n_it = 0
         n_it_last = 0
@@ -422,7 +445,7 @@ class Run_Cov_DP:
                                  k in self.prior_clusters.keys()]] / sample_num
             self.initial_prior_assignment(count_prior)
         
-        white_segments = set(range(self.num_segments)) - self.greylist_segments
+        white_segments = self.segment_idxs - self.greylist_segments
         while len(self.bins_to_clusters) < n_iter:
     
             # status update
@@ -441,17 +464,25 @@ class Run_Cov_DP:
                 
                 # burn in based on ll changes after all are assigned
                 if not burned_in and all_assigned and n_it - n_it_last > 500:
+                    # wait until the chain has stabilized
                     if np.diff(np.r_[self.ll_history[-500:]]).mean() <= 0:
-                        print('burnin', flush=True)
-                        burned_in = True
-                        n_it_last = n_it
+                        # if we havent added back the greylist segments, do so
+                        # and then wait to stabilize again
+                        if not greylist_added:
+                            self.assign_greylist()
+                            greylist_added=True
+                            n_it_last = n_it
+                        else:
+                            print('burnin', flush=True)
+                            burned_in = True
+                            n_it_last = n_it
 
             # pick either a segment or a cluster at random
 
             # pick segment
             if np.random.rand() < 0.5:
                 if len(self.unassigned_segs) > 0 and len(
-                        self.unassigned_segs) / self.num_segments < 0.1 and np.random.rand() < 0.5:
+                        self.unassigned_segs) / len(white_segments)< 0.1 and np.random.rand() < 0.5:
                     segID = np.random.choice(self.unassigned_segs)
                 else:
                     segID = np.random.choice(white_segments)
@@ -750,11 +781,9 @@ class Run_Cov_DP:
 
 
             # save draw after burn in for every n_seg / (n_clust / 2) iterations
-            if burned_in and n_it - n_it_last > self.num_segments / (len(self.cluster_counts) * 2):
-                # assign greylist segments for each draw
-                greylist_cluster_dict, greylist_cluster_assignments = self.assign_greylist()
-                self.bins_to_clusters.append(greylist_cluster_assignments)
-                self.clusters_to_segs.append(greylist_cluster_dict)
+            if burned_in and n_it - n_it_last > len(white_segments) / (len(self.cluster_counts) * 2):
+                self.bins_to_clusters.append(self.cluster_assignments)
+                self.clusters_to_segs.append(self.cluster_dict)
                 n_it_last = n_it
 
             n_it += 1
