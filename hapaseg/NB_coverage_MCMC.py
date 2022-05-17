@@ -318,15 +318,6 @@ class AllelicCluster:
                     ll_l = self.cache_LL[ptr]
                 else: 
                     ll_l = self.ll_cluster(mu_l, lepsi_l)
-
-#                    tmp_mui = self.mu_i_arr.copy()
-#                    tmp_mui[ind[0]:ix] = mu_l
-#                    tmp_mui[ix: ind[1]] = mu_r
-#                    tmp_lepsi = self.lepsi_i_arr.copy()
-#                    tmp_lepsi[ind[0]:ix] = lepsi_l
-#                    tmp_lepsi[ix: ind[1]] = lepsi_r
-#                    ll = self.ll_cluster(tmp_mui, tmp_lepsi)
-
                     self.cache_LL.append(ll_l); self.cache_LL_ptr[ind[0], ix] = len(self.cache_LL) - 1
 
                 # right:
@@ -500,11 +491,6 @@ class AllelicCluster:
             #breakpoint()
             ll_join = self.cache_LL[ptr]
         else:
-#            tmp_mui = self.mu_i_arr.copy()
-#            tmp_mui[ind[0]:ind[1]] = mu_share
-#            tmp_lepsi = self.lepsi_i_arr.copy()
-#            tmp_lepsi[ind[0]:ind[1]] = lepsi_share
-#            ll_join = self.ll_cluster(tmp_mui, tmp_lepsi)
             ll_join = self.ll_cluster(mu_share, lepsi_share)
 
             # add to cache
