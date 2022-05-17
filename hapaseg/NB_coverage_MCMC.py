@@ -8,6 +8,7 @@ from statsmodels.tools.sm_exceptions import ConvergenceWarning, HessianInversion
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
+import scipy.sparse as sp
 from .model_optimizers import PoissonRegression
 
 # turn off warnings for statsmodels fitting
@@ -49,8 +50,10 @@ class AllelicCluster:
         self.segment_lens = sc.SortedDict([(0, len(self.r))])
         
         # keep cache of previously computed breakpoints for fast splitting
-        # these breakpoints keys are in the form (st, en, breakpoint)
-        self.breakpoint_cache = {}
+        self.cache_LL_ptr = sp.dok_matrix((r.shape, r.shape)); self.cache_LL = []
+        self.cache_mu_ptr = sp.dok_matrix((r.shape, r.shape)); self.cache_mu = []
+        self.cache_lepsi_ptr = sp.dok_matrix((r.shape, r.shape)); self.cache_lepsi = []
+        self.cache_hess_ptr = sp.dok_matrix((r.shape, r.shape)); self.cache_hess = []
 
         self.phase_history = []
         self.F = sc.SortedList()
@@ -138,11 +141,26 @@ class AllelicCluster:
 
     # statsmodels NB BFGS optimizer is more stable than NR so we will use it until migration to LNP
     def stats_optimizer(self, ind, ret_hess=False):
+        # cache hit; look up values
+        if self.cache_mu_ptr[ind[0], ind[1]] != 0:
+            mu = self.cache_mu[self.cache_mu_ptr[ind[0], ind[1]]]
+            lepsi = self.cache_lepsi[self.cache_lepsi_ptr[ind[0], ind[1]]]
+            if ret_hess:
+                return mu, lepsi, self.cache_hess[self.cache_hess_ptr[ind[0], ind[1]]]
+            else:
+                return mu, lepsi
+
+        # cache miss; compute values
         endog = self.r[ind[0]:ind[1]].flatten()
         exog = np.ones(self.r[ind[0]:ind[1]].shape[0])
         exposure = np.ones(self.r[ind[0]:ind[1]].shape[0]) * self.bin_exposure
         sNB = statsNB(endog, exog, exposure=exposure, offset=(self.C[ind[0]:ind[1]] @ self.beta).flatten() + self.mu)
         res = sNB.fit(disp=0)
+
+        # save to cache
+        self.cache_mu.append(res.params[0]); self.cache_mu_ptr[ind[0], ind[1]] = len(self.cache_mu) - 1
+        self.cache_lepsi.append(-np.log(res.params[1])); self.cache_lepsi_ptr[ind[0], ind[1]] = len(self.cache_lepsi) - 1
+        self.cache_hess.append(sNB.hessian(res.params)); self.cache_hess_ptr[ind[0], ind[1]] = len(self.cache_hess) - 1
 
         if ret_hess:
             return res.params[0], -np.log(res.params[1]), sNB.hessian(res.params)
@@ -291,15 +309,31 @@ class AllelicCluster:
                 lepsis.append((lepsi_l, lepsi_r))
                 Hs.append((H_l, H_r))
 
-                tmp_mui = self.mu_i_arr.copy()
-                tmp_mui[ind[0]:ix] = mu_l
-                tmp_mui[ix: ind[1]] = mu_r
-                tmp_lepsi = self.lepsi_i_arr.copy()
-                tmp_lepsi[ind[0]:ix] = lepsi_l
-                tmp_lepsi[ix: ind[1]] = lepsi_r
+                # lookup likelihoods in cache
+                # left:
+                if (ptr := self.cache_LL_ptr[ind[0], ix]) != 0:
+                    ll_l = self.cache_LL[ptr]
+                else: 
+                    ll_l = self.ll_cluster(mu_l, lepsi_l)
 
-                ll = self.ll_cluster(tmp_mui, tmp_lepsi)
-                lls.append(ll)
+#                    tmp_mui = self.mu_i_arr.copy()
+#                    tmp_mui[ind[0]:ix] = mu_l
+#                    tmp_mui[ix: ind[1]] = mu_r
+#                    tmp_lepsi = self.lepsi_i_arr.copy()
+#                    tmp_lepsi[ind[0]:ix] = lepsi_l
+#                    tmp_lepsi[ix: ind[1]] = lepsi_r
+#                    ll = self.ll_cluster(tmp_mui, tmp_lepsi)
+
+                    self.cache_LL.append(ll_l); self.cache_LL_ptr[ind[0], ix] = len(self.cache_LL) - 1
+
+                # right:
+                if (ptr := self.cache_LL_ptr[ix, ind[1]]) != 0:
+                    ll_r = self.cache_LL[ptr]
+                else:
+                    ll_r = self.ll_cluster(mu_r, lepsi_r)
+                    self.cache_LL.append(ll_r); self.cache_LL_ptr[ix, ind[1]] = len(self.cache_LL) - 1
+
+                lls.append(ll_l + ll_r)
 
         return lls, mus, lepsis, Hs
 
@@ -456,11 +490,20 @@ class AllelicCluster:
     # computes the log ML of joining two segments
     def _log_ML_join(self, ind, ret_opt_params=False):
         mu_share, lepsi_share, H_share = self.stats_optimizer(ind, True)
-        tmp_mui = self.mu_i_arr.copy()
-        tmp_mui[ind[0]:ind[1]] = mu_share
-        tmp_lepsi = self.lepsi_i_arr.copy()
-        tmp_lepsi[ind[0]:ind[1]] = lepsi_share
-        ll_join = self.ll_cluster(tmp_mui, tmp_lepsi)
+
+        # lookup cache
+        if (ptr := self.cache_LL_ptr[ind[0], ind[1]]) != 0:
+            ll_join = self.cache_LL[ptr]
+        else:
+#            tmp_mui = self.mu_i_arr.copy()
+#            tmp_mui[ind[0]:ind[1]] = mu_share
+#            tmp_lepsi = self.lepsi_i_arr.copy()
+#            tmp_lepsi[ind[0]:ind[1]] = lepsi_share
+#            ll_join = self.ll_cluster(tmp_mui, tmp_lepsi)
+            ll_join = self.ll_cluster(mu_share, lepsi_share)
+
+            # add to cache
+            self.cache_LL.append(ll_join); self.cache_LL_ptr[ind[0], ind[1]] = len(self.cache_LL) - 1
         return mu_share, lepsi_share, self._get_log_ML_gaussint_join(H_share) + ll_join
 
     """
