@@ -140,6 +140,9 @@ class Run_Cov_DP:
 
         self._init_segments()
         self._init_clusters(prior_run, count_prior_sum)
+        
+        # scale factor for dp prior to be set later
+        self.dp_count_scale_factor = 1
 
         # containers for saving the MCMC trace
         self.clusters_to_segs = []
@@ -155,6 +158,9 @@ class Run_Cov_DP:
             if len(self.segment_r_list[ID]) < 10:
                 self.greylist_segments.add(ID)
                 self.unassigned_segs.discard(ID)
+        
+        # set dp scale factor such that the average segment count is set to one
+        self.dp_count_scale_factor =  self.cov_df['segment_ID'].value_counts().mean()
 
     def _init_clusters(self, prior_run, count_prior_sum, warm_start=True):
         # if first iteration then add first segment to first cluster
@@ -291,6 +297,7 @@ class Run_Cov_DP:
             # construct transition probability distribution and draw from it
             log_count_prior = self.DP_tuple_split_prior(segID)[:-1]
             MLs_max = (ML_rat + log_count_prior).max()
+            assert False # TODO need to update dp prior
             choice_p = np.exp(ML_rat + log_count_prior - MLs_max) / np.exp(ML_rat + log_count_prior - MLs_max).sum()
             choice_idx = np.random.choice(np.r_[0:len(ML_rat)], p=choice_p)
             choice = np.r_[self.cluster_dict.keys()][choice_idx]
@@ -337,7 +344,60 @@ class Run_Cov_DP:
 
             self.cluster_dict[choice].add(segID)
             self.cluster_MLs[choice] = self._ML_cluster(self.cluster_dict[choice])
+    
+    # updated DP prior for moving a single segment into an existing or new cluster
+    def DP_move_segment_prior(self, seg_id, prev_clusters):
+        cur_cluster = self.cluster_assignments[seg_id]
+        seg_size = len(self.segment_r_list[seg_id])
+        cluster_vals = np.array(self.cluster_counts.values())
+        
+        # if segment was already assigned, remove its bins from the calculation
+        if cur_cluster > -1:
+            cur_index = self.cluster_counts.index(cur_cluster)
+            cluster_vals[cur_index] -= seg_size
 
+        # expand cluster vals to include counts from old clusters
+        cluster_vals = np.r_[prev_clusters, cluster_vals]
+
+        N = cluster_vals.sum()
+        
+        # apply scale factor
+        N = N / self.dp_count_scale_factor
+        seg_size = seg_size / self.dp_count_scale_factor
+
+        loggamma_N_alpha = ss.loggamma(N + self.alpha)
+        loggamma_N_alpha_seg = ss.loggamma(N + self.alpha - seg_size)
+        prior_results = np.zeros(len(cluster_vals))
+        
+        for i, nc in enumerate(cluster_vals):
+            prior_results[i] = ss.loggamma(seg_size + nc) + loggamma_N_alpha_seg - (ss.loggamma(nc) + loggamma_N_alpha)
+
+        # the prior prob of starting a new cluster
+        prior_new = ss.gammaln(seg_size) + np.log(self.alpha) + loggamma_N_alpha_seg - loggamma_N_alpha
+        return np.r_[prior_results, prior_new]
+
+    # updated DP prior for potentially merging a cluster
+    def DP_move_cluster_prior(self, cur_cluster, prev_clusters):
+        cur_index = self.cluster_counts.index(cur_cluster)
+        cluster_vals = np.array(self.cluster_counts.values())
+        
+        # expland cluster vals to include counts from old clusters
+        cluster_vals = np.r_[prev_clusters, cluster_vals] / self.dp_count_scale_factor
+        N = cluster_vals.sum()
+        M = cluster_vals[cur_index]
+        
+        prior_results = np.zeros(len(cluster_vals))
+        for i, nc in enumerate(cluster_vals):
+            if i != cur_index:
+                prior_results[i] = ss.loggamma(M + nc) + ss.loggamma(N + self.alpha - M) - (
+                    ss.loggamma(nc) + ss.loggamma(N + self.alpha))
+            else:
+                # the prior prob of remaining in the current cluster is the same as for joining a new cluster
+                prior_results[i] = ss.gammaln(M) + np.log(self.alpha) + ss.gammaln(N + self.alpha - M) - ss.gammaln(
+                     N + self.alpha)
+        
+        return prior_results
+        
     def run(self, n_iter, sample_num=0):
 
         burned_in = False
@@ -466,16 +526,14 @@ class Run_Cov_DP:
 
                     # expand MLs to account for multiple new clusters
                     ML_rat = np.r_[np.full(len(prior_diff), ML_rat[-1]), ML_rat]
+                
                 # DP prior based on clusters sizes
-                count_prior = np.r_[
-                    [count_prior[self.prior_clusters.index(x)] for x in
-                     prior_diff], self.cluster_counts.values(), self.alpha]
-                count_prior /= count_prior.sum()
+                log_dp_count_prior = self.DP_move_segment_prior(segID, [count_prior[self.prior_clusters.index(x)] for x in prior_diff])
 
                 # construct transition probability distribution and draw from it
                 MLs_max = ML_rat.max()
-                choice_p = np.exp(ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)) / np.exp(
-                    ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
+                choice_p = np.exp(ML_rat - MLs_max + log_dp_count_prior + np.log(clust_prior_p)) / np.exp(
+                    ML_rat - MLs_max + log_dp_count_prior + np.log(clust_prior_p)).sum()
 
                 if np.isnan(choice_p.sum()):
                     print('skipping iteration {} due to nan. picked segment {}'.format(n_it, segID), flush=True)
@@ -617,15 +675,14 @@ class Run_Cov_DP:
 
                     # expand MLs to account for multiple new merge clusters--which have liklihood = cluster staying as is = 0
                     ML_rat = np.r_[np.full(len(prior_diff), 0), ML_rat]
-                    # DP prior based on clusters sizes now with no alpha
-                count_prior = np.r_[
-                    [count_prior[self.prior_clusters.index(x)] for x in prior_diff], self.cluster_counts.values()]
-                count_prior /= (count_prior.sum() + self.alpha)
+        
+                # DP prior based on clusters sizes now with no alpha
+                log_dp_count_prior = self.DP_move_cluster_prior(clust_pick, [count_prior[self.prior_clusters.index(x)] for x in prior_diff])
 
                 # construct transition probability distribution and draw from it
                 MLs_max = ML_rat.max()
-                choice_p = np.exp(ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)) / np.exp(
-                    ML_rat - MLs_max + np.log(count_prior) + np.log(clust_prior_p)).sum()
+                choice_p = np.exp(ML_rat - MLs_max + log_dp_count_prior + np.log(clust_prior_p)) / np.exp(
+                    ML_rat - MLs_max + log_dp_count_prior + np.log(clust_prior_p)).sum()
                 if np.isnan(choice_p.sum()):
                     print("skipping iteration {} due to nan".format(n_it), flush=True)
                     n_it += 1
