@@ -137,8 +137,6 @@ class Run_Cov_DP:
         self.prior_r_list = None
         self.prior_C_list = None
         self.count_prior_sum = None
-        # for saving init clusters
-        self.init_clusters = None
 
         self._init_segments()
         self._init_clusters(prior_run, count_prior_sum)
@@ -339,7 +337,6 @@ class Run_Cov_DP:
 
             self.cluster_dict[choice].add(segID)
             self.cluster_MLs[choice] = self._ML_cluster(self.cluster_dict[choice])
-        self.init_clusters = sc.SortedDict({k: v.copy() for k, v in self.cluster_dict.items()})
 
     def run(self, n_iter, sample_num=0):
 
