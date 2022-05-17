@@ -154,7 +154,10 @@ class Run_Cov_DP:
         for ID, seg_df in self.cov_df.groupby('segment_ID'):
             self.segment_r_list[ID] = seg_df['covcorr'].values
             self.segment_C_list[ID] = np.c_[seg_df[self.covar_cols]]
-    
+            if len(self.segment_r_list[ID]) < 10:
+                self.greylist_segments.add(ID)
+                self.unassigned_segs.discard(ID)
+
     def _init_clusters(self, prior_run, count_prior_sum, warm_start=True):
         # if first iteration then add first segment to first cluster
         if prior_run is None:
@@ -169,6 +172,9 @@ class Run_Cov_DP:
             else:
                 #initialize each segment to its own cluster
                 for ID in range(self.num_segments):
+                    # dont seed clusters from greylisted segments
+                    if ID in self.greylist_segments:
+                        continue
                     self.cluster_counts[ID] = 1
                     self.unassigned_segs.discard(ID)
                     self.cluster_dict[ID] = sc.SortedSet([ID])
@@ -270,6 +276,33 @@ class Run_Cov_DP:
 
     #TODO: switch to new DP prior
 
+    # for assigning greylisted segments at for each draw
+    def assign_greylist(self):
+        
+        greylist_added_dict = sc.SortedDict({k: v.copy() for k, v in self.cluster_dict.items()})
+        
+        ML_C = np.array([ML for (ID, ML) in self.cluster_MLs.items()])
+
+        for segID in self.greylist_segments:
+            
+            # compute ML of every cluster if S joins  
+            ML_BC = np.array([self._ML_cluster(self.cluster_dict[k].union([segID])) for k in self.cluster_counts.keys()])
+            
+            # likelihood ratios of S joining each other cluster S -> Ck
+            ML_rat = ML_BC - ML_C
+            # construct transition probability distribution and draw from it
+            log_count_prior = self.DP_tuple_split_prior(segID)[:-1]
+            MLs_max = (ML_rat + log_count_prior).max()
+            choice_p = np.exp(ML_rat + log_count_prior - MLs_max) / np.exp(ML_rat + log_count_prior - MLs_max).sum()
+            choice_idx = np.random.choice(np.r_[0:len(ML_rat)], p=choice_p)
+            choice = np.r_[self.cluster_dict.keys()][choice_idx]
+            choice = int(choice)
+            
+            greylist_added_dict[choice].add(segID)        
+            
+            # set cluster dict to the greylist added version
+            
+                
     # if we have prior assignments from the last iteration we can use those clusters to probalistically assign
     # each segment into a old cluster
     def initial_prior_assignment(self, count_prior):
