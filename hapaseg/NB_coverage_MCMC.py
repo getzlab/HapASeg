@@ -50,10 +50,11 @@ class AllelicCluster:
         self.segment_lens = sc.SortedDict([(0, len(self.r))])
         
         # keep cache of previously computed breakpoints for fast splitting
-        self.cache_LL_ptr = sp.dok_matrix((r.shape, r.shape)); self.cache_LL = []
-        self.cache_mu_ptr = sp.dok_matrix((r.shape, r.shape)); self.cache_mu = []
-        self.cache_lepsi_ptr = sp.dok_matrix((r.shape, r.shape)); self.cache_lepsi = []
-        self.cache_hess_ptr = sp.dok_matrix((r.shape, r.shape)); self.cache_hess = []
+        sz = tuple(np.r_[1, 1]*(len(r) + 1))
+        self.cache_LL_ptr = sp.dok_matrix(sz, dtype = np.int64); self.cache_LL = []
+        self.cache_mu_ptr = sp.dok_matrix(sz, dtype = np.int64); self.cache_mu = []
+        self.cache_lepsi_ptr = sp.dok_matrix(sz, dtype = np.int64); self.cache_lepsi = []
+        self.cache_hess_ptr = sp.dok_matrix(sz, dtype = np.int64); self.cache_hess = []
 
         self.phase_history = []
         self.F = sc.SortedList()
