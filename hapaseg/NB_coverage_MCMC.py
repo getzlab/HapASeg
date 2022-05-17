@@ -144,6 +144,7 @@ class AllelicCluster:
     def stats_optimizer(self, ind, ret_hess=False):
         # cache hit; look up values
         if self.cache_mu_ptr[ind[0], ind[1]] != 0:
+            #breakpoint()
             mu = self.cache_mu[self.cache_mu_ptr[ind[0], ind[1]]]
             lepsi = self.cache_lepsi[self.cache_lepsi_ptr[ind[0], ind[1]]]
             if ret_hess:
@@ -313,6 +314,7 @@ class AllelicCluster:
                 # lookup likelihoods in cache
                 # left:
                 if (ptr := self.cache_LL_ptr[ind[0], ix]) != 0:
+                    #breakpoint()
                     ll_l = self.cache_LL[ptr]
                 else: 
                     ll_l = self.ll_cluster(mu_l, lepsi_l)
@@ -329,6 +331,7 @@ class AllelicCluster:
 
                 # right:
                 if (ptr := self.cache_LL_ptr[ix, ind[1]]) != 0:
+                    #breakpoint()
                     ll_r = self.cache_LL[ptr]
                 else:
                     ll_r = self.ll_cluster(mu_r, lepsi_r)
@@ -494,6 +497,7 @@ class AllelicCluster:
 
         # lookup cache
         if (ptr := self.cache_LL_ptr[ind[0], ind[1]]) != 0:
+            #breakpoint()
             ll_join = self.cache_LL[ptr]
         else:
 #            tmp_mui = self.mu_i_arr.copy()
