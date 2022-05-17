@@ -84,8 +84,17 @@ class AllelicCluster:
     def get_join_seg_ind(self, seg_l, seg_r):
         return seg_l, seg_r + self.segment_lens[seg_r]
 
+    # get overall likelihood for all segments
     def get_ll(self):
-        return self.ll_cluster(self.mu_i_arr, self.lepsi_i_arr, True)
+        bdy = np.r_[list(self.segments), len(self.r)]; bdy = np.c_[bdy[:-1], bdy[1:]]
+        ll = 0
+        for st, en in bdy:
+            # lookup in cache
+            if (ptr := self.cache_LL_ptr[st, en]) != 0:
+                ll += self.cache_LL[ptr]
+            else:
+                ll += self.ll_cluster([st, en], self.mu_i_arr[st:en], self.lepsi_i_arr[st:en], True)
+        return ll
     
     # read in the merged cluster assignments from burnin scatter jobs and 
     # fill in data structures for cluster mcmc accordingly
@@ -186,16 +195,16 @@ class AllelicCluster:
             self.lepsi_i_arr[row[0]:row[1]] = lepsi_i
 
     # method for calculating the overall log likelihood of an allelic cluster given a hypothetical mu_i and lepsi arrays
-    def ll_cluster(self, mu_i_arr, lepsi_i_arr, take_sum=True):
-        mu_i_arr = mu_i_arr.flatten()
-        epsi_i_arr = np.exp(lepsi_i_arr).flatten()
+    def ll_cluster(self, ind, mu_i, lepsi_i, take_sum=True):
+        epsi_i = np.exp(lepsi_i)
         exposure= np.log(self.bin_exposure)
-        bc = (self.C @ self.beta).flatten() + exposure
-        exp = np.exp(self.mu + bc + mu_i_arr).flatten()
+        bc = (self.C[ind[0]:ind[1]] @ self.beta).flatten() + exposure
+        exp = np.exp(self.mu + bc + mu_i).flatten()
+        r_subset = self.r[ind[0]:ind[1]]
 
-        lls = (ss.gammaln(self.r + epsi_i_arr) - ss.gammaln(self.r + 1) - ss.gammaln(epsi_i_arr) +
-               (self.r * (self.mu + bc + mu_i_arr - np.log(epsi_i_arr + exp))) +
-               (epsi_i_arr * np.log(epsi_i_arr / (epsi_i_arr + exp))))
+        lls = (ss.gammaln(r_subset + epsi_i) - ss.gammaln(r_subset + 1) - ss.gammaln(epsi_i) +
+               (r_subset * (self.mu + bc + mu_i - np.log(epsi_i + exp))) +
+               (epsi_i * np.log(epsi_i / (epsi_i + exp))))
         if not take_sum:
             return lls
         return lls.sum()
@@ -297,6 +306,8 @@ class AllelicCluster:
         Hs = []
         for ix in split_indices:
             if ix < 0:
+                # what do we do here WRT ll_cluster indices? FIXME
+                breakpoint()
                 # no split proposal
                 ll_join = self.ll_cluster(self.mu_i_arr, self.lepsi_i_arr)
                 lls.append(ll_join)
@@ -317,7 +328,7 @@ class AllelicCluster:
                     #breakpoint()
                     ll_l = self.cache_LL[ptr]
                 else: 
-                    ll_l = self.ll_cluster(mu_l, lepsi_l)
+                    ll_l = self.ll_cluster([ind[0], ix], mu_l, lepsi_l)
                     self.cache_LL.append(ll_l); self.cache_LL_ptr[ind[0], ix] = len(self.cache_LL) - 1
 
                 # right:
@@ -325,7 +336,7 @@ class AllelicCluster:
                     #breakpoint()
                     ll_r = self.cache_LL[ptr]
                 else:
-                    ll_r = self.ll_cluster(mu_r, lepsi_r)
+                    ll_r = self.ll_cluster([ix, ind[1]], mu_r, lepsi_r)
                     self.cache_LL.append(ll_r); self.cache_LL_ptr[ix, ind[1]] = len(self.cache_LL) - 1
 
                 lls.append(ll_l + ll_r)
@@ -491,7 +502,7 @@ class AllelicCluster:
             #breakpoint()
             ll_join = self.cache_LL[ptr]
         else:
-            ll_join = self.ll_cluster(mu_share, lepsi_share)
+            ll_join = self.ll_cluster(ind, mu_share, lepsi_share)
 
             # add to cache
             self.cache_LL.append(ll_join); self.cache_LL_ptr[ind[0], ind[1]] = len(self.cache_LL) - 1
@@ -526,7 +537,7 @@ class AllelicCluster:
 
         max_ML = max(log_MLs)
         k_probs = np.exp(log_MLs - max_ML) / np.exp(log_MLs - max_ML).sum()
-        
+
         if np.isnan(k_probs).any():
             print("skipping split iteration due to nan. log MLs: ", log_MLs, flush=True)
             return 0
