@@ -102,17 +102,18 @@ class CoverageMCMCRunner:
         
 
     def load_covariates(self):
+        zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
+
         ## Target size
 
         # we only need bin size if doing exomes but we can check by looking at the bin lengths
         self.full_cov_df["C_log_len"] = np.log(self.full_cov_df["end"] - self.full_cov_df["start"] + 1)
+        self.full_cov_df["C_log_len_z"] = zt(self.full_cov_df["C_log_len"])
             
         # in case we are doing wgs these will all be the same and we must remove
         if (np.diff(self.full_cov_df["C_log_len"]) == 0).all():
             #remove the len col since it will ruin beta fitting
-            self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
-
-        zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
+            self.full_cov_df = self.full_cov_df.drop(['C_log_len', 'C_log_len_z'], axis=1)
 
         ## Fragment length
 
@@ -120,7 +121,7 @@ class CoverageMCMCRunner:
         self.full_cov_df = self.full_cov_df.loc[(self.full_cov_df.mean_frag_len > 0) & (self.full_cov_df.std_frag_len > 0)].reset_index(drop = True)
 
         self.full_cov_df = self.full_cov_df.rename(columns = { "mean_frag_len" : "C_frag_len" })
-        self.full_cov_df["C_frag_len_z"] = zt(self.full_cov_df["C_frag_len"])
+        self.full_cov_df["C_frag_len_z"] = zt(np.log(self.full_cov_df["C_frag_len"]))
 
         # generate on 5x and 11x scales
         swv = np.lib.stride_tricks.sliding_window_view
@@ -132,7 +133,7 @@ class CoverageMCMCRunner:
             conv = np.einsum('ij,ij->i', wt_sw, fl_sw)
 
             self.full_cov_df[f"C_frag_len_{scale}x"] = conv/wt_sw.sum(1)
-            self.full_cov_df[f"C_frag_len_{scale}x_z"] = zt(self.full_cov_df[f"C_frag_len_{scale}x"])
+            self.full_cov_df[f"C_frag_len_{scale}x_z"] = zt(np.log(self.full_cov_df[f"C_frag_len_{scale}x"]))
 
         ### track-based covariates
         # use midpoint of coverage bins to map to intervals
@@ -148,7 +149,7 @@ class CoverageMCMCRunner:
         self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, 3:].mean(1).values
 
         # z-transform
-        self.full_cov_df["C_RT_z"] = zt(self.full_cov_df["C_RT"])
+        self.full_cov_df["C_RT_z"] = zt(np.log(self.full_cov_df["C_RT"]))
 
         ## GC content
 
@@ -175,7 +176,7 @@ class CoverageMCMCRunner:
             self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, -1].values
 
             # z-transform
-            self.full_cov_df["C_FAIRE_z"] = zt(self.full_cov_df["C_FAIRE"])
+            self.full_cov_df["C_FAIRE_z"] = zt(np.log(self.full_cov_df["C_FAIRE"] + 1))
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
     # clusters with snps from different clusters are probabliztically assigned
