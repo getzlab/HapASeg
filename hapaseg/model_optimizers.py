@@ -54,3 +54,9 @@ class PoissonRegression:
     def fit(self):
         self.NR_poisson()
         return self.mu, self.beta
+
+    def hess(self):
+        hmu = self.hessmu()
+        hbeta = self.hessbeta()
+        hmubeta = self.hessmubeta()
+        return np.r_[np.c_[hmu, hmubeta.T], np.c_[hmubeta, hbeta]]
