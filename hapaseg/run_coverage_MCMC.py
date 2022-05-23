@@ -341,8 +341,11 @@ def nat_sort(lst):
         return sorted(lst, key=alphanum_key)
 
 
-# function for collecting coverage mcmc results from each ADP cluster
-def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None, bin_width=1):
+# function for collecting coverage mcmc results from each ADP segment
+def aggregate_adp_segments(allelic_seg_groups_pickle, coverage_dir=None, f_file_list=None, cov_df_pickle=None, bin_width=1):
+    S = pd.read_pickle(allelic_seg_groups_pickle)
+    S = S.rename_axis(index = "allelic_seg_idx").reset_index()
+
     if coverage_dir is None and f_file_list is None:
         raise ValueError("need to pass in either coverage_dir or file_list txt file!")
     if coverage_dir is not None and f_file_list is not None:
@@ -350,7 +353,7 @@ def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None, 
 
     # get results files from the directory provided or from the file list provided
     if coverage_dir is not None:
-        cluster_files = nat_sort(glob.glob(os.path.join(coverage_dir, 'cov_mcmc_data_cluster_*')))
+        adp_seg_files = nat_sort(glob.glob(os.path.join(coverage_dir, 'cov_mcmc_data_*')))
         cov_df = pd.read_pickle(os.path.join(coverage_dir, 'cov_df.pickle'))
         
     else:
@@ -364,47 +367,67 @@ def aggregate_clusters(coverage_dir=None, f_file_list=None, cov_df_pickle=None, 
                 to_add = l.rstrip('\n')
                 if to_add != "nan":
                     read_files.append(to_add)
-        cluster_files = nat_sort(read_files)
+        adp_seg_files = nat_sort(read_files)
         cov_df = pd.read_pickle(cov_df_pickle)
-    
-    clust_assignments = cov_df['allelic_cluster'].values
-    
+
+    # make sure that number of results shards is consistent with shard indices
+    if len(adp_seg_files) != len(S):
+        raise ValueError("Number of ADP seg files does not match scatter shards!")
+
+    # load in covMCMC segment boundaries and mu's for each ADP segment
     seg_results = []
     mu_i_results = []
     
-    # load data from each cluster
-    for data_path in cluster_files:
-        cluster_data = np.load(data_path)
-        seg_results.append(cluster_data['seg_samples'])
-        mu_i_results.append(cluster_data['mu_i_samples'])
-    
-    num_draws = seg_results[0].shape[1]
-    num_clusters = len(seg_results)
+    for f in adp_seg_files:
+        seg_data = np.load(f)
+        seg_results.append(seg_data['seg_samples'])
+        mu_i_results.append(seg_data['mu_i_samples'])
 
-    # now we use these data to fill an overall coverage segmentation array
+    S["seg_results"] = seg_results
+    S["mu_i_results"] = mu_i_results
+
+    num_draws = seg_results[0].shape[1]
+
+    # create overall segmentation array
     coverage_segmentation = np.zeros((len(cov_df), num_draws))
     mu_i_values = np.zeros((len(cov_df), num_draws))
 
+    # loop over each cov MCMC draw
+    # TODO: only use maximum likelihood draw; CDP should be able to resegment
     for d in range(num_draws):
-        global_counter = 0
-        for c in range(num_clusters):
-            cluster_mask = (clust_assignments == c)
-            coverage_segmentation[cluster_mask, d] = seg_results[c][:,d] + global_counter
-            mu_i_values[cluster_mask, d] = mu_i_results[c][:, d]
-            global_counter += len(np.unique(seg_results[c][:,d]))
-    
-    # generate data to re-compute global beta
+        n_tot_segs = 0
+        # loop over ADP segments
+        for _, s in S.iterrows():
+            seg_idxs = s["seg_results"][:, d]
+            coverage_segmentation[s["indices"], d] = seg_idxs + n_tot_segs
+            n_tot_segs += seg_idxs[-1] + 1
+
+            mu_i_values[s["indices"], d] = s["mu_i_results"][:, d]
+
+    # TEMP HACK: for now, only take iteration with fewest number of segments
+    sidx = coverage_segmentation[-1, :].argmin()
+    coverage_segmentation = coverage_segmentation[:, [sidx]]
+    mu_i_values = mu_i_values[:, [sidx]]
+
+    # remove short segments (<200Kb)
+    # TODO: remove segments not well-modeled by covariates
+    cov_df["cov_seg_idx"] = coverage_segmentation.astype(int)
+    long_seg_idx = cov_df.groupby("cov_seg_idx").apply(lambda x : (x.iloc[-1]["end"] - x.iloc[0]["start"]) > 2e5).rename("seg_OK")
+    cov_df = cov_df.merge(long_seg_idx, left_on = "cov_seg_idx", right_index = True)
+
+    coverage_segmentation = coverage_segmentation[cov_df["seg_OK"], :]
+    mu_i_values = mu_i_values[cov_df["seg_OK"], :]
+    cov_df = cov_df.loc[cov_df["seg_OK"]]
+
+    # recompute global beta
     r = np.c_[cov_df["covcorr"]]
     # we'll use the mu_is from the last segmentation sample
-    mu_is = mu_i_values[:,-1]
-    # compute new edogenous targets by subtracking out the mu_i values of the segments
-    # along with the bin exposure
-    endog = np.exp(np.log(r).flatten() - np.log(bin_width) - mu_is).reshape(-1,1)
+    mu_is = mu_i_values[:, [-1]]
     # generate covars
     covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("^C_.*_z$")])
     C = np.c_[cov_df[covar_columns]]
     # do regression
-    pois_regr = PoissonRegression(endog, C, np.ones(endog.shape))
+    pois_regr = PoissonRegression(r, C, np.ones(r.shape), np.log(bin_width) + mu_is)
     mu_refit, beta_refit = pois_regr.fit()
     
     return coverage_segmentation, beta_refit
