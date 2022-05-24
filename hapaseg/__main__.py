@@ -11,7 +11,7 @@ import scipy.special as ss
 import sortedcontainers as sc
 import traceback
 
-from capy import mut
+from capy import mut, seq
 
 from .load import HapasegSNPs
 from .run_allelic_MCMC import AllelicMCMCRunner
@@ -155,6 +155,25 @@ def parse_args():
                                           default=None)
     preprocess_coverage_mcmc.add_argument("--ref_fasta", required = True)
     preprocess_coverage_mcmc.add_argument("--bin_width", help = "Coverage bin width (for WGS only)", default = 1, type = int)
+
+    ## proprocessing coverage MCMC data for scatter tasks
+    make_simple_segfile = subparsers.add_parser("make_simple_segfile",
+                                                     help="Use logic from coverage_mcmc_preprocess to make a simple allelic segfile")
+    make_simple_segfile.add_argument("--coverage_csv",
+                                          help="csv file containing '['chr', 'start', 'end', 'covcorr', 'covraw'] data", required=True)
+    make_simple_segfile.add_argument("--allelic_clusters_object",
+                                          help="npy file containing allelic dp segs-to-clusters results", required=True)
+    make_simple_segfile.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs", required=True)
+    make_simple_segfile.add_argument("--segmentations_pickle", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
+    make_simple_segfile.add_argument("--repl_pickle", help="pickled dataframe containing replication timing data", required=True)
+    make_simple_segfile.add_argument("--faire_pickle", help="pickled dataframe containing FAIRE data", required=True)
+    make_simple_segfile.add_argument("--gc_pickle", help="pickled dataframe containing precomputed gc content. This is not required but will speed up runtime if passed", default=None)
+    make_simple_segfile.add_argument("--allelic_sample", type=int,
+                                          help="index of sample clustering from allelic DP to use as seed for segmentation. Will use most likely clustering by default",
+                                          default=None)
+    make_simple_segfile.add_argument("--ref_fasta", required = True)
+    make_simple_segfile.add_argument("--cytoband_file", required = True)
+    make_simple_segfile.add_argument("--bin_width", help = "Coverage bin width (for WGS only)", default = 1, type = int)
 
     ## running coverage mcmc on single cluster for scatter task
     coverage_mcmc_shard = subparsers.add_parser("coverage_mcmc_shard",
