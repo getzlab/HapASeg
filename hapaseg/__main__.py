@@ -539,6 +539,96 @@ def main():
         # allelic segment indices into coverage dataframe
         seg_g_idx.to_pickle(os.path.join(output_dir, 'allelic_seg_groups.pickle'))
 
+    ## make simple seg file
+    elif args.command == "make_simple_segfile":
+        ## perform initial Poisson regression
+        cov_mcmc_runner = CoverageMCMCRunner(args.coverage_csv,
+                                             args.allelic_clusters_object,
+                                             args.SNPs_pickle,
+                                             args.segmentations_pickle,
+                                             args.ref_fasta,
+                                             f_repl=args.repl_pickle,
+                                             f_faire=args.faire_pickle,
+                                             f_GC=args.gc_pickle,
+                                             allelic_sample=args.allelic_sample)
+        Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
+
+        chrlens = seq.get_chrlens(ref = args.ref_fasta)
+
+        # 1. split each allelic segment into bins
+        allelic_clusters = cov_mcmc_runner.allelic_clusters
+        ph = allelic_clusters["snps_to_phases"][cov_mcmc_runner.allelic_sample]
+        SNPs = cov_mcmc_runner.SNPs
+
+        binsize = 4000
+        plt.figure(binsize, figsize = [16, 4]); plt.clf()
+        ax = plt.gca()
+
+        seg_file = []
+
+        for (seg, _), seg_idxs in cov_df.groupby(["seg_idx", "chr"]).indices.items():
+            bdy = np.r_[seg_idxs[0]:seg_idxs[-1]:binsize, seg_idxs[-1]]
+            bdy = np.c_[bdy[:-1], bdy[1:]]
+
+            # get beta uncertainty for whole segment
+            snp_idx = SNPs["seg_idx"] == seg
+
+            den = SNPs.loc[snp_idx, ["min", "maj"]].sum().sum()
+            num = SNPs.loc[snp_idx & ph, "maj"].sum() + SNPs.loc[snp_idx & ~ph, "min"].sum()
+
+            # compute coverage segmentation on intervals
+            for st, en in bdy:
+                if en - st < 10:
+                    continue
+                pois_regr = PoissonRegression(r[st:en], C[st:en], np.ones([en - st, 1]), np.log(2000) + C[st:en]@global_beta)
+                mu, beta = pois_regr.fit()
+
+                p = np.r_[cov_df["start_g"].iloc[st], cov_df["end_g"].iloc[en]]
+
+                # get uncertainty around mu
+                mu_post_sigma = np.linalg.inv(-pois_regr.hess())[0, 0]
+
+        #        plt.plot(p, np.r_[1, 1]*np.exp(mu[0])*num/den, color = "r", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+        #        plt.plot(p, np.r_[1, 1]*np.exp(mu[0])*(1 - num/den), color = "b", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+
+                # empirically compute min/maj segment uncertainty
+                maj_emp = s.beta.rvs(num + 1, den - num + 1, size = 1000)*np.exp(s.norm.rvs(mu, mu_post_sigma, size = 1000))
+                min_emp = (1 - s.beta.rvs(num + 1, den - num + 1, size = 1000))*np.exp(s.norm.rvs(mu, mu_post_sigma, size = 1000))
+                plt.plot(p, np.r_[1, 1]*maj_emp.mean(), color = "r", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+                plt.plot(p, np.r_[1, 1]*min_emp.mean(), color = "b", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+
+                ## write entry to seg file
+                seg_file.append([
+                  cov_df["chr"].iloc[st],    # Chromosome
+                  cov_df["start"].iloc[st],  # Start.bp
+                  cov_df["end"].iloc[en - 1],    # End.bp
+                  en - st,                   # n_probes
+                  cov_df["end_g"].iloc[en - 1] - cov_df["start_g"].iloc[st], # length
+                  en - st, # n_hets (standin
+                  num/den, # f
+                  (maj_emp + min_emp).mean(), # tau (will be rescaled)
+                  (maj_emp + min_emp).std(), # sigma.tau
+                  min_emp.mean(), # mu.minor
+                  min_emp.std(), # sigma.minor
+                  maj_emp.mean(), # mu.major
+                  maj_emp.std(), # sigma.major
+                  0, # SegLabelCNLOH (not used?)
+                ])
+
+        hs_utils.plot_chrbdy(args.cytoband_file)
+        plt.xlim([0, cov_df["end_g"].max()])
+
+        plt.savefig("allelic_segs.png", dpi = 300)
+
+        S = pd.DataFrame(seg_file, columns = ["Chromosome", "Start.bp", "End.bp", "n_probes", "length", "n_hets", "f", "tau", "sigma.tau", "mu.minor", "sigma.minor", "mu.major", "sigma.major", "SegLabelCNLOH"]).astype({ "Chromosome" : int, "Start.bp" : int, "End.bp" : int })
+
+        # rescale such that mean = 2
+        sf = S["length"]@S["tau"]/S["length"].sum()/2
+
+        S.loc[:, ["tau", "sigma.tau", "mu.minor", "sigma.minor", "mu.major", "sigma.major"]] /= sf
+
+        S.to_csv("segfile.tsv", sep = "\t", index = False)
+
     ## run scattered coverage mcmc job using preprocessed data
     elif args.command == "coverage_mcmc_shard":
         # load preprocessed data

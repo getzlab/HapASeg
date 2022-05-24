@@ -167,6 +167,47 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v832"
     resources = { "mem" : "15G" }
 
+class Hapaseg_make_simple_segfile(wolf.Task):
+    inputs = {
+        "coverage_csv": None,
+        "allelic_clusters_object": None,
+        "SNPs_pickle": None,
+        "segmentations_pickle": None,
+        "repl_pickle": None,
+        "faire_pickle": "/mnt/j/proj/cnv/20201018_hapseg2/covars/FAIRE_GM12878.hg19.pickle", # TODO: make remote
+        "cytoband_file": None,
+        "gc_pickle":"",
+        "allelic_sample":"",
+        "ref_fasta": None,
+        "bin_width" : 1 # only for whole genomes; for exomes, target lengths are passed as a covariate via the coverage CSV
+    }
+    def script(self):
+        script = """
+        hapaseg make_simple_segfile --coverage_csv ${coverage_csv} \
+        --ref_fasta ${ref_fasta} \
+        --cytoband_file ${cytoband_file} \
+        --allelic_clusters_object ${allelic_clusters_object} \
+        --SNPs_pickle ${SNPs_pickle} \
+        --segmentations_pickle ${segmentations_pickle} \
+        --repl_pickle ${repl_pickle} \
+        --faire_pickle ${faire_pickle} \
+        --bin_width ${bin_width}
+        """
+    
+        if self.conf["inputs"]["gc_pickle"] != "":
+            script += " --gc_pickle ${gc_pickle} "
+        if self.conf["inputs"]["allelic_sample"] != "":
+            script += " --allelic_sample ${allelic_sample}"
+
+        return script
+
+    output_patterns = {
+        "seg_file": "segfile.tsv",
+        "allelic_seg_plot": "*.png",
+    }
+
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration-seglevel_v846"
+    resources = { "mem" : "15G" }
 
 class Hapaseg_coverage_mcmc_burnin(wolf.Task):
     inputs = {

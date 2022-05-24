@@ -498,6 +498,22 @@ def workflow(
     # coverage tasks
     #
 
+    # make siple segfile
+    make_simp_segfile = hapaseg.Hapaseg_make_simple_segfile(
+    inputs={
+        "coverage_csv":tumor_cov_gather_task["coverage"], #each scatter result is the same
+        "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+        "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
+        "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
+        "repl_pickle":ref_config["repl_file"],
+        "gc_pickle":ref_config["gc_file"],
+        "ref_fasta":localization_task["ref_fasta"],
+        "cytoband_file":localization_task["cytoband_file"],
+        "bin_width":bin_width if wgs else 1
+        }
+    )
+    return
+
     # prepare coverage MCMC
     prep_cov_mcmc_task = hapaseg.Hapaseg_prepare_coverage_mcmc(
     inputs={
