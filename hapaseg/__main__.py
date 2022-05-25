@@ -607,6 +607,9 @@ def main():
                 except:
                     continue
 
+                if np.isnan(mu[0, 0]):
+                    continue
+
                 p = np.r_[cov_df["start_g"].iloc[st], cov_df["end_g"].iloc[en]]
 
                 # get uncertainty around mu
