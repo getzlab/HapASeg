@@ -25,6 +25,8 @@ from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters, aggregate
 from .coverage_DP import Coverage_DP
 from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP
 
+from .model_optimizers import PoissonRegression
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Call somatic copynumber alterations taking advantage of SNP phasing")
@@ -636,6 +638,7 @@ def main():
 
         hs_utils.plot_chrbdy(args.cytoband_file)
         plt.xlim([0, cov_df["end_g"].max()])
+        plt.ylabel("Coverage of major/minor alleles")
 
         plt.savefig("allelic_segs.png", dpi = 300)
 
