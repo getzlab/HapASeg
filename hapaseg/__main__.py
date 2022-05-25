@@ -602,7 +602,10 @@ def main():
                 if en - st < 10:
                     continue
                 pois_regr = PoissonRegression(r[st:en], C[st:en], np.ones([en - st, 1]), np.log(2000) + C[st:en]@global_beta)
-                mu, beta = pois_regr.fit()
+                try:
+                    mu, beta = pois_regr.fit()
+                except:
+                    continue
 
                 p = np.r_[cov_df["start_g"].iloc[st], cov_df["end_g"].iloc[en]]
 
