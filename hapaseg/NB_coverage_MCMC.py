@@ -802,6 +802,7 @@ class NB_MCMC_SingleCluster:
         self.mu_i_samples = []
         self.lepsi_i_samples = []
         self.F_samples = []
+        self.ll_samples = []
 
         self.ll_cluster = 0
         self.ll_iter = []
@@ -827,6 +828,7 @@ class NB_MCMC_SingleCluster:
         self.mu_i_samples.append(self.cluster.mu_i_arr.copy())
         self.lepsi_i_samples.append(self.cluster.lepsi_i_arr.copy())
         self.F_samples.append(self.cluster.F.copy())
+        self.ll_samples.append(self.ll_cluster)
 
     def run(self,
             debug=False,
