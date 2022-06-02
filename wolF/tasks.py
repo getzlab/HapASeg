@@ -206,7 +206,7 @@ class Hapaseg_make_simple_segfile(wolf.Task):
         "allelic_seg_plot": "*.png",
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration-seglevel_v846"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration-seglevel_v850"
     resources = { "mem" : "15G" }
 
 class Hapaseg_coverage_mcmc_burnin(wolf.Task):
@@ -262,7 +262,7 @@ class Hapaseg_coverage_mcmc(wolf.Task):
         "cov_seg_figure": 'cov_mcmc_*_visual.png'
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v830"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v842"
     resources = {"mem" : "10G"}
 
 class Hapaseg_collect_coverage_mcmc(wolf.Task):

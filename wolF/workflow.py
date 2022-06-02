@@ -546,6 +546,7 @@ def workflow(
             "bin_width":bin_width,
         }
     )
+    return
  
     #get the cluster indices from the preprocess data and generate the burnin indices
     @prefect.task(nout=4)
@@ -578,16 +579,16 @@ def workflow(
 
     num_clusters, cluster_idxs, cluster_list, range_list = _get_ADP_cluster_list(prep_cov_mcmc_task["preprocess_data"])
 
-    # coverage MCMC burnin
-    cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc_burnin(
-        inputs={
-            "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
-            "num_draws":10,
-            "cluster_num":cluster_list,
-            "bin_width":bin_width,
-            "range":range_list
-        }
-    )
+#    # coverage MCMC burnin
+#    cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc_burnin(
+#        inputs={
+#            "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
+#            "num_draws":10,
+#            "cluster_num":cluster_list,
+#            "bin_width":bin_width,
+#            "range":range_list
+#        }
+#    )
 
     # coverage MCMC scatter post-burnin
     cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc(
