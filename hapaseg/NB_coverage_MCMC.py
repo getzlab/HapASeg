@@ -875,4 +875,4 @@ class NB_MCMC_SingleCluster:
             hist = np.array(self.F_samples[d]).reshape(-1,2)
             for j, r in enumerate(hist):
                 ax_lst[d].add_patch(mpl.patches.Rectangle((r[0],0), r[1]-r[0], 2.3, fill=True, alpha=0.3, color = colors[j % 10]))
-        plt.savefig(savepath, dpi=300)
+        plt.savefig(savepath, dpi=150)
