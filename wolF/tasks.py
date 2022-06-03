@@ -133,7 +133,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "SNPs_pickle": None,
         "segmentations_pickle": None,
         "repl_pickle": None,
-        "faire_pickle": "/mnt/j/proj/cnv/20201018_hapseg2/covars/FAIRE_GM12878.hg19.pickle", # TODO: make remote
+        "faire_pickle": "", # TODO: make remote
         "gc_pickle":"",
         "allelic_sample":"",
         "ref_fasta": None
@@ -144,10 +144,11 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     --allelic_clusters_object ${allelic_clusters_object} \
     --SNPs_pickle ${SNPs_pickle} \
     --segmentations_pickle ${segmentations_pickle} \
-    --repl_pickle ${repl_pickle} \
-    --faire_pickle ${faire_pickle}"""
+    --repl_pickle ${repl_pickle}"""
     
     def prolog(self):
+        if self.conf["inputs"]["faire_pickle"] != "":
+            self.conf["script"][-1] += "--faire_pickle ${faire_pickle}"
         if self.conf["inputs"]["gc_pickle"] != "":
             self.conf["script"][-1] += " --gc_pickle ${gc_pickle}"
         if self.conf["inputs"]["allelic_sample"] != "":
@@ -156,25 +157,28 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     output_patterns = {
         "preprocess_data": "preprocess_data.npz",
         "cov_df_pickle": "cov_df.pickle",
-        "allelic_seg_groups": "allelic_seg_groups.pickle"
+        "allelic_seg_groups": "allelic_seg_groups.pickle",
+        "allelic_seg_idxs": "allelic_seg_idxs.txt"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v815"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v623"
     resources = { "mem" : "15G" }
 
-
-class Hapaseg_coverage_mcmc_burnin(wolf.Task):
+#scatter by allelic segment
+class Hapaseg_coverage_mcmc_by_Aseg(wolf.Task):
     inputs = {
         "preprocess_data": None,
         "num_draws": 50,
-        "cluster_num": None,
+        "allelic_seg_scatter_idx": None,
+        "allelic_seg_indices":None,
         "bin_width":None,
         "range":""
     }
     script = """
     hapaseg coverage_mcmc_shard --preprocess_data ${preprocess_data} \
     --num_draws ${num_draws} \
-    --cluster_num ${cluster_num} \
+    --allelic_seg_indices ${allelic_seg_indices} \
+    --allelic_seg_idx ${allelic_seg_scatter_idx} \
     --bin_width ${bin_width}"""
      
     def prolog(self):
@@ -182,9 +186,9 @@ class Hapaseg_coverage_mcmc_burnin(wolf.Task):
             self.conf["script"][-1] += " --range ${range}"
     
     output_patterns = {
-        "burnin_model": 'cov_mcmc_model_cluster_*.pickle',
-        "burnin_data": 'cov_mcmc_data_cluster_*.npz',
-        "burnin_figure": 'cov_mcmc_cluster_*_visual.png'
+        "cov_segmentation_model": 'cov_mcmc_model*.pickle',
+        "cov_segmentation_data": 'cov_mcmc_data*.npz',
+        "cov_seg_figure": 'cov_mcmc_*_visual.png'
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v623"
@@ -223,11 +227,12 @@ class Hapaseg_collect_coverage_mcmc(wolf.Task):
     inputs = {
         "cov_mcmc_files":None,
         "cov_df_pickle":None,
+        "seg_indices_pickle":None,
         "bin_width":1
      }
 
     script = """
-    hapaseg collect_cov_mcmc --cov_mcmc_files ${cov_mcmc_files} --cov_df_pickle ${cov_df_pickle} --bin_width ${bin_width}
+    hapaseg collect_cov_mcmc --seg_indices_pickle ${seg_indices_pickle} --cov_mcmc_files ${cov_mcmc_files} --cov_df_pickle ${cov_df_pickle} --bin_width ${bin_width}
     """
     
     output_patterns={

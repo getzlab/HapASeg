@@ -514,82 +514,85 @@ def workflow(
     # shim task to get number of allelic segments
     #   (coverage MCMC will be scattered over each allelic segment)
     @prefect.task
-    def get_N_seg_groups(S):
-        return len(S)
+    def get_N_seg_groups(idx_file):
+        indices = np.genfromtxt(idx_file, delimiter='\n', dtype=int)
+        return list(indices)
 
-    N_cov_mcmc_shards = get_N_seg_groups(prep_cov_mcmc_task["allelic_seg_groups"])
+    cov_mcmc_shards_list = get_N_seg_groups(prep_cov_mcmc_task["allelic_seg_idxs"])
 
     # TODO: modify burnin task to subset to these indices
 
     # coverage MCMC burnin(?) <- do we still need to burnin separately?
-    cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc_burnin(
+    cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc_by_Aseg(
         inputs={
             "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
             "allelic_seg_indices":prep_cov_mcmc_task["allelic_seg_groups"],
-            "allelic_seg_scatter_idx":range(0, N_cov_mcmc_shards),
-            "num_draws":50,
+            "allelic_seg_scatter_idx":cov_mcmc_shards_list,
+            "num_draws":num_cov_seg_samples,
             "bin_width":bin_width,
         }
     )
  
-    #get the cluster indices from the preprocess data and generate the burnin indices
-    @prefect.task(nout=4)
-    def _get_ADP_cluster_list(preprocess_data_obj):
-        range_size = 2000
-        data = np.load(preprocess_data_obj)
-        
-        Pi = data['Pi']
-        r = data['r']
-        C = data['C']
-        
-        num_clusters = Pi.shape[1]
-        
-        c_assignments = np.argmax(Pi, axis=1)
-        cluster_list = []
-        range_list = []
-
-        # iterate through clusters and generate ranges
-        for i in range(num_clusters):
-            cluster_mask = (c_assignments == i)
-            clust_size = len(r[cluster_mask])
-            for j in range(int(np.ceil(clust_size / range_size))):
-                cluster_list.append(i)
-                range_list.append("{}-{}".format(j * range_size, min((j+1) * range_size, clust_size)))
-        
-        # also return a plain list of indices for the post-burnin run
-        cluster_idxs = [i for i in np.arange(num_clusters)]
-        print(cluster_idxs, cluster_list, range_list) 
-        return len(cluster_idxs), cluster_idxs, cluster_list, range_list
-
-    num_clusters, cluster_idxs, cluster_list, range_list = _get_ADP_cluster_list(prep_cov_mcmc_task["preprocess_data"])
-
-    # coverage MCMC burnin
-    cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc_burnin(
-        inputs={
-            "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
-            "num_draws":10,
-            "cluster_num":cluster_list,
-            "bin_width":bin_width,
-            "range":range_list
-        }
-    )
-
-    # coverage MCMC scatter post-burnin
-    cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc(
-        inputs={
-            "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
-            "num_draws":num_cov_seg_samples,
-            "cluster_num":cluster_idxs,
-            "bin_width":bin_width,
-            "burnin_files":[cov_mcmc_burnin_task["burnin_data"]] * num_clusters # this is to account for a wolf input len bug
-        }
-    )
+#    #get the cluster indices from the preprocess data and generate the burnin indices
+#    @prefect.task(nout=4)
+#    def _get_ADP_cluster_list(preprocess_data_obj):
+#        range_size = 2000
+#        data = np.load(preprocess_data_obj)
+#        
+#        Pi = data['Pi']
+#        r = data['r']
+#
+#        C = data['C']
+#        
+#        num_clusters = Pi.shape[1]
+#        
+#        c_assignments = np.argmax(Pi, axis=1)
+#        cluster_list = []
+#        range_list = []
+#
+#        # iterate through clusters and generate ranges
+#        for i in range(num_clusters):
+#            cluster_mask = (c_assignments == i)
+#            clust_size = len(r[cluster_mask])
+#            for j in range(int(np.ceil(clust_size / range_size))):
+#                cluster_list.append(i)
+#                range_list.append("{}-{}".format(j * range_size, min((j+1) * range_size, clust_size)))
+#        
+#        # also return a plain list of indices for the post-burnin run
+#        cluster_idxs = [i for i in np.arange(num_clusters)]
+#        print(cluster_idxs, cluster_list, range_list) 
+#        return len(cluster_idxs), cluster_idxs, cluster_list, range_list
+#
+#    num_clusters, cluster_idxs, cluster_list, range_list = _get_ADP_cluster_list(prep_cov_mcmc_task["preprocess_data"])
+#
+#    # old coverage MCMC burnin
+#    cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc_burnin(
+#        inputs={
+#            "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
+#            "num_draws":10,
+#            "cluster_num":cluster_list,
+#            "bin_width":bin_width,
+#            "range":range_list
+#        }
+#    )
+#
+#    # old coverage MCMC scatter post-burnin
+#    cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc(
+#        inputs={
+#            "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
+#            "num_draws":num_cov_seg_samples,
+#            "cluster_num":cluster_idxs,
+#            "bin_width":bin_width,
+#            "burnin_files":[cov_mcmc_burnin_task["burnin_data"]] * num_clusters # this is to account for a wolf input len bug
+#        }
+#    )
 
     # collect coverage MCMC
     cov_mcmc_gather_task = hapaseg.Hapaseg_collect_coverage_mcmc(
     inputs = {
         "cov_mcmc_files":[cov_mcmc_scatter_task["cov_segmentation_data"]],
         "cov_df_pickle":prep_cov_mcmc_task["cov_df_pickle"],
+        "seg_indices_pickle":prep_cov_mcmc_task["allelic_seg_groups"],
         "bin_width":bin_width
         }
     )
