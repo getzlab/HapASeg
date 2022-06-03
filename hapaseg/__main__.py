@@ -165,7 +165,7 @@ def parse_args():
     coverage_mcmc_shard.add_argument("--allelic_seg_idx", help='which allelic segment to perform coverage segmentation on.',
                                      required=True, type=int)
     coverage_mcmc_shard.add_argument("--num_draws", type=int,
-                               help="number of draws to take from coverage segmentation MCMC", default=50)
+                               help="number of draws to take from coverage segmentation MCMC", default=5)
     coverage_mcmc_shard.add_argument("--bin_width", type=int, default=1, help="size of uniform bins if using. Otherwise 1.")
     coverage_mcmc_shard.add_argument("--burnin_files", type=str, help="txt file containing burnt in segment assignments")
 
@@ -176,6 +176,7 @@ def parse_args():
                                   help="path to txt file with each line containing a path to a cov mcmc shard result")
     collect_cov_mcmc.add_argument("--cov_df_pickle",
                                   help="path to cov_df pickle file. Required for using --cov_mcmc_files option")
+    collect_cov_mcmc.add_argument("--seg_indices_pickle", help='path to segment indices dataframe pickle', required=True)
     collect_cov_mcmc.add_argument("--bin_width", type=int, help="size of uniform bins if using. otherwise 1")
 
     ## Coverage DP
@@ -515,8 +516,8 @@ def main():
                                              args.SNPs_pickle,
                                              args.segmentations_pickle,
                                              args.ref_fasta,
-                                             args.faire_pickle,
                                              args.repl_pickle,
+                                             args.faire_pickle,
                                              f_GC=args.gc_pickle,
                                              allelic_sample=args.allelic_sample)
         Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
@@ -538,6 +539,10 @@ def main():
         cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
         # allelic segment indices into coverage dataframe
         seg_g_idx.to_pickle(os.path.join(output_dir, 'allelic_seg_groups.pickle'))
+        
+        with open(os.path.join(output_dir, 'allelic_seg_idxs.txt'), 'w') as f:
+            for i in seg_g_idx.index:
+                f.write("{}\n".format(i))
 
     ## run scattered coverage mcmc job using preprocessed data
     elif args.command == "coverage_mcmc_shard":
@@ -559,17 +564,17 @@ def main():
             raise ValueError("Size mismatch between allelic segment assignments and coverage bin data!")
 
         # subset to a single allelic segment
-        if args.allelic_seg_idx > len(seg_g_idx) - 1:
+        if args.allelic_seg_idx not in seg_g_idx.index:
             raise ValueError("Allelic segment index out of bounds!")
 
-        seg_indices = seg_g_idx.iloc[args.allelic_seg_idx]
-
+        seg_indices = seg_g_idx.loc[args.allelic_seg_idx]
+        
         mu = mu[seg_indices["allelic_cluster"]]
         C = C[seg_indices["indices"], :]
         r = r[seg_indices["indices"], :]
         
         # run cov MCMC
-        cov_mcmc = NB_MCMC_SingleCluster(num_draws, r, C, mu, beta, args.bin_width)
+        cov_mcmc = NB_MCMC_SingleCluster(args.num_draws, r, C, mu, beta, args.bin_width)
 
 #        # if we get a range argument well be doing burnin on a subset of the coverage bins
 #        if args.range is not None:
@@ -613,6 +618,10 @@ def main():
         # collect the results
         segment_samples, global_beta, mu_i_samples = cov_mcmc.prepare_results()
         
+        model_save_str = 'cov_mcmc_model_allelic_seg_{}.pickle'.format(args.allelic_seg_idx)
+        data_save_str = 'cov_mcmc_data_allelic_seg_{}'.format(args.allelic_seg_idx)
+        figure_save_str = 'cov_mcmc_allelic_seg_{}_visual'.format(args.allelic_seg_idx)
+        
         # save samples
         with open(os.path.join(output_dir, model_save_str), 'wb') as f:
             pickle.dump(cov_mcmc, f)
@@ -631,7 +640,7 @@ def main():
         elif args.cov_mcmc_files:
             if args.cov_df_pickle is None:
                 raise ValueError("cov_df_pickle argument required for passing shard file")
-            full_segmentation, beta = aggregate_clusters(f_file_list=args.cov_mcmc_files, cov_df_pickle=args.cov_df_pickle, bin_width=args.bin_width)
+            full_segmentation, beta = aggregate_clusters(seg_indices_pickle= args.seg_indices_pickle, f_file_list=args.cov_mcmc_files, cov_df_pickle=args.cov_df_pickle, bin_width=args.bin_width)
         else:
             # need to pass in one or the other
             raise ValueError("must pass in either a directory or a txt file listing mcmc results")
