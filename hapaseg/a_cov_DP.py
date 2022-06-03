@@ -29,12 +29,12 @@ def LSE(x):
 
 # quick allele counting using phasing
 def _Ssum_ph(S, mm_mat, seg_idx, flip_col, min = True):
-        flip = S.iloc[seg_idx, flip_col]
-        flip_n = ~flip
-        if min:
-            return mm_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(S)]].sum()
-        else:
-            return mm_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(S)]].sum()
+    flip = S.iloc[seg_idx, flip_col]
+    flip_n = ~flip
+    if min:
+        return mm_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(S)]].sum()
+    else:
+        return mm_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(S)]].sum()
 
 # method for concatenating dp draws into a single large df to be used by the acdp
 def generate_acdp_df(SNP_path, # path to SNP df
@@ -49,8 +49,6 @@ def generate_acdp_df(SNP_path, # path to SNP df
     phases = ADP_clusters["snps_to_phases"][ADP_draw_index]
     
     S_flip_col = SNPs.columns.get_loc('flipped')
-    S_min_col = SNPs.columns.get_loc('min')
-    S_maj_col = SNPs.columns.get_loc('maj')
     
     # update phases with those from the selected draw
     SNPs.iloc[:, S_flip_col] = phases
@@ -80,24 +78,28 @@ def generate_acdp_df(SNP_path, # path to SNP df
         a_cov_seg_df = dp_run.cov_df.copy()
 
         covar_cols = sorted(a_cov_seg_df.columns[a_cov_seg_df.columns.str.contains("^C_.*_z$|^C_log_len$")])
+
         # add minor and major allele counts for each bin to the cov_seg_df here to allow for beta draws on the fly for each segment
-        a_cov_seg_df['min_count'] = 0
-        a_cov_seg_df['maj_count'] = 0
-        min_col_idx = a_cov_seg_df.columns.get_loc('min_count')
-        maj_col_idx = a_cov_seg_df.columns.get_loc('maj_count')
-
-        SNPs["cov_tidx"] = mut.map_mutations_to_targets(SNPs, a_cov_seg_df, inplace=False)
-
-        for idx, group in SNPs.groupby('cov_tidx').indices.items():
-            minor, major = _Ssum_ph(SNPs, mm_mat, group, S_flip_col, min = True), _Ssum_ph(SNPs, mm_mat, group, S_flip_col, min = False)
-            a_cov_seg_df.iloc[int(idx), [min_col_idx, maj_col_idx]] = minor, major
-
+#        a_cov_seg_df['min_count'] = 0
+#        a_cov_seg_df['maj_count'] = 0
+#        min_col_idx = a_cov_seg_df.columns.get_loc('min_count')
+#        maj_col_idx = a_cov_seg_df.columns.get_loc('maj_count')
+#
+#        SNPs["cov_tidx"] = mut.map_mutations_to_targets(SNPs, a_cov_seg_df, inplace=False)
+#
+#        for idx, group in SNPs.groupby('cov_tidx').indices.items():
+#            minor, major = _Ssum_ph(SNPs, mm_mat, group, S_flip_col, min = True), _Ssum_ph(SNPs, mm_mat, group, S_flip_col, min = False)
+#            a_cov_seg_df.iloc[int(idx), [min_col_idx, maj_col_idx]] = minor, major
+        
         # add dp cluster annotations
         a_cov_seg_df['cov_DP_cluster'] = -1
 
         segs_to_clusts = dp_run.bins_to_clusters[-1]
         for seg in range(len(segs_to_clusts)):
             a_cov_seg_df.loc[a_cov_seg_df['segment_ID'] == seg, 'cov_DP_cluster'] = segs_to_clusts[seg]
+        
+        # remove segments that were blacklisted in this draw
+        a_cov_seg_df = a_cov_seg_df.loc[a_cov_seg_df['cov_DP_cluster'] != -1]
 
         # adding cluster mus and sigmas to df for each tuple
         # falls back to CDP mu and sigma if the tuple is too small (less than 10 coverage bins)
@@ -125,9 +127,6 @@ def generate_acdp_df(SNP_path, # path to SNP df
             a_cov_seg_df.loc[(a_cov_seg_df.cov_DP_cluster == cdp) & (
                         a_cov_seg_df.allelic_cluster == adp), 'cov_DP_sigma'] = mu_sigma
 
-        # add next_g for ease of plotting down the line
-        a_cov_seg_df["next_g"] = np.r_[a_cov_seg_df.iloc[1:]["start_g"], 2880794554]
-
         # duplicate segments to account for second allele
         num_bins = len(a_cov_seg_df)
         a_cov_seg_df = a_cov_seg_df.reset_index(drop=True)
@@ -145,6 +144,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         draw_dfs.append(a_cov_seg_df)
 
     print('completed ACDP dataframe generation')
+    # return both the acdp df and the index of the best DP run
     return pd.concat(draw_dfs),  np.argmax([dp.ll_history[-1] for dp in DP_runs])
 
 class AllelicCoverage_DP:
