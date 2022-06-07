@@ -8,8 +8,8 @@ class PoissonRegression:
         self.Pi = Pi
         self.log_exposure = log_exposure
 
-        self.mu = np.log(r.mean() * np.ones([Pi.shape[1], 1]))
-        self.beta = np.ones([C.shape[1], 1])
+        self.mu = np.log(r.mean() * np.ones([Pi.shape[1], 1])) - self.log_exposure
+        self.beta = np.zeros([C.shape[1], 1])
         self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu + self.log_exposure)
 
     # mu gradient
