@@ -2,15 +2,16 @@ import numpy as np
 
 
 class PoissonRegression:
-    def __init__(self, r, C, Pi, log_exposure = 0):
+    def __init__(self, r, C, Pi, log_exposure = 0, log_offset = 0):
         self.r = r
         self.C = C
         self.Pi = Pi
         self.log_exposure = log_exposure
+        self.log_offset = log_offset
 
         self.mu = np.log(r.mean() * np.ones([Pi.shape[1], 1])) - self.log_exposure
         self.beta = np.zeros([C.shape[1], 1])
-        self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu + self.log_exposure)
+        self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu + self.log_exposure + self.log_offset)
 
     # mu gradient
     def gradmu(self):
@@ -34,7 +35,7 @@ class PoissonRegression:
 
     def NR_poisson(self):
         for i in range(100):
-            self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu + self.log_exposure)
+            self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu + self.log_exposure + self.log_offset)
             gmu = self.gradmu()
             gbeta = self.gradbeta()
             grad = np.r_[gmu, gbeta]
