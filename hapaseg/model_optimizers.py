@@ -13,21 +13,27 @@ class PoissonRegression:
         self.beta = np.zeros([C.shape[1], 1])
         self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu + self.log_exposure + self.log_offset)
 
+        # prior parameters
+        self.mumu = 0
+        self.musig2 = 1
+        self.betamu = np.zeros_like(self.beta)
+        self.betasiginv = np.eye(len(self.beta))
+
     # mu gradient
     def gradmu(self):
-        return self.Pi.T @ (self.r - self.e_s)
+        return self.Pi.T @ (self.r - self.e_s) - (self.mu - self.mumu)/self.musig2
 
     # mu Hessian
     def hessmu(self):
-        return (-self.Pi.T * self.e_s.T)  @ self.Pi
+        return (-self.Pi.T * self.e_s.T)  @ self.Pi - 1/self.musig2
 
     # beta gradient
     def gradbeta(self):
-        return self.C.T @ (self.r - self.e_s)
+        return self.C.T @ (self.r - self.e_s) - self.betasiginv@(self.beta - self.betamu)
 
     # beta Hessian
     def hessbeta(self):
-        return (-self.C.T * self.e_s.T) @ self.C
+        return (-self.C.T * self.e_s.T) @ self.C - self.betasiginv
 
     # mu,beta Hessian
     def hessmubeta(self):
