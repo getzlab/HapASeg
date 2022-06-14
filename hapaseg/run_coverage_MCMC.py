@@ -253,10 +253,6 @@ class CoverageMCMCRunner:
         
         ## subset to targets containing SNPs
         overlap_idx = Cov_clust_probs.sum(1) > 0
-#        # add targets within a 2 targ radius
-#        overlap_idx = np.flatnonzero(Cov_clust_probs.sum(1) > 0)[:, None]
-#        overlap_idx = overlap_idx + np.c_[-2:3].T
-#        overlap_idx = np.sort(np.unique((overlap_idx + np.c_[-2:3].T).ravel()))
         Cov_clust_probs_overlap = Cov_clust_probs[overlap_idx, :]
 
         # zero out improbable assignments and re-normalilze
