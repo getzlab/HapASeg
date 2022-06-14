@@ -519,7 +519,7 @@ def main():
                                              f_faire=args.faire_pickle,
                                              f_GC=args.gc_pickle,
                                              allelic_sample=args.allelic_sample)
-        Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
+        Pi, r, C, all_mu, global_beta, cov_df, adp_cluster, pois_hess = cov_mcmc_runner.prepare_single_cluster()
 
         ## create chunks for both burnin and scatter
         cov_df = cov_df.sort_values("start_g", ignore_index = True)
@@ -533,7 +533,7 @@ def main():
         ## save
         # regression matrices
         np.savez(os.path.join(output_dir, 'preprocess_data'), Pi=Pi, r=r, C=C, all_mu=all_mu,
-                 global_beta=global_beta, adp_cluster=adp_cluster)
+                 global_beta=global_beta, adp_cluster=adp_cluster, pois_hess=pois_hess)
         # coverage dataframe mapped 
         cov_df.to_pickle(os.path.join(output_dir, 'cov_df.pickle'))
         # allelic segment indices into coverage dataframe

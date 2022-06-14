@@ -70,9 +70,10 @@ class CoverageMCMCRunner:
         Pi, r, C, filtered_cov_df = self.assign_clusters()
         pois_regr = PoissonRegression(r, C, Pi, log_exposure = np.log(self.bin_width))
         all_mu, global_beta = pois_regr.fit()
+        pois_hess = pois_regr.hess()
 
         # save these results to a numpy object
-        return Pi, r, C, all_mu, global_beta, filtered_cov_df, self.allelic_sample
+        return Pi, r, C, all_mu, global_beta, filtered_cov_df, self.allelic_sample, pois_hess
 
     def load_coverage(self, coverage_csv):
         Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "mean_frag_len", "std_frag_len", "num_reads"], low_memory=False)
