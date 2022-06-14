@@ -8,7 +8,7 @@ from statsmodels.tools.sm_exceptions import ConvergenceWarning, HessianInversion
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy.signal import find_peaks
-from .model_optimizers import PoissonRegression
+from .model_optimizers import PoissonRegression, CovLNP_NR, covLNP_ll
 
 # turn off warnings for statsmodels fitting
 warnings.simplefilter('ignore', ConvergenceWarning)
@@ -21,7 +21,7 @@ colors = mpl.cm.get_cmap("tab10").colors
 class AllelicCluster:
     def __init__(self, r, C, mu_0, beta_0, bin_width=1):
         # cluster wide params
-        self.r = r.flatten()
+        self.r = r
         self.C = C
         self.mu = mu_0.flatten()
         self.beta = beta_0
@@ -40,11 +40,11 @@ class AllelicCluster:
         self.exp = 0
 
         # all segment params
-        self.lepsi_i_arr = np.ones(self.r.shape)
-        self.mu_i_arr = np.zeros(self.r.shape)
+        self.lepsi_i_arr = np.ones(len(self.r))
+        self.mu_i_arr = np.zeros(len(self.r))
 
         # all intervals start out in one segment, which also means no breakpoints
-        self.segment_ID = np.zeros(r.shape)
+        self.segment_ID = np.zeros(len(self.r))
         self.segments = sc.SortedSet([0])
         self.segment_lens = sc.SortedDict([(0, len(self.r))])
         
@@ -72,7 +72,7 @@ class AllelicCluster:
 
     # fit initial mu_k and epsilon_k for the cluster
     def NR_init(self):
-        self.mu, self.lepsi = self.stats_init()
+        self.mu, self.lepsi = self.lnp_init()
 
     def get_seg_ind(self, seg):
         return seg, seg + self.segment_lens[seg]
@@ -121,7 +121,7 @@ class AllelicCluster:
 
         #now we need to update the lepsi and mu_i arrays based on the burnin segmentation
         for row in np.array(self.F).reshape(-1,2):
-            mu_i, lepsi_i = self.stats_optimizer(row)
+            mu_i, lepsi_i = self.lnp_optimizer(row)
             self.mu_i_arr[row[0]:row[1]] = mu_i
             self.lepsi_i_arr[row[0]:row[1]] = lepsi_i
         
@@ -136,6 +136,10 @@ class AllelicCluster:
         res = sNB.fit(disp=0)
         return res.params[0], -np.log(res.params[1])
 
+    def lnp_init(self):
+        lnp = CovLNP_NR(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure))
+        return lnp.fit()
+
     # statsmodels NB BFGS optimizer is more stable than NR so we will use it until migration to LNP
     def stats_optimizer(self, ind, ret_hess=False):
         endog = self.r[ind[0]:ind[1]].flatten()
@@ -149,6 +153,10 @@ class AllelicCluster:
         else:
             return res.params[0], -np.log(res.params[1])
     
+    def lnp_optimizer(self, ind, ret_hess = False):
+        lnp = CovLNP_NR(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu)
+        return lnp.fit(ret_hess=ret_hess) 
+    
     # method for refitting beta value of the cluster
     def refit_beta(self):
         #fit poisson to get new beta
@@ -161,12 +169,21 @@ class AllelicCluster:
     
         # refit to segments to get lepsi_i and mu_i arrays
         for row in np.array(self.F).reshape(-1,2):
-            mu_i, lepsi_i = self.stats_optimizer(row)
+            mu_i, lepsi_i = self.lnp_optimizer(row)
             self.mu_i_arr[row[0]:row[1]] = mu_i
             self.lepsi_i_arr[row[0]:row[1]] = lepsi_i
 
-    # method for calculating the overall log likelihood of an allelic cluster given a hypothetical mu_i and lepsi arrays
+    ## caluculating overall ll of allelic cluster under lnp model
     def ll_cluster(self, mu_i_arr, lepsi_i_arr, take_sum=True):
+        exposure = np.log(self.bin_exposure)
+        lls = covLNP_ll(self.r, mu_i_arr[:,None], lepsi_i_arr, self.C, self.beta, exposure)
+        if not take_sum:
+            return lls
+        else:
+            return lls.sum()
+
+    # method for calculating the overall log likelihood of an allelic cluster given a hypothetical mu_i and lepsi arrays
+    def NB_ll_cluster(self, mu_i_arr, lepsi_i_arr, take_sum=True):
         mu_i_arr = mu_i_arr.flatten()
         epsi_i_arr = np.exp(lepsi_i_arr).flatten()
         exposure= np.log(self.bin_exposure)
@@ -182,7 +199,7 @@ class AllelicCluster:
 
     # method for calculating the log likelihood of our NB model
     @staticmethod
-    def ll_nbinom(r, mu, C, beta, mu_i, lepsi, bin_exposure=1):
+    def NB_ll_nbinom(r, mu, C, beta, mu_i, lepsi, bin_exposure=1):
         r = r.flatten()
         epsi = np.exp(lepsi)
         exposure = np.log(bin_exposure)
@@ -191,6 +208,10 @@ class AllelicCluster:
         return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
                 (r * (mu + bc + mu_i - np.log(epsi + exp))) +
                 (epsi * np.log(epsi / (epsi + exp)))).sum()
+
+    def ll_nbinom(r, mu, C, beta, mu_i, lepsi, bin_exposure=1):
+        mu_tot = mu + mu_i
+        return covLNP_ll(r, mu_tot, lepsi, C, beta, np.log(bin_exposure)).sum()
 
     """
     method for convolving a change kernel with a given window across an array of residuals. This change kernel returns 
@@ -284,8 +305,8 @@ class AllelicCluster:
                 lepsis.append(None)
                 Hs.append(None)
             else:
-                mu_l, lepsi_l, H_l = self.stats_optimizer((ind[0], ix), True)
-                mu_r, lepsi_r, H_r = self.stats_optimizer((ix, ind[1]), True)
+                mu_l, lepsi_l, H_l = self.lnp_optimizer((ind[0], ix), True)
+                mu_r, lepsi_r, H_r = self.lnp_optimizer((ix, ind[1]), True)
 
                 mus.append((mu_l, mu_r))
                 lepsis.append((lepsi_l, lepsi_r))
@@ -455,7 +476,7 @@ class AllelicCluster:
 
     # computes the log ML of joining two segments
     def _log_ML_join(self, ind, ret_opt_params=False):
-        mu_share, lepsi_share, H_share = self.stats_optimizer(ind, True)
+        mu_share, lepsi_share, H_share = self.lnp_optimizer(ind, True)
         tmp_mui = self.mu_i_arr.copy()
         tmp_mui[ind[0]:ind[1]] = mu_share
         tmp_lepsi = self.lepsi_i_arr.copy()

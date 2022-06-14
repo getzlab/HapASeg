@@ -4,6 +4,7 @@ import numpy as np
 import scipy.special as ss
 import sortedcontainers as sc
 
+from .model_optimizers import CovLNP_NR, covLNP_ll
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
 from capy import seq
@@ -223,7 +224,7 @@ class Run_Cov_DP:
             self.clust_prior_ML = None
     
     @staticmethod
-    def ll_nbinom(r, mu, C, beta, lepsi, bin_exposure):
+    def stats_ll_nbinom(r, mu, C, beta, lepsi, bin_exposure):
         r = r.flatten()
         epsi = np.exp(lepsi)
         exposure = np.log(bin_exposure)
@@ -232,7 +233,11 @@ class Run_Cov_DP:
         return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
                 (r * (mu + bc - np.log(epsi + exp))) +
                 (epsi * np.log(epsi / (epsi + exp)))).sum()
-
+    
+    @staticmethod
+    def ll_nbinom(r, mu, C, beta, lepsi, bin_exposure=1):
+        return covLNP_ll(r[:,None], mu, lepsi, C, beta, np.log(bin_exposure)).sum()
+    
     # main worker function for computing marginal likelihoods of clusters
     #TODO: move to a bounded size LFU chache over dictionary?
     def _ML_cluster(self, cluster_set):
@@ -243,7 +248,7 @@ class Run_Cov_DP:
             # aggregate r and C arrays
             r = np.hstack([self.segment_r_list[i] for i in cluster_set])
             C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
-            mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, C, ret_hess=True)
+            mu_opt, lepsi_opt, H_opt = self.lnp_optimizer(r, C, ret_hess=True)
             ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt, self.bin_exposure)
             
             res = ll_opt + self._get_laplacian_approx(H_opt)
@@ -255,7 +260,7 @@ class Run_Cov_DP:
         # aggregate r and C arrays
         r = np.hstack([self.segment_r_list[i] for i in cluster_set])
         C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
-        mu_opt, lepsi_opt = self.stats_optimizer(r, C, ret_hess=False)
+        mu_opt, lepsi_opt = self.lnp_optimizer(r, C, ret_hess=False)
         ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt, self.bin_exposure)
 
         return ll_opt
@@ -282,7 +287,7 @@ class Run_Cov_DP:
                 r = np.hstack([self.prior_r_list[i] for i in cluster_set])
                 C = np.concatenate([self.prior_C_list[i] for i in cluster_set])
 
-            mu_opt, lepsi_opt, H_opt = self.stats_optimizer(r, C, ret_hess=True)
+            mu_opt, lepsi_opt, H_opt = self.lnp_optimizer(r, C, ret_hess=True)
             ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt, self.bin_exposure)
             res =  ll_opt + self._get_laplacian_approx(H_opt)
             self.cluster_prior_ml_cache[query] = res
@@ -304,6 +309,10 @@ class Run_Cov_DP:
             return res.params[0], -np.log(res.params[1]), sNB.hessian(res.params)
         else:
             return res.params[0], -np.log(res.params[1])
+    
+    def lnp_optimizer(self, r, C, ret_hess=False):
+        lnp = CovLNP_NR(r[:,None], self.beta, C, exposure = np.log(self.bin_exposure))
+        return lnp.fit(ret_hess = ret_hess)
 
     # for assigning greylisted segments at for each draw
     def assign_greylist(self):
