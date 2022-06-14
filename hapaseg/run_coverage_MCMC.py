@@ -88,7 +88,7 @@ class CoverageMCMCRunner:
 
     def load_SNPs(self, f_snps):
         SNPs = pd.read_pickle(f_snps)
-        SNPs["tidx"] = mut.map_mutations_to_targets(SNPs, self.full_cov_df, inplace=False)
+        SNPs["tidx"] = mut.map_mutations_to_targets(SNPs, self.full_cov_df, inplace=False).astype(int)
         return SNPs
 
     def generate_GC(self):
@@ -187,19 +187,19 @@ class CoverageMCMCRunner:
         clust_choice = self.allelic_clusters["snps_to_clusters"][self.allelic_sample]
         clust_u, clust_uj = np.unique(clust_choice, return_inverse=True)
         clust_uj = clust_uj.reshape(clust_choice.shape)
-        cuj_max = clust_uj.max() + 1
         self.SNPs["clust_choice"] = clust_uj
 
-        ## assign coverage intervals to allelic clusters and segments
-        # assignment probabilities of each coverage interval -> allelic cluster
-        Cov_clust_probs = np.zeros([len(self.full_cov_df), cuj_max])
-
+        ## assign coverage intervals to allelic clusters and segments 
         # get allelic segment boundaries
         seg_bdy = np.r_[0, list(self.segmentations[self.allelic_sample].keys()), len(self.SNPs)]
         seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
         self.SNPs["seg_idx"] = 0
         for i, (st, en) in enumerate(seg_bdy):
             self.SNPs.iloc[st:en, self.SNPs.columns.get_loc("seg_idx")] = i
+        seg_max = self.SNPs["seg_idx"].max() + 1
+
+        # assignment probabilities of each coverage interval -> allelic segment
+        Cov_clust_probs = np.zeros([len(self.full_cov_df), seg_max])
 
         # first compute assignment probabilities based on the SNPs within each bin
         # segments just get assigned to the maximum probability
@@ -208,13 +208,13 @@ class CoverageMCMCRunner:
         for targ, D in tqdm.tqdm(self.SNPs.groupby("tidx")[["clust_choice", "seg_idx"]]):
             clust_idx = D["clust_choice"].values
             seg_idx = D["seg_idx"].values
-            if len(clust_idx) == 1:
-                Cov_clust_probs[int(targ), clust_idx] = 1.0
-                self.full_cov_df.at[int(targ), "seg_idx"] = seg_idx[0]
+            if len(seg_idx) == 1:
+                Cov_clust_probs[targ, seg_idx] = 1.0
+                self.full_cov_df.at[targ, "seg_idx"] = seg_idx[0]
             else: 
-                targ_clust_hist = np.bincount(clust_idx, minlength = cuj_max) 
-                Cov_clust_probs[int(targ), :] = targ_clust_hist / targ_clust_hist.sum()
-                self.full_cov_df.at[int(targ), "seg_idx"] = np.bincount(seg_idx).argmax()
+                targ_clust_hist = np.bincount(seg_idx, minlength = seg_max) 
+                Cov_clust_probs[targ, :] = targ_clust_hist / targ_clust_hist.sum()
+                self.full_cov_df.at[targ, "seg_idx"] = np.bincount(seg_idx).argmax()
 
         ## subset to targets containing SNPs
         overlap_idx = Cov_clust_probs.sum(1) > 0
