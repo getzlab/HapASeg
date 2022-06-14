@@ -164,7 +164,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "allelic_seg_groups": "allelic_seg_groups.pickle"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v856"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v858"
     resources = { "mem" : "15G" }
 
 
