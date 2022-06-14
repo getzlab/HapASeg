@@ -518,7 +518,8 @@ def main():
                                              f_repl=args.repl_pickle,
                                              f_faire=args.faire_pickle,
                                              f_GC=args.gc_pickle,
-                                             allelic_sample=args.allelic_sample)
+                                             allelic_sample=args.allelic_sample,
+                                             bin_width=args.bin_width)
         Pi, r, C, all_mu, global_beta, cov_df, adp_cluster, pois_hess = cov_mcmc_runner.prepare_single_cluster()
 
         ## create chunks for both burnin and scatter
