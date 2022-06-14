@@ -88,7 +88,7 @@ class CoverageMCMCRunner:
 
     def load_SNPs(self, f_snps):
         SNPs = pd.read_pickle(f_snps)
-        SNPs["tidx"] = mut.map_mutations_to_targets(SNPs, self.full_cov_df, inplace=False).astype(int)
+        mut.map_mutations_to_targets(SNPs, self.full_cov_df)
         return SNPs
 
     def generate_GC(self):
@@ -205,7 +205,9 @@ class CoverageMCMCRunner:
         # segments just get assigned to the maximum probability
         self.full_cov_df["seg_idx"] = -1
         print("Mapping SNPs to targets ...", file = sys.stderr)
-        for targ, D in tqdm.tqdm(self.SNPs.groupby("tidx")[["clust_choice", "seg_idx"]]):
+        for targ, D in tqdm.tqdm(self.SNPs.groupby("targ_idx")[["clust_choice", "seg_idx"]]):
+            if targ == -1: # SNP does not overlap a coverage bin
+                continue
             clust_idx = D["clust_choice"].values
             seg_idx = D["seg_idx"].values
             if len(seg_idx) == 1:
