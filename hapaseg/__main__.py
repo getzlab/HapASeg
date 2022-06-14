@@ -21,7 +21,7 @@ from .allelic_DP import A_DP, DPinstance
 from . import utils as hs_utils
 
 from .NB_coverage_MCMC import NB_MCMC_SingleCluster
-from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters, aggregate_burnin_files 
+from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_adp_segments, aggregate_burnin_files
 from .coverage_DP import Coverage_DP
 from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP
 
