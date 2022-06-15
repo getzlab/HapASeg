@@ -176,7 +176,8 @@ class AllelicCluster:
     ## caluculating overall ll of allelic cluster under lnp model
     def ll_cluster(self, mu_i_arr, lepsi_i_arr, take_sum=True):
         exposure = np.log(self.bin_exposure)
-        lls = covLNP_ll(self.r, mu_i_arr[:,None], lepsi_i_arr, self.C, self.beta, exposure)
+        mu_tot = self.mu + mu_i_arr
+        lls = covLNP_ll(self.r, mu_tot[:,None], lepsi_i_arr, self.C, self.beta, exposure)
         if not take_sum:
             return lls
         else:
@@ -208,7 +209,8 @@ class AllelicCluster:
         return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
                 (r * (mu + bc + mu_i - np.log(epsi + exp))) +
                 (epsi * np.log(epsi / (epsi + exp)))).sum()
-
+    
+    @staticmethod
     def ll_nbinom(r, mu, C, beta, mu_i, lepsi, bin_exposure=1):
         mu_tot = mu + mu_i
         return covLNP_ll(r, mu_tot, lepsi, C, beta, np.log(bin_exposure)).sum()
