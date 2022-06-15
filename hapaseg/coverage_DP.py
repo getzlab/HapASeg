@@ -347,7 +347,9 @@ class Run_Cov_DP:
         for clust in self.cluster_dict.keys():
             self.cluster_MLs[clust] = self._ML_cluster(self.cluster_dict[clust])
             self.cluster_LLs[choice] = self._LL_cluster(self.cluster_dict[clust])
-                
+        #need to update the cluster counts as well
+        self.cluster_counts = sc.SortedDict({c: self.segment_sizes[self.cluster_dict[c]].sum() for c in self.cluster_dict.keys()})
+ 
     # if we have prior assignments from the last iteration we can use those clusters to probalistically assign
     # each segment into a old cluster
     def initial_prior_assignment(self, count_prior):
@@ -456,7 +458,7 @@ class Run_Cov_DP:
         
         white_segments = self.segment_idxs - self.greylist_segments
         while len(self.bins_to_clusters) < n_iter:
-    
+            
             # status update
             if not n_it % 250 and self.prior_clusters is None:
                 print("n unassigned: {}".format(len(self.unassigned_segs)), flush=True)
@@ -638,7 +640,6 @@ class Run_Cov_DP:
                                 self.cluster_LLs[clustID] = self._LL_cluster(self.cluster_dict[clustID]) 
                     else:
                         self.unassigned_segs.discard(segID)
-
                     # create new cluster with next available index and add segment
                     self.cluster_assignments[segID] = choice
                     self.cluster_counts[choice] = self.segment_sizes[segID]
@@ -654,7 +655,6 @@ class Run_Cov_DP:
                         continue
 
                     # joining existing cluster
-
                     # update new cluster with additional segment
                     self.cluster_assignments[segID] = choice
                     self.cluster_counts[choice] += self.segment_sizes[segID]
