@@ -55,6 +55,7 @@ class PoissonRegression:
         self.NR_poisson()
         return self.mu, self.beta
 
+hr, hw = ss.roots_legendre(25)
 class CovLNP_NR:
     def __init__(self, x, beta, C, exposure=np.array([[0]])):
         """
@@ -66,9 +67,9 @@ class CovLNP_NR:
         self.beta = beta
         self.bce = C@beta + exposure
 
-        self.hr, self.hw = ss.roots_legendre(25)
+        self.hr, self.hw = hr, hw
         
-        #make empirical estimates about mu and sigma
+        #make empiracle estimates about mu and sigma
         self.mu = (np.log(x) - self.bce).mean()
         self.lgsigma = np.log((np.log(x) - self.bce).std())
 
@@ -83,139 +84,140 @@ class CovLNP_NR:
     
     def gradmu(self, x):
         E = np.exp(self.bce)*self.hs_m_exp
-        I_base = self.hs * x - E - self.h_roots**2 / 2
-        I_grad_mu = self.hs_m + self.bce + I_base
+        I_B = self.hs * x - E - self.h_roots**2 / 2
+        I_A = self.hs_m + self.bce + I_B
         
-        m = np.max(I_base, 1, keepdims = True) 
-        m_grad_mu = np.max(I_grad_mu, 1, keepdims = True)
+        m = np.max(I_B, 1, keepdims = True) 
+        m_A = np.max(I_A, 1, keepdims = True)
         
-        num_sum = (m_grad_mu + np.log(np.exp(I_grad_mu - m_grad_mu)@self.h_weights))
-        denom_sum = (m + np.log(np.exp(I_base - m)@self.h_weights))
+        A = (m_A + np.log(np.exp(I_A - m_A)@self.h_weights))
+        B = (m + np.log(np.exp(I_B - m)@self.h_weights))
         
-        return (x - np.exp(num_sum - denom_sum)).sum()
+        return (x - np.exp(A - B)).sum()
     
     def gradsigma(self,x):
         E = np.exp(self.bce)*self.hs_m_exp
-        I_base = self.hs * x - E - self.h_roots**2 / 2
-        coef = self.hs * ( x - E)
+        I_B = self.hs * x - E - self.h_roots**2 / 2
+        S_coef = self.hs * (x - E)
         # these coefficients can be negative so we save their sign and make positive
-        coef_msk =  coef > 0
-        coef_msk = (coef_msk * 2 - 1)
-        I_grad = np.log(coef * coef_msk) + I_base
+        S_coef_msk =  S_coef > 0
+        S_coef_msk = (S_coef_msk * 2 - 1)
+        I_S = np.log(S_coef * S_coef_msk) + I_B
         
-        m_grad = np.max(I_grad, 1, keepdims = True)
-        m = np.max(I_base, 1, keepdims = True) 
+        m_S = np.max(I_S, 1, keepdims = True)
+        m = np.max(I_B, 1, keepdims = True) 
         
         # we apply the sign correction to get the real, normalized results, but we still
         # need to multiply by the scale factor that we removed
         
-        small_grad = (np.exp(I_grad - m_grad)*coef_msk)@self.h_weights
+        S_real = (np.exp(I_S - m_S)*S_coef_msk)@self.h_weights
         
         # to add back the log term we need to save the signs again
-        small_msk = small_grad > 0
-        small_msk = small_msk * 2 - 1
-        num_sum = (m_grad + np.log(small_grad*small_msk))
+        S_real_msk = S_real > 0
+        S_real_msk = S_real_msk * 2 - 1
+        S = (m_S + np.log(S_real*S_real_msk))
 
-        denom_sum = (m + np.log(np.exp(I_base - m)@self.h_weights))
+        B = (m + np.log(np.exp(I_B - m)@self.h_weights))
         
-        return (small_msk * np.exp(num_sum - denom_sum)).sum()
+        return (S_real_msk * np.exp(S - B)).sum()
     
     def hess_mu_mu(self, x):
         E = np.exp(self.bce)*self.hs_m_exp
-        I_base = self.hs*x - E - self.h_roots**2 / 2
-        I_A = self.hs_m + self.bce + I_base # this has a leading negative but we only use its square
+        I_B = self.hs*x - E - self.h_roots**2 / 2
+        I_A = self.hs_m + self.bce + I_B # this has a leading negative but we only use its square
         
         partial_A_coef = E - 1
         partial_A_coef_msk =  partial_A_coef > 0
         partial_A_coef_msk = (partial_A_coef_msk * 2 - 1)
         
-        I_partial_A = np.log(partial_A_coef * partial_A_coef_msk) + self.hs_m + self.bce + I_base
+        I_partial_A = np.log(partial_A_coef * partial_A_coef_msk) + self.hs_m + self.bce + I_B
         
-        m = np.max(I_base, 1, keepdims = True) 
+        m = np.max(I_B, 1, keepdims = True) 
         m_A = np.max(I_A, 1, keepdims = True)
         m_partial_A = np.max(I_partial_A, 1, keepdims = True)
         
-        partial_A = (np.exp(I_partial_A - m_partial_A)*partial_A_coef_msk)@self.h_weights
-        partial_A_msk = partial_A > 0
-        partial_A_msk = (partial_A_msk * 2 - 1)
-        partial_A = (m_partial_A + np.log(partial_A * partial_A_msk))
+        partial_A_real = (np.exp(I_partial_A - m_partial_A)*partial_A_coef_msk)@self.h_weights
+        partial_A_real_msk = partial_A_real > 0
+        partial_A_real_msk = (partial_A_real_msk * 2 - 1)
+        partial_A = (m_partial_A + np.log(partial_A_real * partial_A_real_msk))
                      
         A = (m_A + np.log(np.exp(I_A - m_A)@self.h_weights))
-        B = (m + np.log(np.exp(I_base - m)@self.h_weights))
+        B = (m + np.log(np.exp(I_B - m)@self.h_weights))
         
-        return (partial_A_msk * np.exp(partial_A - B) - np.exp(2 * A - 2 * B)).sum()
+        return (partial_A_real_msk * np.exp(partial_A - B) - np.exp(2 * A - 2 * B)).sum()
     
     def hess_mu_sigma(self, x):
         E = np.exp(self.bce)*self.hs_m_exp
-        I_base = self.hs * x - E - self.h_roots**2 / 2
+        I_B = self.hs * x - E - self.h_roots**2 / 2
+        
         # negative
-        I_A = self.hs_m + self.bce + I_base
+        I_A = self.hs_m + self.bce + I_B
 
         partial_A_coef = - self.hs * E * (1 + x - E)
         partial_A_coef_msk =  partial_A_coef > 0
         partial_A_coef_msk = (partial_A_coef_msk * 2 - 1)
 
-        I_partial_A = np.log(partial_A_coef * partial_A_coef_msk) + I_base
+        I_partial_A = np.log(partial_A_coef * partial_A_coef_msk) + I_B
 
-        partial_B_coef = self.hs * (x - E)
-        partial_B_coef_msk =  partial_B_coef > 0
-        partial_B_coef_msk = (partial_B_coef_msk * 2 - 1)
+        S_coef = self.hs * (x - E)
+        S_coef_msk =  S_coef > 0
+        S_coef_msk = (S_coef_msk * 2 - 1)
 
-        I_partial_B = np.log(partial_B_coef * partial_B_coef_msk) + I_base
+        I_S = np.log(S_coef * S_coef_msk) + I_B
 
-        m = np.max(I_base, 1, keepdims = True) 
+        m = np.max(I_B, 1, keepdims = True) 
         m_A = np.max(I_A, 1, keepdims = True)
-        m_partial_A = np.max(I_partial_B, 1, keepdims = True)
-        m_partial_B = np.max(I_partial_B, 1, keepdims = True)
+        m_partial_A = np.max(I_partial_A, 1, keepdims = True)
+        m_S = np.max(I_S, 1, keepdims = True)
 
-        partial_A = (np.exp(I_partial_A - m_partial_A)*partial_A_coef_msk)@self.h_weights
-        partial_A_msk = partial_A > 0
-        partial_A_msk = (partial_A_msk * 2 - 1)
-        partial_A = (m_partial_A + np.log(partial_A * partial_A_msk))
+        partial_A_real = (np.exp(I_partial_A - m_partial_A)*partial_A_coef_msk)@self.h_weights
+        partial_A_real_msk = partial_A_real > 0
+        partial_A_real_msk = (partial_A_real_msk * 2 - 1)
+        partial_A = (m_partial_A + np.log(partial_A_real * partial_A_real_msk))
 
-        partial_B = (np.exp(I_partial_B - m_partial_B)*partial_B_coef_msk)@self.h_weights
-        partial_B_msk = partial_B > 0
-        partial_B_msk = (partial_B_msk * 2 - 1)
-        partial_B = (m_partial_B + np.log(partial_B * partial_B_msk))
+        S_real = (np.exp(I_S - m_S)*S_coef_msk)@self.h_weights
+        S_real_msk = S_real > 0
+        S_real_msk = (S_real_msk * 2 - 1)
+        S = (m_S + np.log(S_real * S_real_msk))
 
         A = (m_A + np.log(np.exp(I_A - m_A)@self.h_weights))
-        B = (m + np.log(np.exp(I_base - m)@self.h_weights))
+        B = (m + np.log(np.exp(I_B - m)@self.h_weights))
         
         # the leading negative in I_A is reflected in the addtion of the second term
-        return (partial_A_msk * np.exp(partial_A - B) + partial_B_msk * np.exp(A + partial_B - 2*B)).sum()
+        return (partial_A_real_msk * np.exp(partial_A - B) + S_real_msk * np.exp(A + S - 2*B)).sum()
     
     def hess_sigma_sigma(self, x):
         E = np.exp(self.bce)*self.hs_m_exp
-        I_base = self.hs*x - E - self.h_roots**2 / 2
+        I_B = self.hs*x - E - self.h_roots**2 / 2
 
-        I_S_coef = self.hs * (x - E)
-        I_S_coef_msk =  I_S_coef > 0
-        I_S_coef_msk = (I_S_coef_msk * 2 - 1)
-        I_S = np.log(I_S_coef * I_S_coef_msk) + I_base
+        S_coef = self.hs * (x - E)
+        S_coef_msk =  S_coef > 0
+        S_coef_msk = (S_coef_msk * 2 - 1)
+        I_S = np.log(S_coef * S_coef_msk) + I_B
 
-        I_partial_S_coef = self.hs * (x + x * self.hs * (x - E) - E - self.hs * E - self.hs * E * (x - E))
-        I_partial_S_coef_msk =  I_partial_S_coef > 0
-        I_partial_S_coef_msk = (I_partial_S_coef_msk * 2 - 1)
-        I_partial_S = np.log(I_partial_S_coef * I_partial_S_coef_msk) + I_base
+        partial_S_coef = self.hs * (x + x * self.hs * (x - E) - E - self.hs * E - self.hs * E * (x - E))
+        partial_S_coef_msk =  partial_S_coef > 0
+        partial_S_coef_msk = (partial_S_coef_msk * 2 - 1)
+        I_partial_S = np.log(partial_S_coef * partial_S_coef_msk) + I_B
 
-        m = np.max(I_base, 1, keepdims = True)
+        m = np.max(I_B, 1, keepdims = True)
         m_S = np.max(I_S, 1, keepdims = True)
         m_partial_S = np.max(I_partial_S, 1, keepdims = True)
 
-        _S = (np.exp(I_S - m_S)*I_S_coef_msk)@self.h_weights
-        S_msk = _S > 0
-        S_msk = (S_msk * 2 - 1)
-        S = (m_S + np.log(_S * S_msk))
+        S_real = (np.exp(I_S - m_S)*S_coef_msk)@self.h_weights
+        S_real_msk = S_real > 0
+        S_real_msk = (S_real_msk * 2 - 1)
+        S = (m_S + np.log(S_real * S_real_msk))
 
-        _partial_S = (np.exp(I_partial_S - m_partial_S)*I_partial_S_coef_msk)@self.h_weights
-        partial_S_msk = _partial_S > 0
-        partial_S_msk = (partial_S_msk * 2 - 1)
-        partial_S = (m_partial_S + np.log(_partial_S * partial_S_msk))
+        partial_S_real = (np.exp(I_partial_S - m_partial_S)*partial_S_coef_msk)@self.h_weights
+        partial_S_real_msk = partial_S_real > 0
+        partial_S_real_msk = (partial_S_real_msk * 2 - 1)
+        partial_S = (m_partial_S + np.log(partial_S_real * partial_S_real_msk))
 
-        B = (m + np.log(np.exp(I_base - m)@self.h_weights))
+        B = (m + np.log(np.exp(I_B - m)@self.h_weights))
 
         #dont need to correct S sign since we square it
-        return (partial_S_msk * np.exp(partial_S - B) - np.exp(2 * S - 2 * B)).sum()
+        return (partial_S_real_msk * np.exp(partial_S - B) - np.exp(2 * S - 2 * B)).sum()
         
     def lnp_logprob(self, x):
         """
@@ -264,6 +266,101 @@ class CovLNP_NR:
         plt.ylabel('density')
         del pmf_object
     
+    def gradhess(self):
+        x = self.x
+		## grad mu
+        E = np.exp(self.bce)*self.hs_m_exp
+        I_B = self.hs * x - E - self.h_roots**2 / 2
+        I_A = self.hs_m + self.bce + I_B
+        
+        m = np.max(I_B, 1, keepdims = True) 
+        m_A = np.max(I_A, 1, keepdims = True)
+        
+        A = (m_A + np.log(np.exp(I_A - m_A)@self.h_weights))
+        B = (m + np.log(np.exp(I_B - m)@self.h_weights))
+        
+        gradmu = (x - np.exp(A - B)).sum()
+    
+        ## grad sigma 
+        S_coef = self.hs * (x - E)
+        # these coefficients can be negative so we save their sign and make positive
+        S_coef_msk =  S_coef > 0
+        S_coef_msk = (S_coef_msk * 2 - 1)
+        I_S = np.log(S_coef * S_coef_msk) + I_B
+        
+        m_S = np.max(I_S, 1, keepdims = True)
+        
+        # we apply the sign correction to get the real, normalized results, but we still
+        # need to multiply by the scale factor that we removed
+        
+        S_real = (np.exp(I_S - m_S)*S_coef_msk)@self.h_weights
+        
+        # to add back the log term we need to save the signs again
+        S_real_msk = S_real > 0
+        S_real_msk = S_real_msk * 2 - 1
+        S = (m_S + np.log(S_real*S_real_msk))
+        
+        gradsigma = (S_real_msk * np.exp(S - B)).sum()
+    
+        ## hess mu mu
+        # I_A term here techinically has a leading negative but we only use its square
+        
+        partial_A_coef = E - 1
+        partial_A_coef_msk =  partial_A_coef > 0
+        partial_A_coef_msk = (partial_A_coef_msk * 2 - 1)
+        
+        I_partial_A = np.log(partial_A_coef * partial_A_coef_msk) + self.hs_m + self.bce + I_B
+        
+        m_partial_A = np.max(I_partial_A, 1, keepdims = True)
+        
+        partial_A_real = (np.exp(I_partial_A - m_partial_A)*partial_A_coef_msk)@self.h_weights
+        partial_A_real_msk = partial_A_real > 0
+        partial_A_real_msk = (partial_A_real_msk * 2 - 1)
+        partial_A = (m_partial_A + np.log(partial_A_real * partial_A_real_msk))
+        
+        hess_mu_mu = (partial_A_real_msk * np.exp(partial_A - B) - np.exp(2 * A - 2 * B)).sum()
+        
+        ## hess mu sigma       
+        # I_A term is negative here, but we reflect that in the final division
+
+        partial_A2_coef = - self.hs * E * (1 + x - E)
+        partial_A2_coef_msk =  partial_A2_coef > 0
+        partial_A2_coef_msk = (partial_A2_coef_msk * 2 - 1)
+
+        I_partial_A2 = np.log(partial_A2_coef * partial_A2_coef_msk) + I_B
+
+        m_partial_A2 = np.max(I_partial_A2, 1, keepdims = True)
+
+        partial_A2_real = (np.exp(I_partial_A2 - m_partial_A2)*partial_A2_coef_msk)@self.h_weights
+        partial_A2_real_msk = partial_A2_real > 0
+        partial_A2_real_msk = (partial_A2_real_msk * 2 - 1)
+        partial_A2 = (m_partial_A2 + np.log(partial_A2_real * partial_A2_real_msk))
+        
+        # the leading negative in I_A is reflected in the addtion of the second term
+        hess_mu_sigma = (partial_A2_real_msk * np.exp(partial_A2 - B) + S_real_msk * np.exp(A + S - 2*B)).sum()
+        
+        ## hess sigma_sigma
+
+        partial_S_coef = self.hs * (x + x * self.hs * (x - E) - E - self.hs * E - self.hs * E * (x - E))
+        partial_S_coef_msk =  partial_S_coef > 0
+        partial_S_coef_msk = (partial_S_coef_msk * 2 - 1)
+        I_partial_S = np.log(partial_S_coef * partial_S_coef_msk) + I_B
+
+        m_partial_S = np.max(I_partial_S, 1, keepdims = True)
+
+        partial_S_real = (np.exp(I_partial_S - m_partial_S)*partial_S_coef_msk)@self.h_weights
+        partial_S_real_msk = partial_S_real > 0
+        partial_S_real_msk = (partial_S_real_msk * 2 - 1)
+        partial_S = (m_partial_S + np.log(partial_S_real * partial_S_real_msk))
+
+        #dont need to correct S sign since we square it
+        hess_sigma_sigma = (partial_S_real_msk * np.exp(partial_S - B) - np.exp(2 * S - 2 * B)).sum()
+        
+        grad = np.array([gradmu, gradsigma])
+        hess = np.array([[hess_mu_mu, hess_mu_sigma],
+                        [hess_mu_sigma, hess_sigma_sigma]])
+        return grad, hess
+    
     def fit(self, ret_hess = False, debug=False):
         for _ in range(100):
             if debug: print(self.mu, self.lgsigma)
@@ -281,9 +378,8 @@ class CovLNP_NR:
             self.hs_m = self.hs + self.mu
             self.hs_m_exp = np.exp(self.hs + self.mu)
             
-            grad = np.array([self.gradmu(x), self.gradsigma(x)])
-            hess = np.array([[self.hess_mu_mu(x), self.hess_mu_sigma(x)],
-                            [self.hess_mu_sigma(x), self.hess_sigma_sigma(x)]])
+            grad, hess = self.gradhess()
+            
             if debug: print('grad:', grad)
             if debug: print('hess:', hess)
             delta = np.linalg.inv(hess) @ grad
@@ -301,7 +397,6 @@ class CovLNP_NR:
 def covLNP_ll(x, mu, lgsigma, C, beta, exposure=np.array([[0]])):
     #mu and lgsigma can either be doubles or nx1 arrays
     bce = C@beta + exposure
-    hr, hw = ss.roots_legendre(25)
     
     interval_center = np.exp(lgsigma) * x - np.exp(-lgsigma) * ss.wrightomega(mu + bce + 2 * lgsigma + np.exp(2*lgsigma) * x).real
     epsi_hess = - np.exp(bce + mu + np.exp(lgsigma) * interval_center) * np.exp(2*lgsigma) -1
