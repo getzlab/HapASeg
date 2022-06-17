@@ -191,7 +191,7 @@ class Hapaseg_coverage_mcmc_by_Aseg(wolf.Task):
         "cov_seg_figure": 'cov_mcmc_*_visual.png'
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:cover_mcmc_integration_op_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_op_v623"
     resources = {"mem" : "5G"}
 
 class Hapaseg_coverage_mcmc(wolf.Task):
@@ -268,7 +268,7 @@ class Hapaseg_coverage_dp(wolf.Task):
         "cov_dp_object" : "Cov_DP_model*",
         "cov_dp_figure" : "cov_dp_visual_draw*"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:cover_mcmc_integration_op_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_op_v623"
     resources = {"cpus-per-task": 4, "mem" : "10G"} #potentially overkill and wont be necessary if cache table implemented
 
 class Hapaseg_acdp_generate_df(wolf.Task):
