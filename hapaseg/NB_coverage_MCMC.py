@@ -305,7 +305,7 @@ class AllelicCluster:
 		elif len_ind > 5000:
 			windows=np.array([500,100,25])
 		elif len_ind > 1000:
-			windows = np.array([100, 50])
+			windows = np.array([100, 50, 25])
 		else:
 			minimal = True
 			windows = np.array([50, 10])
