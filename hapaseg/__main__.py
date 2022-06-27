@@ -533,12 +533,13 @@ def main():
         # remove segments with < 3 bins since we need 3 to fit a reliable model
         # TODO: merge these segments with others in the same cluster?
         seg_filter = seg_g_idx.n_cov_bins > 2
-        filtered_indices = np.hstack(seg_g_idx.loc[seg_filter].indices)
+        passed_indices = np.hstack(seg_g_idx.loc[seg_filter].indices)
         seg_g_idx = seg_g_idx.loc[seg_filter]
         #remove those bins from the rest of the data
-        cov_df = cov_df.loc[~cov_df.index.isin(filtered_indices)]
-        mask = np.ones(len(r))
-        mask[filtered_indices] = 0
+        cov_df = cov_df.loc[cov_df.index.isin(passed_indices)]
+        mask = np.zeros(len(r), dtype=int)
+        mask[passed_indices] = 1
+        mask = mask == 1
         Pi, r, C = Pi[mask], r[mask], C[mask]
 
         ## save
