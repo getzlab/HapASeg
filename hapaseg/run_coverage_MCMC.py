@@ -108,15 +108,9 @@ class CoverageMCMCRunner:
 
     def load_covariates(self):
         zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
-        
         # we only need bin size if doing exomes but we can check by looking at the bin lengths
         self.full_cov_df["C_log_len"] = np.log(self.full_cov_df["end"] - self.full_cov_df["start"] + 1)
             
-        # in case we are doing wgs these will all be the same and we must remove
-        if (np.diff(self.full_cov_df["C_log_len"]) == 0).all():
-            #remove the len col since it will ruin beta fitting
-            self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
-
         zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
 
         ## Fragment length
@@ -153,7 +147,7 @@ class CoverageMCMCRunner:
         self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, 3:].mean(1).values
 
         # take log z-transform
-        self.full_cov_df["C_RT_z"] = zt(np.log(self.full_cov_df["C_RT"]))
+        self.full_cov_df["C_RT_z"] = zt(np.log(self.full_cov_df["C_RT"] +1e-5))
 
         ## GC content
 
@@ -173,6 +167,11 @@ class CoverageMCMCRunner:
         # take log z-transform
         self.full_cov_df["C_GC_z"] = zt(np.log(self.full_cov_df["C_GC"] + 1e-4))
 
+        # in case we are doing wgs these will all be the same and we should remove
+        if (np.diff(self.full_cov_df["C_log_len"]) == 0).all():
+            #remove the len col since it will ruin beta fitting
+            self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
+        
         ## FAIRE
         if self.f_faire is not None:
             F = pd.read_pickle(self.f_faire)
@@ -286,14 +285,8 @@ class CoverageMCMCRunner:
 #            Cov_clust_probs_overlap = Cov_clust_probs_overlap[downsample_mask]
 #            Cov_overlap = Cov_overlap.iloc[downsample_mask]
     
-        # remove clusters with fewer than 4 assigned coverage bins (remove these coverage bins as well)
-        bad_clusters = Cov_clust_probs_overlap.sum(0) < 4
-        bad_bins = Cov_clust_probs_overlap[:, bad_clusters].any(1) == 1
-        filtered = Cov_clust_probs_overlap[~bad_bins, :][:, ~bad_clusters]
-
-        Cov_overlap = Cov_overlap.loc[~bad_bins, :]
-        Pi = filtered.copy()
-        Cov_overlap['allelic_cluster'] = np.argmax(Pi, axis=1)
+        Pi = Cov_clust_probs_overlap
+        Cov_overlap.loc[:, 'allelic_cluster'] = np.argmax(Pi, axis=1)
        
         r = np.c_[Cov_overlap["covcorr"]]
         
@@ -311,7 +304,6 @@ class CoverageMCMCRunner:
         Pi = Pi[~naidx]
 
         Cov_overlap = Cov_overlap.iloc[~naidx]
-        
         ## removing coverage outliers
         outlier_mask = find_outliers(r)
         r = r[~outlier_mask]
@@ -323,18 +315,28 @@ class CoverageMCMCRunner:
         Pi = Pi[:, Pi.sum(0) > 0]
  
         ## remove covariate outliers (+- 6 sigma)
-        covar_outlier_idx = (Cov_overlap.loc[:, covar_columns].abs() < 6).all(axis = 1)
+        z_norm_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")])
+        covar_outlier_idx = (Cov_overlap.loc[:, z_norm_columns].abs() < 6).all(axis = 1)
         Cov_overlap = Cov_overlap.loc[covar_outlier_idx]
         Pi = Pi[covar_outlier_idx, :]
         r = r[covar_outlier_idx]
         C = C[covar_outlier_idx, :]
+        
+        ## make a final pass at removing clusters that have become too small after these filters
+        bad_clusters = Pi.sum(0) < 4
+        bad_bins = Pi[:, bad_clusters].any(1) == 1
+        Pi = Pi[~bad_bins,:][:, ~bad_clusters]
+        r = r[~bad_bins]
+        C = C[~bad_bins]
+        Cov_overlap = Cov_overlap.loc[~bad_bins]
 
         return Pi, r, C, Cov_overlap
 
+#TODO switch to lnp
 # function for fitting nb model without covariates
 def fit_nb(r):
     endog = r.flatten()
-    exog = np.ones(r.shape[0])
+    exog = np.ones(len(r))
     sNB = statsNB(endog, exog)
     res = sNB.fit(disp=0)
     mu = res.params[0]; lepsi = -np.log(res.params[1])
