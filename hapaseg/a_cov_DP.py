@@ -16,6 +16,7 @@ import distinctipy
 
 from capy import seq, mut
 
+from.model_optimizers import CovLNP_NR
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
 from .utils import *
@@ -117,13 +118,14 @@ def generate_acdp_df(SNP_path, # path to SNP df
             exog = np.ones(r.shape)
             exposure = np.ones(r.shape) * bin_width
             sNB = statsNB(endog, exog, exposure=exposure, offset = (C @ dp_pickle.beta).flatten())
-            res = sNB.fit(disp=0)
-            mu = res.params[0]
+            lnp = CovLNP_NR(r[:,None], dp_pickle.beta, C, exposure = np.log(bin_width))
+            res = lnp.fit(ret_hess=True)
+            mu = res[0]
             a_cov_seg_df.loc[
                 (a_cov_seg_df.cov_DP_cluster == cdp) & (a_cov_seg_df.allelic_cluster == adp), 'cov_DP_mu'] = mu
-            H = sNB.hessian(res.params)
+            #H = sNB.hessian(res.params)
             # variance of the mu posterior is taken as the inverse of the hessian component for mu
-            mu_sigma = np.linalg.inv(-H)[0, 0]
+            mu_sigma = np.linalg.inv(-res[2])[0, 0]
             a_cov_seg_df.loc[(a_cov_seg_df.cov_DP_cluster == cdp) & (
                         a_cov_seg_df.allelic_cluster == adp), 'cov_DP_sigma'] = mu_sigma
 
