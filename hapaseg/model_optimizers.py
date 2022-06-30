@@ -14,6 +14,7 @@ class PoissonRegression:
 
         self.mu = np.log(r.mean() * np.ones([Pi.shape[1], 1])) - self.log_exposure
         self.beta = np.zeros([C.shape[1], 1])
+        self.f = 1
         self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu + self.log_exposure + self.log_offset)
 
         # prior parameters
@@ -85,3 +86,22 @@ class PoissonRegression:
             return np.r_[np.c_[hmu, hmubeta.T], np.c_[hmubeta, hbeta]]
         else:
             return hbeta
+
+    # scale factor
+    def gradf(self):
+        return (self.C@self.beta).T@(self.r - self.e_s)
+
+    def hessf(self):
+        CB = self.C@self.beta
+        return -(CB*self.e_s).T@CB
+
+    def NR_f(self):
+        for i in range(100):
+            self.e_s = np.exp(self.f*self.C @ self.beta + self.Pi @ self.mu + self.log_exposure + self.log_offset)
+            gf = self.gradf()
+            hf = self.hessf()
+
+            self.f -= gf/hf
+
+            if np.linalg.norm(gf) < 1e-5:
+                break
