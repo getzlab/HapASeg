@@ -232,8 +232,10 @@ class AllelicCoverage_DP:
                 a = major
                 b = minor
             r = np.array(np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=group_len)) * s.beta.rvs(a, b, size=group_len))
+            #r = np.array(s.norm.rvs(mu, np.sqrt(sigma), size=group_len) + np.log(s.beta.rvs(a, b, size=group_len)))
 
             V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a, b, size=10000)).var()
+            #V = (s.norm.rvs(mu, np.sqrt(sigma), size=10000) + np.log(s.beta.rvs(a, b, size=10000))).var()
 
             # blacklist segments with very high variance
             #if np.sqrt(V) > 15:
@@ -1134,10 +1136,11 @@ class AllelicCoverage_DP:
     def visualize_ACDP_clusters(self, save_path):
         #plot individual tuples within clusters
         rs = []
+        rmax=0
         for c in self.cluster_dict:
             rs.append(
                 (np.array([np.array(self.segment_r_list[i]).mean() for i in self.cluster_dict[c]]).mean(), c))
-
+            rmax = max(rmax, np.array([np.array(self.segment_r_list[i]).max() for i in self.cluster_dict[c]]).max())
         f, ax = plt.subplots(1, figsize=[19.2, 10])
         #plt.clf()
         counter = 0
@@ -1149,7 +1152,7 @@ class AllelicCoverage_DP:
             for arr in vals:
                 ax.scatter(np.repeat(counter, len(arr)), arr, marker='.', alpha=0.05, s=4)
                 counter += 1
-            ax.add_patch(mpl.patches.Rectangle((c0, 0), counter - c0, 300, fill=True, alpha=0.10,
+            ax.add_patch(mpl.patches.Rectangle((c0, 0), counter - c0, rmax, fill=True, alpha=0.10,
                                                color=colors[cc % len(colors)]))
             if self.cluster_counts[c] > 2000:
                 ax.text(c0 + (counter - c0) / 2, 0, '{}'.format(c), horizontalalignment='center')
