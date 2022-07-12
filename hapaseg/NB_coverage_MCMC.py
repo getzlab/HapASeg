@@ -830,6 +830,7 @@ class NB_MCMC_SingleCluster:
 		self.mu_i_samples = []
 		self.lepsi_i_samples = []
 		self.F_samples = []
+		self.ll_samples = []
 
 		self.ll_cluster = 0
 		self.ll_iter = []
@@ -855,6 +856,7 @@ class NB_MCMC_SingleCluster:
 		self.mu_i_samples.append(self.cluster.mu_i_arr.copy())
 		self.lepsi_i_samples.append(self.cluster.lepsi_i_arr.copy())
 		self.F_samples.append(self.cluster.F.copy())
+		self.ll_samples.append(self.cluster.get_ll())
 
 	def run(self,
 			debug=False,
@@ -931,7 +933,7 @@ class NB_MCMC_SingleCluster:
 				segmentation_samples[st:en, d] = seg_counter
 				seg_counter += 1
 
-		return segmentation_samples, self.beta, mu_i_full
+		return segmentation_samples, self.beta, mu_i_full, self.ll_samples
 
 	def visualize_cluster_samples(self, savepath):
 		residuals = np.exp(np.log(self.cluster.r.flatten()) - (self.cluster.mu.flatten()) - np.log(self.bin_width) - (self.cluster.C@self.cluster.beta).flatten())
