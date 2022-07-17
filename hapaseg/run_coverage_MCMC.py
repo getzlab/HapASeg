@@ -164,8 +164,11 @@ class CoverageMCMCRunner:
         else:
             print("Computing GC content", file = sys.stderr)
             self.generate_GC()
-        
-        self.full_cov_df["C_GC_z"] = zt(self.full_cov_df["C_GC"])
+
+        # bin GC content with resolution proportional to the sqrt of the number of bins
+        self.full_cov_df["GC_bin"] = np.round(self.full_cov_df["C_GC"]*np.sqrt(len(self.full_cov_df))).astype(int)
+
+        # we will subsequently transform GC content to reflect the coverage bias of that bin
 
         ## FAIRE
 
@@ -264,13 +267,36 @@ class CoverageMCMCRunner:
 
         Cov_overlap = Cov_overlap.loc[~bad_bins, :]
         Pi = filtered.copy()
-        Cov_overlap['allelic_cluster'] = np.argmax(Pi, axis=1)
-       
-        r = np.c_[Cov_overlap["covcorr"]]
-        
-        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")])
 
-        ## making covariate matrix
+        ## making regressor vector/covariate matrix
+
+        # scale regressor to reflect fragment counts
+        Cov_overlap["fragcorr"] = np.round(Cov_overlap["covcorr"]/Cov_overlap["C_frag_len"].mean())
+        r = np.c_[Cov_overlap["fragcorr"]]
+
+        # fit empirical GC correction model (we do this here because we only consider "good" coverage bins)
+        GC_b = []   # GC bin
+        N_gc = [] # total number of coverage intervals within GC bin
+        F_gc = [] # total number of fragments within GC bin
+        for _, cidx in Cov_overlap.groupby("allelic_cluster").indices.items():
+            ngc = Cov_overlap.iloc[cidx].groupby("GC_bin").size()
+            fgc = Cov_overlap.iloc[cidx].groupby("GC_bin")["fragcorr"].sum()
+            GC_b.extend(ngc.index)
+            N_gc.extend(ngc)
+            F_gc.extend(fgc)
+        GC_b = np.r_[GC_b]
+        N_gc = np.r_[N_gc]
+        F_gc = np.r_[F_gc]
+
+        # use quadratic model
+        v = np.polyfit(GC_b/np.sqrt(len(self.full_cov_df)), F_gc/N_gc, 2)
+
+        Cov_overlap["C_GCtr"] = v[::-1]@((Cov_overlap["GC_bin"].values/np.sqrt(len(self.full_cov_df)))**np.c_[0:3])
+        Cov_overlap.loc[Cov_overlap["C_GCtr"] < 0, "C_GCtr"] = 1
+        #Cov_overlap["C_GCtr_z"] = (lambda x : (x - np.nanmean(x))/np.nanstd(x))(np.log(Cov_overlap["C_GCtr"]))
+        Cov_overlap["C_GCtr_z"] = np.log(Cov_overlap["C_GCtr"])
+
+        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")])
         C = np.c_[Cov_overlap[covar_columns]]
 
         ## dropping Nans
@@ -294,7 +320,7 @@ class CoverageMCMCRunner:
         Pi = Pi[:, Pi.sum(0) > 0]
  
         ## remove covariate outliers (+- 6 sigma)
-        covar_outlier_idx = (Cov_overlap.loc[:, covar_columns].abs() < 6).all(axis = 1)
+        covar_outlier_idx = (Cov_overlap.loc[:, set(covar_columns) - {"C_GCtr_z"}].abs() < 6).all(axis = 1)
         Cov_overlap = Cov_overlap.loc[covar_outlier_idx]
         Pi = Pi[covar_outlier_idx, :]
         r = r[covar_outlier_idx]
