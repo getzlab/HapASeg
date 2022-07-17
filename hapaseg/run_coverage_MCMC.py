@@ -207,6 +207,7 @@ class CoverageMCMCRunner:
         # first compute assignment probabilities based on the SNPs within each bin
         # segments just get assigned to the maximum probability
         self.full_cov_df["seg_idx"] = -1
+        self.full_cov_df["allelic_cluster"] = -1
         print("Mapping SNPs to targets ...", file = sys.stderr)
         for targ, D in tqdm.tqdm(self.SNPs.groupby("targ_idx")[["clust_choice", "seg_idx"]]):
             if targ == -1: # SNP does not overlap a coverage bin
@@ -216,10 +217,12 @@ class CoverageMCMCRunner:
             if len(seg_idx) == 1:
                 Cov_clust_probs[targ, seg_idx] = 1.0
                 self.full_cov_df.at[targ, "seg_idx"] = seg_idx[0]
+                self.full_cov_df.at[targ, "allelic_cluster"] = clust_idx[0]
             else: 
                 targ_clust_hist = np.bincount(seg_idx, minlength = seg_max) 
                 Cov_clust_probs[targ, :] = targ_clust_hist / targ_clust_hist.sum()
                 self.full_cov_df.at[targ, "seg_idx"] = np.bincount(seg_idx).argmax()
+                self.full_cov_df.at[targ, "allelic_cluster"] = np.bincount(clust_idx).argmax()
 
         ## subset to targets containing SNPs
         overlap_idx = Cov_clust_probs.sum(1) > 0
