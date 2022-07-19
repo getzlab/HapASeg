@@ -84,7 +84,7 @@ def parse_args():
 
     scatter.add_argument("--read_backed_phased_VCF")
     scatter.add_argument("--allele_counts_T", required=True)
-    scatter.add_argument("--allele_counts_N", required=True)
+    scatter.add_argument("--allele_counts_N", default=None)
     scatter.add_argument("--cytoband_file", required=True)
 
     ## amcmc
@@ -198,6 +198,8 @@ def parse_args():
     gen_acdp_df.add_argument("--snp_dataframe", help="path to dataframe containing snps")
     gen_acdp_df.add_argument("--cdp_object", help="path to coverage DP output object")
     gen_acdp_df.add_argument("--cdp_filepaths", help="paths of scattered DP objects")
+    gen_acdp_df.add_argument("--cov_df_pickle", help="path to cov_df pickle. For running on cov segmentation results directly")
+    gen_acdp_df.add_argument("--cov_seg_data",  help="path to collected cov mcmc segmentation data. For running on cov segmentation results directly")
     gen_acdp_df.add_argument("--allelic_clusters_object",
                              help="npy file containing allelic dp segs-to-clusters results")
     gen_acdp_df.add_argument("--allelic_draw_index", help="index of ADP draw used for coverage MCMC", type=int, default=-1)
@@ -205,7 +207,7 @@ def parse_args():
 
     # run acdp clustering 
     ac_dp = subparsers.add_parser("allelic_coverage_dp", help="Run DP clustering on allelic coverage tuples")
-    ac_dp.add_argument("--coverage_dp_object", help="path to coverage DP output object")
+    ac_dp.add_argument("--cov_seg_data", help="path to savez file containing global beta")
     ac_dp.add_argument("--acdp_df_path", help="path to acdp dataframe")
     ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
     ac_dp.add_argument("--cytoband_file", help="path to cytoband txt file")
@@ -521,27 +523,22 @@ def main():
                                              f_GC=args.gc_pickle,
                                              allelic_sample=args.allelic_sample)
         Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
-
-        ## create chunks for both burnin and scatter
-        cov_df = cov_df.sort_values("start_g", ignore_index = True)
-
+        
+        # to prepare to do coverage segmentation by ADP segment we must remove
+        # segments with <3 bins since we need 3 to fit a reliable model
+        seg_g = cov_df.groupby("seg_idx")
+        seg_counts = seg_g.count().iloc[:,0]
+        good_segs = seg_counts.loc[seg_counts > 2]
+        bin_mask = cov_df.seg_idx.isin(good_segs).index
+        Pi, r, C = Pi[bin_mask], r[bin_mask], C[bin_mask]
+        cov_df = cov_df.loc[bin_mask]
+        
         # indices of coverage bins 
         seg_g = cov_df.groupby("seg_idx")
         seg_g_idx = pd.Series(seg_g.indices).to_frame(name = "indices")
         seg_g_idx["allelic_cluster"] = seg_g["allelic_cluster"].first()
         seg_g_idx["n_cov_bins"] = seg_g.size()
-        # remove segments with < 3 bins since we need 3 to fit a reliable model
-        # TODO: merge these segments with others in the same cluster?
-        seg_filter = seg_g_idx.n_cov_bins > 2
-        passed_indices = np.hstack(seg_g_idx.loc[seg_filter].indices)
-        seg_g_idx = seg_g_idx.loc[seg_filter]
-        #remove those bins from the rest of the data
-        cov_df = cov_df.loc[cov_df.index.isin(passed_indices)]
-        mask = np.zeros(len(r), dtype=int)
-        mask[passed_indices] = 1
-        mask = mask == 1
-        Pi, r, C = Pi[mask], r[mask], C[mask]
-
+        
         ## save
         # regression matrices
         np.savez(os.path.join(output_dir, 'preprocess_data'), Pi=Pi, r=r, C=C, all_mu=all_mu,
@@ -627,7 +624,7 @@ def main():
         cov_mcmc.run()
 
         # collect the results
-        segment_samples, global_beta, mu_i_samples = cov_mcmc.prepare_results()
+        segment_samples, global_beta, mu_i_samples, ll_samples = cov_mcmc.prepare_results()
         
         model_save_str = 'cov_mcmc_model_allelic_seg_{}.pickle'.format(args.allelic_seg_idx)
         data_save_str = 'cov_mcmc_data_allelic_seg_{}'.format(args.allelic_seg_idx)
@@ -638,7 +635,7 @@ def main():
             pickle.dump(cov_mcmc, f)
 
         np.savez(os.path.join(output_dir, data_save_str),
-                 seg_samples=segment_samples, beta=global_beta, mu_i_samples=mu_i_samples)
+                 seg_samples=segment_samples, beta=global_beta, mu_i_samples=mu_i_samples, ll_samples = ll_samples)
 
         # save visualization
         cov_mcmc.visualize_cluster_samples(
@@ -646,12 +643,12 @@ def main():
 
     elif args.command == "collect_cov_mcmc":
         if args.coverage_dir:
-            full_segmentation, beta = aggregate_clusters(coverage_dir=args.coverage_dir, cov_df_pickle=args.cov_df_pickle)
+            full_segmentation, beta, ll_samples = aggregate_clusters(coverage_dir=args.coverage_dir, cov_df_pickle=args.cov_df_pickle)
 
         elif args.cov_mcmc_files:
             if args.cov_df_pickle is None:
                 raise ValueError("cov_df_pickle argument required for passing shard file")
-            full_segmentation, beta = aggregate_clusters(seg_indices_pickle= args.seg_indices_pickle, f_file_list=args.cov_mcmc_files, cov_df_pickle=args.cov_df_pickle, bin_width=args.bin_width)
+            full_segmentation, beta, ll_samples= aggregate_clusters(seg_indices_pickle= args.seg_indices_pickle, f_file_list=args.cov_mcmc_files, cov_df_pickle=args.cov_df_pickle, bin_width=args.bin_width)
         else:
             # need to pass in one or the other
             raise ValueError("must pass in either a directory or a txt file listing mcmc results")
@@ -659,9 +656,9 @@ def main():
         ## save these results to new aggregated file
         if args.coverage_dir:
             np.savez(os.path.join(args.coverage_dir, 'cov_mcmc_collected_data'), seg_samples=full_segmentation,
-                     beta=beta)
+                     beta=beta, ll_samples = ll_samples)
         else:
-            np.savez('./cov_mcmc_collected_data', seg_samples=full_segmentation, beta=beta)
+            np.savez('./cov_mcmc_collected_data', seg_samples=full_segmentation, beta=beta, ll_samples = ll_samples)
 
     elif args.command == "coverage_dp":
         cov_df = pd.read_pickle(args.f_cov_df)
@@ -696,25 +693,34 @@ def main():
                                              bin_width=args.bin_width,
                                              ADP_draw_index=args.allelic_draw_index)
         
-        if args.cdp_filepaths is not None:
+        elif args.cdp_filepaths is not None:
             #all of our dp runs are in one object
             acdp_df, opt_cdp_idx = generate_acdp_df(args.snp_dataframe,
                                              args.allelic_clusters_object,
                                              cdp_scatter_files=args.cdp_filepaths,
                                              bin_width=args.bin_width,
                                              ADP_draw_index=args.allelic_draw_index)
-        
+        # for running directly from cov_mcmc segments
+        elif args.cov_df_pickle is not None and args.cov_seg_data is not None:
+            acdp_df, opt_cdp_idx = generate_acdp_df(args.snp_dataframe,
+                                             args.allelic_clusters_object,
+                                             cov_df_path=args.cov_df_pickle,
+                                             cov_mcmc_data_path =args.cov_seg_data,
+                                             bin_width=args.bin_width,
+                                             ADP_draw_index=args.allelic_draw_index)
+                        
+        else:
+            raise ValueError("must pass a cdp filepath, list of cdp filepaths or cov_df pickle and mcmc seg file")
+           
         acdp_df.to_pickle(os.path.join(output_dir, "acdp_df.pickle"))
         with open('./opt_cdp_draw.txt', 'w') as f:
             f.write(str(opt_cdp_idx))
        
     elif args.command == "allelic_coverage_dp":
         acdp_df = pd.read_pickle(args.acdp_df_path)
-        # may want to switch this to a preferred method of beta loading
-        with open(args.coverage_dp_object, "rb") as f:
-            cdp_pickle = pickle.load(f)
+        mcmc_data = np.load(args.cov_seg_data)
+        beta = mcmc_data['beta']
         
-        beta = cdp_pickle.beta
         acdp = AllelicCoverage_DP(acdp_df, beta, args.cytoband_file, args.warmstart)
         acdp.run(args.num_samples)
         print("visualizing run")
