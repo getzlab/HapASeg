@@ -312,7 +312,16 @@ class Run_Cov_DP:
     
     def lnp_optimizer(self, r, C, ret_hess=False):
         lnp = CovLNP_NR(r[:,None], self.beta, C, exposure = np.log(self.bin_exposure))
-        return lnp.fit(ret_hess = ret_hess)
+        
+        try:
+            res = lnp.fit(ret_hess = ret_hess)
+        except:
+            try:
+                lnp = CovLNP_NR(r[:,None], self.beta, C, exposure = np.log(self.bin_exposure), extra_roots=True)
+                res = lnp.fit(ret_hess = ret_hess, extra_roots=True)
+            except:
+                res = np.nan, np.nan, np.full((2,2), np.nan)
+        return res
 
     # for assigning greylisted segments at for each draw
     def assign_greylist(self):
@@ -588,6 +597,8 @@ class Run_Cov_DP:
 
                 if np.isnan(choice_p.sum()):
                     print('skipping iteration {} due to nan. picked segment {}'.format(n_it, segID), flush=True)
+                    #print(np.isnan(ML_rat).sum(), 'nans')
+                    #print(np.where(np.isnan(ML_rat)))
                     n_it += 1
                     continue
                 choice_idx = np.random.choice(
@@ -734,6 +745,8 @@ class Run_Cov_DP:
                     ML_rat - MLs_max + log_dp_count_prior + np.log(clust_prior_p)).sum()
                 if np.isnan(choice_p.sum()):
                     print("skipping iteration {} due to nan".format(n_it), flush=True)
+                    #print(np.isnan(ML_rat).sum(), 'nans')
+                    #print(np.where(np.isnan(ML_rat)))
                     n_it += 1
                     continue
 
