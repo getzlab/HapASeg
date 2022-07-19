@@ -13,6 +13,7 @@ import sortedcontainers as sc
 import pickle
 import os
 import distinctipy
+import tqdm
 
 from capy import seq, mut
 
@@ -42,23 +43,32 @@ def generate_acdp_df(SNP_path, # path to SNP df
                  ADP_path, # path to npz ADP result
                  cdp_object_path=None, # path to CDP runner pickle object
                  cdp_scatter_files=None, #path to CDP scattered pickle obj txt file
+                 cov_df_path=None, #cov_df file if using segments directly from cov mcmc
+                 cov_mcmc_data_path=None, #segmentation data if using segments from cov_mcmc
                  bin_width=1, #set to uniform bin width for wgs or 1 for exomes
                  ADP_draw_index=-1): # index of ADP draw used in Coverage MCMC
 
     SNPs = pd.read_pickle(SNP_path)
     ADP_clusters = np.load(ADP_path)
-    phases = ADP_clusters["snps_to_phases"][ADP_draw_index]
+    #phases = ADP_clusters["snps_to_phases"][ADP_draw_index]
     
-    S_flip_col = SNPs.columns.get_loc('flipped')
+    #S_flip_col = SNPs.columns.get_loc('flipped')
     
     # update phases with those from the selected draw
-    SNPs.iloc[:, S_flip_col] = phases
-    mm_mat = SNPs.loc[:, ["min", "maj"]].values.reshape(-1, order = "F")
+    #SNPs.iloc[:, S_flip_col] = phases
+    #mm_mat = SNPs.loc[:, ["min", "maj"]].values.reshape(-1, order = "F")
+    
+    dp_run_data = []
 
     if cdp_object_path is not None:
         with open(CDP_path, 'rb') as f:
             dp_pickle = pickle.load(f)
             DP_runs = dp_pickle.DP_runs
+        for dp_run in DP_runs:
+            dp_run_data.append((dp_run.cov_df, dp_run.bins_to_clusters[-1]))
+        beta = dp_pickle.beta
+        best_run = np.argmax([dp.ll_history[-1] for dp in DP_runs])
+
     elif cdp_scatter_files is not None:
         #load in the file names
         with open(cdp_scatter_files, 'r') as f:
@@ -69,33 +79,45 @@ def generate_acdp_df(SNP_path, # path to SNP df
              with open(cdp_file, 'rb') as cdp:
                 dp_pickle = pickle.load(cdp)
                 print("file {} : len dp runs: {}".format(cdp_file, len(dp_pickle.DP_runs)), flush=True)
-                DP_runs.extend(dp_pickle.DP_runs)
+                dp_run = dp.pickle.DP_runs[0]
+                dp_run_data.append((dp_run.cov_df, dp_run.bins_to_clusters[-1]))
+        beta = dp_pickle.beta
+        best_run = np.argmax([dp.ll_history[-1] for dp in DP_runs])
+
+    elif cov_df_path is not None and cov_mcmc_data_path is not None:
+        seg_data = np.load(cov_mcmc_data_path)
+        beta = seg_data['beta']
+        seg_samples = seg_data['seg_samples']
+        cov_df = pd.read_pickle(cov_df_path)
+        
+        for run in range(seg_samples.shape[1]):
+            cov_df_run = cov_df.copy()
+            cov_df_run['segment_ID'] = seg_samples[:, run].astype(int)
+            dp_assignments = seg_samples[:,run]
+            
+            # filter out small segments (<10)            
+            gb = cov_df_run.groupby('segment_ID').count().iloc[:,0]
+            small_segs = gb.loc[gb < 10].index
+            dp_assignments = dp_assignments[~cov_df_run.segment_ID.isin(small_segs)]
+            cov_df_run = cov_df_run.loc[~cov_df_run.segment_ID.isin(small_segs)]
+
+            dp_run_data.append((cov_df_run, dp_assignments))
+        #best_run = np.argmax(seg_data['ll_samples'])
+        best_run = 4
     else:
         raise ValueError("must pass in either a cdp object path or a txt file containing a list of object paths")
     # currently uses the last sample from every DP draw
     draw_dfs = []
-    for draw_num, dp_run in enumerate(DP_runs):
-        print('concatenating dp run ', draw_num)
-        a_cov_seg_df = dp_run.cov_df.copy()
+    for draw_num, dp_data in enumerate(dp_run_data):
+        print('concatenating dp run ', draw_num, flush=True)
+        a_cov_seg_df = dp_data[0].copy()
 
         covar_cols = sorted(a_cov_seg_df.columns[a_cov_seg_df.columns.str.contains("^C_.*_z$|^C_log_len$")])
 
-        # add minor and major allele counts for each bin to the cov_seg_df here to allow for beta draws on the fly for each segment
-#        a_cov_seg_df['min_count'] = 0
-#        a_cov_seg_df['maj_count'] = 0
-#        min_col_idx = a_cov_seg_df.columns.get_loc('min_count')
-#        maj_col_idx = a_cov_seg_df.columns.get_loc('maj_count')
-#
-#        SNPs["cov_tidx"] = mut.map_mutations_to_targets(SNPs, a_cov_seg_df, inplace=False)
-#
-#        for idx, group in SNPs.groupby('cov_tidx').indices.items():
-#            minor, major = _Ssum_ph(SNPs, mm_mat, group, S_flip_col, min = True), _Ssum_ph(SNPs, mm_mat, group, S_flip_col, min = False)
-#            a_cov_seg_df.iloc[int(idx), [min_col_idx, maj_col_idx]] = minor, major
-        
         # add dp cluster annotations
         a_cov_seg_df['cov_DP_cluster'] = -1
 
-        segs_to_clusts = dp_run.bins_to_clusters[-1]
+        segs_to_clusts = dp_data[1]
         for seg in range(len(segs_to_clusts)):
             a_cov_seg_df.loc[a_cov_seg_df['segment_ID'] == seg, 'cov_DP_cluster'] = segs_to_clusts[seg]
         
@@ -107,18 +129,14 @@ def generate_acdp_df(SNP_path, # path to SNP df
         a_cov_seg_df['cov_DP_mu'] = 0
         a_cov_seg_df['cov_DP_sigma'] = 0
 
-        for adp, cdp in a_cov_seg_df.groupby(['allelic_cluster', 'cov_DP_cluster']).indices:
+        for adp, cdp in tqdm.tqdm(a_cov_seg_df.groupby(['allelic_cluster', 'cov_DP_cluster']).indices):
             acdp_clust = a_cov_seg_df.loc[
                 (a_cov_seg_df.cov_DP_cluster == cdp) & (a_cov_seg_df.allelic_cluster == adp)]
             if len(acdp_clust) < 10:
                 acdp_clust = a_cov_seg_df.loc[a_cov_seg_df.cov_DP_cluster == cdp]
             r = acdp_clust.covcorr.values
             C = np.c_[acdp_clust[covar_cols]]
-            endog = r
-            exog = np.ones(r.shape)
-            exposure = np.ones(r.shape) * bin_width
-            sNB = statsNB(endog, exog, exposure=exposure, offset = (C @ dp_pickle.beta).flatten())
-            lnp = CovLNP_NR(r[:,None], dp_pickle.beta, C, exposure = np.log(bin_width))
+            lnp = CovLNP_NR(r[:,None], beta, C, exposure = np.log(bin_width))
             res = lnp.fit(ret_hess=True)
             mu = res[0]
             a_cov_seg_df.loc[
@@ -147,7 +165,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
 
     print('completed ACDP dataframe generation')
     # return both the acdp df and the index of the best DP run
-    return pd.concat(draw_dfs),  np.argmax([dp.ll_history[-1] for dp in DP_runs])
+    return pd.concat(draw_dfs),  best_run
 
 class AllelicCoverage_DP:
     def __init__(self, cov_df, beta, cytoband_file, seed_all_clusters=True):
