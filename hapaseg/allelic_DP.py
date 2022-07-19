@@ -978,10 +978,11 @@ class DPinstance:
         T["terr"] = T["gp_end"] - T["gp_st"]
         T["clust"] = self.S.loc[T["snp_st"], "clust"].values
 
-        clust_terr = T.groupby("clust")["terr"].sum().sort_values(ascending = False)
-        si = clust_terr.index.argsort()
-
-        # color any cluster larger than 10Mb (~0.003 of total genomic territory)
+        clust_terr = T.groupby("clust")["terr"].sum()
+        # we only need distinct colors for those larger than 10Mb (~0.003 of total genomic territory)
+        sig_clusts = (clust_terr/clust_terr.sum() >= 0.003)
+        sig_clust_terr = clust_terr.loc[sig_clusts].sort_values(ascending = False)
+        si = sig_clust_terr.index.argsort()
         base_colors = np.array([
           [0.368417, 0.506779, 0.709798],
           [0.880722, 0.611041, 0.142051],
@@ -1001,12 +1002,11 @@ class DPinstance:
         ])
         extra_colors = np.array(
           distinctipy.distinctipy.get_colors(
-            (clust_terr/clust_terr.sum() >= 0.003).sum() - base_colors.shape[0],
+            sig_clusts.sum() - base_colors.shape[0],
             exclude_colors = [list(x) for x in np.r_[np.c_[0, 0, 0], np.c_[1, 1, 1], np.c_[0.5, 0.5, 0.5], np.c_[1, 0, 1], base_colors]],
             rng = 1234
           )
         )
-
         return np.r_[base_colors, extra_colors if extra_colors.size > 0 else np.empty([0, 3])][si]
 
     def visualize_segs(self, f = None, use_clust = False, show_snps = False, chrom = None):
