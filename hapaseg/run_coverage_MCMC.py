@@ -329,7 +329,13 @@ class CoverageMCMCRunner:
         r = r[~bad_bins]
         C = C[~bad_bins]
         Cov_overlap = Cov_overlap.loc[~bad_bins]
-
+        
+        ## sort data by genomic position
+        sort_indices = Cov_overlap.start_g.argsort().values
+        Pi = Pi[sort_indices]
+        r = r[sort_indices]
+        C = C[sort_indices]
+        Cov_overlap = Cov_overlap.sort_values("start_g", ignore_index = True)
         return Pi, r, C, Cov_overlap
 
 #TODO switch to lnp
@@ -413,13 +419,14 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     
     seg_results = {}
     mu_i_results = {}
-    
+    ll_results = {} 
     # load data from each cluster
     for seg, data_path in zip(seg_idxs, seg_files):
         cluster_data = np.load(data_path)
         seg_results[seg] = cluster_data['seg_samples']
         mu_i_results[seg] = cluster_data['mu_i_samples']
-    
+        ll_results[seg] = cluster_data['ll_samples']
+
     num_draws = seg_results[seg_idxs[0]].shape[1]
     num_clusters = len(seg_data.allelic_cluster.unique())
     num_segments = len(seg_results)
@@ -450,7 +457,14 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     pois_regr = PoissonRegression(endog, C, np.ones(endog.shape))
     mu_refit, beta_refit = pois_regr.fit()
     
-    return coverage_segmentation, beta_refit
+    # calculate likelihoods of each sample
+    ll_samples_arr = np.zeros((num_segments, num_draws))
+    for seg, ll_arr in ll_results.items():
+        ll_samples_arr[seg] = ll_arr
+    
+    ll_samples = ll_samples_arr.sum(0)
+
+    return coverage_segmentation, beta_refit, ll_samples
 
 def aggregate_burnin_files(file_list, cluster_num):
     file_captures = []
