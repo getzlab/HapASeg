@@ -184,10 +184,19 @@ class AllelicCluster:
 				return mu, lepsi
 
 		# cache miss; compute values
-		ind_len = ind[1] - ind[0]
+		#lnp = CovLNP_NR(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu)
 		lnp = CovLNP_NR_prior(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu, mu_prior = 0, lamda = self.lamda, alpha_prior = self.alpha_prior, beta_prior = self.beta_prior)
 		
-		res =  lnp.fit(ret_hess=ret_hess)
+		try:	
+			res =  lnp.fit(ret_hess=ret_hess)
+		except:
+			# try adding some jitter
+			try:
+				#lnp = CovLNP_NR(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu + 1e-5)
+				lnp = CovLNP_NR_prior(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu, mu_prior = 0, lamda = self.lamda, alpha_prior = self.alpha_prior, beta_prior = self.beta_prior, extra_roots=True)
+				res =  lnp.fit(ret_hess=ret_hess)
+			except:
+				res = (np.nan, np.nan, np.full((2,2), np.nan))
 
 		# save to cache
 		self.cache_mu.append(res[0]); self.cache_mu_ptr[ind[0], ind[1]] = len(self.cache_mu) - 1
@@ -220,6 +229,7 @@ class AllelicCluster:
 		exposure = np.log(self.bin_exposure)
 		mu_tot = self.mu + mu_i
 		ll = covLNP_ll_prior(self.r[ind[0]:ind[1]], mu_tot, lgsigma, self.C[ind[0]:ind[1]], self.beta, exposure = exposure, mu_prior = mu_tot, lamda = self.lamda, alpha_prior=self.alpha_prior, beta_prior = self.beta_prior)
+		#ll = covLNP_ll(self.r[ind[0]:ind[1]], mu_tot, lgsigma, self.C[ind[0]:ind[1]], self.beta, exposure = exposure)
 		return ll
 
 	# method for calculating the overall log likelihood of an allelic cluster given a hypothetical mu_i and lepsi arrays
@@ -458,7 +468,7 @@ class AllelicCluster:
 			ix_r = ix + 1
 			l_samples = 0
 			while l_samples < max_samples:
-				if ix_r > ind[1] -1:
+				if ix_r >= ind[1] -1:
 					break
 				ll_add, mu_add, lepsi_add, Hs_add = self._calculate_splits(ind, [ix_r])
 				if ll_add[0] > sig_threshold and ix_r not in sig_set:
@@ -557,6 +567,8 @@ class AllelicCluster:
 		ind = self.get_seg_ind(seg)
 
 		split_indices, log_split_MLs, all_mus, all_lepsis = self._get_split_liks(ind, debug=debug)
+		## penalize splitting to replace prior
+		log_split_MLs -= 10
 		_, _, log_join_ML = self._log_ML_join(ind)
 
 		log_MLs = np.r_[log_split_MLs, log_join_ML]
@@ -617,6 +629,7 @@ class AllelicCluster:
 
 		lls_split, _, _, Hs = self._calculate_splits(ind, [seg_r])
 		log_split_ML = lls_split[0] + self._get_log_ML_gaussint_split(Hs[0][0], Hs[0][1])
+		log_split_ML -= 10 # penalize splitting without prior
 		mu_share, lepsi_share, log_join_ML = self._log_ML_join(ind)
 
 		log_MLs = np.r_[log_split_ML, log_join_ML]

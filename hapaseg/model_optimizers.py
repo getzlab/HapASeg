@@ -56,8 +56,10 @@ class PoissonRegression:
         return self.mu, self.beta
 
 hr, hw = ss.roots_legendre(25)
+hr_extra, hw_extra = ss.roots_legendre(2500)
+
 class CovLNP_NR:
-    def __init__(self, x, beta, C, exposure=np.array([[0]])):
+    def __init__(self, x, beta, C, exposure=np.array([[0]]), extra_roots=False):
         """
         find posterior predictive over MCMC chains
         """
@@ -65,11 +67,15 @@ class CovLNP_NR:
         # legrende roots/weights for quadrature
         self.x =x
         self.beta = beta
-        self.bce = C@beta + exposure
-
-        self.hr, self.hw = hr, hw
+        self.bc = C@beta
+        self.bce = self.bc + exposure
         
-        #make empiracle estimates about mu and sigma
+        if extra_roots:
+                self.hr, self.hw = hr_extra, hw_extra
+        else:
+                self.hr, self.hw = hr, hw
+        
+        # make empirical estimates about mu and sigma
         self.mu = (np.log(x) - self.bce).mean()
         self.lgsigma = np.log((np.log(x) - self.bce).std())
 
@@ -99,13 +105,14 @@ class CovLNP_NR:
         """
         x = self.x
         log_prob_data = self.lnp_logprob(x).sum()
-
+        
+        # remove covariate effects
+        x = np.exp(np.log(x) - self.bc)
         pmf_object = copy.deepcopy(self)
 
-        x_corr = np.exp(np.log(x) - pmf_object.bce).flatten()
-        #temporarily zero out bce
-        pmf_object.bce = np.zeros((1000,1))
-        xs= np.r_[0.1:1000:1]
+        step = int(np.ceil(x.size / 1000))
+        xs= np.r_[max(x.min() - 20 * step, 0.1):x.max() + 20 * step:step][:, None]
+        pmf_object.bce = np.zeros(xs.shape)
         interval_center = np.exp(pmf_object.lgsigma) * np.c_[xs] - np.exp(-pmf_object.lgsigma) * ss.wrightomega(pmf_object.mu + pmf_object.bce + 2 * pmf_object.lgsigma + np.exp(2*pmf_object.lgsigma) * np.c_[xs]).real
         epsi_hess = - np.exp(pmf_object.bce + pmf_object.mu + np.exp(pmf_object.lgsigma) * interval_center) * np.exp(2*pmf_object.lgsigma) -1
         epsi_sigma = np.sqrt(-epsi_hess**-1)
@@ -116,14 +123,12 @@ class CovLNP_NR:
         pmf_object.hs = pmf_object.h_roots*(np.exp(pmf_object.lgsigma))
         pmf_object.hs_m = pmf_object.hs + pmf_object.mu
         pmf_object.hs_m_exp = np.exp(pmf_object.hs + pmf_object.mu)
-        pmf = pmf_object.lnp_logprob(xs[:,None])
+        pmf = pmf_object.lnp_logprob(xs)
 
         import matplotlib.pyplot as plt
-        plt.hist(x_corr.flatten(), bins = xs, density=True)
-        plt.plot(xs, np.exp(pmf.flatten()))
+        plt.hist(x.flatten(), bins = 100, density=True)
+        plt.plot(xs.flatten(), np.exp(pmf.flatten()))
 
-        sig_bins = xs[pmf.flatten() > -30]
-        plt.xlim([min(x_corr.min(), sig_bins[0]), max(x_corr.max(), sig_bins[-1])])
         plt.title('lnp fit: mu: {}  sigma {} ll: {}'.format(np.around(pmf_object.mu, 2), np.around(np.exp(pmf_object.lgsigma),2), np.around(log_prob_data,2)))
         plt.xlabel('corrected coverage')
         plt.ylabel('density')
@@ -224,14 +229,15 @@ class CovLNP_NR:
                         [hess_mu_sigma, hess_sigma_sigma]])
         return grad, hess
     
-    def fit(self, ret_hess = False, debug=False):
-        for _ in range(100):
+    def fit(self, ret_hess = False, debug=False, extra_roots=False):
+        for _ in range(200):
             if debug: print(self.mu, self.lgsigma)
+            radius_mult = 500 if extra_roots else 6
             x = self.x
             interval_center = np.exp(self.lgsigma) * x - np.exp(-self.lgsigma) * ss.wrightomega(self.mu + self.bce + 2 * self.lgsigma + np.exp(2*self.lgsigma) * x).real
             epsi_hess = - np.exp(self.bce + self.mu + np.exp(self.lgsigma) * interval_center) * np.exp(2*self.lgsigma) -1
             epsi_sigma = np.sqrt(-epsi_hess**-1)
-            interval_radius = 6 * epsi_sigma
+            interval_radius = radius_mult * epsi_sigma
             
             self.a, self.b = interval_center - interval_radius, interval_center + interval_radius
             self.h_roots = (self.b - self.a)/2 * self.hr[None] + (self.a + self.b) / 2
@@ -249,14 +255,15 @@ class CovLNP_NR:
             self.mu -= delta[0]
             self.lgsigma -= delta[1]
             if debug: print('grad_norm:', np.linalg.norm(grad))
-            if np.linalg.norm(grad) < 1e-5:
+            if np.linalg.norm(grad) < 5e-5:
                 if ret_hess: return self.mu, self.lgsigma, hess
                 return self.mu, self.lgsigma
         print('did not converge!')
+        raise ValueError("DNC")
         if ret_hess: return None, None, None
         return None, None
 
-# stand alone function for computing log likelyhood of a segment under lnp model
+# stand alone function for computing log likelihood of a segment under lnp model
 def covLNP_ll(x, mu, lgsigma, C, beta, exposure=np.array([[0]])):
     #mu and lgsigma can either be doubles or nx1 arrays
     bce = C@beta + exposure
@@ -282,7 +289,7 @@ def covLNP_ll(x, mu, lgsigma, C, beta, exposure=np.array([[0]])):
 
 # with prior
 class CovLNP_NR_prior:
-    def __init__(self, x, beta, C, exposure=np.array([[0]]), *, mu_prior, lamda, alpha_prior, beta_prior):
+    def __init__(self, x, beta, C, exposure=np.array([[0]]), extra_roots=False, *, mu_prior, lamda, alpha_prior, beta_prior):
         """
         find posterior predictive over MCMC chains
         """
@@ -295,8 +302,11 @@ class CovLNP_NR_prior:
         self.lamda = lamda
         self.alpha_prior = alpha_prior
         self.beta_prior = beta_prior
-
-        self.hr, self.hw = ss.roots_legendre(25)
+        
+        if extra_roots:
+                self.hr, self.hw = hr_extra, hw_extra
+        else:
+                self.hr, self.hw = hr, hw
         
         #make empirical estimates about mu and sigma
         self.mu = (np.log(x) - self.bce).mean()
@@ -457,14 +467,15 @@ class CovLNP_NR_prior:
                         [hess_mu_sigma, hess_sigma_sigma]])
         return grad, hess
     
-    def fit(self, ret_hess = False, debug=False):
-        for _ in range(200):
+    def fit(self, ret_hess = False, debug=False, extra_roots=False):
+        radius_mult = 500 if extra_roots else 6
+        for it in range(200):
             if debug: print(self.mu, self.lgsigma)
             x = self.x
             interval_center = np.exp(self.lgsigma) * x - np.exp(-self.lgsigma) * ss.wrightomega(self.mu + self.bce + 2 * self.lgsigma + np.exp(2*self.lgsigma) * x).real
             epsi_hess = - np.exp(self.bce + self.mu + np.exp(self.lgsigma) * interval_center) * np.exp(2*self.lgsigma) -1
             epsi_sigma = np.sqrt(-epsi_hess**-1)
-            interval_radius = 6 * epsi_sigma
+            interval_radius = radius_mult * epsi_sigma
             
             self.a, self.b = interval_center - interval_radius, interval_center + interval_radius
             self.h_roots = (self.b - self.a)/2 * self.hr[None] + (self.a + self.b) / 2
@@ -482,9 +493,11 @@ class CovLNP_NR_prior:
             self.lgsigma -= delta[1]
             if debug: print('grad_norm:', np.linalg.norm(grad))
             if np.linalg.norm(grad) < 1e-5:
+                if it > 100: print('took {} iterations'.format(it))
                 if ret_hess: return self.mu, self.lgsigma, hess
                 return self.mu, self.lgsigma
         print('did not converge!')
+        raise ValueError("DNC")
         if ret_hess: return None, None, None
         return None, None
 
