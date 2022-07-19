@@ -97,6 +97,8 @@ def _hg38_config_gen(wgs):
 
 def workflow(
   callstats_file = None,
+  hetsites_file = None,
+  genotype_file =None,
 
   tumor_bam = None,
   tumor_bai = None,
@@ -257,6 +259,8 @@ def workflow(
           ref_fasta_dict = localization_task["ref_fasta_dict"],
           use_pod_genotyper = True
         )
+    elif hetsites_file is not None and genotype_file is not None:
+        hp_task = {"tumor_hets": hetsites_file, "normal_hets": "", "normal_genotype": genotype_file}
 
     # otherwise, run M1 and get it from the BAM
     elif callstats_file is None and tumor_bam is not None and normal_bam is not None:
@@ -384,7 +388,7 @@ def workflow(
         output_file_prefix = "foo",
         num_threads = 4,
       ),
-      resources = { "cpus-per-task" : 4 }
+      resources = { "cpus-per-task" : 4, "mem":'5G'}
     )
 
     # TODO: run whatshap
@@ -596,42 +600,59 @@ def workflow(
         "bin_width":bin_width
         }
     )
-
-    # coverage DP
-    cov_dp_task = hapaseg.Hapaseg_coverage_dp(
-    inputs = {
-        "f_cov_df":prep_cov_mcmc_task["cov_df_pickle"],
-        "cov_mcmc_data": cov_mcmc_gather_task["cov_collected_data"],
-        "num_segmentation_samples":num_cov_seg_samples, # this argument get overwritten TODO:make it optional
-        "num_dp_samples":5,
-        "sample_idx":list(range(num_cov_seg_samples)),
-        "bin_width":bin_width
-        }
-    )
-
+    
     #get the adp draw number from the preprocess data object
     @prefect.task
     def _get_ADP_draw_num(preprocess_data_obj):
         return int(np.load(preprocess_data_obj)["adp_cluster"])
     
     adp_draw_num = _get_ADP_draw_num(prep_cov_mcmc_task["preprocess_data"])
+    
 
-    # generate acdp dataframe 
-    gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
-    inputs = {
-        "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'], #each scatter result is the same
-        "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
-        "cdp_filepaths":[cov_dp_task["cov_dp_object"]],
-        "allelic_draw_index":adp_draw_num,
-        "ref_file_path":localization_task["ref_fasta"],
-        "bin_width":bin_width
-        }
-    )
+    # only run cov DP if using exomes. genomes should have enough bins in each segment
+    if not wgs:
+        # coverage DP
+        cov_dp_task = hapaseg.Hapaseg_coverage_dp(
+        inputs = {
+            "f_cov_df":prep_cov_mcmc_task["cov_df_pickle"],
+            "cov_mcmc_data": cov_mcmc_gather_task["cov_collected_data"],
+            "num_segmentation_samples":num_cov_seg_samples, # this argument get overwritten TODO:make it optional
+            "num_dp_samples":5,
+            "sample_idx":list(range(num_cov_seg_samples)),
+            "bin_width":bin_width
+            }
+        )
+
+        # generate acdp dataframe 
+        gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
+        inputs = {
+            "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'], #each scatter result is the same
+            "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+            "cdp_filepaths":[cov_dp_task["cov_dp_object"]],
+            "allelic_draw_index":adp_draw_num,
+            "ref_file_path":localization_task["ref_fasta"],
+            "bin_width":bin_width
+            }
+        )
+    
+    else:
+        # otherwise generate acdp dataframe directly from cov_mcmc results
+        gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
+        inputs = {
+            "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'], #each scatter result is the same
+            "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+            "cov_df_pickle":prep_cov_mcmc_task["cov_df_pickle"],
+            "cov_seg_data":cov_mcmc_gather_task["cov_collected_data"],
+            "ref_file_path":localization_task["ref_fasta"],
+            "allelic_draw_index":adp_draw_num,
+            "bin_width":bin_width
+            }
+       ) 
 
     # run acdp
     acdp_task = hapaseg.Hapaseg_run_acdp(
     inputs = {
-        "coverage_dp_object":cov_dp_task["cov_dp_object"][0],
+        "cov_seg_data" : cov_mcmc_gather_task["cov_collected_data"],
         "acdp_df":gen_acdp_task["acdp_df_pickle"],
         "num_samples":num_cov_seg_samples,
         "cytoband_file": localization_task["cytoband_file"],
