@@ -108,10 +108,15 @@ class CoverageMCMCRunner:
 
     def load_covariates(self):
         zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
+
+        ## Target size
+
         # we only need bin size if doing exomes but we can check by looking at the bin lengths
         self.full_cov_df["C_log_len"] = np.log(self.full_cov_df["end"] - self.full_cov_df["start"] + 1)
-            
-        zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
+        # in case we are doing wgs these will all be the same and we must remove
+        # since it will ruin beta fitting
+        if (np.diff(self.full_cov_df["C_log_len"]) == 0).all():
+            self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
 
         ## Fragment length
 
@@ -167,11 +172,6 @@ class CoverageMCMCRunner:
         # take log z-transform
         self.full_cov_df["C_GC_z"] = zt(np.log(self.full_cov_df["C_GC"] + 1e-4))
 
-        # in case we are doing wgs these will all be the same and we should remove
-        if (np.diff(self.full_cov_df["C_log_len"]) == 0).all():
-            #remove the len col since it will ruin beta fitting
-            self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
-        
         ## FAIRE
         if self.f_faire is not None:
             F = pd.read_pickle(self.f_faire)
