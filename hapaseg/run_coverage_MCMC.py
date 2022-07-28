@@ -76,7 +76,7 @@ class CoverageMCMCRunner:
         return Pi, r, C, all_mu, global_beta, filtered_cov_df, self.allelic_sample, pois_hess
 
     def load_coverage(self, coverage_csv):
-        Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "mean_frag_len", "std_frag_len", "num_reads"], low_memory=False)
+        Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "mean_frag_len", "std_frag_len", "num_frags", "tot_reads", "fail_reads"], low_memory=False)
         Cov.loc[Cov['chr'] == 'chrM', 'chr'] = 'chrMT' #change mitocondrial contigs to follow mut conventions
         Cov["chr"] = mut.convert_chr(Cov["chr"])
         Cov = Cov.loc[Cov["chr"] != 0]
@@ -127,7 +127,7 @@ class CoverageMCMCRunner:
         # generate on 5x and 11x scales
         swv = np.lib.stride_tricks.sliding_window_view
         fl = self.full_cov_df["C_frag_len"].values; fl[np.isnan(fl)] = 0
-        wt = self.full_cov_df["num_reads"].values
+        wt = self.full_cov_df["num_frags"].values
         for scale in [5, 11]:
             fl_sw = swv(np.pad(fl, scale//2), scale)
             wt_sw = swv(np.pad(wt, scale//2), scale)
