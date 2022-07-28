@@ -44,7 +44,8 @@ split_intervals = wolf.ImportTask(
 
 cov_collect = wolf.ImportTask(
   task_path = "git@github.com:getzlab/covcollect.git",
-  task_name = "covcollect"
+  task_name = "covcollect",
+  branch = "tot_reads"
 )
 
 ####
