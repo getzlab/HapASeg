@@ -172,13 +172,17 @@ class CoverageMCMCRunner:
 
         if self.f_faire is not None:
             F = pd.read_pickle(self.f_faire)
+
             # map targets to FAIRE intervals
             tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "midpoint")
-            self.full_cov_df['C_FAIRE'] = np.nan
-            self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, -1].values
+            F = F.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : "C_" + x)
+            self.full_cov_df = pd.concat([self.full_cov_df, F], axis = 1)
 
             # z-transform
-            self.full_cov_df["C_FAIRE_z"] = zt(np.log(self.full_cov_df["C_FAIRE"] + 1))
+            self.full_cov_df = pd.concat([
+              self.full_cov_df,
+              self.full_cov_df.loc[:, F.columns].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_z")
+            ], axis = 1)
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
     # clusters with snps from different clusters are probabliztically assigned
