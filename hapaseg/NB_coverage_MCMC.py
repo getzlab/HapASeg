@@ -44,7 +44,7 @@ class AllelicCluster:
 		self.lepsi_i_arr = np.ones(len(self.r))
 		self.mu_i_arr = np.zeros(len(self.r))
 
-		self.lamda = 0.0000000001
+		self.lamda = 1e-10
 
 		# keep cache of previously computed breakpoints for fast splitting
 		sz = tuple(np.r_[1, 1]*(len(r) + 1))
@@ -80,9 +80,12 @@ class AllelicCluster:
 		self.lepsi_i_arr = np.ones(len(self.r)) * self.lepsi
 		self.epsi_i_arr = np.exp(self.lepsi_i_arr)
 		
-		self.alpha_prior = len(self.r)
-		self.beta_prior = (self.alpha_prior + 1.5) * np.exp(2 * self.lepsi)
-
+		#self.alpha_prior = len(self.r)
+		#self.beta_prior = (self.alpha_prior + 1.5) * np.exp(2 * self.lepsi)
+		#self.alpha_prior = 1
+		#self.beta_prior = (self.alpha_prior + 1.5) * np.exp(2 * self.lepsi)
+		self.alpha_prior = 1e-4
+		self.beta_prior = 8e-3
 	# fit initial mu_k and epsilon_k for the cluster
 	def NR_init(self):
 		self.mu, self.lepsi = self.lnp_init()
@@ -158,7 +161,8 @@ class AllelicCluster:
 		return res.params[0], -np.log(res.params[1])
 
 	def lnp_init(self):
-		lnp = CovLNP_NR(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure))
+		#lnp = CovLNP_NR(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure))
+		lnp = CovLNP_NR_prior(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure), init_prior=True, lamda = self.lamda, mu_prior = np.log(self.r - self.C @ self.beta).mean(), alpha_prior = 1, beta_prior = 5e-2)
 		return lnp.fit()
 
 	# statsmodels NB BFGS optimizer is more stable than NR so we will use it until migration to LNP
@@ -185,14 +189,13 @@ class AllelicCluster:
 
 		# cache miss; compute values
 		#lnp = CovLNP_NR(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu)
-		lnp = CovLNP_NR_prior(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu, mu_prior = 0, lamda = self.lamda, alpha_prior = self.alpha_prior, beta_prior = self.beta_prior)
+		lnp = CovLNP_NR_prior(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu, mu_prior = 0, lamda = self.lamda, alpha_prior = self.alpha_prior, beta_prior = self.beta_prior, init_prior = True)
 		
 		try:	
 			res =  lnp.fit(ret_hess=ret_hess)
 		except:
 			# try adding some jitter
 			try:
-				#lnp = CovLNP_NR(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu + 1e-5)
 				lnp = CovLNP_NR_prior(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu, mu_prior = 0, lamda = self.lamda, alpha_prior = self.alpha_prior, beta_prior = self.beta_prior, extra_roots=True)
 				res =  lnp.fit(ret_hess=ret_hess)
 			except:
@@ -567,8 +570,6 @@ class AllelicCluster:
 		ind = self.get_seg_ind(seg)
 
 		split_indices, log_split_MLs, all_mus, all_lepsis = self._get_split_liks(ind, debug=debug)
-		## penalize splitting to replace prior
-		log_split_MLs -= 10
 		_, _, log_join_ML = self._log_ML_join(ind)
 
 		log_MLs = np.r_[log_split_MLs, log_join_ML]
@@ -629,7 +630,6 @@ class AllelicCluster:
 
 		lls_split, _, _, Hs = self._calculate_splits(ind, [seg_r])
 		log_split_ML = lls_split[0] + self._get_log_ML_gaussint_split(Hs[0][0], Hs[0][1])
-		log_split_ML -= 10 # penalize splitting without prior
 		mu_share, lepsi_share, log_join_ML = self._log_ML_join(ind)
 
 		log_MLs = np.r_[log_split_ML, log_join_ML]
