@@ -72,6 +72,7 @@ bad_idx = (F["chr_start_lift"] != F["chr"]) | \
 #
 # GC content {{{
 
+## precompute GC content {{{
 # note: this is obsolete; GC content is now computed on the fly
 
 B = pd.read_csv("/mnt/j/proj/cnv/20210326_coverage_collector/targets.bed", sep = "\t", header = None, names = ["chr", "start", "end"])
@@ -85,6 +86,127 @@ for (i, chrm, start, end, _) in B.itertuples():
     B.iat[i, -1] = F[chrm - 1][(start - 1):end].gc
 
 B.to_pickle("covars/GC.pickle")
+
+# }}}
+
+# Terry Speed GC content estimator {{{
+
+import hapaseg.run_coverage_MCMC
+
+# load coverage
+
+args = lambda : None
+args.coverage_csv = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/coverage_cat.bed" 
+args.allelic_clusters_object  = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/allelic_DP_SNP_clusts_and_phase_assignments.npz" 
+args.SNPs_pickle  = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/all_SNPs.pickle"
+args.segmentations_pickle = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/segmentations.pickle"
+args.repl_pickle = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/GSE137764_H1.hg19_liftover.pickle"
+args.faire_pickle  = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/FAIRE_GM12878.hg19.pickle"
+args.ref_fasta = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/Homo_sapiens_assembly19.fasta"
+args.bin_width = 2000
+
+cov_mcmc_runner = hapaseg.run_coverage_MCMC.CoverageMCMCRunner(
+  args.coverage_csv,
+  args.allelic_clusters_object,
+  args.SNPs_pickle,
+  args.segmentations_pickle,
+  f_repl=args.repl_pickle,
+  f_faire=args.faire_pickle,
+ # ref_fasta = "/mnt/j/db/hg38/ref/hg38.analysisSet.fa", # ALCH
+  ref_fasta = args.ref_fasta, #"/mnt/j/db/hg19/ref/hs37d5.fa", # Richter's
+  bin_width = args.bin_width
+)
+C = cov_mcmc_runner.full_cov_df
+
+# bin intervals by GC content
+C["GC_bin"] = np.round(C["C_GC"]*1000).astype(int)
+C["num_frags_corr"] = C["covcorr"]/C["C_frag_len"].mean()
+
+N_gc = C.groupby("GC_bin").size()
+F_gc = C.groupby("GC_bin")["num_frags_corr"].sum()
+
+plt.figure(1); plt.clf()
+plt.scatter(N_gc.index, F_gc/N_gc, marker = '.', s = 1)
+
+cov_df = pd.read_pickle("/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--15-35-16_040rmzi_pid3cty_0w3oyu5xxnfwe/jobs/0/workspace/cov_df.pickle")
+cov_df = cov_df.merge(C[["start_g", "C_GC"]], left_on = "start_g", right_on = "start_g")
+
+cov_df["GC_bin"] = np.round(cov_df["C_GC"]*1000).astype(int)
+cov_df["num_frags_corr"] = cov_df["covcorr"]/cov_df["C_frag_len"].mean()
+
+N_gc = cov_df.groupby("GC_bin").size()
+F_gc = cov_df.groupby("GC_bin")["num_frags_corr"].sum()
+
+cov_df = cov_df.merge((F_gc/N_gc).rename("C_GC_f"), left_on = cov_df["GC_bin"], right_index = True)
+
+import loess
+_, y_l, _ = loess_1d.loess_1d(np.r_[N_gc.index], np.r_[F_gc/N_gc])
+
+plt.figure(2); plt.clf()
+plt.scatter(N_gc.index, F_gc/N_gc, marker = '.', s = 1)
+#plt.plot(N_gc.index, y_l)
+r = np.linspace(0, 1000, 1000)
+v = np.polyfit(np.r_[N_gc.index]/1000, F_gc/N_gc, 2)
+plt.plot(r, v[::-1]@(r**np.c_[0:3]))
+plt.ylim([0, 500])
+
+from capy import plots
+
+plt.figure(3); plt.clf()
+plots.pixplot(cov_df["C_GC_f"], cov_df["num_frags_corr"], alpha = 0.11)
+plots.pixplot(v[::-1]@(cov_df["C_GC"].values**np.c_[0:3]), cov_df["num_frags_corr"], alpha = 0.11)
+
+gc_g = []
+N_gc_g = []
+F_gc_g = []
+plt.figure(4); plt.clf()
+for _, cidx in cov_df.groupby("allelic_cluster").indices.items():
+    N_gc = cov_df.iloc[cidx].groupby("GC_bin").size()
+    F_gc = cov_df.iloc[cidx].groupby("GC_bin")["num_frags_corr"].sum()
+    lplt = plt.scatter(N_gc.index, (F_gc/N_gc)/F_gc.sum(), marker = '.', s = 1)
+
+    v = np.polyfit(N_gc.index, F_gc/N_gc, 2)
+    rng = np.linspace(0, 1000, 200)
+    plt.plot(rng, v[::-1]@(rng**np.c_[0:3]), color = lplt.get_edgecolor())
+
+    gc_g.extend(N_gc.index)
+    N_gc_g.extend(N_gc)
+    F_gc_g.extend(F_gc)
+
+N_gc_g = np.r_[N_gc_g]
+F_gc_g = np.r_[F_gc_g]
+gc_g = np.r_[gc_g]
+
+v = np.polyfit(gc_g, F_gc_g/N_gc_g, 2)
+plt.plot(r, v[::-1]@(r**np.c_[0:3]))
+_, y_l, _ = loess_1d.loess_1d(gc_g, F_gc_g/N_gc_g, xnew = r, degree = 2)
+plt.plot(r, y_l)
+
+plt.figure(3); plt.clf()
+_, y_l, _ = loess_1d.loess_1d(gc_g/1000, F_gc_g/N_gc_g, xnew = cov_df["C_GC"], degree = 2)
+plots.pixplot(cov_df["C_GC_f"], cov_df["num_frags_corr"], alpha = 0.11)
+
+## simulate quadratic relationship
+seg_sim = np.r_[np.ones([500, 1]), 1.5*np.ones([500, 1])].T
+gc_sim = np.random.rand(1000)*0.6 + 0.2
+rng = np.linspace(0, 1, 100)
+x = stats.poisson.rvs(np.exp(-30*(gc_sim - 0.5)**2 + 5*seg_sim))[:, None]
+C = np.c_[gc_sim**2, gc_sim]
+
+import hapaseg.model_optimizers
+PR = hapaseg.model_optimizers.PoissonRegression
+
+Pi = np.r_[np.tile([1, 0], [500, 1]), np.tile([0, 1], [500, 1])]
+pois_regr = PR(x, C, Pi)
+pois_regr.fit()
+pois_regr2 = PR(x, C[:, [1]], Pi)
+pois_regr2.fit()
+plt.figure(2); plt.clf()
+plt.scatter(x, np.exp(Pi@pois_regr.mu + C@pois_regr.beta), marker = '.', s = 1)
+plt.scatter(x, np.exp(Pi@pois_regr2.mu + C[:, [1]]@pois_regr2.beta), marker = '.', s = 1)
+
+
+# }}}
 
 # }}}
 
