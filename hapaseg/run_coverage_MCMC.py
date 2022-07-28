@@ -166,11 +166,9 @@ class CoverageMCMCRunner:
         else:
             print("Computing GC content", file = sys.stderr)
             self.generate_GC()
-        
-        # give bins with 0 GC content a single count so that we can take the log
-        self.full_cov_df.loc[self.full_cov_df['C_GC'] == 0, 'C_GC'] = 1 / np.exp(self.full_cov_df.loc[self.full_cov_df['C_GC'] == 0, 'C_log_len'])
-        # take log z-transform
-        self.full_cov_df["C_GC_z"] = zt(np.log(self.full_cov_df["C_GC"] + 1e-4))
+
+        # GC content follows a roughly quadratic relationship with coverage
+        self.full_cov_df["C_GC2"] = self.full_cov_df["C_GC"]**2
 
         ## FAIRE
         if self.f_faire is not None:
@@ -288,11 +286,12 @@ class CoverageMCMCRunner:
         Pi = Cov_clust_probs_overlap
         Cov_overlap.loc[:, 'allelic_cluster'] = np.argmax(Pi, axis=1)
        
+        ## making regressor vector/covariate matrix
         r = np.c_[Cov_overlap["covcorr"]]
         
-        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$|^C_log_len$")])
+        # covariate matrix; use all z-transformed covariates + non-scaled GC content+GC^2 + target length (if running on exomes)
+        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z|^C_GC|^C_log_len$")])
 
-        ## making covariate matrix
         C = np.c_[Cov_overlap[covar_columns]]
 
         ## dropping Nans
