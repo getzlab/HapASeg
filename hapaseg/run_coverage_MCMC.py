@@ -122,16 +122,16 @@ class CoverageMCMCRunner:
         self.full_cov_df["C_frag_len_z"] = zt(np.log(self.full_cov_df["C_frag_len"]))
 
         # generate on 5x and 11x scales
-#        swv = np.lib.stride_tricks.sliding_window_view
-#        fl = self.full_cov_df["C_frag_len"].values; fl[np.isnan(fl)] = 0
-#        wt = self.full_cov_df["num_reads"].values
-#        for scale in [5, 11]:
-#            fl_sw = swv(np.pad(fl, scale//2), scale)
-#            wt_sw = swv(np.pad(wt, scale//2), scale)
-#            conv = np.einsum('ij,ij->i', wt_sw, fl_sw)
-#
-#            self.full_cov_df[f"C_frag_len_{scale}x"] = conv/wt_sw.sum(1)
-#            self.full_cov_df[f"C_frag_len_{scale}x_z"] = zt(self.full_cov_df[f"C_frag_len_{scale}x"])
+        swv = np.lib.stride_tricks.sliding_window_view
+        fl = self.full_cov_df["C_frag_len"].values; fl[np.isnan(fl)] = 0
+        wt = self.full_cov_df["num_frags"].values
+        for scale in [5, 11]:
+            fl_sw = swv(np.pad(fl, scale//2), scale)
+            wt_sw = swv(np.pad(wt, scale//2), scale)
+            conv = np.einsum('ij,ij->i', wt_sw, fl_sw)
+
+            self.full_cov_df[f"C_frag_len_{scale}x"] = conv/wt_sw.sum(1)
+            self.full_cov_df[f"C_frag_len_{scale}x_z"] = zt(np.log(self.full_cov_df[f"C_frag_len_{scale}x"]))
 
         ### track-based covariates
         # use midpoint of coverage bins to map to intervals
