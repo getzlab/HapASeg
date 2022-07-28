@@ -535,7 +535,7 @@ def main():
         
         #for frag normalization
         cov_df['old_covcorr'] = cov_df.covcorr
-        cov_df.covcorr = cov_df.covcorr / cov_df.C_frag_len
+        cov_df.covcorr = cov_df.covcorr/(cov_df["C_frag_len"].mean())
         r = cov_df.covcorr.values[:, None]        
 
         # indices of coverage bins 
