@@ -57,6 +57,7 @@ class PoissonRegression:
 
 hr, hw = ss.roots_legendre(25)
 hr_extra, hw_extra = ss.roots_legendre(2500)
+hr_herm, hw_herm = ss.roots_hermitenorm(4000)
 
 class CovLNP_NR:
     def __init__(self, x, beta, C, exposure=np.array([[0]]), extra_roots=False):
@@ -289,7 +290,7 @@ def covLNP_ll(x, mu, lgsigma, C, beta, exposure=np.array([[0]])):
 
 # with prior
 class CovLNP_NR_prior:
-    def __init__(self, x, beta, C, exposure=np.array([[0]]), extra_roots=False, *, mu_prior, lamda, alpha_prior, beta_prior):
+    def __init__(self, x, beta, C, exposure=np.array([[0]]), extra_roots=False, init_prior=False, *, mu_prior, lamda, alpha_prior, beta_prior):
         """
         find posterior predictive over MCMC chains
         """
@@ -310,9 +311,11 @@ class CovLNP_NR_prior:
         
         #make empirical estimates about mu and sigma
         self.mu = (np.log(x) - self.bce).mean()
-        #self.lgsigma = np.log((np.log(x) - self.bce).std())
+        if init_prior:
+                self.lgsigma = np.log((np.log(x) - self.bce).std())
+        else:
         # use sigma prior as starting point
-        self.lgsigma = np.log(beta_prior / (alpha_prior + 1 + 0.5)) / 2
+                self.lgsigma = np.log(beta_prior / (alpha_prior + 1 + 0.5)) / 2
         self.sigma = np.exp(self.lgsigma)
 
     def integral(self, x):
@@ -406,7 +409,7 @@ class CovLNP_NR_prior:
         S_real_msk = S_real_msk * 2 - 1
         S = (m_S + np.log(S_real*S_real_msk))
         
-        gradsigma = (S_real_msk * np.exp(S - B)).sum() - (2*self.alpha_prior + 3) / self.sigma + (2 * self.beta_prior + self.lamda * (self.mu - self.mu_prior)**2) / self.sigma**3
+        gradsigma = (S_real_msk * np.exp(S - B)).sum() - (2*self.alpha_prior + 3) + (2*self.beta_prior + self.lamda * (self.mu -self.mu_prior)**2) / self.sigma**2        
     
         ## hess mu mu
         # I_A term here techinically has a leading negative but we only use its square
@@ -443,7 +446,7 @@ class CovLNP_NR_prior:
         partial_A2 = (m_partial_A2 + np.log(partial_A2_real * partial_A2_real_msk))
         
         # the leading negative in I_A is reflected in the addtion of the second term
-        hess_mu_sigma = (partial_A2_real_msk * np.exp(partial_A2 - B) + S_real_msk * np.exp(A + S - 2*B)).sum() + 2 * self.lamda * (self.mu - self.mu_prior) / self.sigma**3
+        hess_mu_sigma = (partial_A2_real_msk * np.exp(partial_A2 - B) + S_real_msk * np.exp(A + S - 2*B)).sum() + 2 * self.lamda * (self.mu - self.mu_prior) / self.sigma**2
         
         ## hess sigma_sigma
 
@@ -460,7 +463,7 @@ class CovLNP_NR_prior:
         partial_S = (m_partial_S + np.log(partial_S_real * partial_S_real_msk))
 
         #dont need to correct S sign since we square it
-        hess_sigma_sigma = (partial_S_real_msk * np.exp(partial_S - B) - np.exp(2 * S - 2 * B)).sum() + (2 * self.alpha_prior + 3) / self.sigma**2 - 3 * (2 * self.beta_prior + self.lamda * (self.mu - self.mu_prior)**2) / self.sigma**4
+        hess_sigma_sigma = (partial_S_real_msk * np.exp(partial_S - B) - np.exp(2 * S - 2 * B)).sum() - 2 * (2 * self.beta_prior + self.lamda * (self.mu - self.mu_prior)**2) / self.sigma**2
         
         grad = np.array([gradmu, gradsigma])
         hess = np.array([[hess_mu_mu, hess_mu_sigma],
@@ -469,7 +472,7 @@ class CovLNP_NR_prior:
     
     def fit(self, ret_hess = False, debug=False, extra_roots=False):
         radius_mult = 500 if extra_roots else 6
-        for it in range(200):
+        for it in range(100):
             if debug: print(self.mu, self.lgsigma)
             x = self.x
             interval_center = np.exp(self.lgsigma) * x - np.exp(-self.lgsigma) * ss.wrightomega(self.mu + self.bce + 2 * self.lgsigma + np.exp(2*self.lgsigma) * x).real
@@ -492,7 +495,7 @@ class CovLNP_NR_prior:
             self.mu -= delta[0]
             self.lgsigma -= delta[1]
             if debug: print('grad_norm:', np.linalg.norm(grad))
-            if np.linalg.norm(grad) < 1e-5:
+            if np.linalg.norm(grad) < 5e-5:
                 if it > 100: print('took {} iterations'.format(it))
                 if ret_hess: return self.mu, self.lgsigma, hess
                 return self.mu, self.lgsigma
@@ -523,4 +526,174 @@ def covLNP_ll_prior(x, mu, lgsigma, C, beta, exposure=np.array([[0]]), *, mu_pri
 
     Int =  m + np.log((b-a)/2 * np.exp(I - m)@h_weights)
     sigma = np.exp(lgsigma)
-    return (-ss.loggamma(x + 1) - np.log(2*np.pi)/2 + x*(bce + mu) + Int).sum() + np.log(lamda) / 2 - lgsigma + np.log(np.sqrt(2 * np.pi)) + alpha_prior * np.log(beta_prior) - ss.loggamma(alpha_prior) - (alpha_prior +1) * 2 * lgsigma - (2 * beta_prior + lamda * (mu - mu_prior)**2) / (2 * np.exp(lgsigma) **2)
+    return (-ss.loggamma(x + 1) - np.log(2*np.pi)/2 + x*(bce + mu) + Int).sum() + np.log(lamda) / 2 - (lgsigma + np.log(np.sqrt(2 * np.pi))) + alpha_prior * np.log(beta_prior) - ss.loggamma(alpha_prior) - (alpha_prior +1) * 2 * lgsigma - (2 * beta_prior + lamda * (mu - mu_prior)**2) / (2 * np.exp(lgsigma) **2)
+
+# hermite with prior
+class CovLNP_NR_prior_herm:
+    def __init__(self, x, beta, C, exposure=np.array([[0]]), *, mu_prior, lamda, alpha_prior, beta_prior):
+        """
+        find posterior predictive over MCMC chains
+        """
+        # legrende roots/weights for quadrature
+        self.x =x
+        self.beta = beta
+        self.bce = C@beta + exposure
+        
+        self.mu_prior = mu_prior
+        self.lamda = lamda
+        self.alpha_prior = alpha_prior
+        self.beta_prior = beta_prior
+        
+        self.hr, self.hw = hr_herm, hw_herm
+        
+        #make empirical estimates about mu and sigma
+        self.mu = (np.log(x) - self.bce).mean()
+        #self.lgsigma = np.log((np.log(x) - self.bce).std())
+        # use sigma prior as starting point
+        self.lgsigma = np.log(beta_prior / (alpha_prior + 1 + 0.5)) / 2
+        self.sigma = np.exp(self.lgsigma)
+
+    def integral(self, x):
+        """ Approximate marginalizing out latent parameter via Hermite quadrature.
+            Assumes x is n x 1, c is n x n_c
+        """
+        I = self.hs*x - np.exp(self.bce)*self.hs_m_exp - self.h_roots**2 / 2
+        m = np.max(I, 1, keepdims = True)
+
+        return  m + np.log((self.b-self.a)/2 * np.exp(I - m)@self.h_weights)
+        
+    def lnp_logprob(self, x):
+        """
+        Compute LNP log PMF 
+         x : counts
+         c : covariate vector
+         e : log exposures
+        """
+
+        return -ss.loggamma(x + 1) - np.log(2*np.pi)/2 + x * (self.bce + self.mu) + self.integral(x) + np.log(self.lamda) / 2 - self.lgsigma + np.log(np.sqrt(2 * np.pi)) + self.alpha_prior * np.log(self.beta_prior) - ss.loggamma(self.alpha_prior) - (self.alpha_prior +1) * 2 * self.lgsigma - (2 * self.beta_prior + self.lamda * (self.mu - self.mu_prior)**2) / (2 * np.exp(self.lgsigma) **2)
+    
+    def gradhess(self):
+        self.sigma = np.exp(self.lgsigma)
+        x = self.x
+        ## grad mu
+        E = np.exp(self.bce)*self.hs_m_exp
+        I_B = self.hs * x - E
+        I_A = self.hs_m + self.bce + I_B
+        
+        m = np.max(I_B, 1, keepdims = True) 
+        m_A = np.max(I_A, 1, keepdims = True)
+        
+        A = (m_A + np.log(np.exp(I_A - m_A)@self.h_weights))
+        B = (m + np.log(np.exp(I_B - m)@self.h_weights))
+        
+        gradmu = (x - np.exp(A - B)).sum() - self.lamda * (self.mu - self.mu_prior) / self.sigma**2
+    
+        ## grad sigma 
+        S_coef = self.hs * (x - E)
+        # these coefficients can be negative so we save their sign and make positive
+        S_coef_msk =  S_coef > 0
+        S_coef_msk = (S_coef_msk * 2 - 1)
+        I_S = np.log(S_coef * S_coef_msk) + I_B
+        
+        m_S = np.max(I_S, 1, keepdims = True)
+        
+        # we apply the sign correction to get the real, normalized results, but we still
+        # need to multiply by the scale factor that we removed
+        
+        S_real = (np.exp(I_S - m_S)*S_coef_msk)@self.h_weights
+        
+        # to add back the log term we need to save the signs again
+        S_real_msk = S_real > 0
+        S_real_msk = S_real_msk * 2 - 1
+        S = (m_S + np.log(S_real*S_real_msk))
+        
+        gradsigma = (S_real_msk * np.exp(S - B)).sum() - (2*self.alpha_prior + 3) + (2*self.beta_prior + self.lamda * (self.mu -self.mu_prior)**2) / self.sigma**2        
+ 
+        ## hess mu mu
+        # I_A term here techinically has a leading negative but we only use its square
+        
+        partial_A_coef = E - 1
+        partial_A_coef_msk =  partial_A_coef > 0
+        partial_A_coef_msk = (partial_A_coef_msk * 2 - 1)
+        
+        I_partial_A = np.log(partial_A_coef * partial_A_coef_msk) + self.hs_m + self.bce + I_B
+        
+        m_partial_A = np.max(I_partial_A, 1, keepdims = True)
+        
+        partial_A_real = (np.exp(I_partial_A - m_partial_A)*partial_A_coef_msk)@self.h_weights
+        partial_A_real_msk = partial_A_real > 0
+        partial_A_real_msk = (partial_A_real_msk * 2 - 1)
+        partial_A = (m_partial_A + np.log(partial_A_real * partial_A_real_msk))
+        
+        hess_mu_mu = (partial_A_real_msk * np.exp(partial_A - B) - np.exp(2 * A - 2 * B)).sum() - self.lamda / self.sigma**2
+        
+        ## hess mu sigma       
+        # I_A term is negative here, but we reflect that in the final division
+
+        partial_A2_coef = - self.hs * E * (1 + x - E)
+        partial_A2_coef_msk =  partial_A2_coef > 0
+        partial_A2_coef_msk = (partial_A2_coef_msk * 2 - 1)
+
+        I_partial_A2 = np.log(partial_A2_coef * partial_A2_coef_msk) + I_B
+
+        m_partial_A2 = np.max(I_partial_A2, 1, keepdims = True)
+
+        partial_A2_real = (np.exp(I_partial_A2 - m_partial_A2)*partial_A2_coef_msk)@self.h_weights
+        partial_A2_real_msk = partial_A2_real > 0
+        partial_A2_real_msk = (partial_A2_real_msk * 2 - 1)
+        partial_A2 = (m_partial_A2 + np.log(partial_A2_real * partial_A2_real_msk))
+        
+        # the leading negative in I_A is reflected in the addtion of the second term
+        hess_mu_sigma = (partial_A2_real_msk * np.exp(partial_A2 - B) + S_real_msk * np.exp(A + S - 2*B)).sum() + 2 * self.lamda * (self.mu - self.mu_prior) / self.sigma**2
+        
+        ## hess sigma_sigma
+
+        partial_S_coef = self.hs * (x + x * self.hs * (x - E) - E - self.hs * E - self.hs * E * (x - E))
+        partial_S_coef_msk =  partial_S_coef > 0
+        partial_S_coef_msk = (partial_S_coef_msk * 2 - 1)
+        I_partial_S = np.log(partial_S_coef * partial_S_coef_msk) + I_B
+
+        m_partial_S = np.max(I_partial_S, 1, keepdims = True)
+
+        partial_S_real = (np.exp(I_partial_S - m_partial_S)*partial_S_coef_msk)@self.h_weights
+        partial_S_real_msk = partial_S_real > 0
+        partial_S_real_msk = (partial_S_real_msk * 2 - 1)
+        partial_S = (m_partial_S + np.log(partial_S_real * partial_S_real_msk))
+
+        #dont need to correct S sign since we square it
+        hess_sigma_sigma = (partial_S_real_msk * np.exp(partial_S - B) - np.exp(2 * S - 2 * B)).sum() - 2 * (2 * self.beta_prior + self.lamda * (self.mu - self.mu_prior)**2) / self.sigma**2
+        
+        grad = np.array([gradmu, gradsigma])
+        hess = np.array([[hess_mu_mu, hess_mu_sigma],
+                        [hess_mu_sigma, hess_sigma_sigma]])
+        return grad, hess
+    
+    def fit(self, ret_hess = False, debug=False, extra_roots=False):
+        radius_mult = 500 if extra_roots else 6
+        max_its = 50 if extra_roots else 200
+        for it in range(max_its):
+            if debug: print(self.mu, self.lgsigma)
+            x = self.x
+            self.h_roots = self.hr[None] 
+            self.h_weights = np.c_[self.hw]
+            # cache intermediate values
+            self.hs = self.h_roots*(np.exp(self.lgsigma))
+            self.hs_m = self.hs + self.mu
+            self.hs_m_exp = np.exp(self.hs + self.mu)
+            
+            grad, hess = self.gradhess()
+            if debug: print('grad:', grad)
+            if debug: print('hess:', hess)
+            delta = np.linalg.inv(hess) @ grad
+            self.mu -= delta[0]
+            self.lgsigma -= delta[1]
+            if debug: print('grad_norm:', np.linalg.norm(grad))
+            if np.linalg.norm(grad) < 5e-5:
+                print(it)
+                if it > 100: print('took {} iterations'.format(it))
+                if ret_hess: return self.mu, self.lgsigma, hess
+                return self.mu, self.lgsigma
+        print('did not converge!')
+        raise ValueError("DNC")
+        if ret_hess: return None, None, None
+        return None, None
