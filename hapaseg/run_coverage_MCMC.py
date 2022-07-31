@@ -318,8 +318,8 @@ class CoverageMCMCRunner:
         Pi = Pi[:, Pi.sum(0) > 0]
  
         ## remove covariate outliers (+- 6 sigma)
-        z_norm_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")])
-        covar_outlier_idx = (Cov_overlap.loc[:, z_norm_columns].abs() < 6).all(axis = 1)
+        z_norm_columns = Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")]
+        covar_outlier_idx = (Cov_overlap.loc[:, z_norm_columns].abs() < 6).all(axis = 1) # XXX: all() -> any() ?
         Cov_overlap = Cov_overlap.loc[covar_outlier_idx]
         Pi = Pi[covar_outlier_idx, :]
         r = r[covar_outlier_idx]
