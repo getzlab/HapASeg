@@ -298,9 +298,6 @@ class CoverageMCMCRunner:
 #            Cov_clust_probs_overlap = Cov_clust_probs_overlap[downsample_mask]
 #            Cov_overlap = Cov_overlap.iloc[downsample_mask]
     
-        Pi = Cov_clust_probs_overlap
-        Cov_overlap.loc[:, 'allelic_cluster'] = np.argmax(Pi, axis=1)
-       
         ## making regressor vector/covariate matrix
 
         # scale coverage in units of fragments, rather than bases in order to correctly model Poisson noise
@@ -308,7 +305,8 @@ class CoverageMCMCRunner:
             Cov_overlap["fragcorr"] = np.round(Cov_overlap["covcorr"]/Cov_overlap["C_frag_len"].mean())
         r = np.c_[Cov_overlap["fragcorr"]]
 
-        r = np.c_[Cov_overlap["covcorr"]] # regressor vector
+        # intercept matrix (one intercept per allelic segment)
+        Pi = Cov_clust_probs_overlap
 
         # covariate matrix; use all z-transformed covariates + non-scaled GC content+GC^2 + target length (if running on exomes)
         covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z|^C_GC|^C_log_len$")])
