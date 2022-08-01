@@ -313,6 +313,10 @@ class CoverageMCMCRunner:
 
         C = np.c_[Cov_overlap[covar_columns]]
 
+        ### filtering
+
+        ## TODO: do all this filtering on the dataframe, before we build the vectors
+
         ## dropping Nans
         naidx = np.isnan(C).any(axis=1)
         # drop zero coverage bins as well (this is to account for a bug in coverage collector) TODO: remove need for this
