@@ -83,6 +83,9 @@ class CoverageMCMCRunner:
         Cov["start_g"] = seq.chrpos2gpos(Cov["chr"], Cov["start"], ref = self.ref_fasta)
         Cov["end_g"] = seq.chrpos2gpos(Cov["chr"], Cov["end"], ref = self.ref_fasta)
         
+        # filter bins with no reads
+        Cov = Cov.loc[(Cov['tot_reads'] > 0) & (Cov['num_frags'] > 0)]
+        
         return Cov
 
     def load_SNPs(self, f_snps):
@@ -248,6 +251,14 @@ class CoverageMCMCRunner:
                 self.full_cov_df.at[targ, "seg_idx"] = np.bincount(seg_idx).argmax()
                 self.full_cov_df.at[targ, "allelic_cluster"] = np.bincount(clust_idx).argmax()
 
+# TODO: add this check back outside of the loop
+#                # check to see if all of the snps in the bin agree on the cluster
+#                if (clust_idx == clust_idx[0]).all():
+#                    # if so then we can unambiguously assign to that cluster
+#                    Cov_clust_probs[int(targ), clust_idx] = 1.0
+#                    self.full_cov_df.at[int(targ), "seg_idx"] = seg_idx[0]
+#                # otherwise we toss this bin by giving it no assignment
+        
         ## expand coverage bins to within 2 targets on same chr & segment within max_dist of SNP
         expand = False 
         if expand:

@@ -127,6 +127,10 @@ def workflow(
     bin_width = target_list if isinstance(target_list, int) else 1
     wgs = True if bin_width > 1 else False
     
+    #testing alt counting
+    print('warning:setting bin width to one')
+    bin_width = 1 
+    
     # Select config based on ref genome choice
     if ref_genome_build is None:
         raise ValueError("Reference genome must be specified! Options are 'hg19' or hg38'")

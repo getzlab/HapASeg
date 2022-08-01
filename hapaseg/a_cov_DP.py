@@ -116,11 +116,17 @@ def generate_acdp_df(SNP_path, # path to SNP df
 
         # add dp cluster annotations
         a_cov_seg_df['cov_DP_cluster'] = -1
-
-        segs_to_clusts = dp_data[1]
-        for seg in range(len(segs_to_clusts)):
-            a_cov_seg_df.loc[a_cov_seg_df['segment_ID'] == seg, 'cov_DP_cluster'] = segs_to_clusts[seg]
         
+        if cov_df_path is None:
+        # use the segs to clusts data
+            segs_to_clusts = dp_data[1]
+            for seg in range(len(segs_to_clusts)):
+                a_cov_seg_df.loc[a_cov_seg_df['segment_ID'] == seg, 'cov_DP_cluster'] = segs_to_clusts[seg]
+        
+        else:
+            # each segment becomes its own DP cluster
+            a_cov_seg_df['cov_DP_cluster'] = a_cov_seg_df['segment_ID']
+
         # remove segments that were blacklisted in this draw
         a_cov_seg_df = a_cov_seg_df.loc[a_cov_seg_df['cov_DP_cluster'] != -1]
 
@@ -143,7 +149,10 @@ def generate_acdp_df(SNP_path, # path to SNP df
                 (a_cov_seg_df.cov_DP_cluster == cdp) & (a_cov_seg_df.allelic_cluster == adp), 'cov_DP_mu'] = mu
             #H = sNB.hessian(res.params)
             # variance of the mu posterior is taken as the inverse of the hessian component for mu
-            mu_sigma = np.linalg.inv(-res[2])[0, 0]
+            sigma_hinv = np.linalg.inv(res[2])[1,1]
+            
+            #try propogating through sigma with proper change of variable
+            mu_sigma = np.exp(res[1] - sigma_hinv**2)
             a_cov_seg_df.loc[(a_cov_seg_df.cov_DP_cluster == cdp) & (
                         a_cov_seg_df.allelic_cluster == adp), 'cov_DP_sigma'] = mu_sigma
 
@@ -206,7 +215,7 @@ class AllelicCoverage_DP:
         self.loggamma_alpha_0 =0
         self.log_beta_0 = 0
         self.half_log2pi = np.log(2*np.pi) / 2
-        
+        self.seg_count_norm = 1 
 
         self._init_segments()
         self._init_clusters()
@@ -249,12 +258,23 @@ class AllelicCoverage_DP:
             else:
                 a = major
                 b = minor
-            r = np.array(np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=group_len)) * s.beta.rvs(a, b, size=group_len))
+            # lin scale
+            #r = np.array(np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=group_len)) * s.beta.rvs(a, b, size=group_len))
+            #logscale
             #r = np.array(s.norm.rvs(mu, np.sqrt(sigma), size=group_len) + np.log(s.beta.rvs(a, b, size=group_len)))
-
-            V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a, b, size=10000)).var()
-            #V = (s.norm.rvs(mu, np.sqrt(sigma), size=10000) + np.log(s.beta.rvs(a, b, size=10000))).var()
-
+            # experiment 1
+            #r = np.array(np.exp(s.norm.rvs(mu + np.log( s.beta.rvs(a, b, size=group_len)), np.sqrt(sigma), size=group_len)))
+            # lnp
+            r = np.array(s.poisson.rvs(np.exp(s.norm.rvs(mu, sigma, size=group_len)) * s.beta.rvs(a, b, size=group_len)))
+                
+            # linscale
+            # V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a, b, size=10000)).var()
+            # logscale
+            # V = (s.norm.rvs(mu, np.sqrt(sigma), size=10000) + np.log(s.beta.rvs(a, b, size=10000))).var()
+            # experiment 1
+            #V = (np.exp(s.norm.rvs(mu + np.log(s.beta.rvs(a, b, size=10000)), np.sqrt(sigma), size=10000))).var()
+            #lnp
+            V = (np.array(s.poisson.rvs(np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a, b, size=10000)))).var()
             # blacklist segments with very high variance
             #if np.sqrt(V) > 15:
             #    self.greylist_segments.add(ID)
@@ -278,6 +298,8 @@ class AllelicCoverage_DP:
         for i in set(range(self.num_segments)) - self.greylist_segments:
             if self.segment_V_list[i] > cutoff:
                 self.greylist_segments.add(i)
+
+        self.seg_count_norm = self.segment_counts.mean() / 25
 
     def _init_clusters(self):
         [self.unassigned_segs.discard(s) for s in self.greylist_segments]
@@ -429,6 +451,8 @@ class AllelicCoverage_DP:
     def DP_merge_prior(self, cur_cluster):
         cur_index = self.cluster_counts.index(cur_cluster)
         cluster_vals = np.array(self.cluster_counts.values())
+        ##normalize cluster counts
+        cluster_vals = cluster_vals / self.seg_count_norm
         N = cluster_vals.sum()
         M = cluster_vals[cur_index]
         prior_results = np.zeros(len(cluster_vals))
@@ -452,7 +476,10 @@ class AllelicCoverage_DP:
             # if the tuple was already in a cluster
             cur_index = self.cluster_counts.index(cur_cluster)
             cluster_vals[cur_index] -= seg_size
-
+        
+        ##normalize cluster counts
+        cluster_vals = cluster_vals / self.seg_count_norm
+        
         N = cluster_vals.sum()
 
         loggamma_N_alpha = ss.loggamma(N + self.alpha)
@@ -471,6 +498,9 @@ class AllelicCoverage_DP:
     def DP_split_prior(self, split_A_segs, split_B_segs):
         n_a = self.segment_counts[split_A_segs].sum()
         n_b = self.segment_counts[split_B_segs].sum()
+        ##normalize segment_counts
+        n_a = n_a / self.seg_count_norm
+        n_b = n_b / self.seg_count_norm
         M = n_a + n_b
         split = 2 * np.log(self.alpha) + ss.gammaln(n_a) + ss.gammaln(n_b)
         stay = np.log(self.alpha) + ss.gammaln(M - 1)
@@ -523,7 +553,7 @@ class AllelicCoverage_DP:
             self.save_ML_total()
             # status update
             if not n_it % 250 and self.prior_clusters is None:
-                print("n unassigned: {}".format(len(self.unassigned_segs)))
+                print("{} iterations; num_clusters: {}; ML:{}".format(n_it, len(self.cluster_dict.keys()), self.MLDP_total_history[-1]), flush=True)
 
             # start couting for burn in
             if not n_it % 100:
@@ -534,7 +564,7 @@ class AllelicCoverage_DP:
                 # burn in after n_seg / n_clust iteration
                 if not burned_in and all_assigned and n_it - n_it_last > max(2000, self.num_segments):
                     if np.diff(np.r_[self.MLDP_total_history[-2000:]]).mean() <= 0:
-                        print('burnin')
+                        print('burnin', flush=True)
                         burned_in = True
                         n_it_last = n_it
             
@@ -593,7 +623,8 @@ class AllelicCoverage_DP:
                     ML_rat + log_count_prior - MLs_max).sum()
 
                 if np.isnan(choice_p.sum()):
-                    print('skipping iteration {} due to nan. picked segment {}'.format(n_it, segID))
+                    print('skipping iteration {} due to nan. picked segment {}'.format(n_it, segID), flush=True)
+                    #print(np.where(np.isnan(log_count_prior)))
                     n_it += 1
                     continue
                 choice_idx = np.random.choice(
@@ -794,10 +825,10 @@ class AllelicCoverage_DP:
                         ML_rat + count_prior - MLs_max).sum()
 
                     if np.isnan(choice_p.sum()):
-                        print("skipping iteration {} due to nan".format(n_it))
-                        print(ML_rat)
-                        print(count_prior)
-                        print(choice_p)
+                        print("skipping iteration {} due to nan".format(n_it), flush=True)
+                        #print(ML_rat)
+                        #print(count_prior)
+                        #print(choice_p)
                         n_it += 1
                         continue
 

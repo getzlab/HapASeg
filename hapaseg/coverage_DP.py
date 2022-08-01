@@ -470,7 +470,7 @@ class Run_Cov_DP:
             
             # status update
             if not n_it % 250 and self.prior_clusters is None:
-                print("n unassigned: {}".format(len(self.unassigned_segs)), flush=True)
+                print("n clusters: {}".format(len(self.cluster_dict)), flush=True)
 
             # start couting for burn in
             if not n_it % 100:

@@ -339,4 +339,4 @@ class Hapaseg_run_acdp(wolf.Task):
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_op_v623"
-    resources = {"mem" : "15G"}
+    resources = { "cpus-per-task":4, "mem" : "15G"}
