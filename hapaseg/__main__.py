@@ -1,5 +1,4 @@
 import argparse
-import dask.distributed as dd
 import matplotlib.pyplot as plt
 import multiprocessing
 import numpy as np
@@ -235,31 +234,7 @@ def main():
         os.mkdir(args.output_dir + "/figures")
     output_dir = os.path.realpath(args.output_dir)
 
-    if args.command == "run":
-        dask_client = dd.Client(n_workers=int(args.n_workers))
-
-        snps = HapasegSNPs(
-            phased_VCF=args.phased_VCF,
-            readbacked_phased_VCF=args.read_backed_phased_VCF,
-            allele_counts=args.allele_counts_T,
-            allele_counts_N=args.allele_counts_N
-        )
-
-        runner = AllelicMCMCRunner(
-            snps.allele_counts,
-            snps.chromosome_intervals,
-            dask_client,
-            phase_correct=args.phase_correct
-        )
-
-        allelic_segs = runner.run_all()
-
-        # TODO: checkpoint here
-        allelic_segs.to_pickle(output_dir + "/allelic_imbalance_segments.pickle")
-
-        # TODO: save per-chromosome plots of raw allelic segmentations
-
-    elif args.command == "load_snps":
+    if args.command == "load_snps":
         # load from VCF
         snps = HapasegSNPs(
             phased_VCF=args.phased_VCF,
