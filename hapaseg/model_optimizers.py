@@ -2,31 +2,45 @@ import numpy as np
 import scipy.special as ss
 import copy
 
+## Poisson regression
+
 class PoissonRegression:
-    def __init__(self, r, C, Pi):
+    def __init__(self, r, C, Pi,
+      log_exposure = 0, log_offset = 0, intercept = True,
+      mumu = 0, musig2 = 10, betamu = None, betasiginv = None):
         self.r = r
         self.C = C
         self.Pi = Pi
+        self.log_exposure = log_exposure
+        self.log_offset = log_offset
+        self.intercept = intercept
 
-        self.mu = np.log(r.mean() * np.ones([Pi.shape[1], 1]))
-        self.beta = np.ones([C.shape[1], 1])
-        self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu)
+        self.mu = np.log(r.mean() * np.ones([Pi.shape[1], 1])) - self.log_exposure
+        self.beta = np.zeros([C.shape[1], 1])
+        self.f = 1
+        self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu + self.log_exposure + self.log_offset)
+
+        # prior parameters
+        self.mumu = mumu
+        self.musig2 = musig2
+        self.betamu = np.zeros_like(self.beta) if betamu is None else betamu
+        self.betasiginv = 1/np.sqrt(10)*np.eye(len(self.beta)) if betasiginv is None else betasiginv
 
     # mu gradient
     def gradmu(self):
-        return self.Pi.T @ (self.r - self.e_s)
+        return self.Pi.T @ (self.r - self.e_s) - (self.mu - self.mumu)/self.musig2
 
     # mu Hessian
     def hessmu(self):
-        return (-self.Pi.T * self.e_s.T)  @ self.Pi
+        return (-self.Pi.T * self.e_s.T)  @ self.Pi - 1/self.musig2
 
     # beta gradient
     def gradbeta(self):
-        return self.C.T @ (self.r - self.e_s)
+        return self.C.T @ (self.r - self.e_s) - self.betasiginv@(self.beta - self.betamu)
 
     # beta Hessian
     def hessbeta(self):
-        return (-self.C.T * self.e_s.T) @ self.C
+        return (-self.C.T * self.e_s.T) @ self.C - self.betasiginv
 
     # mu,beta Hessian
     def hessmubeta(self):
@@ -34,26 +48,68 @@ class PoissonRegression:
 
     def NR_poisson(self):
         for i in range(100):
-            self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu)
-            gmu = self.gradmu()
+            self.e_s = np.exp(self.C @ self.beta + self.Pi @ self.mu + self.log_exposure + self.log_offset)
             gbeta = self.gradbeta()
-            grad = np.r_[gmu, gbeta]
+            if self.intercept:
+                gmu = self.gradmu()
+                grad = np.r_[gmu, gbeta]
+            else:
+                grad = gbeta
 
-            hmu = self.hessmu()
             hbeta = self.hessbeta()
-            hmubeta = self.hessmubeta()
-            H = np.r_[np.c_[hmu, hmubeta.T], np.c_[hmubeta, hbeta]]
+            if self.intercept:
+                hmubeta = self.hessmubeta()
+                hmu = self.hessmu()
+                H = np.r_[np.c_[hmu, hmubeta.T], np.c_[hmubeta, hbeta]]
+            else:
+                H = hbeta
 
             delta = np.linalg.inv(H) @ grad
-            self.mu -= delta[0:len(self.mu)]
-            self.beta -= delta[len(self.mu):]
+            if self.intercept:
+                self.mu -= delta[0:len(self.mu)]
+                self.beta -= delta[len(self.mu):]
+            else:
+                self.beta -= delta
 
             if np.linalg.norm(grad) < 1e-5:
                 break
 
     def fit(self):
         self.NR_poisson()
-        return self.mu, self.beta
+        if self.intercept:
+            return self.mu, self.beta
+        else:
+            return self.beta
+
+    def hess(self):
+        hbeta = self.hessbeta()
+        if self.intercept:
+            hmu = self.hessmu()
+            hmubeta = self.hessmubeta()
+            return np.r_[np.c_[hmu, hmubeta.T], np.c_[hmubeta, hbeta]]
+        else:
+            return hbeta
+
+    # scale factor
+    def gradf(self):
+        return (self.C@self.beta).T@(self.r - self.e_s)
+
+    def hessf(self):
+        CB = self.C@self.beta
+        return -(CB*self.e_s).T@CB
+
+    def NR_f(self):
+        for i in range(100):
+            self.e_s = np.exp(self.f*self.C @ self.beta + self.Pi @ self.mu + self.log_exposure + self.log_offset)
+            gf = self.gradf()
+            hf = self.hessf()
+
+            self.f -= gf/hf
+
+            if np.linalg.norm(gf) < 1e-5:
+                break
+
+## LNP regression
 
 hr, hw = ss.roots_legendre(25)
 hr_extra, hw_extra = ss.roots_legendre(2500)
