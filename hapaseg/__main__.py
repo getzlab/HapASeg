@@ -532,11 +532,6 @@ def main():
         bin_mask = cov_df.seg_idx.isin(good_segs).index
         Pi, r, C = Pi[bin_mask], r[bin_mask], C[bin_mask]
         cov_df = cov_df.loc[bin_mask]
-        
-        #for frag normalization
-        cov_df['old_covcorr'] = cov_df.covcorr
-        cov_df.covcorr = cov_df.covcorr/(cov_df["C_frag_len"].mean())
-        r = cov_df.covcorr.values[:, None]        
 
         # indices of coverage bins 
         seg_g = cov_df.groupby("seg_idx")
