@@ -140,6 +140,10 @@ class CoverageMCMCRunner:
             self.full_cov_df[f"C_frag_len_{scale}x"] = conv/wt_sw.sum(1)
             self.full_cov_df[f"C_frag_len_{scale}x_z"] = zt(np.log(self.full_cov_df[f"C_frag_len_{scale}x"]))
 
+        ## Failing read fraction
+        # (not used as a covariate, but it makes sense to preprocess it here anyway)
+        self.full_cov_df["fail_reads_zt"] = zt(self.full_cov_df["fail_reads"]/self.full_cov_df["tot_reads"])
+
         ### track-based covariates
         # use midpoint of coverage bins to map to intervals
         self.full_cov_df["midpoint"] = ((self.full_cov_df["end"] + self.full_cov_df["start"])/2).astype(int)
@@ -318,6 +322,13 @@ class CoverageMCMCRunner:
         C = C[~naidx]
         Pi = Pi[~naidx]
         Cov_overlap = Cov_overlap.iloc[~naidx]
+
+        ## removing bins with low quality reads (>3 sigma)
+        lowqidx = Cov_overlap["fail_reads_zt"] > 3
+        r = r[~lowqidx]
+        C = C[~lowqidx]
+        Pi = Pi[~lowqidx]
+        Cov_overlap = Cov_overlap.loc[~lowqidx]
 
         ## removing coverage outliers
         outlier_mask = find_outliers(r)
