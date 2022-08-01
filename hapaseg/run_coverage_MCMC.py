@@ -330,8 +330,6 @@ class CoverageMCMCRunner:
 
         ## dropping Nans
         naidx = np.isnan(C).any(axis=1)
-        # drop zero coverage bins as well (this is to account for a bug in coverage collector) TODO: remove need for this
-        naidx = np.logical_or(naidx, (r==0).flatten())
         r = r[~naidx]
         C = C[~naidx]
         Pi = Pi[~naidx]
