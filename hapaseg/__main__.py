@@ -525,18 +525,9 @@ def main():
                                              allelic_sample=args.allelic_sample,
                                              bin_width=args.bin_width)
         Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
-        
-        # to prepare to do coverage segmentation by ADP segment we must remove
-        # segments with <3 bins since we need 3 to fit a reliable model
-        seg_g = cov_df.groupby("seg_idx")
-        seg_counts = seg_g.count().iloc[:,0]
-        good_segs = seg_counts.loc[seg_counts > 2]
-        bin_mask = cov_df.seg_idx.isin(good_segs).index
-        Pi, r, C = Pi[bin_mask], r[bin_mask], C[bin_mask]
-        cov_df = cov_df.loc[bin_mask]
 
         # indices of coverage bins 
-        seg_g = cov_df.groupby("seg_idx")
+        seg_g = cov_df.groupby("seg_idx") # NOTE: seg_idx may not be contiguous if any allelic segments were dropped
         seg_g_idx = pd.Series(seg_g.indices).to_frame(name = "indices")
         seg_g_idx["allelic_cluster"] = seg_g["allelic_cluster"].first()
         seg_g_idx["n_cov_bins"] = seg_g.size()
