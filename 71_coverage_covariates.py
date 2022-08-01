@@ -335,6 +335,8 @@ C10k = C.groupby(["chr", "index_r"]).agg({
 
 C10k.to_pickle("covars/FAIRE/coverage.dedup.raw.10kb.pickle")
 
+# gsutil cp covars/FAIRE/coverage.dedup.raw.10kb.pickle gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/FAIRE/coverage.dedup.raw.10kb.pickle
+
 # 100k?
 C["index_r"] = C.index//50
 C100k = C.groupby(["chr", "index_r"]).agg({
