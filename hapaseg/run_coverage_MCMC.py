@@ -57,7 +57,7 @@ class CoverageMCMCRunner:
         # assign coverage bins to allelic clusters from the specified allelic sample (if specified; o.w. random choice)
         cov_mcmc = NB_MCMC_AllClusters(self.num_draws, r, C, Pi)
 
-        # either way we run and save results
+        # either way "e runtand save results
         cov_mcmc.run()
         self.model = cov_mcmc
         segment_samples, global_beta, mu_i_samples = cov_mcmc.prepare_results()
@@ -73,7 +73,7 @@ class CoverageMCMCRunner:
         return Pi, r, C, all_mu, global_beta, filtered_cov_df, self.allelic_sample
 
     def load_coverage(self, coverage_csv):
-        Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "mean_frag_len", "std_frag_len", "num_reads"], low_memory=False)
+        Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "mean_frag_len", "std_frag_len", "num_frags", "tot_reads", "reads_flagged"], low_memory=False)
         Cov.loc[Cov['chr'] == 'chrM', 'chr'] = 'chrMT' #change mitocondrial contigs to follow mut conventions
         Cov["chr"] = mut.convert_chr(Cov["chr"])
         Cov = Cov.loc[Cov["chr"] != 0]
@@ -81,6 +81,14 @@ class CoverageMCMCRunner:
         Cov["start_g"] = seq.chrpos2gpos(Cov["chr"], Cov["start"], ref = self.ref_fasta)
         Cov["end_g"] = seq.chrpos2gpos(Cov["chr"], Cov["end"], ref = self.ref_fasta)
         
+        # filter bins with no reads
+        Cov = Cov.loc[(Cov['tot_reads'] > 0) & (Cov['num_frags'] > 0)]
+        
+        # filter bins with >10% of reads flagged
+        frac_flagged = (Cov['reads_flagged']  / (Cov['tot_reads'] + Cov['reads_flagged'])).values
+        failing_mask = frac_flagged > 0.1
+        filter_mask = failing_mask | np.roll(failing_mask, 1) | np.roll(failing_mask, -1)
+        Cov = Cov.loc[~filter_mask]
         return Cov
 
     def load_SNPs(self, f_snps):
@@ -205,7 +213,7 @@ class CoverageMCMCRunner:
         Cov_clust_probs = np.zeros([len(self.full_cov_df), cuj_max])
 
         # get allelic segment boundaries
-        seg_bdy = np.r_[list(self.segmentations[self.allelic_sample].keys()), len(self.SNPs)]
+        seg_bdy = np.r_[0, list(self.segmentations[self.allelic_sample].keys()), len(self.SNPs)]
         seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
         self.SNPs["seg_idx"] = 0
         for i, (st, en) in enumerate(seg_bdy):
@@ -232,9 +240,13 @@ class CoverageMCMCRunner:
                 Cov_clust_probs[int(targ), clust_idx] = 1.0
                 self.full_cov_df.at[int(targ), "seg_idx"] = seg_idx[0]
             else: 
-                targ_clust_hist = np.bincount(clust_idx, minlength = cuj_max) 
-                Cov_clust_probs[int(targ), :] = targ_clust_hist / targ_clust_hist.sum()
-                self.full_cov_df.at[int(targ), "seg_idx"] = np.bincount(seg_idx).argmax()
+                # check to see if all of the snps in the bin agree on the cluster
+                if (clust_idx == clust_idx[0]).all():
+                    # if so then we can unambiguously assign to that cluster
+                    Cov_clust_probs[int(targ), clust_idx] = 1.0
+                    self.full_cov_df.at[int(targ), "seg_idx"] = seg_idx[0]
+                # otherwise we toss this bin by giving it no assignment
+        
         expand = False 
         if expand:
             # expand coverage bins to within 2 targets on same chr & segment within max_dist of SNP
