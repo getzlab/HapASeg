@@ -87,7 +87,7 @@ class CoverageMCMCRunner:
 
     def load_SNPs(self, f_snps):
         SNPs = pd.read_pickle(f_snps)
-        SNPs["tidx"] = mut.map_mutations_to_targets(SNPs, self.full_cov_df, inplace=False)
+        mut.map_mutations_to_targets(SNPs, self.full_cov_df)
         return SNPs
 
     def generate_GC(self):
@@ -195,53 +195,58 @@ class CoverageMCMCRunner:
         clust_choice = self.allelic_clusters["snps_to_clusters"][self.allelic_sample]
         clust_u, clust_uj = np.unique(clust_choice, return_inverse=True)
         clust_uj = clust_uj.reshape(clust_choice.shape)
-        cuj_max = clust_uj.max() + 1
         self.SNPs["clust_choice"] = clust_uj
-        
-        # fix phases based on the cluster choice
-        phases = self.allelic_clusters["snps_to_phases"][self.allelic_sample]
-        S_flip_col = self.SNPs.columns.get_loc('flipped')
-        self.SNPs.iloc[:, S_flip_col] = phases
-        mm_mat = self.SNPs.loc[:, ["min", "maj"]].values.reshape(-1, order = "F")
 
         ## assign coverage intervals to allelic clusters and segments
-        # assignment probabilities of each coverage interval -> allelic cluster
-        Cov_clust_probs = np.zeros([len(self.full_cov_df), cuj_max])
-
         # get allelic segment boundaries
         seg_bdy = np.r_[0, list(self.segmentations[self.allelic_sample].keys()), len(self.SNPs)]
         seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
         self.SNPs["seg_idx"] = 0
         for i, (st, en) in enumerate(seg_bdy):
             self.SNPs.iloc[st:en, self.SNPs.columns.get_loc("seg_idx")] = i
+        seg_max = self.SNPs["seg_idx"].max() + 1
+
+        # assignment probabilities of each coverage interval -> allelic cluster
+        Cov_clust_probs = np.zeros([len(self.full_cov_df), seg_max])
 
         # first compute assignment probabilities based on the SNPs within each bin
         # segments just get assigned to the maximum probability
         self.full_cov_df["seg_idx"] = -1
-        self.full_cov_df['min_count'] = 0
-        self.full_cov_df['maj_count'] = 0
-        min_col_idx = self.full_cov_df.columns.get_loc('min_count')
-        maj_col_idx = self.full_cov_df.columns.get_loc('maj_count')
-        
+        self.full_cov_df["allelic_cluster"] = -1
+
+# TODO: add back code to import allelic counts
+#        # fix phases based on the cluster choice
+#        phases = self.allelic_clusters["snps_to_phases"][self.allelic_sample]
+#        S_flip_col = self.SNPs.columns.get_loc('flipped')
+#        self.SNPs.iloc[:, S_flip_col] = phases
+#        mm_mat = self.SNPs.loc[:, ["min", "maj"]].values.reshape(-1, order = "F")
+#        self.full_cov_df['min_count'] = 0
+#        self.full_cov_df['maj_count'] = 0
+#        min_col_idx = self.full_cov_df.columns.get_loc('min_count')
+#        maj_col_idx = self.full_cov_df.columns.get_loc('maj_count')
+ 
         print("Mapping SNPs to targets ...", file = sys.stderr)
-        for targ, group in tqdm.tqdm(self.SNPs.groupby("tidx").indices.items()):
+        for targ, D in tqdm.tqdm(self.SNPs.groupby("targ_idx")[["clust_choice", "seg_idx"]]):
+            if targ == -1: # SNP does not overlap a coverage bin
+                continue
+#            minor, major = self._Ssum_ph(mm_mat, group, S_flip_col, min = True), self._Ssum_ph(mm_mat, group, S_flip_col, min = False)
+#            self.full_cov_df.iloc[targ, [min_col_idx, maj_col_idx]] = minor, major
 
-            minor, major = self._Ssum_ph(mm_mat, group, S_flip_col, min = True), self._Ssum_ph(mm_mat, group, S_flip_col, min = False)
-            self.full_cov_df.iloc[int(targ), [min_col_idx, maj_col_idx]] = minor, major
-
-            D = self.SNPs.loc[group]
             clust_idx = D["clust_choice"].values
             seg_idx = D["seg_idx"].values
-            if len(clust_idx) == 1:
-                Cov_clust_probs[int(targ), clust_idx] = 1.0
-                self.full_cov_df.at[int(targ), "seg_idx"] = seg_idx[0]
+            if len(seg_idx) == 1:
+                Cov_clust_probs[targ, seg_idx] = 1.0
+                self.full_cov_df.at[targ, "seg_idx"] = seg_idx[0]
+                self.full_cov_df.at[targ, "allelic_cluster"] = clust_idx[0]
             else: 
-                targ_clust_hist = np.bincount(clust_idx, minlength = cuj_max) 
-                Cov_clust_probs[int(targ), :] = targ_clust_hist / targ_clust_hist.sum()
-                self.full_cov_df.at[int(targ), "seg_idx"] = np.bincount(seg_idx).argmax()
+                targ_clust_hist = np.bincount(seg_idx, minlength = seg_max) 
+                Cov_clust_probs[targ, :] = targ_clust_hist / targ_clust_hist.sum()
+                self.full_cov_df.at[targ, "seg_idx"] = np.bincount(seg_idx).argmax()
+                self.full_cov_df.at[targ, "allelic_cluster"] = np.bincount(clust_idx).argmax()
+
+        ## expand coverage bins to within 2 targets on same chr & segment within max_dist of SNP
         expand = False 
         if expand:
-            # expand coverage bins to within 2 targets on same chr & segment within max_dist of SNP
             max_dist = 5000
             # keep track of which SNP-covered bin brought it in each expanded bin 
             # to allow us to easily assign SNP counts later
@@ -312,21 +317,18 @@ class CoverageMCMCRunner:
         r = r[~naidx]
         C = C[~naidx]
         Pi = Pi[~naidx]
-
         Cov_overlap = Cov_overlap.iloc[~naidx]
+
         ## removing coverage outliers
         outlier_mask = find_outliers(r)
         r = r[~outlier_mask]
         C = C[~outlier_mask]
         Pi = Pi[~outlier_mask]
         Cov_overlap = Cov_overlap.iloc[~outlier_mask]
-
-        # some clusters may have been eliminated by this point; prune them from Pi
-        Pi = Pi[:, Pi.sum(0) > 0]
  
         ## remove covariate outliers (+- 6 sigma)
         z_norm_columns = Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")]
-        covar_outlier_idx = (Cov_overlap.loc[:, z_norm_columns].abs() < 6).all(axis = 1) # XXX: all() -> any() ?
+        covar_outlier_idx = (Cov_overlap.loc[:, z_norm_columns].abs() < 6).all(axis = 1)
         Cov_overlap = Cov_overlap.loc[covar_outlier_idx]
         Pi = Pi[covar_outlier_idx, :]
         r = r[covar_outlier_idx]
@@ -334,18 +336,22 @@ class CoverageMCMCRunner:
         
         ## make a final pass at removing clusters that have become too small after these filters
         bad_clusters = Pi.sum(0) < 4
-        bad_bins = Pi[:, bad_clusters].any(1) == 1
-        Pi = Pi[~bad_bins,:][:, ~bad_clusters]
+        bad_bins = Pi[:, bad_clusters].any(1)
+        Pi = Pi[~bad_bins, :][:, ~bad_clusters]
         r = r[~bad_bins]
         C = C[~bad_bins]
         Cov_overlap = Cov_overlap.loc[~bad_bins]
-        
+
+        # some clusters may have been eliminated by this point; prune them from Pi
+        Pi = Pi[:, Pi.sum(0) > 0]
+
         ## sort data by genomic position
         sort_indices = Cov_overlap.start_g.argsort().values
         Pi = Pi[sort_indices]
         r = r[sort_indices]
         C = C[sort_indices]
         Cov_overlap = Cov_overlap.sort_values("start_g", ignore_index = True)
+
         return Pi, r, C, Cov_overlap
 
 #TODO switch to lnp
