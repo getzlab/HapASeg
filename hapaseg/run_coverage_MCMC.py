@@ -304,8 +304,9 @@ class CoverageMCMCRunner:
         ## making regressor vector/covariate matrix
 
         # scale coverage in units of fragments, rather than bases in order to correctly model Poisson noise
-        Cov_overlap["old_covcorr"] = Cov_overlap["covcorr"].copy()
-        Cov_overlap["covcorr"] = Cov_overlap["covcorr"]/(Cov_overlap["C_frag_len"].mean())
+        with pd.option_context('mode.chained_assignment', None): # suppress erroneous SettingWithCopyWarning
+            Cov_overlap["fragcorr"] = np.round(Cov_overlap["covcorr"]/Cov_overlap["C_frag_len"].mean())
+        r = np.c_[Cov_overlap["fragcorr"]]
 
         r = np.c_[Cov_overlap["covcorr"]] # regressor vector
 
