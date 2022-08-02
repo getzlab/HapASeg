@@ -9,6 +9,11 @@ from capy import mut, seq
 #
 # replication timing {{{
 
+## Zhao et al. {{{
+
+# * https://genomebiology.biomedcentral.com/articles/10.1186/s13059-020-01983-8#MOESM2
+# * https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE137764
+
 F = pd.read_csv("/mnt/j/proj/cnv/20201018_hapseg2/covars/GSE137764_H1_GaussiansGSE137764_mooth_scaled_autosome.mat", sep = "\t", header = None).T.rename(columns = { 0 : "chr", 1 : "start", 2 : "end" })
 F.iloc[:, 3:] = F.loc[:, 3:].astype(float)
 F.loc[:, ["start", "end"]] = F.loc[:, ["start", "end"]].astype(int)
@@ -64,6 +69,74 @@ bad_idx = (F["chr_start_lift"] != F["chr"]) | \
 (F["chr_end_lift"] != F["chr"]) | \
 (F["start_strand_lift"].notin(["+", "?"])) | \
 (F["start_lift"] > F["end_lift"])
+
+# }}}
+
+# }}}
+
+# Zhao et al. did not seem to correlate at all with coverage
+
+## standard RepliSeq {{{
+
+base_url = "http://hgdownload.cse.ucsc.edu/goldenpath/hg19/encodeDCC/wgEncodeUwRepliSeq/"
+
+# curl http://hgdownload.cse.ucsc.edu/goldenpath/hg19/encodeDCC/wgEncodeUwRepliSeq/ 2> /dev/null | grep -Po '>wgEncode.*WaveSignal.*?bigWig<' | tr -d '><'
+
+wigs = pd.Series([
+"wgEncodeUwRepliSeqBg02esWaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqBjWaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqBjWaveSignalRep2.bigWig",
+"wgEncodeUwRepliSeqGm06990WaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqGm12801WaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqGm12812WaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqGm12813WaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqGm12878WaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqHelas3WaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqHepg2WaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqHuvecWaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqImr90WaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqK562WaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqMcf7WaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqNhekWaveSignalRep1.bigWig",
+"wgEncodeUwRepliSeqSknshWaveSignalRep1.bigWig"
+], name = "filename")
+wigs = pd.concat([wigs, wigs.str.extract(r".*RepliSeq(?P<celline>.*)WaveSignalRep(?P<rep>\d+)\.bigWig")], axis = 1)
+
+from capy import seq
+
+# make 50kb interval dataframe
+clen = seq.get_chrlens()
+cnames = [ "chr" + (str(i + 1) if i < 22 else { 22 : "X", 23 : "Y" }[i]) for i in range(24) ]
+
+F = []
+for cidx, cname in zip(range(24), cnames):
+    bdy = np.r_[0:clen[cidx]:50000, clen[cidx]]
+    bdy[0] = 1
+    F.append(pd.DataFrame({ "chr" : cname, "start" : bdy[:-1], "end" : bdy[1:] }))
+F = pd.concat(F, ignore_index = True)
+
+# get contents of each WIG in 1Mb chunks, then bin to 50kb
+for _, w in wigs.iterrows():
+    bw = pyBigWig.open(base_url + w["filename"])
+    field = w["celline"] + "_" + w["rep"]
+    F[field] = np.nan
+
+    for chrname, idxs in F.groupby("chr").indices.items(): 
+        l = F.loc[idxs[-1], "end"]
+        bdy = np.r_[0:l:1000000, l]
+        bdy = np.c_[bdy[:-1], bdy[1:]]
+        idxbdy = np.r_[idxs[0::20], idxs[-1] + 1]; idxbdy = np.c_[idxbdy[:-1], idxbdy[1:]]
+        for st, en, ist, ien in tqdm.tqdm(np.c_[bdy, idxbdy], desc = f"{w['celline']}_{w['rep']} {chrname}"):
+            try:
+                F.iloc[ist:ien, F.columns.get_loc(field)] = np.nanmean(
+                  np.pad(
+                    bw.values(chrname, st, en, numpy = True),
+                    (0, int(np.ceil(en/50000)*50000) - en),
+                    constant_values = np.nan
+                  ).reshape(-1, 50000)
+                , 1)
+            except:
+                continue
 
 # }}}
 
