@@ -102,7 +102,7 @@ wigs = pd.Series([
 ], name = "filename")
 wigs = pd.concat([wigs, wigs.str.extract(r".*RepliSeq(?P<celline>.*)WaveSignalRep(?P<rep>\d+)\.bigWig")], axis = 1)
 
-from capy import seq
+from capy import seq, mut
 
 # make 50kb interval dataframe
 clen = seq.get_chrlens()
@@ -137,6 +137,31 @@ for _, w in wigs.iterrows():
                 , 1)
             except:
                 continue
+
+F["chr"] = mut.convert_chr(F["chr"])
+
+F.to_pickle("covars/RT.raw.hg19.pickle")
+
+# lift over to hg38
+from capy import liftover as capylo
+
+F = pd.read_pickle("covars/RT.raw.hg19.pickle")
+F["chr"] = mut.convert_chr_back(F["chr"])
+
+L = capylo.liftover_intervals(F["chr"], F["start"], F["end"], chainfile = "/mnt/j/db/hg19/liftover/hg19ToHg38.over.chain", from_name = "hg19", to_name = "hg38")
+
+F38 = F.merge(
+  L[["chr", "start", "end", "chr_start_lift", "start_lift", "end_lift"]],
+  left_on = ["chr", "start", "end"],
+  right_on = ["chr", "start", "end"]
+).drop(
+  columns = ["chr", "start", "end"]
+).rename(
+  columns = { "chr_start_lift" : "chr", "start_lift" : "start", "end_lift" : "end" }
+).iloc[:, np.r_[(F.shape[1] - 3):F.shape[1], 0:(F.shape[1] - 3)]]
+
+F38["chr"] = mut.convert_chr(F38["chr"])
+F38.to_pickle("covars/RT.raw.hg38.pickle")
 
 # }}}
 
