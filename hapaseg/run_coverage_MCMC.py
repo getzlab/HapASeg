@@ -157,11 +157,16 @@ class CoverageMCMCRunner:
         F = pd.read_pickle(self.f_repl)
         # map targets to RT intervals
         tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "midpoint")
-        self.full_cov_df['C_RT'] = np.nan
-        self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, 3:].mean(1).values
+        F = F.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : "C_RT-" + x)
+        self.full_cov_df = pd.concat([self.full_cov_df, F], axis = 1)
 
-        # take log z-transform
-        self.full_cov_df["C_RT_z"] = zt(np.log(self.full_cov_df["C_RT"] +1e-5))
+        # z-transform
+        # note that log(RT) \propto coverage, so we merely z-transform without
+        # taking any log here
+        self.full_cov_df = pd.concat([
+          self.full_cov_df,
+          self.full_cov_df.loc[:, F.columns].apply(lambda x : zt(x)).rename(columns = lambda x : x + "_z")
+        ], axis = 1)
 
         ## GC content
 
@@ -185,7 +190,7 @@ class CoverageMCMCRunner:
 
             # map targets to FAIRE intervals
             tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "midpoint")
-            F = F.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : "C_" + x)
+            F = F.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : "C_FAIRE-" + x)
             self.full_cov_df = pd.concat([self.full_cov_df, F], axis = 1)
 
             # z-transform
