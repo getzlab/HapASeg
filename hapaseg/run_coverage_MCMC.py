@@ -233,15 +233,12 @@ class CoverageMCMCRunner:
 
             clust_idx = D["clust_choice"].values
             seg_idx = D["seg_idx"].values
-            if len(seg_idx) == 1:
+            # all SNPs in this coverage bin have to agree
+            if len(seg_idx) == 1 or (seg_idx[0] == seg_idx).all(): # short circuit second condition for efficiency
                 Cov_clust_probs[targ, seg_idx] = 1.0
                 self.full_cov_df.at[targ, "seg_idx"] = seg_idx[0]
                 self.full_cov_df.at[targ, "allelic_cluster"] = clust_idx[0]
-            else: 
-                targ_clust_hist = np.bincount(seg_idx, minlength = seg_max) 
-                Cov_clust_probs[targ, :] = targ_clust_hist / targ_clust_hist.sum()
-                self.full_cov_df.at[targ, "seg_idx"] = np.bincount(seg_idx).argmax()
-                self.full_cov_df.at[targ, "allelic_cluster"] = np.bincount(clust_idx).argmax()
+            # otherwise, we don't consider this coverage bin
 
         ## add allelic counts to each coverage bin
 
@@ -258,14 +255,6 @@ class CoverageMCMCRunner:
           how = "left"
         ).rename(columns = { "min_ph" : "min_count", "maj_ph" : "maj_count" })
 
-# TODO: add this check back outside of the loop
-#                # check to see if all of the snps in the bin agree on the cluster
-#                if (clust_idx == clust_idx[0]).all():
-#                    # if so then we can unambiguously assign to that cluster
-#                    Cov_clust_probs[int(targ), clust_idx] = 1.0
-#                    self.full_cov_df.at[int(targ), "seg_idx"] = seg_idx[0]
-#                # otherwise we toss this bin by giving it no assignment
-        
         ## expand coverage bins to within 2 targets on same chr & segment within max_dist of SNP
         expand = False 
         if expand:
@@ -284,37 +273,7 @@ class CoverageMCMCRunner:
         ## subset to targets containing SNPs
         overlap_idx = Cov_clust_probs.sum(1) > 0
         Cov_clust_probs_overlap = Cov_clust_probs[overlap_idx, :]
-
-        # zero out improbable assignments and re-normalilze
-        Cov_clust_probs_overlap[Cov_clust_probs_overlap < 0.05] = 0
-        Cov_clust_probs_overlap /= Cov_clust_probs_overlap.sum(1)[:, None]
-        # prune empty clusters
-        prune_idx = Cov_clust_probs_overlap.sum(0) > 0
-        Cov_clust_probs_overlap = Cov_clust_probs_overlap[:, prune_idx]
-        num_pruned_clusters = Cov_clust_probs_overlap.shape[1]
-
-        ## subsetting to only targets that overlap SNPs
         Cov_overlap = self.full_cov_df.loc[overlap_idx, :]
-
-        ## probabilistically assign each ambiguous coverage bin to a cluster
-        # for now we will take maximum instead
-        amb_mask = np.max(Cov_clust_probs_overlap, 1) != 1
-        amb_assgn_probs = Cov_clust_probs_overlap[amb_mask, :]
-        if amb_mask.sum() > 0:
-            #new_assgn = np.array([np.random.choice(np.r_[:num_pruned_clusters],
-            #                                       p=amb_assgn_probs[i]) for i in range(len(amb_assgn_probs))])
-            new_assgn = np.array([np.argmax(amb_assgn_probs[i]) for i in range(len(amb_assgn_probs))])
-            new_onehot = np.zeros((new_assgn.size, num_pruned_clusters))
-            new_onehot[np.arange(new_assgn.size), new_assgn] = 1
-    
-            # update with assigned values
-            Cov_clust_probs_overlap[amb_mask, :] = new_onehot
-
-        ## downsampling for wgs
-#        if len(Cov_clust_probs_overlap) > 20000:
-#            downsample_mask = np.random.rand(Cov_clust_probs_overlap.shape[0]) < 0.2
-#            Cov_clust_probs_overlap = Cov_clust_probs_overlap[downsample_mask]
-#            Cov_overlap = Cov_overlap.iloc[downsample_mask]
     
         ## making regressor vector/covariate matrix
 
