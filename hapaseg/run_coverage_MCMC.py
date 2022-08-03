@@ -225,24 +225,11 @@ class CoverageMCMCRunner:
         # segments just get assigned to the maximum probability
         self.full_cov_df["seg_idx"] = -1
         self.full_cov_df["allelic_cluster"] = -1
-
-# TODO: add back code to import allelic counts
-#        # fix phases based on the cluster choice
-#        phases = self.allelic_clusters["snps_to_phases"][self.allelic_sample]
-#        S_flip_col = self.SNPs.columns.get_loc('flipped')
-#        self.SNPs.iloc[:, S_flip_col] = phases
-#        mm_mat = self.SNPs.loc[:, ["min", "maj"]].values.reshape(-1, order = "F")
-#        self.full_cov_df['min_count'] = 0
-#        self.full_cov_df['maj_count'] = 0
-#        min_col_idx = self.full_cov_df.columns.get_loc('min_count')
-#        maj_col_idx = self.full_cov_df.columns.get_loc('maj_count')
  
         print("Mapping SNPs to targets ...", file = sys.stderr)
         for targ, D in tqdm.tqdm(self.SNPs.groupby("targ_idx")[["clust_choice", "seg_idx"]]):
             if targ == -1: # SNP does not overlap a coverage bin
                 continue
-#            minor, major = self._Ssum_ph(mm_mat, group, S_flip_col, min = True), self._Ssum_ph(mm_mat, group, S_flip_col, min = False)
-#            self.full_cov_df.iloc[targ, [min_col_idx, maj_col_idx]] = minor, major
 
             clust_idx = D["clust_choice"].values
             seg_idx = D["seg_idx"].values
@@ -255,6 +242,21 @@ class CoverageMCMCRunner:
                 Cov_clust_probs[targ, :] = targ_clust_hist / targ_clust_hist.sum()
                 self.full_cov_df.at[targ, "seg_idx"] = np.bincount(seg_idx).argmax()
                 self.full_cov_df.at[targ, "allelic_cluster"] = np.bincount(clust_idx).argmax()
+
+        ## add allelic counts to each coverage bin
+
+        # fix phases based on the cluster choice
+        phases = self.allelic_clusters["snps_to_phases"][self.allelic_sample]
+        self.SNPs.loc[:, ["min_ph", "maj_ph"]] = self.SNPs.loc[:, ["min", "maj"]].values[
+          np.c_[0:len(self.SNPs)],
+          np.c_[[0, 1], [1, 0]][phases.astype(int)]
+        ]
+
+        self.full_cov_df = self.full_cov_df.merge(
+          self.SNPs.groupby("targ_idx")[["min_ph", "maj_ph"]].sum(),
+          left_index = True, right_index = True,
+          how = "left"
+        ).rename(columns = { "min_ph" : "min_count", "maj_ph" : "maj_count" })
 
 # TODO: add this check back outside of the loop
 #                # check to see if all of the snps in the bin agree on the cluster
