@@ -219,7 +219,7 @@ class CoverageMCMCRunner:
         seg_max = self.SNPs["seg_idx"].max() + 1
 
         # assignment probabilities of each coverage interval -> allelic cluster
-        Cov_clust_probs = np.zeros([len(self.full_cov_df), seg_max])
+        Cov_clust_probs = np.zeros([len(self.full_cov_df), seg_max], dtype = np.float16)
 
         # first compute assignment probabilities based on the SNPs within each bin
         # segments just get assigned to the maximum probability
@@ -278,7 +278,7 @@ class CoverageMCMCRunner:
                 self.full_cov_df.loc[nbors.index, 'min_count'] = min_count
                 self.full_cov_df.loc[nbors.index, 'maj_count'] = maj_count
                 Cov_clust_probs[nbors.index, :] = Cov_clust_probs[ix, :]
-        
+
         ## subset to targets containing SNPs
         overlap_idx = Cov_clust_probs.sum(1) > 0
         Cov_clust_probs_overlap = Cov_clust_probs[overlap_idx, :]
