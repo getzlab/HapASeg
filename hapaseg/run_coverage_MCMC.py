@@ -498,8 +498,8 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     
     # calculate likelihoods of each sample
     ll_samples_arr = np.zeros((num_segments, num_draws))
-    for seg, ll_arr in ll_results.items():
-        ll_samples_arr[seg] = ll_arr
+    for ID, (seg, ll_arr) in enumerate(ll_results.items()):
+        ll_samples_arr[ID] = ll_arr
     
     ll_samples = ll_samples_arr.sum(0)
 
