@@ -157,11 +157,16 @@ class CoverageMCMCRunner:
         F = pd.read_pickle(self.f_repl)
         # map targets to RT intervals
         tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "midpoint")
-        self.full_cov_df['C_RT'] = np.nan
-        self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, 3:].mean(1).values
+        F = F.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : "C_RT-" + x)
+        self.full_cov_df = pd.concat([self.full_cov_df, F], axis = 1)
 
-        # take log z-transform
-        self.full_cov_df["C_RT_z"] = zt(np.log(self.full_cov_df["C_RT"] +1e-5))
+        # z-transform
+        # note that log(RT) \propto coverage, so we merely z-transform without
+        # taking any log here
+        self.full_cov_df = pd.concat([
+          self.full_cov_df,
+          self.full_cov_df.loc[:, F.columns].apply(lambda x : zt(x)).rename(columns = lambda x : x + "_z")
+        ], axis = 1)
 
         ## GC content
 
@@ -185,7 +190,7 @@ class CoverageMCMCRunner:
 
             # map targets to FAIRE intervals
             tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "midpoint")
-            F = F.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : "C_" + x)
+            F = F.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : "C_FAIRE-" + x)
             self.full_cov_df = pd.concat([self.full_cov_df, F], axis = 1)
 
             # z-transform
@@ -213,52 +218,39 @@ class CoverageMCMCRunner:
             self.SNPs.iloc[st:en, self.SNPs.columns.get_loc("seg_idx")] = i
         seg_max = self.SNPs["seg_idx"].max() + 1
 
-        # assignment probabilities of each coverage interval -> allelic cluster
-        Cov_clust_probs = np.zeros([len(self.full_cov_df), seg_max])
-
         # first compute assignment probabilities based on the SNPs within each bin
         # segments just get assigned to the maximum probability
         self.full_cov_df["seg_idx"] = -1
         self.full_cov_df["allelic_cluster"] = -1
 
-# TODO: add back code to import allelic counts
-#        # fix phases based on the cluster choice
-#        phases = self.allelic_clusters["snps_to_phases"][self.allelic_sample]
-#        S_flip_col = self.SNPs.columns.get_loc('flipped')
-#        self.SNPs.iloc[:, S_flip_col] = phases
-#        mm_mat = self.SNPs.loc[:, ["min", "maj"]].values.reshape(-1, order = "F")
-#        self.full_cov_df['min_count'] = 0
-#        self.full_cov_df['maj_count'] = 0
-#        min_col_idx = self.full_cov_df.columns.get_loc('min_count')
-#        maj_col_idx = self.full_cov_df.columns.get_loc('maj_count')
- 
         print("Mapping SNPs to targets ...", file = sys.stderr)
         for targ, D in tqdm.tqdm(self.SNPs.groupby("targ_idx")[["clust_choice", "seg_idx"]]):
             if targ == -1: # SNP does not overlap a coverage bin
                 continue
-#            minor, major = self._Ssum_ph(mm_mat, group, S_flip_col, min = True), self._Ssum_ph(mm_mat, group, S_flip_col, min = False)
-#            self.full_cov_df.iloc[targ, [min_col_idx, maj_col_idx]] = minor, major
 
             clust_idx = D["clust_choice"].values
             seg_idx = D["seg_idx"].values
-            if len(seg_idx) == 1:
-                Cov_clust_probs[targ, seg_idx] = 1.0
+            # all SNPs in this coverage bin have to be assigned to the same allelic segment
+            if len(seg_idx) == 1 or (seg_idx[0] == seg_idx).all(): # short circuit second condition for efficiency
                 self.full_cov_df.at[targ, "seg_idx"] = seg_idx[0]
                 self.full_cov_df.at[targ, "allelic_cluster"] = clust_idx[0]
-            else: 
-                targ_clust_hist = np.bincount(seg_idx, minlength = seg_max) 
-                Cov_clust_probs[targ, :] = targ_clust_hist / targ_clust_hist.sum()
-                self.full_cov_df.at[targ, "seg_idx"] = np.bincount(seg_idx).argmax()
-                self.full_cov_df.at[targ, "allelic_cluster"] = np.bincount(clust_idx).argmax()
+            # otherwise, we don't consider this coverage bin
 
-# TODO: add this check back outside of the loop
-#                # check to see if all of the snps in the bin agree on the cluster
-#                if (clust_idx == clust_idx[0]).all():
-#                    # if so then we can unambiguously assign to that cluster
-#                    Cov_clust_probs[int(targ), clust_idx] = 1.0
-#                    self.full_cov_df.at[int(targ), "seg_idx"] = seg_idx[0]
-#                # otherwise we toss this bin by giving it no assignment
-        
+        ## add allelic counts to each coverage bin
+
+        # fix phases based on the cluster choice
+        phases = self.allelic_clusters["snps_to_phases"][self.allelic_sample]
+        self.SNPs.loc[:, ["min_ph", "maj_ph"]] = self.SNPs.loc[:, ["min", "maj"]].values[
+          np.c_[0:len(self.SNPs)],
+          np.c_[[0, 1], [1, 0]][phases.astype(int)]
+        ]
+
+        self.full_cov_df = self.full_cov_df.merge(
+          self.SNPs.groupby("targ_idx")[["min_ph", "maj_ph"]].sum(),
+          left_index = True, right_index = True,
+          how = "left"
+        ).rename(columns = { "min_ph" : "min_count", "maj_ph" : "maj_count" })
+
         ## expand coverage bins to within 2 targets on same chr & segment within max_dist of SNP
         expand = False 
         if expand:
@@ -272,108 +264,51 @@ class CoverageMCMCRunner:
                 self.full_cov_df.loc[nbors.index, 'seg_idx'] = seg
                 self.full_cov_df.loc[nbors.index, 'min_count'] = min_count
                 self.full_cov_df.loc[nbors.index, 'maj_count'] = maj_count
-                Cov_clust_probs[nbors.index, :] = Cov_clust_probs[ix, :]
-        
+
         ## subset to targets containing SNPs
-        overlap_idx = Cov_clust_probs.sum(1) > 0
-        Cov_clust_probs_overlap = Cov_clust_probs[overlap_idx, :]
+        Cov_overlap = self.full_cov_df.loc[self.full_cov_df["seg_idx"] != -1, :]
 
-        # zero out improbable assignments and re-normalilze
-        Cov_clust_probs_overlap[Cov_clust_probs_overlap < 0.05] = 0
-        Cov_clust_probs_overlap /= Cov_clust_probs_overlap.sum(1)[:, None]
-        # prune empty clusters
-        prune_idx = Cov_clust_probs_overlap.sum(0) > 0
-        Cov_clust_probs_overlap = Cov_clust_probs_overlap[:, prune_idx]
-        num_pruned_clusters = Cov_clust_probs_overlap.shape[1]
-
-        ## subsetting to only targets that overlap SNPs
-        Cov_overlap = self.full_cov_df.loc[overlap_idx, :]
-
-        ## probabilistically assign each ambiguous coverage bin to a cluster
-        # for now we will take maximum instead
-        amb_mask = np.max(Cov_clust_probs_overlap, 1) != 1
-        amb_assgn_probs = Cov_clust_probs_overlap[amb_mask, :]
-        if amb_mask.sum() > 0:
-            #new_assgn = np.array([np.random.choice(np.r_[:num_pruned_clusters],
-            #                                       p=amb_assgn_probs[i]) for i in range(len(amb_assgn_probs))])
-            new_assgn = np.array([np.argmax(amb_assgn_probs[i]) for i in range(len(amb_assgn_probs))])
-            new_onehot = np.zeros((new_assgn.size, num_pruned_clusters))
-            new_onehot[np.arange(new_assgn.size), new_assgn] = 1
-    
-            # update with assigned values
-            Cov_clust_probs_overlap[amb_mask, :] = new_onehot
-
-        ## downsampling for wgs
-#        if len(Cov_clust_probs_overlap) > 20000:
-#            downsample_mask = np.random.rand(Cov_clust_probs_overlap.shape[0]) < 0.2
-#            Cov_clust_probs_overlap = Cov_clust_probs_overlap[downsample_mask]
-#            Cov_overlap = Cov_overlap.iloc[downsample_mask]
-    
-        ## making regressor vector/covariate matrix
-
-        # scale coverage in units of fragments, rather than bases in order to correctly model Poisson noise
+        ## scale coverage in units of fragments, rather than bases in order to
+        ## correctly model Poisson noise
         with pd.option_context('mode.chained_assignment', None): # suppress erroneous SettingWithCopyWarning
             Cov_overlap["fragcorr"] = np.round(Cov_overlap["covcorr"]/Cov_overlap["C_frag_len"].mean())
+
+        ## filtering
+        # use all z-transformed covariates + non-scaled GC content+GC^2 + target length (if running on exomes)
+        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z|^C_GC|^C_log_len$")])
+        Cslice = Cov_overlap.loc[:, covar_columns]
+
+        # no NaN covariates
+        naidx = Cslice.isna().any(1)
+
+        # remove bins with low quality reads (>3 sigma)
+        lowqidx = Cov_overlap["fail_reads_zt"] > 3
+
+        # coverage outliers
+        outlier_mask = find_outliers(Cov_overlap["fragcorr"].values)
+ 
+        # remove covariate outliers (+- 6 sigma)
+        z_norm_columns = Cslice.columns[Cslice.columns.str.contains("^C_.*_z$")]
+        covar_6sig_idx = (Cslice.loc[:, z_norm_columns].abs() < 6).all(axis = 1)
+
+        # apply all filters
+        Cov_overlap = Cov_overlap.loc[~naidx & ~lowqidx & ~outlier_mask & covar_6sig_idx]
+
+        ## making regressor vector/covariate matrix
+
+        # sort by genomic coordinates
+        Cov_overlap = Cov_overlap.sort_values("start_g", ignore_index = True)
+
+        # regressor
         r = np.c_[Cov_overlap["fragcorr"]]
 
         # intercept matrix (one intercept per allelic segment)
-        Pi = Cov_clust_probs_overlap
+        Pi = np.zeros([len(Cov_overlap), Cov_overlap["seg_idx"].max() + 1], dtype = np.float16)
+        Pi[np.r_[0:len(Cov_overlap)], Cov_overlap["seg_idx"]] = 1
+        Pi = Pi[:, Pi.sum(0) > 0] # prune zero columns in Pi (allelic segments that got totally eliminated)
 
-        # covariate matrix; use all z-transformed covariates + non-scaled GC content+GC^2 + target length (if running on exomes)
-        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z|^C_GC|^C_log_len$")])
-
+        # covariate matrix
         C = np.c_[Cov_overlap[covar_columns]]
-
-        ### filtering
-
-        ## TODO: do all this filtering on the dataframe, before we build the vectors
-
-        ## dropping Nans
-        naidx = np.isnan(C).any(axis=1)
-        r = r[~naidx]
-        C = C[~naidx]
-        Pi = Pi[~naidx]
-        Cov_overlap = Cov_overlap.iloc[~naidx]
-
-        ## removing bins with low quality reads (>3 sigma)
-        lowqidx = Cov_overlap["fail_reads_zt"] > 3
-        r = r[~lowqidx]
-        C = C[~lowqidx]
-        Pi = Pi[~lowqidx]
-        Cov_overlap = Cov_overlap.loc[~lowqidx]
-
-        ## removing coverage outliers
-        outlier_mask = find_outliers(r)
-        r = r[~outlier_mask]
-        C = C[~outlier_mask]
-        Pi = Pi[~outlier_mask]
-        Cov_overlap = Cov_overlap.iloc[~outlier_mask]
- 
-        ## remove covariate outliers (+- 6 sigma)
-        z_norm_columns = Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$")]
-        covar_outlier_idx = (Cov_overlap.loc[:, z_norm_columns].abs() < 6).all(axis = 1)
-        Cov_overlap = Cov_overlap.loc[covar_outlier_idx]
-        Pi = Pi[covar_outlier_idx, :]
-        r = r[covar_outlier_idx]
-        C = C[covar_outlier_idx, :]
-        
-        ## make a final pass at removing clusters that have become too small after these filters
-        bad_clusters = Pi.sum(0) < 4
-        bad_bins = Pi[:, bad_clusters].any(1)
-        Pi = Pi[~bad_bins, :][:, ~bad_clusters]
-        r = r[~bad_bins]
-        C = C[~bad_bins]
-        Cov_overlap = Cov_overlap.loc[~bad_bins]
-
-        # some clusters may have been eliminated by this point; prune them from Pi
-        Pi = Pi[:, Pi.sum(0) > 0]
-
-        ## sort data by genomic position
-        sort_indices = Cov_overlap.start_g.argsort().values
-        Pi = Pi[sort_indices]
-        r = r[sort_indices]
-        C = C[sort_indices]
-        Cov_overlap = Cov_overlap.sort_values("start_g", ignore_index = True)
 
         return Pi, r, C, Cov_overlap
 
