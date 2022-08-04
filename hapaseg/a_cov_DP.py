@@ -112,7 +112,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         print('concatenating dp run ', draw_num, flush=True)
         a_cov_seg_df = dp_data[0].copy()
 
-        covar_cols = sorted(a_cov_seg_df.columns[a_cov_seg_df.columns.str.contains("^C_.*_z$|^C_log_len$")])
+        covar_cols = sorted(a_cov_seg_df.columns[a_cov_seg_df.columns.str.contains("^C_.*_z$|^C_GC|^C_log_len$")])
 
         # add dp cluster annotations
         a_cov_seg_df['cov_DP_cluster'] = -1
@@ -969,7 +969,7 @@ class AllelicCoverage_DP:
         return centers, _f
     
     def _get_real_cov(self, df):
-        covar_cols = sorted(df.columns[df.columns.str.contains("^C_.*_z$|^C_log_len$")])
+        covar_cols = sorted(df.columns[df.columns.str.contains("^C_.*_z$|^C_GC|^C_log_len$")])
         C = np.c_[df[covar_cols]]
         return np.exp(np.log(df.covcorr.values) - (C @ self.beta).flatten())
 

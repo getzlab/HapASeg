@@ -151,12 +151,14 @@ class CoverageMCMCRunner:
         F = pd.read_pickle(self.f_repl)
         # map targets to RT intervals
         tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "midpoint")
-        self.full_cov_df['C_RT'] = np.nan
-        self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, 3:].mean(1).values
-
-        # take log z-transform
-        self.full_cov_df["C_RT_z"] = zt(np.log(self.full_cov_df["C_RT"] +1e-5))
-
+        #self.full_cov_df['C_RT'] = np.nan
+        #self.full_cov_df.iloc[tidx.index, -1] = F.iloc[tidx, 3:].mean(1).values
+        ## take log z-transform
+        #self.full_cov_df["C_RT_z"] = zt(np.log(self.full_cov_df["C_RT"] +1e-5))
+        self.full_cov_df[['C_' + s + '_z' for s in F.iloc[tidx, 3:].columns]] = np.nan
+        self.full_cov_df.iloc[tidx.index, -16:] = F.iloc[tidx, 3:]
+        self.full_cov_df.iloc[:, -16:] = self.full_cov_df.iloc[:, -16:].apply(zt, axis=0)
+        
         ## GC content
 
         # load GC content if we have it precomputed, otherwise generate it
@@ -173,7 +175,9 @@ class CoverageMCMCRunner:
         # give bins with 0 GC content a single count so that we can take the log
         self.full_cov_df.loc[self.full_cov_df['C_GC'] == 0, 'C_GC'] = 1 / np.exp(self.full_cov_df.loc[self.full_cov_df['C_GC'] == 0, 'C_log_len'])
         # take log z-transform
-        self.full_cov_df["C_GC_z"] = zt(np.log(self.full_cov_df["C_GC"] + 1e-4))
+        #self.full_cov_df["C_GC_z"] = zt(np.log(self.full_cov_df["C_GC"] + 1e-4))
+        
+        self.full_cov_df["C_GC2"] = self.full_cov_df["C_GC"]**2
 
         # in case we are doing wgs these will all be the same and we should remove
         if (np.diff(self.full_cov_df["C_log_len"]) == 0).all():
@@ -302,7 +306,7 @@ class CoverageMCMCRunner:
        
         r = np.c_[Cov_overlap["covcorr"]]
         
-        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$|^C_log_len$")])
+        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z$|^C_GC|^C_log_len$")])
 
         ## making covariate matrix
         C = np.c_[Cov_overlap[covar_columns]]
@@ -463,7 +467,7 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     # along with the bin exposure
     endog = np.exp(np.log(r).flatten() - np.log(bin_width) - mu_is).reshape(-1,1)
     # generate covars
-    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("^C_.*_z$|^C_log_len$")])
+    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("^C_.*_z$|^C_GC|^C_log_len$")])
     C = np.c_[cov_df[covar_columns]]
     # do regression
     pois_regr = PoissonRegression(endog, C, np.ones(endog.shape))
@@ -471,8 +475,8 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     
     # calculate likelihoods of each sample
     ll_samples_arr = np.zeros((num_segments, num_draws))
-    for seg, ll_arr in ll_results.items():
-        ll_samples_arr[seg] = ll_arr
+    for i, (seg, ll_arr) in enumerate(ll_results.items()):
+        ll_samples_arr[i] = ll_arr
     
     ll_samples = ll_samples_arr.sum(0)
 
