@@ -141,21 +141,23 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "allelic_sample":"",
         "ref_fasta": None
     }
-    script = """
-    hapaseg coverage_mcmc_preprocess --coverage_csv ${coverage_csv} \
-    --ref_fasta ${ref_fasta} \
-    --allelic_clusters_object ${allelic_clusters_object} \
-    --SNPs_pickle ${SNPs_pickle} \
-    --segmentations_pickle ${segmentations_pickle} \
-    --repl_pickle ${repl_pickle}"""
+    def script(self):
+        script = """
+        hapaseg coverage_mcmc_preprocess --coverage_csv ${coverage_csv} \
+        --ref_fasta ${ref_fasta} \
+        --allelic_clusters_object ${allelic_clusters_object} \
+        --SNPs_pickle ${SNPs_pickle} \
+        --segmentations_pickle ${segmentations_pickle} \
+        --repl_pickle ${repl_pickle}"""
     
-    def prolog(self):
         if self.conf["inputs"]["faire_pickle"] != "":
-            self.conf["script"][-1] += "--faire_pickle ${faire_pickle}"
+            script += " --faire_pickle ${faire_pickle}"
         if self.conf["inputs"]["gc_pickle"] != "":
-            self.conf["script"][-1] += " --gc_pickle ${gc_pickle}"
+            script += " --gc_pickle ${gc_pickle}"
         if self.conf["inputs"]["allelic_sample"] != "":
-            self.conf["script"][-1] += " --allelic_sample ${allelic_sample}"
+            script += " --allelic_sample ${allelic_sample}"
+
+        return script
 
     output_patterns = {
         "preprocess_data": "preprocess_data.npz",
