@@ -25,15 +25,15 @@ class Hapaseg_load_snps(wolf.Task):
       "cytoband_file" : None,
       "ref_file_path" : None    
     }
-    script = """
-    export CAPY_REF_FA=${ref_file_path}
-    hapaseg load_snps --phased_VCF ${phased_VCF} \
-            --allele_counts_T ${tumor_allele_counts} \
-            --cytoband_file ${cytoband_file}
-    """
-    def prolog(self):
+    def script(self):
+        script = """
+        export CAPY_REF_FA=${ref_file_path}
+        hapaseg load_snps --phased_VCF ${phased_VCF} \
+                --allele_counts_T ${tumor_allele_counts} \
+                --cytoband_file ${cytoband_file}"""
         if self.conf["inputs"]["normal_allele_counts"] != "":
-            self.conf["script"][-1] += "--allele_counts_N ${normal_allele_counts}"
+            script += " --allele_counts_N ${normal_allele_counts}"
+        return script
     
     output_patterns = {
       "allele_counts" : "allele_counts.pickle",
