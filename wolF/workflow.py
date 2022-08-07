@@ -530,7 +530,9 @@ def workflow(
         "repl_pickle":ref_config["repl_file"],
         "faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
         "gc_pickle":ref_config["gc_file"],
-        "ref_fasta":localization_task["ref_fasta"]
+        "ref_fasta":localization_task["ref_fasta"],
+        "bin_width":bin_width,
+        "wgs":wgs
         }
     )
 

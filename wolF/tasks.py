@@ -139,7 +139,9 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "faire_pickle": "", # TODO: make remote
         "gc_pickle":"",
         "allelic_sample":"",
-        "ref_fasta": None
+        "ref_fasta": None,
+        "bin_width": 1,
+        "wgs": True
     }
     def script(self):
         script = """
@@ -148,8 +150,11 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         --allelic_clusters_object ${allelic_clusters_object} \
         --SNPs_pickle ${SNPs_pickle} \
         --segmentations_pickle ${segmentations_pickle} \
-        --repl_pickle ${repl_pickle}"""
-    
+        --repl_pickle ${repl_pickle} \
+        --bin_width ${bin_width}"""
+
+        if self.conf["inputs"]["wgs"] == True:
+            script += " --wgs"
         if self.conf["inputs"]["faire_pickle"] != "":
             script += " --faire_pickle ${faire_pickle}"
         if self.conf["inputs"]["gc_pickle"] != "":
@@ -166,7 +171,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "allelic_seg_idxs": "allelic_seg_idxs.txt"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v912"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v915"
     resources = { "mem" : "15G" }
 
 #scatter by allelic segment

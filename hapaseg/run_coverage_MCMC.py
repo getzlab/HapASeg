@@ -27,7 +27,8 @@ class CoverageMCMCRunner:
                  num_draws=50,
                  cluster_num=None,
                  allelic_sample=None,
-                 bin_width=1
+                 bin_width=1,
+                 wgs=True
                  ):
 
         self.num_draws = num_draws
@@ -37,6 +38,7 @@ class CoverageMCMCRunner:
         self.f_GC = f_GC
         self.ref_fasta = ref_fasta
         self.bin_width = bin_width
+        self.wgs = wgs
 
         self.allelic_clusters = np.load(f_allelic_clusters)
         with open(f_segs, "rb") as f:
@@ -90,7 +92,13 @@ class CoverageMCMCRunner:
 
     def load_SNPs(self, f_snps):
         SNPs = pd.read_pickle(f_snps)
-        mut.map_mutations_to_targets(SNPs, self.full_cov_df)
+        # pad WES targets by +-150b when mapping SNPs to catch flanking coverage
+        if not self.wgs:
+            self.full_cov_df["start_pad"] = self.full_cov_df["start"] - 150
+            self.full_cov_df["end_pad"] = self.full_cov_df["end"] + 150
+            mut.map_mutations_to_targets(SNPs, self.full_cov_df, startcol = "start_pad", endcol = "end_pad")
+        else:
+            mut.map_mutations_to_targets(SNPs, self.full_cov_df)
         return SNPs
 
     def generate_GC(self):
