@@ -64,7 +64,8 @@ def _hg19_config_gen(wgs):
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg19/eagle/genetic_map_hg19_withX.txt.gz",
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg19/gnomad/gnomAD_MAF10_80pct_45prob.txt",
         cytoband_file = 'gs://getzlab-workflows-reference_files-oa/hg19/cytoBand.txt',
-        repl_file = 'gs://opriebe-tmp/GSE137764_H1.hg19_liftover.pickle',
+        repl_file = 'gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/RT/RT.raw.hg19.pickle',
+        faire_file = 'gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/FAIRE/coverage.dedup.raw.10kb.pickle',
         ref_panel_1000g = hg19_ref_dict
     )
     #if we're using whole genome we can use the precomputed gc file for 200 bp bins
@@ -87,7 +88,7 @@ def _hg38_config_gen(wgs):
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
         cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg19/cytoBand.txt',
-        repl_file = 'gs://opriebe-tmp/GSE137764_H1.hg38.pickle',
+        repl_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/RT.raw.hg38.pickle',
         ref_panel_1000g = hg38_ref_dict
     )
     #if we're using whole genome we can use the precomputed gc file for 200 bp bins
@@ -527,6 +528,7 @@ def workflow(
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":ref_config["repl_file"],
+        "faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
         "gc_pickle":ref_config["gc_file"],
         "ref_fasta":localization_task["ref_fasta"]
         }
