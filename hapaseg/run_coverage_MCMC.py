@@ -425,7 +425,7 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     # along with the bin exposure
     endog = np.exp(np.log(r).flatten() - np.log(bin_width) - mu_is).reshape(-1,1)
     # generate covars
-    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("^C_.*_z$|^C_log_len$")])
+    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("^C_.*_z$|^C_GC|^C_log_len$")])
     C = np.c_[cov_df[covar_columns]]
     # do regression
     pois_regr = PoissonRegression(endog, C, np.ones(endog.shape))
