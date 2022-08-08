@@ -162,7 +162,7 @@ class AllelicCluster:
 
 	def lnp_init(self):
 		#lnp = CovLNP_NR(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure))
-		lnp = CovLNP_NR_prior(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure), init_prior=True, lamda = self.lamda, mu_prior = np.log(self.r - self.C @ self.beta).mean(), alpha_prior = 1, beta_prior = 5e-2)
+		lnp = CovLNP_NR_prior(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure), init_prior=True, lamda = self.lamda, mu_prior = (np.log(self.r) - self.C@self.beta).mean(), alpha_prior = 1, beta_prior = 5e-2)
 		return lnp.fit()
 
 	# statsmodels NB BFGS optimizer is more stable than NR so we will use it until migration to LNP
