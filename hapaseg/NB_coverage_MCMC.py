@@ -161,8 +161,18 @@ class AllelicCluster:
 		return res.params[0], -np.log(res.params[1])
 
 	def lnp_init(self):
-		#lnp = CovLNP_NR(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure))
-		lnp = CovLNP_NR_prior(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure), init_prior=True, lamda = self.lamda, mu_prior = (np.log(self.r) - self.C@self.beta).mean(), alpha_prior = 1, beta_prior = 5e-2)
+		# run plain Poisson regression without fitting beta to get mu prior
+		prior = PoissonRegression(
+		  self.r,
+		  np.zeros([len(self.r), 0]), # don't fit beta
+		  np.ones_like(self.r),
+		  log_exposure = np.log(self.bin_exposure),
+		  log_offset = self.C@self.beta # beta included as offset
+		)
+		prior.fit()
+
+		# now fit LNP
+		lnp = CovLNP_NR_prior(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure), init_prior=True, lamda = self.lamda, mu_prior = prior.mu[0, 0], alpha_prior = 1, beta_prior = 5e-2)
 		return lnp.fit()
 
 	# statsmodels NB BFGS optimizer is more stable than NR so we will use it until migration to LNP
