@@ -112,7 +112,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         print('concatenating dp run ', draw_num, flush=True)
         a_cov_seg_df = dp_data[0].copy()
 
-        covar_cols = sorted(a_cov_seg_df.columns[a_cov_seg_df.columns.str.contains("^C_.*_z$|^C_log_len$")])
+        covar_cols = sorted(a_cov_seg_df.columns[a_cov_seg_df.columns.str.contains("^C_.*_z$|^C_GC|^C_log_len$")])
 
         # add dp cluster annotations
         a_cov_seg_df['cov_DP_cluster'] = -1
@@ -140,7 +140,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
                 (a_cov_seg_df.cov_DP_cluster == cdp) & (a_cov_seg_df.allelic_cluster == adp)]
             if len(acdp_clust) < 10:
                 acdp_clust = a_cov_seg_df.loc[a_cov_seg_df.cov_DP_cluster == cdp]
-            r = acdp_clust.covcorr.values
+            r = acdp_clust.fragcorr.values
             C = np.c_[acdp_clust[covar_cols]]
             lnp = CovLNP_NR(r[:,None], beta, C, exposure = np.log(bin_width))
             res = lnp.fit(ret_hess=True)
@@ -211,7 +211,7 @@ class AllelicCoverage_DP:
         # inverse gamma hyper parameter default values -- will be set later based on tuples
         self.alpha_0 = 100
         self.beta_0 = 30
-        self.kappa_0 = 1e-4
+        self.kappa_0 = 1e-6
         self.loggamma_alpha_0 =0
         self.log_beta_0 = 0
         self.half_log2pi = np.log(2*np.pi) / 2
@@ -289,8 +289,11 @@ class AllelicCoverage_DP:
         greylist_mask = np.ones(self.num_segments, dtype=bool)
         greylist_mask[self.greylist_segments] = False
         cutoff = np.quantile(self.segment_V_list[greylist_mask], 0.95)
-        self.alpha_0 = self.segment_counts[greylist_mask].mean()
-        self.beta_0 = self.alpha_0 / 2 * self.segment_V_list[greylist_mask].mean()
+        #self.alpha_0 = self.segment_counts[greylist_mask].mean()
+        #self.beta_0 = self.alpha_0 / 2 * self.segment_V_list[greylist_mask].mean()
+        self.alpha_0 = 1e-4
+        self.beta_0 = 1e-4
+
         self.loggamma_alpha_0 = ss.loggamma(self.alpha_0)
         self.log_beta_0 = np.log(self.beta_0)
 
@@ -376,9 +379,9 @@ class AllelicCoverage_DP:
         return self.ML_normalgamma(mn, mu_mn, ssd)
     
     # worker function for normal-gamma distribution log Marginal Likelihood
-    def ML_normalgamma(self, n, mu0, ssd):
+    def ML_normalgamma(self, n, x_mean, ssd):
         # for now x_mean is the same as mu0
-        x_mean = mu0
+        mu0 = x_mean
 
         mu_n = (self.kappa_0*mu0 + n * x_mean) / (self.kappa_0 + n)
         kappa_n = self.kappa_0 + n
@@ -969,7 +972,7 @@ class AllelicCoverage_DP:
         return centers, _f
     
     def _get_real_cov(self, df):
-        covar_cols = sorted(df.columns[df.columns.str.contains("^C_.*_z$|^C_log_len$")])
+        covar_cols = sorted(df.columns[df.columns.str.contains("^C_.*_z$|^C_GC|^C_log_len$")])
         C = np.c_[df[covar_cols]]
         return np.exp(np.log(df.covcorr.values) - (C @ self.beta).flatten())
 
