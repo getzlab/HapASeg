@@ -92,11 +92,17 @@ class CoverageMCMCRunner:
 
     def load_SNPs(self, f_snps):
         SNPs = pd.read_pickle(f_snps)
-        # pad WES targets by +-150b when mapping SNPs to catch flanking coverage
+        # pad WES targets by +-1kb when mapping SNPs to catch flanking coverage
         if not self.wgs:
-            self.full_cov_df["start_pad"] = self.full_cov_df["start"] - 150
-            self.full_cov_df["end_pad"] = self.full_cov_df["end"] + 150
-            mut.map_mutations_to_targets(SNPs, self.full_cov_df, startcol = "start_pad", endcol = "end_pad")
+            # first, map to regular target boundaries
+            mut.map_mutations_to_targets(SNPs, self.full_cov_df)
+
+            # map any unmapped SNPs to extended target boundaries
+            self.full_cov_df["start_pad"] = self.full_cov_df["start"] - 1000
+            self.full_cov_df["end_pad"] = self.full_cov_df["end"] + 1000
+            tidx_ext = mut.map_mutations_to_targets(SNPs, self.full_cov_df, startcol = "start_pad", endcol = "end_pad", inplace = False)
+            unmap_idx = SNPs.index.isin(tidx_ext.index) & (SNPs["targ_idx"] == -1)
+            SNPs.loc[unmap_idx, "targ_idx"] = tidx_ext.loc[unmap_idx]
         else:
             mut.map_mutations_to_targets(SNPs, self.full_cov_df)
         return SNPs
