@@ -142,6 +142,8 @@ F["chr"] = mut.convert_chr(F["chr"])
 
 F.to_pickle("covars/RT.raw.hg19.pickle")
 
+# gsutil cp covars/RT.raw.hg19.pickle gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/RT/
+
 # lift over to hg38
 from capy import liftover as capylo
 
@@ -162,6 +164,8 @@ F38 = F.merge(
 
 F38["chr"] = mut.convert_chr(F38["chr"])
 F38.to_pickle("covars/RT.raw.hg38.pickle")
+
+# gsutil cp covars/RT.raw.hg38.pickle gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/
 
 # }}}
 
@@ -433,7 +437,7 @@ C10k = C.groupby(["chr", "index_r"]).agg({
 
 C10k.to_pickle("covars/FAIRE/coverage.dedup.raw.10kb.pickle")
 
-# gsutil cp covars/FAIRE/coverage.dedup.raw.10kb.pickle gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/FAIRE/coverage.dedup.raw.10kb.pickle
+# gsutil cp covars/FAIRE/coverage.dedup.raw.10kb.pickle gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/FAIRE/
 
 # 100k?
 C["index_r"] = C.index//50

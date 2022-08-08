@@ -25,14 +25,15 @@ class Hapaseg_load_snps(wolf.Task):
       "cytoband_file" : None,
       "ref_file_path" : None    
     }
-    script = """
-    export CAPY_REF_FA=${ref_file_path}
-    hapaseg load_snps --phased_VCF ${phased_VCF} \
-            --allele_counts_T ${tumor_allele_counts} \
-            --cytoband_file ${cytoband_file}"""
-    def prolog(self):
+    def script(self):
+        script = """
+        export CAPY_REF_FA=${ref_file_path}
+        hapaseg load_snps --phased_VCF ${phased_VCF} \
+                --allele_counts_T ${tumor_allele_counts} \
+                --cytoband_file ${cytoband_file}"""
         if self.conf["inputs"]["normal_allele_counts"] != "":
-            self.conf["script"][-1] += "--allele_counts_N ${normal_allele_counts}"
+            script += " --allele_counts_N ${normal_allele_counts}"
+        return script
     
     output_patterns = {
       "allele_counts" : "allele_counts.pickle",
@@ -138,23 +139,30 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "faire_pickle": "", # TODO: make remote
         "gc_pickle":"",
         "allelic_sample":"",
-        "ref_fasta": None
+        "ref_fasta": None,
+        "bin_width": 1,
+        "wgs": True
     }
-    script = """
-    hapaseg coverage_mcmc_preprocess --coverage_csv ${coverage_csv} \
-    --ref_fasta ${ref_fasta} \
-    --allelic_clusters_object ${allelic_clusters_object} \
-    --SNPs_pickle ${SNPs_pickle} \
-    --segmentations_pickle ${segmentations_pickle} \
-    --repl_pickle ${repl_pickle}"""
-    
-    def prolog(self):
+    def script(self):
+        script = """
+        hapaseg coverage_mcmc_preprocess --coverage_csv ${coverage_csv} \
+        --ref_fasta ${ref_fasta} \
+        --allelic_clusters_object ${allelic_clusters_object} \
+        --SNPs_pickle ${SNPs_pickle} \
+        --segmentations_pickle ${segmentations_pickle} \
+        --repl_pickle ${repl_pickle} \
+        --bin_width ${bin_width}"""
+
+        if self.conf["inputs"]["wgs"] == True:
+            script += " --wgs"
         if self.conf["inputs"]["faire_pickle"] != "":
-            self.conf["script"][-1] += "--faire_pickle ${faire_pickle}"
+            script += " --faire_pickle ${faire_pickle}"
         if self.conf["inputs"]["gc_pickle"] != "":
-            self.conf["script"][-1] += " --gc_pickle ${gc_pickle}"
+            script += " --gc_pickle ${gc_pickle}"
         if self.conf["inputs"]["allelic_sample"] != "":
-            self.conf["script"][-1] += " --allelic_sample ${allelic_sample}"
+            script += " --allelic_sample ${allelic_sample}"
+
+        return script
 
     output_patterns = {
         "preprocess_data": "preprocess_data.npz",
