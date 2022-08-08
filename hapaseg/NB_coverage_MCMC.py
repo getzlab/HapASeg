@@ -189,7 +189,7 @@ class AllelicCluster:
 
 		# cache miss; compute values
 		#lnp = CovLNP_NR(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu)
-		lnp = CovLNP_NR_prior(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu, mu_prior = 0, lamda = self.lamda, alpha_prior = self.alpha_prior, beta_prior = self.beta_prior, init_prior = True)
+		lnp = CovLNP_NR_prior(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure), mu_prior = 0, lamda = self.lamda, alpha_prior = self.alpha_prior, beta_prior = self.beta_prior, init_prior = True)
 		
 		try:	
 			res =  lnp.fit(ret_hess=ret_hess)
@@ -230,7 +230,7 @@ class AllelicCluster:
 	## caluculating overall ll of allelic cluster under lnp model
 	def ll_segment(self, ind, mu_i, lgsigma):
 		exposure = np.log(self.bin_exposure)
-		mu_tot = self.mu + mu_i
+		mu_tot = mu_i
 		ll = covLNP_ll_prior(self.r[ind[0]:ind[1]], mu_tot, lgsigma, self.C[ind[0]:ind[1]], self.beta, exposure = exposure, mu_prior = mu_tot, lamda = self.lamda, alpha_prior=self.alpha_prior, beta_prior = self.beta_prior)
 		#ll = covLNP_ll(self.r[ind[0]:ind[1]], mu_tot, lgsigma, self.C[ind[0]:ind[1]], self.beta, exposure = exposure)
 		return ll
