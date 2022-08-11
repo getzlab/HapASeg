@@ -43,15 +43,14 @@ class CoverageMCMCRunner:
         self.allelic_clusters = np.load(f_allelic_clusters)
         with open(f_segs, "rb") as f:
             self.segmentations = pickle.load(f)
-        # coverage input is expected to be a df file with columns: ["chr", "start", "end", "covcorr", "covraw"]
-        self.full_cov_df = self.load_coverage(coverage_csv)
-        self.load_covariates()
-        self.SNPs = self.load_SNPs(f_SNPs)
-        
         if allelic_sample is not None:
             self.allelic_sample = allelic_sample
         else:
             self.allelic_sample = np.argmax(self.allelic_clusters["likelihoods"])
+        # coverage input is expected to be a df file with columns: ["chr", "start", "end", "covcorr", "covraw"]
+        self.full_cov_df = self.load_coverage(coverage_csv)
+        self.load_covariates()
+        self.SNPs = self.load_SNPs(f_SNPs)
 
         self.model = None
 
@@ -92,6 +91,25 @@ class CoverageMCMCRunner:
 
     def load_SNPs(self, f_snps):
         SNPs = pd.read_pickle(f_snps)
+
+        # annotate SNPs with allelic clusters
+        clust_choice = self.allelic_clusters["snps_to_clusters"][self.allelic_sample]
+        clust_u, clust_uj = np.unique(clust_choice, return_inverse=True)
+        clust_uj = clust_uj.reshape(clust_choice.shape)
+        SNPs["clust_choice"] = clust_uj
+
+        # annotate SNPs with allelic segments
+        seg_bdy = np.r_[0, list(self.segmentations[self.allelic_sample].keys()), len(SNPs)]
+        seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
+        SNPs["seg_idx"] = 0
+        self.full_cov_df["allelic_seg_overlap"] = -1
+        for i, (st, en) in enumerate(seg_bdy):
+            SNPs.iloc[st:en, SNPs.columns.get_loc("seg_idx")] = i
+
+            # add allelic segment boundaries to full coverage dataframe
+            st_g, en_g = SNPs.iloc[[st, en - 1], SNPs.columns.get_loc("pos_gp")]
+            self.full_cov_df.loc[(self.full_cov_df["start_g"] >= st_g) & (self.full_cov_df["end_g"] <= en_g), "allelic_seg_overlap"] = i
+
         # pad WES targets by +-1kb when mapping SNPs to catch flanking coverage
         if not self.wgs:
             # first, map to regular target boundaries
@@ -217,23 +235,7 @@ class CoverageMCMCRunner:
     # clusters with snps from different clusters are probabliztically assigned
     # method returns coverage df with only bins that overlap snps
     def assign_clusters(self):
-        ## generate unique clust assignments
-        clust_choice = self.allelic_clusters["snps_to_clusters"][self.allelic_sample]
-        clust_u, clust_uj = np.unique(clust_choice, return_inverse=True)
-        clust_uj = clust_uj.reshape(clust_choice.shape)
-        self.SNPs["clust_choice"] = clust_uj
-
         ## assign coverage intervals to allelic clusters and segments
-        # get allelic segment boundaries
-        seg_bdy = np.r_[0, list(self.segmentations[self.allelic_sample].keys()), len(self.SNPs)]
-        seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
-        self.SNPs["seg_idx"] = 0
-        for i, (st, en) in enumerate(seg_bdy):
-            self.SNPs.iloc[st:en, self.SNPs.columns.get_loc("seg_idx")] = i
-        seg_max = self.SNPs["seg_idx"].max() + 1
-
-        # first compute assignment probabilities based on the SNPs within each bin
-        # segments just get assigned to the maximum probability
         self.full_cov_df["seg_idx"] = -1
         self.full_cov_df["allelic_cluster"] = -1
 
