@@ -275,19 +275,33 @@ class CoverageMCMCRunner:
           how = "left"
         ).rename(columns = { "min_ph" : "min_count", "maj_ph" : "maj_count" })
 
-        ## expand coverage bins to within 2 targets on same chr & segment within max_dist of SNP
-        expand = False 
-        if expand:
-            max_dist = 5000
-            # keep track of which SNP-covered bin brought it in each expanded bin 
-            # to allow us to easily assign SNP counts later
-            for ix in tqdm.tqdm(self.full_cov_df.loc[self.full_cov_df.seg_idx != -1].index):
-                nbors = self.full_cov_df.loc[max(0, ix - 2):min(ix+2, len(self.full_cov_df))]
-                chrom, st,en, seg, min_count, maj_count = self.full_cov_df.loc[ix, ['chr', 'start', 'end', 'seg_idx', 'min_count', 'maj_count']]
-                nbors = nbors.loc[(nbors.chr == chrom) & (nbors.start > st - max_dist) & (nbors.end < en + max_dist) & (nbors.seg_idx == -1)]
-                self.full_cov_df.loc[nbors.index, 'seg_idx'] = seg
-                self.full_cov_df.loc[nbors.index, 'min_count'] = min_count
-                self.full_cov_df.loc[nbors.index, 'maj_count'] = maj_count
+        ## assign coverage bins within 10kb of each bin overlapping a SNP to its allelic segment
+        if not self.wgs: # TODO: always expand, and set threshold based on WGS/WES?
+            max_dist = 10000
+
+            # make sure that SNP radii don't exceed the boundaries of their respective Segment Intervals
+            SI = self.SNPs.groupby("seg_idx")["pos_gp"].agg([min, max])
+            T = pd.DataFrame({
+              "chr" : self.SNPs["chr"],
+              "start" : seq.gpos2chrpos(np.maximum(
+                self.SNPs["pos_gp"].values - max_dist,
+                SI.loc[self.SNPs["seg_idx"], "min"].values
+              ))[1],
+              "end" : seq.gpos2chrpos(np.minimum(
+                self.SNPs["pos_gp"].values + max_dist,
+                SI.loc[self.SNPs["seg_idx"], "max"].values
+              ))[1],
+              "seg_idx" : self.SNPs["seg_idx"]
+            })
+
+            # map midpoints of coverage bins to SNPs with radius +- max_dist
+            tidx = mut.map_mutations_to_targets(self.full_cov_df, T, inplace = False, poscol = "midpoint")
+            tidx = tidx.loc[self.full_cov_df.loc[tidx.index, "seg_idx"] == -1]
+            self.full_cov_df.loc[tidx.index, "seg_idx"] = T.loc[tidx, "seg_idx"].values
+
+            # set allelic counts to 0 for these coverage bins, since they don't actually contain SNPs
+            self.full_cov_df.loc[tidx.index, "min_count"] = 0
+            self.full_cov_df.loc[tidx.index, "maj_count"] = 0
 
         ## subset to targets containing SNPs
         Cov_overlap = self.full_cov_df.loc[self.full_cov_df["seg_idx"] != -1, :]
