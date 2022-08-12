@@ -17,7 +17,7 @@ import tqdm
 
 from capy import seq, mut
 
-from.model_optimizers import CovLNP_NR
+from.model_optimizers import CovLNP_NR_prior
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
 from .utils import *
@@ -51,6 +51,8 @@ def generate_acdp_df(SNP_path, # path to SNP df
     SNPs = pd.read_pickle(SNP_path)
     ADP_clusters = np.load(ADP_path)
     #phases = ADP_clusters["snps_to_phases"][ADP_draw_index]
+    alpha_prior = 1e-5
+    beta_prior=4e-3
     
     #S_flip_col = SNPs.columns.get_loc('flipped')
     
@@ -59,7 +61,6 @@ def generate_acdp_df(SNP_path, # path to SNP df
     #mm_mat = SNPs.loc[:, ["min", "maj"]].values.reshape(-1, order = "F")
     
     dp_run_data = []
-
     if cdp_object_path is not None:
         with open(CDP_path, 'rb') as f:
             dp_pickle = pickle.load(f)
@@ -102,10 +103,12 @@ def generate_acdp_df(SNP_path, # path to SNP df
             cov_df_run = cov_df_run.loc[~cov_df_run.segment_ID.isin(small_segs)]
 
             dp_run_data.append((cov_df_run, dp_assignments))
-        #best_run = np.argmax(seg_data['ll_samples'])
-        best_run = 4
+        best_run = np.argmax(seg_data['ll_samples'])
+        #best_run = 4
     else:
         raise ValueError("must pass in either a cdp object path or a txt file containing a list of object paths")
+    # save the hessians for bootstrapping 
+    data = {}
     # currently uses the last sample from every DP draw
     draw_dfs = []
     for draw_num, dp_data in enumerate(dp_run_data):
@@ -142,7 +145,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
                 acdp_clust = a_cov_seg_df.loc[a_cov_seg_df.cov_DP_cluster == cdp]
             r = acdp_clust.fragcorr.values
             C = np.c_[acdp_clust[covar_cols]]
-            lnp = CovLNP_NR(r[:,None], beta, C, exposure = np.log(bin_width))
+            lnp = CovLNP_NR_prior(r[:,None], beta, C, exposure = np.log(bin_width), alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior= r.mean(), lamda=1e-10, init_prior = True)
             res = lnp.fit(ret_hess=True)
             mu = res[0]
             a_cov_seg_df.loc[
@@ -155,7 +158,9 @@ def generate_acdp_df(SNP_path, # path to SNP df
             mu_sigma = np.exp(res[1] - sigma_hinv**2)
             a_cov_seg_df.loc[(a_cov_seg_df.cov_DP_cluster == cdp) & (
                         a_cov_seg_df.allelic_cluster == adp), 'cov_DP_sigma'] = mu_sigma
-
+            resi = np.exp(np.log(r) - C@beta)
+            res = (res[0], res[1], res[2])
+            data[(adp, cdp, draw_num)] = res
         # duplicate segments to account for second allele
         num_bins = len(a_cov_seg_df)
         a_cov_seg_df = a_cov_seg_df.reset_index(drop=True)
@@ -173,15 +178,18 @@ def generate_acdp_df(SNP_path, # path to SNP df
         draw_dfs.append(a_cov_seg_df)
 
     print('completed ACDP dataframe generation')
-    # return both the acdp df and the index of the best DP run
-    return pd.concat(draw_dfs),  best_run
+    # return the acdp df, the hessians dictionary, and the index of the best DP run
+    return pd.concat(draw_dfs), data,  best_run
 
 class AllelicCoverage_DP:
-    def __init__(self, cov_df, beta, cytoband_file, seed_all_clusters=True):
+    def __init__(self, cov_df, beta, cytoband_file, lnp_data, wgs=False, draw_idx=None, seed_all_clusters=True):
         self.cov_df = cov_df
         self.beta = beta
         self.cytoband_file = cytoband_file
         self.seed_all_clusters = seed_all_clusters
+        self.wgs = wgs
+        self.draw_idx = draw_idx
+        self.lnp_data = lnp_data
 
         self.num_segments = len(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
         self.segment_r_list = [None] * self.num_segments
@@ -215,7 +223,7 @@ class AllelicCoverage_DP:
         self.loggamma_alpha_0 =0
         self.log_beta_0 = 0
         self.half_log2pi = np.log(2*np.pi) / 2
-        self.seg_count_norm = 1 
+        self.seg_count_norm = 1. 
 
         self._init_segments()
         self._init_clusters()
@@ -226,7 +234,11 @@ class AllelicCoverage_DP:
         self.draw_indices = []
 
         self.alpha = 0.5
-
+        
+        # if draw_idx passed then only use those draws
+        if draw_idx is not None:
+            self.cov_df = self.cov_df.loc[self.cov_df.dp_draw == draw_index]
+        
     # initialize each segment object with its data
     def _init_segments(self):
         # keep a table of reads for each allelic cluster to fallback on if the tuple has too few bins (<10)
@@ -265,8 +277,14 @@ class AllelicCoverage_DP:
             # experiment 1
             #r = np.array(np.exp(s.norm.rvs(mu + np.log( s.beta.rvs(a, b, size=group_len)), np.sqrt(sigma), size=group_len)))
             # lnp
-            r = np.array(s.poisson.rvs(np.exp(s.norm.rvs(mu, sigma, size=group_len)) * s.beta.rvs(a, b, size=group_len)))
-                
+            #r = np.array(s.poisson.rvs(np.exp(s.norm.rvs(mu, sigma, size=group_len)) * s.beta.rvs(a, b, size=group_len)))
+            
+            # using joint
+            lnp_res = self.lnp_data[(name[0], name[1], name[3])]
+            
+            norm_samples =np.exp(np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = group_len))
+            r = np.array(s.poisson.rvs(s.norm.rvs(norm_samples[:,0], norm_samples[:,1]) * s.beta.rvs(a,b, size = group_len)))
+            
             # linscale
             # V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a, b, size=10000)).var()
             # logscale
@@ -274,10 +292,11 @@ class AllelicCoverage_DP:
             # experiment 1
             #V = (np.exp(s.norm.rvs(mu + np.log(s.beta.rvs(a, b, size=10000)), np.sqrt(sigma), size=10000))).var()
             #lnp
-            V = (np.array(s.poisson.rvs(np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a, b, size=10000)))).var()
-            # blacklist segments with very high variance
-            #if np.sqrt(V) > 15:
-            #    self.greylist_segments.add(ID)
+            #V = (np.array(s.poisson.rvs(np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a, b, size=10000)))).var()
+            
+            # using joint
+            norm_samples =np.exp(np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000))
+            V = np.array(s.poisson.rvs(s.norm.rvs(norm_samples[:,0], norm_samples[:,1]) * s.beta.rvs(a,b, size = 10000))).var()
 
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r
@@ -288,7 +307,7 @@ class AllelicCoverage_DP:
         # go back through segments and greylist ones with high variance
         greylist_mask = np.ones(self.num_segments, dtype=bool)
         greylist_mask[self.greylist_segments] = False
-        cutoff = np.quantile(self.segment_V_list[greylist_mask], 0.95)
+        cutoff = np.median(self.segment_V_list[greylist_mask]) * 10
         #self.alpha_0 = self.segment_counts[greylist_mask].mean()
         #self.beta_0 = self.alpha_0 / 2 * self.segment_V_list[greylist_mask].mean()
         self.alpha_0 = 1e-4
@@ -302,7 +321,7 @@ class AllelicCoverage_DP:
             if self.segment_V_list[i] > cutoff:
                 self.greylist_segments.add(i)
 
-        self.seg_count_norm = self.segment_counts.mean() / 25
+        #self.seg_count_norm = self.segment_counts.mean() / 25
 
     def _init_clusters(self):
         [self.unassigned_segs.discard(s) for s in self.greylist_segments]
@@ -1035,7 +1054,7 @@ class AllelicCoverage_DP:
         
         cluster_colors = self._get_cluster_colors()
         cdp_colors = self._get_cdp_colors() if cdp_draw is None else self._get_cdp_colors(cdp_draw)
-        if plot_SNP_imbalance:
+        if plot_SNP_imbalance or self.wgs:
             adp_colors = self._get_adp_colors()
         
         full_df = list(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
@@ -1107,45 +1126,84 @@ class AllelicCoverage_DP:
                     lc = mpl.collections.LineCollection([[(l, 0), (l, 0.01)] for l in locs], color = cdp_colors[quad[1]], transform=cdp_trans)
                     ax_g.add_collection(lc)
                 
-                #plot patches for each segment within the tuple
-                seg_intervals = self._get_tuple_intervals(x.index)
-                for intv in seg_intervals:
-                    #plot patch with centered at cluster mean with height equal to cluster 95% CI
-                    if use_cluster_stats:
-                        # use overall cluster statistics
+                if not self.wgs:
+                    #plot patches for each segment within the tuple
+                    seg_intervals = self._get_tuple_intervals(x.index)
+                    for intv in seg_intervals:
+                        #plot patch with centered at cluster mean with height equal to cluster 95% CI
+                        if use_cluster_stats:
+                            # use overall cluster statistics
+                            tup_mean = cluster_stats[c]['mean']
+                            tup_std = cluster_stats[c]['std']
+                        else:
+                            # use statistics from the tuple only
+                            tup_mean = self.segment_r_list[tup].mean()
+                            tup_std = np.sqrt(self.segment_V_list[tup])
+                        
+                        tup_width = x.iloc[intv[1]].end_g - x.iloc[intv[0]].start_g
+                        tup_allele = x.iloc[0].allele
+                        
+                        # draw the acdp segment
+                        ax_g.add_patch(mpl.patches.Rectangle(
+                          (x.iloc[intv[0]].start_g, tup_mean - 1.95 * tup_std),
+                          tup_width,
+                          np.maximum(0, 2 * 1.95 * tup_std),
+                          facecolor = cluster_colors[i],
+                          fill = True, alpha=0.5 if cdp_draw is None else 0.8,
+                          edgecolor = 'b' if tup_allele > 0 else 'r', # color edges according to allele
+                          linewidth = 1 if tup_width > 1000000 else 0.5,
+                          ls = (0, (0,5,5,0)) if tup_allele > 0 else (0, (5,0,0,5)) # color edges with alternating pattern according to allele
+                        ))
+                        
+                        # show cdp cluster at bottom of plot
+                        if quad[3] == 0 or (cdp_draw is not None and quad[3]==cdp_draw):
+                            ax_g.add_patch(mpl.patches.Rectangle(
+                              (x.iloc[intv[0]].start_g, 0),
+                              tup_width,
+                              0.01,
+                              transform=cdp_trans,
+                              facecolor = cdp_colors[quad[1]],
+                              fill = True, alpha=1,
+                            ))
+            if self.wgs:
+                #only plot for first dp cluster for now
+                # plot patches for each cluster based only on the allleic cluster and allele
+                cdp_draw_idx = 0 if cdp_draw is None else cdp_draw
+                all_cluster_bins = pd.concat([full_df[tup][1] for tup in self.cluster_dict[c] if full_df[tup][0][3]==cdp_draw_idx])
+                all_cluster_bins = all_cluster_bins.sort_index()
+                # plot patches for each contiguous segment within a adp, allele tuple
+                for label, bins in all_cluster_bins.groupby(['allelic_cluster', 'allele']):
+                    seg_intervals = self._get_tuple_intervals(bins.index)
+                    for intv in seg_intervals:
+                        #only use cluster stats since individual tuples are short
                         tup_mean = cluster_stats[c]['mean']
                         tup_std = cluster_stats[c]['std']
-                    else:
-                        # use statistics from the tuple only
-                        tup_mean = self.segment_r_list[tup].mean()
-                        tup_std = np.sqrt(self.segment_V_list[tup])
-                    
-                    tup_width = x.iloc[intv[1]].end_g - x.iloc[intv[0]].start_g
-                    tup_allele = x.iloc[0].allele
-                    
-                    # draw the acdp segment
-                    ax_g.add_patch(mpl.patches.Rectangle(
-                      (x.iloc[intv[0]].start_g, tup_mean - 1.95 * tup_std),
-                      tup_width,
-                      np.maximum(0, 2 * 1.95 * tup_std),
-                      facecolor = cluster_colors[i],
-                      fill = True, alpha=0.5 if cdp_draw is None else 0.8,
-                      edgecolor = 'b' if tup_allele > 0 else 'r', # color edges according to allele
-                      linewidth = 1 if tup_width > 1000000 else 0.5,
-                      ls = (0, (0,5,5,0)) if tup_allele > 0 else (0, (5,0,0,5)) # color edges with alternating pattern according to allele
-                    ))
-                    
-                    # show cdp cluster at bottom of plot
-                    if quad[3] == 0 or (cdp_draw is not None and quad[3]==cdp_draw):
+                        tup_width = bins.iloc[intv[1]].end_g - bins.iloc[intv[0]].start_g
+                        tup_allele = bins.iloc[0].allele
+                        
+                        
+                        # draw the acdp segment
                         ax_g.add_patch(mpl.patches.Rectangle(
-                          (x.iloc[intv[0]].start_g, 0),
+                          (bins.iloc[intv[0]].start_g, tup_mean - 1.95 * tup_std),
+                          tup_width,
+                          np.maximum(0, 2 * 1.95 * tup_std),
+                          facecolor = cluster_colors[i],
+                          fill = True, alpha=0.5 if cdp_draw is None else 0.8,
+                          edgecolor = 'b' if tup_allele > 0 else 'r', # color edges according to allele
+                          linewidth = 1 if tup_width > 1000000 else 0.5,
+                          ls = (0, (0,5,5,0)) if tup_allele > 0 else (0, (5,0,0,5)) # color edges with alternating pattern according to allele
+                        ))
+                        
+                        # show adp cluster at bottom of plot
+                        ax_g.add_patch(mpl.patches.Rectangle(
+                          (bins.iloc[intv[0]].start_g, 0),
                           tup_width,
                           0.01,
                           transform=cdp_trans,
-                          facecolor = cdp_colors[quad[1]],
+                          facecolor = adp_colors[label[0]],
                           fill = True, alpha=1,
                         ))
-            
+         
             #save real data for histogram if there were any in the draw(s) of interest
             cluster_stats[c]['real_data'] = np.concatenate(cluster_real_data) if len(cluster_real_data) > 0 else []
             

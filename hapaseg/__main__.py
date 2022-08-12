@@ -213,6 +213,9 @@ def parse_args():
     ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
     ac_dp.add_argument("--cytoband_file", help="path to cytoband txt file")
     ac_dp.add_argument("--opt_cdp_idx", help="index of best cdp run")
+    ac_dp.add_argument("--wgs", help="flag to determine if sample is whole genome", default=False, action='store_true')
+    ac_dp.add_argument("--lnp_data_pickle", help="path to lnp data dictionary", required=True)
+    ac_dp.add_argument("--use_single_draw", help="flag to force acdp to only use best draw", default=False, action='store_true')
     ac_dp.add_argument("--warmstart", type=bool, default=True, help="run clustering with warmstart")
 
     args = parser.parse_args()
@@ -657,7 +660,7 @@ def main():
     elif args.command == "generate_acdp_df":
         if args.cdp_object is not None:
             #all of our dp runs are in one object
-            acdp_df, opt_cdp_idx = generate_acdp_df(args.snp_dataframe,
+            acdp_df, lnp_data, opt_cdp_idx = generate_acdp_df(args.snp_dataframe,
                                              args.allelic_clusters_object,
                                              cdp_object_path=args.cdp_object,
                                              bin_width=args.bin_width,
@@ -665,14 +668,14 @@ def main():
         
         elif args.cdp_filepaths is not None:
             #all of our dp runs are in one object
-            acdp_df, opt_cdp_idx = generate_acdp_df(args.snp_dataframe,
+            acdp_df, lnp_data, opt_cdp_idx = generate_acdp_df(args.snp_dataframe,
                                              args.allelic_clusters_object,
                                              cdp_scatter_files=args.cdp_filepaths,
                                              bin_width=args.bin_width,
                                              ADP_draw_index=args.allelic_draw_index)
         # for running directly from cov_mcmc segments
         elif args.cov_df_pickle is not None and args.cov_seg_data is not None:
-            acdp_df, opt_cdp_idx = generate_acdp_df(args.snp_dataframe,
+            acdp_df, lnp_data, opt_cdp_idx = generate_acdp_df(args.snp_dataframe,
                                              args.allelic_clusters_object,
                                              cov_df_path=args.cov_df_pickle,
                                              cov_mcmc_data_path =args.cov_seg_data,
@@ -683,6 +686,9 @@ def main():
             raise ValueError("must pass a cdp filepath, list of cdp filepaths or cov_df pickle and mcmc seg file")
            
         acdp_df.to_pickle(os.path.join(output_dir, "acdp_df.pickle"))
+        with open('./lnp_data.pickle', 'wb') as f:
+            pickle.dump(lnp_data, f)
+
         with open('./opt_cdp_draw.txt', 'w') as f:
             f.write(str(opt_cdp_idx))
        
@@ -691,13 +697,25 @@ def main():
         mcmc_data = np.load(args.cov_seg_data)
         beta = mcmc_data['beta']
         
-        acdp = AllelicCoverage_DP(acdp_df, beta, args.cytoband_file, args.warmstart)
+        draw_idx = args.opt_cdp_idx if args.use_single_draw else None
+        acdp = AllelicCoverage_DP(acdp_df, 
+                                  beta, 
+                                  args.cytoband_file,
+                                  args.lnp_data_pickle,
+                                  wgs=args.wgs,
+                                  draw_idx=draw_idx,
+                                  seed_all_clusters=args.warmstart)
         acdp.run(args.num_samples)
         print("visualizing run")
         
-        acdp.visualize_ACDP('./acdp_all_draws.png')
-        acdp.visualize_ACDP('./acdp_agg_draws.png', plot_real_cov=True, use_cluster_stats=True)
-        acdp.visualize_ACDP('./acdp_best_cdp_draw.png', use_cluster_stats=True, cdp_draw=int(args.opt_cdp_idx))
+        if wgs:
+            acdp.visualize_ACDP('./acdp_agg_draws.png', use_cluster_stats=True)
+        else:
+            acdp.visualize_ACDP('./acdp_agg_draws.png', plot_real_cov=True, use_cluster_stats=True)
+        
+        if not args.use_single_draw:
+            acdp.visualize_ACDP('./acdp_best_cdp_draw.png', use_cluster_stats=True, cdp_draw=int(args.opt_cdp_idx))
+            acdp.visualize_ACDP('./acdp_all_draws.png')
         
         acdp.visualize_ACDP_clusters(output_dir)
         with open(os.path.join(output_dir, "acdp_model.pickle"), "wb") as f:
