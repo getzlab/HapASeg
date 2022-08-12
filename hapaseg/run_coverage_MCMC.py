@@ -151,14 +151,6 @@ class CoverageMCMCRunner:
         #this indexing assumes 0-indexed start and end cols
         for (i, chrm, start, end) in tqdm.tqdm(self.full_cov_df[['chr', 'start','end']].itertuples(), total = len(self.full_cov_df)):
             self.full_cov_df.iat[i, -1] = F[chrm-1][start:end+1].gc
-        
-    def _Ssum_ph(self, mm_mat, seg_idx, flip_col, min = True):
-        flip = self.SNPs.iloc[seg_idx, flip_col]
-        flip_n = ~flip
-        if min:
-            return mm_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.SNPs)]].sum()
-        else:
-            return mm_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.SNPs)]].sum()
 
     def load_covariates(self):
         zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
