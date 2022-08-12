@@ -14,6 +14,8 @@ from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 from .NB_coverage_MCMC import NB_MCMC_AllClusters, NB_MCMC_SingleCluster
 from .model_optimizers import PoissonRegression
 
+zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
+
 class CoverageMCMCRunner:
     def __init__(self,
                  coverage_csv,
@@ -58,10 +60,15 @@ class CoverageMCMCRunner:
             self.allelic_sample = np.argmax(self.allelic_clusters["likelihoods"])
         # coverage input is expected to be a df file with columns: ["chr", "start", "end", "covcorr", "covraw"]
         self.full_cov_df = self.load_coverage(coverage_csv)
-        self.load_covariates()
         self.SNPs = self.load_SNPs(f_SNPs)
 
         self.model = None
+
+        # combine allelic segments and coverage bins
+        self.aseg_cov_df = self.assign_clusters()
+
+        # load and filter covariates (modifies self.aseg_cov_df)
+        self.load_covariates(self.aseg_cov_df)
 
     def run_all_clusters(self):
         Pi, r, C, filtered_cov_df = self.assign_clusters()
@@ -95,8 +102,20 @@ class CoverageMCMCRunner:
         
         # filter bins with no reads
         Cov = Cov.loc[(Cov['tot_reads'] > 0) & (Cov['num_frags'] > 0)]
+
+        # filter bins with an excessive number of failing reads
+        Cov["fail_reads_zt"] = zt(Cov["fail_reads"]/Cov["tot_reads"])
+        Cov = Cov.loc[Cov["fail_reads_zt"] < 3]
+
+        # midpoint of coverage bins will be used to map bins to covariates
+        Cov["midpoint"] = ((Cov["end"] + Cov["start"])/2).astype(int)
+
+        # scale coverage in units of fragments, rather than bases in order to
+        # correctly model Poisson noise
+        with pd.option_context('mode.chained_assignment', None): # suppress erroneous SettingWithCopyWarning
+            Cov["fragcorr"] = np.round(Cov["covcorr"]/Cov["mean_frag_len"].mean())
         
-        return Cov
+        return Cov.reset_index(drop = True)
 
     def load_SNPs(self, f_snps):
         SNPs = pd.read_pickle(f_snps)
@@ -152,61 +171,54 @@ class CoverageMCMCRunner:
         for (i, chrm, start, end) in tqdm.tqdm(self.full_cov_df[['chr', 'start','end']].itertuples(), total = len(self.full_cov_df)):
             self.full_cov_df.iat[i, -1] = F[chrm-1][start:end+1].gc
 
-    def load_covariates(self):
-        zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
-
+    def load_covariates(self, cov_df):
         ## Target size
 
         # we only need bin size if doing exomes but we can check by looking at the bin lengths
-        self.full_cov_df["C_log_len"] = np.log(self.full_cov_df["end"] - self.full_cov_df["start"] + 1)
+        cov_df["C_log_len"] = np.log(cov_df["end"] - cov_df["start"] + 1)
         # in case we are doing wgs these will all be the same and we must remove
         # since it will ruin beta fitting
         if self.wgs:
-            self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
+            cov_df = cov_df.drop(['C_log_len'], axis=1)
 
         ## Fragment length
 
         # some bins have zero mean fragment length; these bins are bad and should be removed
-        self.full_cov_df = self.full_cov_df.loc[(self.full_cov_df.mean_frag_len > 0) & (self.full_cov_df.std_frag_len > 0)].reset_index(drop = True)
+        cov_df = cov_df.loc[(cov_df.mean_frag_len > 0) & (cov_df.std_frag_len > 0)].reset_index(drop = True)
 
-        self.full_cov_df = self.full_cov_df.rename(columns = { "mean_frag_len" : "C_frag_len" })
-        self.full_cov_df["C_frag_len_z"] = zt(np.log(self.full_cov_df["C_frag_len"]))
+        cov_df = cov_df.rename(columns = { "mean_frag_len" : "C_frag_len" })
+        cov_df["C_frag_len_z"] = zt(np.log(cov_df["C_frag_len"]))
 
         # generate on 5x and 11x scales
         swv = np.lib.stride_tricks.sliding_window_view
-        fl = self.full_cov_df["C_frag_len"].values; fl[np.isnan(fl)] = 0
-        wt = self.full_cov_df["num_frags"].values
+        fl = cov_df["C_frag_len"].values; fl[np.isnan(fl)] = 0
+        wt = cov_df["num_frags"].values
         for scale in [5, 11]:
             fl_sw = swv(np.pad(fl, scale//2), scale)
             wt_sw = swv(np.pad(wt, scale//2), scale)
             conv = np.einsum('ij,ij->i', wt_sw, fl_sw)
 
-            self.full_cov_df[f"C_frag_len_{scale}x"] = conv/wt_sw.sum(1)
-            self.full_cov_df[f"C_frag_len_{scale}x_z"] = zt(np.log(self.full_cov_df[f"C_frag_len_{scale}x"]))
-
+            cov_df[f"C_frag_len_{scale}x"] = conv/wt_sw.sum(1)
+            cov_df[f"C_frag_len_{scale}x_z"] = zt(np.log(cov_df[f"C_frag_len_{scale}x"]))
         ## Failing read fraction
-        # (not used as a covariate, but it makes sense to preprocess it here anyway)
-        self.full_cov_df["fail_reads_zt"] = zt(self.full_cov_df["fail_reads"]/self.full_cov_df["tot_reads"])
 
         ### track-based covariates
-        # use midpoint of coverage bins to map to intervals
-        self.full_cov_df["midpoint"] = ((self.full_cov_df["end"] + self.full_cov_df["start"])/2).astype(int)
 
         ## Replication timing
 
         # load repl timing
         F = pd.read_pickle(self.f_repl)
         # map targets to RT intervals
-        tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "midpoint")
+        tidx = mut.map_mutations_to_targets(cov_df, F, inplace=False, poscol = "midpoint")
         F = F.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : "C_RT-" + x)
-        self.full_cov_df = pd.concat([self.full_cov_df, F], axis = 1)
+        cov_df = pd.concat([cov_df, F], axis = 1)
 
         # z-transform
         # note that log(RT) \propto coverage, so we merely z-transform without
         # taking any log here
-        self.full_cov_df = pd.concat([
-          self.full_cov_df,
-          self.full_cov_df.loc[:, F.columns].apply(lambda x : zt(x)).rename(columns = lambda x : x + "_z")
+        cov_df = pd.concat([
+          cov_df,
+          cov_df.loc[:, F.columns].apply(lambda x : zt(x)).rename(columns = lambda x : x + "_z")
         ], axis = 1)
 
         ## GC content
@@ -216,51 +228,51 @@ class CoverageMCMCRunner:
             print("Using precomputed GC content", file = sys.stderr)
             B = pd.read_pickle(self.f_GC)
             
-            self.full_cov_df = self.full_cov_df.merge(B.rename(columns={"gc": "C_GC"}), left_on=["chr", "start", "end"],
+            cov_df = cov_df.merge(B.rename(columns={"gc": "C_GC"}), left_on=["chr", "start", "end"],
                                                   right_on=["chr", "start", "end"], how="left")
         else:
             print("Computing GC content", file = sys.stderr)
             self.generate_GC()
 
         # GC content follows a roughly quadratic relationship with coverage
-        self.full_cov_df["C_GC2"] = self.full_cov_df["C_GC"]**2
+        cov_df["C_GC2"] = cov_df["C_GC"]**2
 
         ## FAIRE
         if self.f_faire is not None:
             F = pd.read_pickle(self.f_faire)
 
             # map targets to FAIRE intervals
-            tidx = mut.map_mutations_to_targets(self.full_cov_df, F, inplace=False, poscol = "midpoint")
+            tidx = mut.map_mutations_to_targets(cov_df, F, inplace=False, poscol = "midpoint")
             F = F.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : "C_FAIRE-" + x)
-            self.full_cov_df = pd.concat([self.full_cov_df, F], axis = 1)
+            cov_df = pd.concat([cov_df, F], axis = 1)
 
             # z-transform
-            self.full_cov_df = pd.concat([
-              self.full_cov_df,
-              self.full_cov_df.loc[:, F.columns].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_z")
+            cov_df = pd.concat([
+              cov_df,
+              cov_df.loc[:, F.columns].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_z")
             ], axis = 1)
 
         ## (panel of) normal coverage
         if self.f_Ncov is not None:
             Ncov = self.load_coverage(self.f_Ncov)
-            self.full_cov_df = self.full_cov_df.merge(
+            cov_df = cov_df.merge(
               Ncov.loc[:, ["start_g", "end_g", "covcorr"]],
               left_on = ["start_g", "end_g"],
               right_on = ["start_g", "end_g"],
               how = "left",
               suffixes = (None, "_N")
             )
-            self.full_cov_df = self.full_cov_df.rename(columns = { "covcorr_N" : "C_normcov0" })
+            cov_df = cov_df.rename(columns = { "covcorr_N" : "C_normcov0" })
 
         if self.f_PoN is not None:
             raise NotImplementedError("PoNs are not yet supported")
 
         # z-transform all normal coverage covariates, if they exist
-        normcovcols = self.full_cov_df.columns[self.full_cov_df.columns.str.contains(r"^C_normcov\d")]
+        normcovcols = cov_df.columns[cov_df.columns.str.contains(r"^C_normcov\d")]
         if len(normcovcols):
-            self.full_cov_df = pd.concat([
-              self.full_cov_df,
-              self.full_cov_df.loc[:, normcovcols].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_z"),
+            cov_df = pd.concat([
+              cov_df,
+              cov_df.loc[:, normcovcols].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_z"),
             ], axis = 1)
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
@@ -335,6 +347,10 @@ class CoverageMCMCRunner:
         with pd.option_context('mode.chained_assignment', None): # suppress erroneous SettingWithCopyWarning
             Cov_overlap["fragcorr"] = np.round(Cov_overlap["covcorr"]/Cov_overlap["C_frag_len"].mean())
 
+        return Cov_overlap
+
+    def filter_and_scale_covariates(self, cov_df):
+        return
         ## filtering
         # use all z-transformed covariates + non-scaled GC content+GC^2 + target length (if running on exomes)
         covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z|^C_GC|^C_log_len$")])
