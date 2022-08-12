@@ -85,7 +85,7 @@ class CoverageMCMCRunner:
 
     # Do preprocessing for running on each ADP cluster individually
     def prepare_single_cluster(self):
-        Pi, r, C, filtered_cov_df = self.assign_clusters()
+        Pi, r, C, filtered_cov_df = self.make_regressors(self.aseg_cov_df)
         pois_regr = PoissonRegression(r, C, Pi, log_exposure = np.log(self.bin_width))
         all_mu, global_beta = pois_regr.fit()
 
@@ -364,23 +364,25 @@ class CoverageMCMCRunner:
 
         return Cov_overlap
 
+    def make_regressors(self, cov_df):
         ## making regressor vector/covariate matrix
 
         # sort by genomic coordinates
-        Cov_overlap = Cov_overlap.sort_values("start_g", ignore_index = True)
+        cov_df = cov_df.sort_values("start_g", ignore_index = True)
 
         # regressor
-        r = np.c_[Cov_overlap["fragcorr"]]
+        r = np.c_[cov_df["fragcorr"]]
 
         # intercept matrix (one intercept per allelic segment)
-        Pi = np.zeros([len(Cov_overlap), Cov_overlap["seg_idx"].max() + 1], dtype = np.float16)
-        Pi[np.r_[0:len(Cov_overlap)], Cov_overlap["seg_idx"]] = 1
+        Pi = np.zeros([len(cov_df), cov_df["seg_idx"].max() + 1], dtype = np.float16)
+        Pi[np.r_[0:len(cov_df)], cov_df["seg_idx"]] = 1
         Pi = Pi[:, Pi.sum(0) > 0] # prune zero columns in Pi (allelic segments that got totally eliminated)
 
         # covariate matrix
-        C = np.c_[Cov_overlap[covar_columns]]
+        covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("(?:^C_.*z$|C_log_len)")])
+        C = np.c_[cov_df[covar_columns]]
 
-        return Pi, r, C, Cov_overlap
+        return Pi, r, C, cov_df
 
 #TODO switch to lnp
 # function for fitting nb model without covariates
