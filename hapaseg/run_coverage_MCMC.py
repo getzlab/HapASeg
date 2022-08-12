@@ -381,10 +381,11 @@ class CoverageMCMCRunner:
         Pi = Pi[:, Pi.sum(0) > 0] # prune zero columns in Pi (allelic segments that got totally eliminated)
 
         # covariate matrix
-        covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("(?:^C_.*z$|C_log_len)")])
-        C = np.c_[cov_df[covar_columns]]
+        col_idx = cov_df.columns.str.contains("(?:^C_.*z$|C_log_len)")
+        sorted_covar_columns = sorted(cov_df.columns[col_idx])
+        C = np.c_[cov_df[sorted_covar_columns]]
 
-        return Pi, r, C, cov_df
+        return Pi, r, C, pd.concat([cov_df.loc[:, ~col_idx], cov_df.loc[:, sorted_covar_columns]], axis = 1)
 
 #TODO switch to lnp
 # function for fitting nb model without covariates
