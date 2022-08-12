@@ -314,7 +314,8 @@ class Hapaseg_acdp_generate_df(wolf.Task):
     
     output_patterns = {
         "acdp_df_pickle": "acdp_df.pickle",
-        "opt_cdp_idx" : ("opt_cdp_draw.txt", wolf.read_file)
+        "opt_cdp_idx" : ("opt_cdp_draw.txt", wolf.read_file),
+        "lnp_data_pickle": "lnp_data.pickle"
     }
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
     resources = {"cpus-per-task": 8, "mem" : "15G"}
@@ -325,24 +326,32 @@ class Hapaseg_run_acdp(wolf.Task):
         "acdp_df" : None,
         "num_samples" : None,
         "cytoband_file" : None,
-        "opt_cdp_idx": None
+        "opt_cdp_idx": None,
+        "lnp_data_pickle":None,
+        "wgs": False,
+        "use_single_draw":""
     }
-
-    script = """
-    hapaseg allelic_coverage_dp  --cov_seg_data ${cov_seg_data} \
-    --acdp_df_path ${acdp_df} \
-    --num_samples ${num_samples} \
-    --cytoband_file ${cytoband_file} \
-    --opt_cdp_idx ${opt_cdp_idx}
-    """
+    
+    def script(self):
+        script = """
+        hapaseg allelic_coverage_dp  --cov_seg_data ${cov_seg_data} \
+        --acdp_df_path ${acdp_df} \
+        --lnp_data_pickle ${lnp_data_pickle} \
+        --num_samples ${num_samples} \
+        --cytoband_file ${cytoband_file} \
+        --opt_cdp_idx ${opt_cdp_idx}"""
+        
+        if self.conf["inputs"]["wgs"] == True:
+            script += " --wgs"
+        if self.conf["inputs"]["use_single_draw"] == True:
+            script += " --use_single_draw"
+        return script
 
     output_patterns = {
         "acdp_model_pickle": "acdp_model.pickle",
         "acdp_clusters_plot": "acdp_clusters_plot.png",
         "acdp_tuples_plot": "acdp_tuples_plot.png",
-        "acdp_genome_all_draws": 'acdp_all_draws.png',
-        "acdp_genome_agg_draws" : "acdp_agg_draws.png",
-        "acdp_genome_best_cdp_draw" : "acdp_best_cdp_draw.png"
+        "acdp_genome_plots": 'acdp*draws.png',
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"

@@ -528,9 +528,9 @@ def workflow(
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":ref_config["repl_file"],
-        "faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
+       # "faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
         "gc_pickle":ref_config["gc_file"],
-        "ref_fasta":localization_task["ref_fasta"]
+        "ref_fasta":localization_task["ref_fasta"],
         "bin_width":bin_width,
         "wgs":wgs
         }
@@ -655,7 +655,18 @@ def workflow(
             "bin_width":bin_width
             }
         )
-    
+        # run acdp
+        acdp_task = hapaseg.Hapaseg_run_acdp(
+        inputs = {
+            "cov_seg_data" : cov_mcmc_gather_task["cov_collected_data"],
+            "acdp_df":gen_acdp_task["acdp_df_pickle"],
+            "num_samples":num_cov_seg_samples,
+            "cytoband_file": localization_task["cytoband_file"],
+            "opt_cdp_idx" : gen_acdp_task["opt_cdp_idx"],
+            "lnp_data_pickle": gen_acdp_task["lnp_data_pickle"],
+            "wgs": wgs
+            }
+        ) 
     else:
         # otherwise generate acdp dataframe directly from cov_mcmc results
         gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
@@ -670,16 +681,19 @@ def workflow(
             }
        ) 
 
-    # run acdp
-    acdp_task = hapaseg.Hapaseg_run_acdp(
-    inputs = {
-        "cov_seg_data" : cov_mcmc_gather_task["cov_collected_data"],
-        "acdp_df":gen_acdp_task["acdp_df_pickle"],
-        "num_samples":num_cov_seg_samples,
-        "cytoband_file": localization_task["cytoband_file"],
-        "opt_cdp_idx" : gen_acdp_task["opt_cdp_idx"]
-        }
-    )
+        # run acdp
+        acdp_task = hapaseg.Hapaseg_run_acdp(
+        inputs = {
+            "cov_seg_data" : cov_mcmc_gather_task["cov_collected_data"],
+            "acdp_df":gen_acdp_task["acdp_df_pickle"],
+            "num_samples":num_cov_seg_samples,
+            "cytoband_file": localization_task["cytoband_file"],
+            "opt_cdp_idx" : gen_acdp_task["opt_cdp_idx"],
+            "wgs": wgs,
+            "lnp_data_pickle": gen_acdp_task["lnp_data_pickle"],
+            "use_single_idx":True # for now only use single best draw for wgs
+            }
+        )
 
     #cleanup by deleting bam disks. we make seperate tasks for the bams
     if not persistent_dry_run and tumor_bam is not None and tumor_bai is not None:
