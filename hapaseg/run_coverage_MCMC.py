@@ -17,13 +17,20 @@ from .model_optimizers import PoissonRegression
 class CoverageMCMCRunner:
     def __init__(self,
                  coverage_csv,
+
+                 # allelic segment files
                  f_allelic_clusters,
                  f_SNPs,
                  f_segs,
                  ref_fasta,
+
+                 # covariates
                  f_repl,
                  f_faire,
                  f_GC=None,
+                 f_Ncov=None,
+                 f_PoN=None,
+
                  num_draws=50,
                  cluster_num=None,
                  allelic_sample=None,
@@ -36,6 +43,8 @@ class CoverageMCMCRunner:
         self.f_repl = f_repl
         self.f_faire = f_faire
         self.f_GC = f_GC
+        self.f_Ncov = f_Ncov
+        self.f_PoN = f_PoN
         self.ref_fasta = ref_fasta
         self.bin_width = bin_width
         self.wgs = wgs
@@ -237,6 +246,29 @@ class CoverageMCMCRunner:
             self.full_cov_df = pd.concat([
               self.full_cov_df,
               self.full_cov_df.loc[:, F.columns].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_z")
+            ], axis = 1)
+
+        ## (panel of) normal coverage
+        if self.f_Ncov is not None:
+            Ncov = self.load_coverage(self.f_Ncov)
+            self.full_cov_df = self.full_cov_df.merge(
+              Ncov.loc[:, ["start_g", "end_g", "covcorr"]],
+              left_on = ["start_g", "end_g"],
+              right_on = ["start_g", "end_g"],
+              how = "left",
+              suffixes = (None, "_N")
+            )
+            self.full_cov_df = self.full_cov_df.rename(columns = { "covcorr_N" : "C_normcov0" })
+
+        if self.f_PoN is not None:
+            raise NotImplementedError("PoNs are not yet supported")
+
+        # z-transform all normal coverage covariates, if they exist
+        normcovcols = self.full_cov_df.columns[self.full_cov_df.columns.str.contains(r"^C_normcov\d")]
+        if len(normcovcols):
+            self.full_cov_df = pd.concat([
+              self.full_cov_df,
+              self.full_cov_df.loc[:, normcovcols].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_z"),
             ], axis = 1)
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
