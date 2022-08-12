@@ -69,6 +69,7 @@ class CoverageMCMCRunner:
 
         # load and filter covariates
         self.aseg_cov_df = self.load_covariates(self.aseg_cov_df)
+        self.aseg_cov_df = self.filter_and_scale_covariates(self.aseg_cov_df)
 
     def run_all_clusters(self):
         Pi, r, C, filtered_cov_df = self.assign_clusters()
@@ -188,7 +189,6 @@ class CoverageMCMCRunner:
         cov_df = cov_df.loc[(cov_df.mean_frag_len > 0) & (cov_df.std_frag_len > 0)].reset_index(drop = True)
 
         cov_df = cov_df.rename(columns = { "mean_frag_len" : "C_frag_len" })
-        cov_df["C_frag_len_z"] = zt(np.log(cov_df["C_frag_len"]))
 
         # generate on 5x and 11x scales
         swv = np.lib.stride_tricks.sliding_window_view
@@ -200,8 +200,6 @@ class CoverageMCMCRunner:
             conv = np.einsum('ij,ij->i', wt_sw, fl_sw)
 
             cov_df[f"C_frag_len_{scale}x"] = conv/wt_sw.sum(1)
-            cov_df[f"C_frag_len_{scale}x_z"] = zt(np.log(cov_df[f"C_frag_len_{scale}x"]))
-        ## Failing read fraction
 
         ### track-based covariates
 
@@ -213,14 +211,6 @@ class CoverageMCMCRunner:
         tidx = mut.map_mutations_to_targets(cov_df, F, inplace=False, poscol = "midpoint")
         F = F.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : "C_RT-" + x)
         cov_df = pd.concat([cov_df, F], axis = 1)
-
-        # z-transform
-        # note that log(RT) \propto coverage, so we merely z-transform without
-        # taking any log here
-        cov_df = pd.concat([
-          cov_df,
-          cov_df.loc[:, F.columns].apply(lambda x : zt(x)).rename(columns = lambda x : x + "_z")
-        ], axis = 1)
 
         ## GC content
 
@@ -235,9 +225,6 @@ class CoverageMCMCRunner:
             print("Computing GC content", file = sys.stderr)
             self.generate_GC(cov_df)
 
-        # GC content follows a roughly quadratic relationship with coverage
-        cov_df["C_GC2"] = cov_df["C_GC"]**2
-
         ## FAIRE
         if self.f_faire is not None:
             F = pd.read_pickle(self.f_faire)
@@ -246,12 +233,6 @@ class CoverageMCMCRunner:
             tidx = mut.map_mutations_to_targets(cov_df, F, inplace=False, poscol = "midpoint")
             F = F.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : "C_FAIRE-" + x)
             cov_df = pd.concat([cov_df, F], axis = 1)
-
-            # z-transform
-            cov_df = pd.concat([
-              cov_df,
-              cov_df.loc[:, F.columns].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_z")
-            ], axis = 1)
 
         ## (panel of) normal coverage
         if self.f_Ncov is not None:
@@ -268,13 +249,49 @@ class CoverageMCMCRunner:
         if self.f_PoN is not None:
             raise NotImplementedError("PoNs are not yet supported")
 
-        # z-transform all normal coverage covariates, if they exist
-        normcovcols = cov_df.columns[cov_df.columns.str.contains(r"^C_normcov\d")]
-        if len(normcovcols):
-            cov_df = pd.concat([
-              cov_df,
-              cov_df.loc[:, normcovcols].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_z"),
-            ], axis = 1)
+        return cov_df
+
+    def filter_and_scale_covariates(self, cov_df):
+        Cslice = cov_df.loc[:, cov_df.columns.str.contains("^C_")]
+
+        ## scale covariates
+
+        # FAIRE, fragment length, and normal coverage get log z-transformed
+        lztcols = Cslice.columns.str.contains("FAIRE|frag_len|normcov")
+        cov_df = pd.concat([
+          cov_df,
+          Cslice.loc[:, lztcols].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_lz")
+        ], axis = 1)
+
+        # RT and GC get z-transformed sans log (they are already proportional to log coverage)
+        ztcols = Cslice.columns.str.contains("C_(?:RT|GC)")
+        cov_df = pd.concat([
+          cov_df,
+          Cslice.loc[:, ztcols].apply(zt).rename(columns = lambda x : x + "_z")
+        ], axis = 1)
+
+        # GC content follows a roughly quadratic relationship with coverage
+        cov_df["C_GC2_z"] = cov_df["C_GC_z"]**2
+
+        # log bin length gets zero-centered (so that we can see how much it deviates from 1 [perfect proportionality to target length])
+        if "C_log_len" in cov_df.columns:
+            cov_df["C_log_len"] -= cov_df["C_log_len"].mean()
+
+        ## filter covariates
+        Cslice = cov_df.loc[:, cov_df.columns.str.contains("(?:^C_.*z$|C_log_len)")]
+
+        # no NaN covariates
+        naidx = Cslice.isna().any(1)
+
+        # coverage outliers
+        outlier_mask = find_outliers(cov_df["fragcorr"].values)
+ 
+        # remove covariate outliers (+- 6 sigma)
+        z_norm_columns = Cslice.columns.str.contains("^C_.*z$")
+        covar_6sig_idx = (Cslice.loc[:, z_norm_columns].abs() < 6).all(axis = 1)
+
+        # apply all filters
+        cov_df = cov_df.loc[~naidx & ~outlier_mask & covar_6sig_idx]
 
         return cov_df
 
@@ -345,35 +362,7 @@ class CoverageMCMCRunner:
         ## subset to targets containing SNPs
         Cov_overlap = self.full_cov_df.loc[self.full_cov_df["seg_idx"] != -1, :]
 
-        ## scale coverage in units of fragments, rather than bases in order to
-        ## correctly model Poisson noise
-        with pd.option_context('mode.chained_assignment', None): # suppress erroneous SettingWithCopyWarning
-            Cov_overlap["fragcorr"] = np.round(Cov_overlap["covcorr"]/Cov_overlap["C_frag_len"].mean())
-
         return Cov_overlap
-
-    def filter_and_scale_covariates(self, cov_df):
-        return
-        ## filtering
-        # use all z-transformed covariates + non-scaled GC content+GC^2 + target length (if running on exomes)
-        covar_columns = sorted(Cov_overlap.columns[Cov_overlap.columns.str.contains("^C_.*_z|^C_GC|^C_log_len$")])
-        Cslice = Cov_overlap.loc[:, covar_columns]
-
-        # no NaN covariates
-        naidx = Cslice.isna().any(1)
-
-        # remove bins with low quality reads (>3 sigma)
-        lowqidx = Cov_overlap["fail_reads_zt"] > 3
-
-        # coverage outliers
-        outlier_mask = find_outliers(Cov_overlap["fragcorr"].values)
- 
-        # remove covariate outliers (+- 6 sigma)
-        z_norm_columns = Cslice.columns[Cslice.columns.str.contains("^C_.*_z$")]
-        covar_6sig_idx = (Cslice.loc[:, z_norm_columns].abs() < 6).all(axis = 1)
-
-        # apply all filters
-        Cov_overlap = Cov_overlap.loc[~naidx & ~lowqidx & ~outlier_mask & covar_6sig_idx]
 
         ## making regressor vector/covariate matrix
 
