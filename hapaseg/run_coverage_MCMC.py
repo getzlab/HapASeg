@@ -161,7 +161,7 @@ class CoverageMCMCRunner:
         self.full_cov_df["C_log_len"] = np.log(self.full_cov_df["end"] - self.full_cov_df["start"] + 1)
         # in case we are doing wgs these will all be the same and we must remove
         # since it will ruin beta fitting
-        if (np.diff(self.full_cov_df["C_log_len"]) == 0).all():
+        if self.wgs:
             self.full_cov_df = self.full_cov_df.drop(['C_log_len'], axis=1)
 
         ## Fragment length
