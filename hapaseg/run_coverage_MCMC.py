@@ -67,8 +67,8 @@ class CoverageMCMCRunner:
         # combine allelic segments and coverage bins
         self.aseg_cov_df = self.assign_clusters()
 
-        # load and filter covariates (modifies self.aseg_cov_df)
-        self.load_covariates(self.aseg_cov_df)
+        # load and filter covariates
+        self.aseg_cov_df = self.load_covariates(self.aseg_cov_df)
 
     def run_all_clusters(self):
         Pi, r, C, filtered_cov_df = self.assign_clusters()
@@ -172,6 +172,7 @@ class CoverageMCMCRunner:
             cov_df.iat[i, -1] = F[chrm-1][start:end+1].gc
 
     def load_covariates(self, cov_df):
+        cov_df = cov_df.copy()
         ## Target size
 
         # we only need bin size if doing exomes but we can check by looking at the bin lengths
@@ -274,6 +275,8 @@ class CoverageMCMCRunner:
               cov_df,
               cov_df.loc[:, normcovcols].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_z"),
             ], axis = 1)
+
+        return cov_df
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
     # clusters with snps from different clusters are probabliztically assigned
