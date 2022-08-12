@@ -161,15 +161,15 @@ class CoverageMCMCRunner:
             mut.map_mutations_to_targets(SNPs, self.full_cov_df)
         return SNPs
 
-    def generate_GC(self):
+    def generate_GC(self, cov_df):
         #grab fasta object from seq to avoid rebuilding
         seq.set_reference(self.ref_fasta)
         F = seq._fa.ref_fa_obj
-        self.full_cov_df['C_GC'] = np.nan
+        cov_df['C_GC'] = np.nan
         
         #this indexing assumes 0-indexed start and end cols
-        for (i, chrm, start, end) in tqdm.tqdm(self.full_cov_df[['chr', 'start','end']].itertuples(), total = len(self.full_cov_df)):
-            self.full_cov_df.iat[i, -1] = F[chrm-1][start:end+1].gc
+        for (i, chrm, start, end) in tqdm.tqdm(cov_df[['chr', 'start','end']].itertuples(), total = len(cov_df)):
+            cov_df.iat[i, -1] = F[chrm-1][start:end+1].gc
 
     def load_covariates(self, cov_df):
         ## Target size
@@ -232,7 +232,7 @@ class CoverageMCMCRunner:
                                                   right_on=["chr", "start", "end"], how="left")
         else:
             print("Computing GC content", file = sys.stderr)
-            self.generate_GC()
+            self.generate_GC(cov_df)
 
         # GC content follows a roughly quadratic relationship with coverage
         cov_df["C_GC2"] = cov_df["C_GC"]**2
