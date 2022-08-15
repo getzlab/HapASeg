@@ -370,8 +370,10 @@ class CovLNP_NR_prior:
             self.mu = np.log((x/np.exp(self.bce)).mean()) 
         # use mu prior as starting point
         else:
-                self.mu = self.mu_prior
-                self.lgsigma = np.log(beta_prior / (alpha_prior + 1 + 0.5)) / 2
+            self.mu = self.mu_prior
+
+        # init sigma from sqrt(mode(inverse gamma prior))
+        self.lgsigma = np.log(beta_prior / (alpha_prior + 1)) / 2
         self.sigma = np.exp(self.lgsigma)
 
     def integral(self, x):
