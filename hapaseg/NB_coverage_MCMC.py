@@ -24,7 +24,8 @@ class AllelicCluster:
 		# cluster wide params
 		self.r = r
 		self.C = C
-		self.mu = mu_0.flatten()
+		assert len(mu_0) == 1
+		self.mu = np.asscalar(mu_0)
 		self.beta = beta_0
 		self.lepsi = 1
 		self.epsi = np.exp(self.lepsi)
