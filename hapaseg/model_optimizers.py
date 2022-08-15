@@ -361,9 +361,9 @@ class CovLNP_NR_prior:
         self.beta_prior = beta_prior
         
         if extra_roots:
-                self.hr, self.hw = hr_extra, hw_extra
+            self.hr, self.hw = hr_extra, hw_extra
         else:
-                self.hr, self.hw = hr, hw
+            self.hr, self.hw = hr, hw
         
         # make empirical estimate for mu starting point (log mean after removing residuals)
         if not init_prior:
