@@ -366,11 +366,14 @@ class CovLNP_NR_prior:
                 self.hr, self.hw = hr, hw
         
         #make empirical estimates about mu and sigma
-        self.mu = (np.log(x) - self.bce).mean()
         if init_prior:
-                self.lgsigma = np.log((np.log(x) - self.bce).std())
+                emp = x/np.exp(self.bce)
+                self.mu = np.log(emp.mean())
+                self.lgsigma = np.log(np.log(emp).std())
+
+        # use priors as starting point
         else:
-        # use sigma prior as starting point
+                self.mu = self.mu_prior
                 self.lgsigma = np.log(beta_prior / (alpha_prior + 1 + 0.5)) / 2
         self.sigma = np.exp(self.lgsigma)
 

@@ -148,6 +148,8 @@ def parse_args():
     preprocess_coverage_mcmc.add_argument("--segmentations_pickle", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
     preprocess_coverage_mcmc.add_argument("--repl_pickle", help="pickled dataframe containing replication timing data", required=True)
     preprocess_coverage_mcmc.add_argument("--faire_pickle", help="pickled dataframe containing FAIRE data", required=False)
+    preprocess_coverage_mcmc.add_argument("--normal_coverage_csv", help="csv file in the format of the tumor coverage file, but for the normal", required=False)
+    preprocess_coverage_mcmc.add_argument("--panel_of_normals", help="path to newline delimited file listing multiple normal coverage CSVs", required=False)
     preprocess_coverage_mcmc.add_argument("--gc_pickle", help="pickled dataframe containing precomputed gc content. This is not required but will speed up runtime if passed", default=None)
     preprocess_coverage_mcmc.add_argument("--allelic_sample", type=int,
                                           help="index of sample clustering from allelic DP to use as seed for segmentation. Will use most likely clustering by default",
@@ -212,7 +214,7 @@ def parse_args():
     ac_dp.add_argument("--acdp_df_path", help="path to acdp dataframe")
     ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
     ac_dp.add_argument("--cytoband_file", help="path to cytoband txt file")
-    ac_dp.add_argument("--opt_cdp_idx", help="index of best cdp run")
+    ac_dp.add_argument("--opt_cdp_idx", type=int, help="index of best cdp run")
     ac_dp.add_argument("--wgs", help="flag to determine if sample is whole genome", default=False, action='store_true')
     ac_dp.add_argument("--lnp_data_pickle", help="path to lnp data dictionary", required=True)
     ac_dp.add_argument("--use_single_draw", help="flag to force acdp to only use best draw", default=False, action='store_true')
@@ -501,6 +503,8 @@ def main():
                                              args.repl_pickle,
                                              args.faire_pickle,
                                              f_GC=args.gc_pickle,
+                                             f_Ncov=args.normal_coverage_csv,
+                                             f_PoN=args.panel_of_normals,
                                              allelic_sample=args.allelic_sample,
                                              bin_width=args.bin_width,
                                              wgs=args.wgs)
@@ -696,19 +700,21 @@ def main():
         acdp_df = pd.read_pickle(args.acdp_df_path)
         mcmc_data = np.load(args.cov_seg_data)
         beta = mcmc_data['beta']
+        with open(args.lnp_data_pickle, 'rb') as f:
+            lnp_data = pickle.load(f)
         
         draw_idx = args.opt_cdp_idx if args.use_single_draw else None
         acdp = AllelicCoverage_DP(acdp_df, 
                                   beta, 
                                   args.cytoband_file,
-                                  args.lnp_data_pickle,
+                                  lnp_data,
                                   wgs=args.wgs,
                                   draw_idx=draw_idx,
                                   seed_all_clusters=args.warmstart)
         acdp.run(args.num_samples)
         print("visualizing run")
         
-        if wgs:
+        if args.wgs:
             acdp.visualize_ACDP('./acdp_agg_draws.png', use_cluster_stats=True)
         else:
             acdp.visualize_ACDP('./acdp_agg_draws.png', plot_real_cov=True, use_cluster_stats=True)

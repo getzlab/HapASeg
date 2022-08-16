@@ -191,6 +191,10 @@ class AllelicCoverage_DP:
         self.draw_idx = draw_idx
         self.lnp_data = lnp_data
 
+        # if draw_idx passed then only use those draws
+        if draw_idx is not None:
+            self.cov_df = self.cov_df.loc[self.cov_df.dp_draw == draw_idx]
+
         self.num_segments = len(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
         self.segment_r_list = [None] * self.num_segments
         self.segment_V_list = np.zeros(self.num_segments)
@@ -224,7 +228,7 @@ class AllelicCoverage_DP:
         self.log_beta_0 = 0
         self.half_log2pi = np.log(2*np.pi) / 2
         self.seg_count_norm = 1. 
-
+        
         self._init_segments()
         self._init_clusters()
 
@@ -234,10 +238,6 @@ class AllelicCoverage_DP:
         self.draw_indices = []
 
         self.alpha = 0.5
-        
-        # if draw_idx passed then only use those draws
-        if draw_idx is not None:
-            self.cov_df = self.cov_df.loc[self.cov_df.dp_draw == draw_index]
         
     # initialize each segment object with its data
     def _init_segments(self):
@@ -282,8 +282,9 @@ class AllelicCoverage_DP:
             # using joint
             lnp_res = self.lnp_data[(name[0], name[1], name[3])]
             
-            norm_samples =np.exp(np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = group_len))
-            r = np.array(s.poisson.rvs(s.norm.rvs(norm_samples[:,0], norm_samples[:,1]) * s.beta.rvs(a,b, size = group_len)))
+            norm_samples =np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = group_len)
+            r = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1])))))
+            #r = np.array(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a,b, size = group_len))
             
             # linscale
             # V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a, b, size=10000)).var()
@@ -295,8 +296,9 @@ class AllelicCoverage_DP:
             #V = (np.array(s.poisson.rvs(np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a, b, size=10000)))).var()
             
             # using joint
-            norm_samples =np.exp(np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000))
-            V = np.array(s.poisson.rvs(s.norm.rvs(norm_samples[:,0], norm_samples[:,1]) * s.beta.rvs(a,b, size = 10000))).var()
+            norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000)
+            V = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))))).var()
+            #V = np.array(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a,b, size = 10000)).var()
 
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r
@@ -338,7 +340,9 @@ class AllelicCoverage_DP:
             #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
             self.next_cluster_index = 1
         else:
-            for i in set(range(self.num_segments)) - self.greylist_segments:
+            segs_to_init = set(range(self.num_segments)) - self.greylist_segments
+            print('initializing {} non-greylisted segments'.format(len(segs_to_init)), flush=True)
+            for i in segs_to_init:
                 self.cluster_counts[i] = self.segment_counts[i]
                 self.unassigned_segs.discard(i)
                 self.cluster_dict[i] = sc.SortedSet([i])
@@ -976,7 +980,8 @@ class AllelicCoverage_DP:
         return {c : palette[i] for i, c in enumerate(chosen_draw.cov_DP_cluster.value_counts().index)}
 
     def _get_adp_colors(self):
-        chosen_draw = self.cov_df.loc[(self.cov_df.dp_draw == 0) & (self.cov_df.allele==1)]
+        draw_idx = self.draw_idx if self.draw_idx else 0
+        chosen_draw = self.cov_df.loc[(self.cov_df.dp_draw == draw_idx) & (self.cov_df.allele==1)]
         num_clusters = len(chosen_draw.allelic_cluster.unique())
         palette = self._get_color_palette(num_clusters)
         
@@ -1027,7 +1032,7 @@ class AllelicCoverage_DP:
     
         # precompute the fallback ADP counts
         ADP_dict = {}
-        for ADP, group in self.cov_df.loc[self.cov_df.dp_draw == 0].groupby('allelic_cluster'):
+        for ADP, group in self.cov_df.loc[self.cov_df.dp_draw == self.cov_df.dp_draw.values[0]].groupby('allelic_cluster'):
             ADP_dict[ADP] = (group['maj_count'].sum(), group['min_count'].sum())
         
         # set up canvas according to options
@@ -1166,7 +1171,7 @@ class AllelicCoverage_DP:
                               fill = True, alpha=1,
                             ))
             if self.wgs:
-                #only plot for first dp cluster for now
+                # only plot for first dp draw for now
                 # plot patches for each cluster based only on the allleic cluster and allele
                 cdp_draw_idx = 0 if cdp_draw is None else cdp_draw
                 all_cluster_bins = pd.concat([full_df[tup][1] for tup in self.cluster_dict[c] if full_df[tup][0][3]==cdp_draw_idx])

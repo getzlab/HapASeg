@@ -192,42 +192,44 @@ def workflow(
     else:
         print("Normal coverage will not be used as a covariate; ability to regress out germline CNVs may suffer.")
         use_normal_coverage = False
-    
+        collect_normal_coverage = False
+ 
     if tumor_coverage_bed is not None:
         collect_tumor_coverage=False
         
     #
     # collect or load coverage
-    # tumor
-    if collect_tumor_coverage:
-        # FIXME: hack to account for "chr" in hg38 but not in hg19
-        if ref_genome_build == "hg38":
-            primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
-            primary_contigs.extend(['chrX','chrY','chrM'])
-        else:
-            primary_contigs = [str(x) for x in range(1, 23)] + ["X", "Y", "M"]
 
+    # FIXME: hack to account for "chr" in hg38 but not in hg19
+    if ref_genome_build == "hg38":
+        primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
+        primary_contigs.extend(['chrX','chrY','chrM'])
+    else:
+        primary_contigs = [str(x) for x in range(1, 23)] + ["X", "Y", "M"]
+
+    # shim task to transform split_intervals files into subset parameters for covcollect task
+    @prefect.task
+    def interval_gather(interval_files, primary_contigs):
+        ints = []
+        for f in interval_files:
+            ints.append(pd.read_csv(f, sep = "\t", header = None, names = ["chr", "start", "end"]))
+        #filter non-primary contigs
+        full_bed = pd.concat(ints).sort_values(["chr", "start", "end"]).astype({ "chr" : str })
+        filtered_bed = full_bed.loc[full_bed.chr.isin(primary_contigs)]
+        return filtered_bed
+
+    ## tumor
+    if collect_tumor_coverage:
         # create scatter intervals
-        split_intervals_task = split_intervals.split_intervals(
+        tumor_split_intervals_task = split_intervals.split_intervals(
           bam = tumor_bam_localization_task["t_bam"],
           bai = tumor_bam_localization_task["t_bai"],
           interval_type = "bed",
           selected_chrs = primary_contigs
         )
 
-        # shim task to transform split_intervals files into subset parameters for covcollect task
-        @prefect.task
-        def interval_gather(interval_files, primary_contigs):
-            ints = []
-            for f in interval_files:
-                ints.append(pd.read_csv(f, sep = "\t", header = None, names = ["chr", "start", "end"]))
-            #filter non-primary contigs
-            full_bed = pd.concat(ints).sort_values(["chr", "start", "end"]).astype({ "chr" : str })
-            filtered_bed = full_bed.loc[full_bed.chr.isin(primary_contigs)]
-            return filtered_bed
-
-        subset_intervals = interval_gather(
-          split_intervals_task["interval_files"],
+        tumor_subset_intervals = interval_gather(
+          tumor_split_intervals_task["interval_files"],
           primary_contigs
         )
 
@@ -237,9 +239,9 @@ def workflow(
             bam = tumor_bam_localization_task["t_bam"],
             bai = tumor_bam_localization_task["t_bai"],
             intervals = target_list,
-            subset_chr = subset_intervals["chr"],
-            subset_start = subset_intervals["start"],
-            subset_end = subset_intervals["end"],
+            subset_chr = tumor_subset_intervals["chr"],
+            subset_start = tumor_subset_intervals["start"],
+            subset_end = tumor_subset_intervals["end"],
           )
         )
 
@@ -253,7 +255,44 @@ def workflow(
     else:
         tumor_cov_gather_task = {"coverage":tumor_coverage_bed}
     
-    
+    ## normal
+    if use_normal_coverage:
+        if collect_normal_coverage:
+            # create scatter intervals
+            normal_split_intervals_task = split_intervals.split_intervals(
+              bam = normal_bam_localization_task["n_bam"],
+              bai = normal_bam_localization_task["n_bai"],
+              interval_type = "bed",
+              selected_chrs = primary_contigs
+            )
+
+            normal_subset_intervals = interval_gather(
+              normal_split_intervals_task["interval_files"],
+              primary_contigs
+            )
+
+            # dispatch coverage scatter
+            normal_cov_collect_task = cov_collect.Covcollect(
+              inputs = dict(
+                bam = normal_bam_localization_task["n_bam"],
+                bai = normal_bam_localization_task["n_bai"],
+                intervals = target_list,
+                subset_chr = normal_subset_intervals["chr"],
+                subset_start = normal_subset_intervals["start"],
+                subset_end = normal_subset_intervals["end"],
+              )
+            )
+
+            # gather normal coverage
+            normal_cov_gather_task = wolf.Task(
+              name = "gather_coverage",
+              inputs = { "coverage_beds" : [normal_cov_collect_task["coverage"]] },
+              script = """cat $(cat ${coverage_beds}) > coverage_cat.bed""",
+              outputs = { "coverage" : "coverage_cat.bed" }
+            )
+        else:
+            normal_cov_gather_task = {"coverage":normal_coverage_bed}
+
     # get het site coverage/genotypes from callstats
     if callstats_file is not None:
         hp_task = het_pulldown.get_het_coverage_from_callstats(
@@ -295,7 +334,7 @@ def workflow(
           refFastaIdx = localization_task["ref_fasta_idx"],
           refFastaDict = localization_task["ref_fasta_dict"],
 
-          intervals = split_intervals_task["interval_files"],
+          intervals = tumor_split_intervals_task["interval_files"],
           #intervals = split_het_sites["snp_list_shards"],
 
           exclude_chimeric = True#,
@@ -530,6 +569,7 @@ def workflow(
         "repl_pickle":ref_config["repl_file"],
        # "faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
         "gc_pickle":ref_config["gc_file"],
+        "normal_coverage_csv":normal_cov_gather_task["coverage"] if collect_normal_coverage else "",
         "ref_fasta":localization_task["ref_fasta"],
         "bin_width":bin_width,
         "wgs":wgs
@@ -691,7 +731,7 @@ def workflow(
             "opt_cdp_idx" : gen_acdp_task["opt_cdp_idx"],
             "wgs": wgs,
             "lnp_data_pickle": gen_acdp_task["lnp_data_pickle"],
-            "use_single_idx":True # for now only use single best draw for wgs
+            "use_single_draw":True # for now only use single best draw for wgs
             }
         )
 
