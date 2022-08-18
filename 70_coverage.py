@@ -791,3 +791,346 @@ for st, en in bdy:
 #axs[1].scatter(np.r_[0:len(r)], np.exp(mu + cov_mcmc.mu_i_samples[-1][:, None] + C@beta)/2000, s=0.5)
 
 # }}}
+
+## prune uninformative segments
+seg_mle_idx = np.r_[cov_mcmc.ll_samples].argmax()
+bdy = np.c_[cov_mcmc.F_samples[seg_mle_idx][:-1:2], cov_mcmc.F_samples[seg_mle_idx][1::2]]
+
+# local marginal likelihood based approach {{{
+for st, en in bdy:
+    # Laplace approximation of regression marginal likelihood
+    #pois_regr = PoissonRegression(cov_mcmc.r[st:en], np.ones([en - st, 0]), np.ones([en - st, 1]), np.log(2000))
+    pois_regr = PoissonRegression(cov_mcmc.r[st:en], cov_mcmc.C[st:en, [0, 2, 3, 4]], np.ones([en - st, 1]), np.log(2000))
+    try:
+        pois_regr.fit()
+    except np.linalg.LinAlgError:
+        print(f"{st}-{en} is singular")
+    d = len(pois_regr.beta) + 1
+    _, det = np.linalg.slogdet(pois_regr.hess())
+    e_s = pois_regr.mu + pois_regr.C@pois_regr.beta + pois_regr.log_exposure
+    regr_lik = -np.exp(e_s).sum() + pois_regr.r.T@e_s - ss.gammaln(pois_regr.r + 1).sum()
+    regr_marg_lik = d/2*np.log(2*np.pi) - 0.5*det + regr_lik
+
+    # Poisson marginal likelihood from gamma distribution
+    s = pois_regr.r.sum()
+    beta = len(pois_regr.r)
+    pois_marg_lik = (-1 - s)*np.log(beta) + ss.gammaln(s + 1) - ss.gammaln(pois_regr.r + 1).sum()
+
+    print(regr_marg_lik - pois_marg_lik)
+
+# doesn't work; model can always find a way to overfit to covariates, so Bayes factors always positive
+
+# }}}
+
+# global likelihood ratio based approach {{{
+
+# instead, use MLE of global beta (really, we should integrate over the posterior distribution of global beta)
+
+# experiment with using "glocal" beta -- beta re-fit specifically to the entire first allelic segment
+pois_regr = PoissonRegression(cov_mcmc.r, np.zeros([len(cov_mcmc.r), 0]), np.ones([len(cov_mcmc.r), 1]), log_exposure = np.log(2000))
+pois_regr = PoissonRegression(cov_mcmc.r, cov_mcmc.C, np.ones([len(cov_mcmc.r), 1]), log_exposure = np.log(2000))
+pois_regr.fit()
+mu_local = pois_regr.mu
+beta_local = pois_regr.beta
+
+hess_local = pois_regr.hess()
+musig2 = -1/hess_local[0, 0]
+betasiginv = -hess_local[1:, 1:]
+
+plt.figure(1); plt.clf()
+for st, en in bdy: 
+    pois_regr = PoissonRegression(cov_mcmc.r[st:en], np.zeros([en - st, 0]), np.ones([en - st, 1]), log_exposure = mu_local + np.log(2000), log_offset = cov_mcmc.C[st:en]@beta_local)
+
+    try:
+        pois_regr.fit()
+    except np.linalg.LinAlgError:
+        print(f"{st}-{en} is singular")
+    d = len(pois_regr.beta) + 1
+    _, det = np.linalg.slogdet(-pois_regr.hess())
+    e_s = pois_regr.mu + pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+    regr_lik = -np.exp(e_s).sum() + pois_regr.r.T@e_s - ss.gammaln(pois_regr.r + 1).sum()
+    regr_marg_lik = d/2*np.log(2*np.pi) - 0.5*det + regr_lik
+
+    exp_regr = e_s
+    mu_regr = pois_regr.mu
+
+    # Poisson marginal likelihood sans covariates
+    pois_regr = PoissonRegression(cov_mcmc.r[st:en], np.zeros([en - st, 0]), np.ones([en - st, 1]), log_exposure = mu_local + np.log(2000))
+
+    try:
+        pois_regr.fit()
+    except np.linalg.LinAlgError:
+        print(f"{st}-{en} is singular")
+    d = len(pois_regr.beta) + 1
+    _, det = np.linalg.slogdet(-pois_regr.hess())
+    e_s = pois_regr.mu + pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+    regr_lik = -np.exp(e_s).sum() + pois_regr.r.T@e_s - ss.gammaln(pois_regr.r + 1).sum()
+    pois_marg_lik = d/2*np.log(2*np.pi) - 0.5*det + regr_lik
+
+    exp_noregr = e_s
+
+    #plt.scatter(np.r_[st:en], np.exp(mu_local + cov_mcmc.C[st:en]@cov_mcmc.beta + np.log(2000)), color = 'b', marker = '+')
+    plt.scatter(np.r_[st:en], np.exp(mu_local + cov_mcmc.C[st:en]@beta_local + np.log(2000)), color = 'b', marker = '+')
+    plt.scatter(np.r_[st:en], cov_mcmc.r[st:en], s = 1, color = 'k')
+    plt.scatter(np.r_[st:en], cov_mcmc.r[st:en] - np.exp(exp_regr - mu_regr), s = 1)
+
+    bf = (regr_marg_lik - pois_marg_lik)[0, 0]
+    if bf < 0:
+        plt.scatter(np.r_[st:en], cov_mcmc.r[st:en] - np.exp(exp_regr - mu_regr), s = 20, marker = "o", color = 'r', facecolor = "none")
+
+#    # Poisson marginal likelihood from gamma distribution
+#    s = pois_regr.r.sum()
+#    beta = len(pois_regr.r)
+#    pois_marg_lik = (-1 - s)*np.log(beta) + ss.gammaln(s + 1) - ss.gammaln(pois_regr.r + 1).sum()
+
+    print("{st}-{en}: {lik}".format(st = st, en = en, lik = (regr_marg_lik - pois_marg_lik)[0,0]))
+
+# }}}
+
+# bilinear model {{{
+
+# compute three marginal likelihoods
+
+# 1. no covariates (nul)
+# 2. global beta (lin)
+# 3. global beta + seg-specific (bil)
+
+plt.figure(2); plt.clf()
+for st, en in bdy: 
+    # no covariates
+    pois_regr = PoissonRegression(cov_mcmc.r[st:en], np.zeros([en - st, 0]), np.ones([en - st, 1]), log_exposure = np.log(2000))
+
+    try:
+        pois_regr.fit()
+    except np.linalg.LinAlgError:
+        print(f"{st}-{en} is singular")
+    d = len(pois_regr.beta) + 1
+    _, det = np.linalg.slogdet(-pois_regr.hess())
+    e_s = pois_regr.mu + pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+    lik = -np.exp(e_s).sum() + pois_regr.r.T@e_s - ss.gammaln(pois_regr.r + 1).sum()
+    nul_marg_lik = d/2*np.log(2*np.pi) - 0.5*det + lik
+
+    mu_lin = pois_regr.mu
+
+    # global beta (MLE)
+    pois_regr = PoissonRegression(cov_mcmc.r[st:en], np.zeros([en - st, 0]), np.ones([en - st, 1]), log_exposure = mu_lin + np.log(2000), log_offset = cov_mcmc.C[st:en]@beta, intercept = False)
+
+    try:
+        pois_regr.fit()
+    except np.linalg.LinAlgError:
+        print(f"{st}-{en} is singular")
+    d = len(pois_regr.beta) + 1
+    _, det = np.linalg.slogdet(-pois_regr.hess())
+    e_s = pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+    lik = -np.exp(e_s).sum() + pois_regr.r.T@e_s - ss.gammaln(pois_regr.r + 1).sum()
+    lin_marg_lik = d/2*np.log(2*np.pi) - 0.5*det + lik
+
+    exp_lin = e_s
+
+    # global + local beta
+    # fix intercept to be the same as global beta model (mu_lin); only use fine-grained covariates
+    pois_regr = PoissonRegression(cov_mcmc.r[st:en], cov_mcmc.C[st:en, [0, 3, 4]], np.ones([en - st, 1]), log_exposure = mu_lin + np.log(2000), log_offset = cov_mcmc.C[st:en]@beta, intercept = False)
+    #pois_regr = PoissonRegression(cov_mcmc.r[st:en], cov_mcmc.C[st:en], np.ones([en - st, 1]), log_exposure = mu_local + np.log(2000))
+
+    try:
+        pois_regr.fit()
+    except np.linalg.LinAlgError:
+        print(f"{st}-{en} is singular")
+    d = len(pois_regr.beta)
+    _, det = np.linalg.slogdet(-pois_regr.hess())
+    e_s = pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+    lik = -np.exp(e_s).sum() + pois_regr.r.T@e_s - ss.gammaln(pois_regr.r + 1).sum()
+    bil_marg_lik = d/2*np.log(2*np.pi) - 0.5*det + lik
+
+    exp_bil = e_s
+
+
+    #plt.scatter(np.r_[st:en], np.exp(mu_local + cov_mcmc.C[st:en]@beta + np.log(2000)), color = 'b', marker = '+')
+    plt.scatter(np.r_[st:en], cov_mcmc.r[st:en], s = 1, color = 'k')
+    plt.scatter(np.r_[st:en], cov_mcmc.r[st:en] - np.exp(exp_bil - mu_lin + mu_local) - 76000, marker = '+')
+    plt.scatter(np.r_[st:en], cov_mcmc.r[st:en] - np.exp(exp_lin - mu_lin + mu_local), marker = 'x')
+
+    print("{st}-{en}: {bil} {lin} {nul} ({mod})".format(st = st, en = en, bil = bil_marg_lik[0, 0], lin = lin_marg_lik[0, 0], nul = nul_marg_lik[0, 0], mod = np.r_[bil_marg_lik, lin_marg_lik, nul_marg_lik].argmax()))
+    #print("{st}-{en}: {bil} {lin} {nul}".format(st = st, en = en, bil = (bil_marg_lik - lin_marg_lik)[0, 0], lin = (lin_marg_lik - nul_marg_lik)[0, 0], nul = (bil_marg_lik - nul_marg_lik)[0, 0]))
+
+# }}}
+
+# marginal likelihood with prior {{{
+
+# using global regression as prior
+mu = preprocess_data["all_mu"][seg_indices["allelic_cluster"]]
+beta = preprocess_data["global_beta"]
+
+hess = preprocess_data["pois_hess"]
+musig2 = -1/hess[args.allelic_seg_idx, args.allelic_seg_idx]
+betasiginv = -hess[-len(beta):, -len(beta):]
+#betasiginv = np.c_[-hess[-6, -6]]
+
+# using local regression on ADP segment as prior
+pois_regr = PoissonRegression(r, C, np.ones([len(r), 1]), log_exposure = np.log(2000))
+pois_regr.fit()
+mu = pois_regr.mu
+beta = pois_regr.beta
+
+hess_local = pois_regr.hess()
+musig2 = -1/hess_local[0, 0]
+betasiginv = -hess_local[1:, 1:]
+
+r[200:] = r[200:]*1.3
+
+plt.figure(4); plt.clf()
+_, axs = plt.subplots(2, 1, num = 4)
+plt.figure(5); plt.clf()
+for st, en in bdy: 
+    # global beta (MLE)
+    #pois_regr = PoissonRegression(r[st:en], np.zeros([en - st, 0]), np.ones([en - st, 1]), log_exposure = np.log(2000), log_offset = C[st:en]@beta)
+    pois_regr = PoissonRegression(r[st:en], C[st:en], np.ones([en - st, 1]), log_exposure = np.log(2000), mumu = mu, musig2 = musig2, betamu = beta, betasiginv = betasiginv)
+    #pois_regr = PoissonRegression(r[st:en], C[st:en, np.r_[:2, 3:6]], np.ones([en - st, 1]), log_exposure = np.log(2000), mumu = mu, musig2 = musig2)
+    #pois_regr = PoissonRegression(r[st:en], C[st:en], np.ones([en - st, 1]), log_exposure = np.log(2000) + mu, intercept = False, betamu = beta, betasiginv = betasiginv)
+    #pois_regr = PoissonRegression(r[st:en], C[st:en], np.ones([en - st, 1]), log_exposure = np.log(2000), betamu = beta, betasiginv = betasiginv)
+
+    try:
+        pois_regr.fit()
+        #pois_regr.NR_f()
+        #pois_regr.f = 1
+    except np.linalg.LinAlgError:
+        print(f"{st}-{en} is singular")
+    d = len(pois_regr.beta) + 1
+    #d = len(pois_regr.beta)
+    _, det = np.linalg.slogdet(-pois_regr.hess())
+    #e_s = pois_regr.mu + pois_regr.f*pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+    e_s = pois_regr.mu + pois_regr.f*pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+    #e_s = pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+    lin_lik = -np.exp(e_s).sum() + pois_regr.r.T@e_s - ss.gammaln(pois_regr.r + 1).sum()
+    lin_marg_lik = d/2*np.log(2*np.pi) - 0.5*det + lin_lik + \
+      s.norm.logpdf(pois_regr.mu, pois_regr.mumu, np.sqrt(pois_regr.musig2)) + \
+      s.multivariate_normal.logpdf(pois_regr.beta.ravel(), pois_regr.betamu.ravel(), pois_regr.betasiginv)
+
+    exp_lin = e_s
+    mu_lin = pois_regr.mu
+
+    # no covariates
+    #pois_regr = PoissonRegression(r[st:en], np.zeros([en - st, 0]), np.ones([en - st, 1]), log_exposure = np.log(2000), mumu = mu, musig2 = musig2)
+    #pois_regr = PoissonRegression(r[st:en], np.zeros([en - st, 0]), np.ones([en - st, 1]), log_exposure = np.log(2000) + mu, intercept = False)
+    #pois_regr = PoissonRegression(r[st:en], np.zeros([en - st, 0]), np.ones([en - st, 1]), log_exposure = np.log(2000), mumu = mu, musig2 = musig2)
+    pois_regr = PoissonRegression(r[st:en], np.zeros([en - st, 0]), np.ones([en - st, 1]), log_exposure = np.log(2000))
+    #pois_regr = PoissonRegression(r[st:en], np.random.rand(en - st, 5), np.ones([en - st, 1]), log_exposure = np.log(2000), mumu = mu, musig2 = musig2)
+    #pois_regr = PoissonRegression(r[st:en], np.ones([en - st, 5]), np.ones([en - st, 1]), log_exposure = np.log(2000), mumu = mu, musig2 = musig2)
+
+    try:
+        pois_regr.fit()
+    except np.linalg.LinAlgError:
+        print(f"{st}-{en} is singular")
+    d = len(pois_regr.beta) + 1
+    _, det = np.linalg.slogdet(-pois_regr.hess())
+    e_s = pois_regr.mu + pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+    #e_s = pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+    nul_lik = -np.exp(e_s).sum() + pois_regr.r.T@e_s - ss.gammaln(pois_regr.r + 1).sum()
+    nul_marg_lik = d/2*np.log(2*np.pi) - 0.5*det + nul_lik + \
+      s.norm.logpdf(pois_regr.mu, pois_regr.mumu, np.sqrt(pois_regr.musig2)) #+ \
+      #s.multivariate_normal.logpdf(pois_regr.beta.ravel(), pois_regr.betamu.ravel(), pois_regr.betasiginv)
+    #nul_marg_lik = d/2*np.log(2*np.pi) - 0.5*det + nul_lik
+
+    plt.figure(5)
+    plt.scatter(r[st:en], np.exp(exp_lin), marker = 'x')
+    plt.scatter(r[st:en], np.exp(e_s), marker = '+')
+    axs[0].scatter(np.r_[st:en], r[st:en], s = 1, color = 'k', marker = '.')
+    axs[0].scatter(np.r_[st:en], np.exp(exp_lin), marker = 'x')
+    axs[0].scatter(np.r_[st:en], np.exp(e_s), marker = '+')
+    axs[1].scatter(np.r_[st:en], np.exp(exp_lin) - r[st:en], marker = 'x')
+    #axs[1].scatter(np.r_[st:en], np.exp(e_s) - r[st:en], marker = '+')
+    axs[1].axhline(color = 'k', linestyle = ":")
+    if ((lin_marg_lik - nul_marg_lik)/(en - st) < -100)[0, 0]:
+        axs[0].scatter(np.r_[st:en], r[st:en], s = 30, color = 'r', facecolor = "none")
+        
+
+    print("{st}-{en}: {dif}".format(st = st, en = en, dif = (lin_marg_lik[0, 0] - nul_marg_lik[0, 0])/(en - st)))
+    #print("{st}-{en}: {lin} {nul}".format(st = st, en = en, lin = lin_marg_lik[0, 0], nul = nul_marg_lik[0, 0]))
+
+
+# check Laplace approximation
+
+sig = np.sqrt(-1/pois_regr.hess()[0, 0])
+mu_rng = np.linspace(pois_regr.mu[0, 0] - 5*sig, pois_regr.mu[0, 0] + 5*sig, 100)
+e_s = mu_rng + pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+nul_lik = -np.exp(e_s).sum(0) + pois_regr.r.T@e_s - ss.gammaln(pois_regr.r + 1).sum()
+
+plt.figure(10); plt.clf()
+plt.plot(mu_rng, (nul_lik - nul_lik.max()).ravel())
+lap = s.norm.logpdf(mu_rng, pois_regr.mu[0, 0], np.sqrt(-1/pois_regr.hess()[0, 0]))
+plt.plot(mu_rng, lap - lap.max(), linestyle = "--")
+
+# looks good in 1D!
+
+
+# }}}
+
+# autoregression {{{
+
+pois_regr = PoissonRegression(r[10:], np.c_[C[10:, :], r[:-10]], np.ones([len(r) - 10, 1]), log_exposure = np.log(2000))
+#pois_regr = PoissonRegression(r[1:], np.c_[C[1:, :], C[:-1]], np.ones([len(r) - 1, 1]), log_exposure = np.log(2000))
+#pois_regr = PoissonRegression(r, C, np.ones([len(r), 1]), log_exposure = np.log(2000))
+pois_regr.fit()
+
+e_s = pois_regr.mu + pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+
+plt.figure(56); plt.clf()
+_, axs = plt.subplots(2, 1, num = 56, sharex = True)
+axs[0].scatter(np.r_[0:len(pois_regr.r)], np.exp(e_s), marker = '.', s = 1)
+axs[0].scatter(np.r_[0:len(pois_regr.r)], pois_regr.r, marker = '.', s = 1)
+axs[1].scatter(np.r_[0:len(pois_regr.r)], pois_regr.r - np.exp(e_s) , marker = '.', s = 1)
+
+pois_regr = PoissonRegression(r[10:], np.c_[C[10:, :], r[:-10]], np.ones([len(r) - 10, 1]), log_exposure = np.log(2000))
+
+# }}}
+
+# likelihood approach (v2?) {{{
+
+# using global regression as point estimate
+mu = preprocess_data["all_mu"][seg_indices["allelic_cluster"]]
+beta = preprocess_data["global_beta"]
+
+hess_local = pois_regr.hess()
+musig2 = -1/hess_local[0, 0]
+betasiginv = -hess_local[1:, 1:]
+
+plt.figure(40); plt.clf()
+plt.figure(50); plt.clf()
+for st, en in bdy: 
+    # use global regression mu and beta
+    r_seg = cov_mcmc.r[st:en]
+    C_seg = cov_mcmc.C[st:en]
+
+    e_s = mu + C_seg@beta + np.log(2000)
+    lin_lik = -np.exp(e_s).sum() + r_seg.T@e_s - ss.gammaln(r_seg + 1).sum()
+
+    exp_lin = e_s
+    mu_lin = pois_regr.mu
+
+    # no covariates; use local Poisson mu
+    pois_regr = PoissonRegression(r_seg, np.zeros([en - st, 0]), np.ones([en - st, 1]), log_exposure = np.log(2000), mumu = mu, musig2 = musig2)
+
+    try:
+        pois_regr.fit()
+    except np.linalg.LinAlgError:
+        print(f"{st}-{en} is singular")
+    e_s = pois_regr.mu + pois_regr.C@pois_regr.beta + pois_regr.log_exposure + pois_regr.log_offset
+    nul_lik = -np.exp(e_s).sum() + pois_regr.r.T@e_s - ss.gammaln(pois_regr.r + 1).sum()
+
+    plt.figure(50)
+    #plt.scatter(np.r_[st:en], cov_mcmc.r[st:en], s = 1, color = 'k', marker = '.')
+    plt.scatter(np.r_[st:en], -(cov_mcmc.r[st:en] - np.exp(exp_lin)), marker = '+')
+    plt.scatter(np.r_[st:en], -(cov_mcmc.r[st:en] - np.exp(e_s)), marker = 'x')
+    if (lin_lik - nul_lik < 0)[0, 0]:
+        plt.scatter(np.r_[st:en], cov_mcmc.r[st:en], s = 30, color = 'r', facecolor = "none")
+    plt.figure(40)
+    plt.scatter(np.r_[st:en], cov_mcmc.r[st:en], s = 1, color = 'k', marker = '.')
+    plt.scatter(np.r_[st:en], np.exp(exp_lin), marker = '+')
+    plt.scatter(np.r_[st:en], np.exp(e_s), marker = 'x')
+    if (lin_lik - nul_lik < 0)[0, 0]:
+        plt.scatter(np.r_[st:en], cov_mcmc.r[st:en], s = 30, color = 'r', facecolor = "none")
+        
+
+    print("{st}-{en}: {dif}".format(st = st, en = en, dif = lin_lik[0, 0] - nul_lik[0, 0]))
+
+# }}}
