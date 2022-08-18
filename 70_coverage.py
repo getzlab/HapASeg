@@ -412,3 +412,218 @@ axs[2].set_title("Inferred coverage for each target")
 
 plt.xlim((0.0, 2879000000.0))
 plt.ylim([0, 400])
+
+#
+# new coverage processing
+#
+
+### 
+import hapaseg.run_coverage_MCMC
+#from hapaseg.run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters, aggregate_burnin_files 
+
+args = lambda:None
+
+# ALCH
+args.coverage_csv = "/mnt/nfs/workspace/ALCH_000b5e0e/gather_coverage__2022-04-26--11-56-17_g414gwy_tbhx1ki_2iix430p5rile/outputs/0/coverage/coverage_cat.bed" 
+args.allelic_clusters_object = "/mnt/nfs/workspace/ALCH_000b5e0e/Hapaseg_allelic_DP__2022-04-20--08-28-23_rhbc0tq_eigugba_m5hwkvb1xdflo/outputs/0/cluster_and_phase_assignments/allelic_DP_SNP_clusts_and_phase_assignments.npz"
+args.SNPs_pickle = "/mnt/nfs/workspace/ALCH_000b5e0e/Hapaseg_allelic_DP__2022-04-20--08-28-23_rhbc0tq_eigugba_m5hwkvb1xdflo/outputs/0/all_SNPs/all_SNPs.pickle"
+# args.segmentations = # TODO: fill in!
+args.repl_pickle = "gs://opriebe-tmp/GSE137764_H1.hg38.pickle"
+
+# Richter's
+args.coverage_csv = "/mnt/nfs/HapASeg_Richters/CH1011LN-CH1011GL/gather_coverage__2022-04-27--11-05-51_g414gwy_tbhx1ki_tknqgaiklbgdi/jobs/0/workspace/coverage_cat.bed"
+args.allelic_clusters_object = "/mnt/j/proj/cnv/20201018_hapseg2/genome/CH1011LN-CH1011GL/allelic_DP_SNP_clusts_and_phase_assignments.npz"
+args.SNPs_pickle = "/mnt/j/proj/cnv/20201018_hapseg2/genome/CH1011LN-CH1011GL/all_SNPs.pickle"
+args.segmentations_pickle = "/mnt/j/proj/cnv/20201018_hapseg2/genome/CH1011LN-CH1011GL/segmentations.pickle"
+args.repl_pickle = "gs://opriebe-tmp/GSE137764_H1.hg19_liftover.pickle"
+
+# Richter's 2
+args.coverage_csv = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/gather_coverage__2022-04-27--10-46-55_g414gwy_tbhx1ki_1um2ayzjbcu1a/jobs/0/workspace/coverage_cat.bed"
+args.allelic_clusters_object = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_allelic_DP__2022-05-05--13-16-15_fg035ei_s2v0xea_tygpai5cxpelg/jobs/0/workspace/allelic_DP_SNP_clusts_and_phase_assignments.npz"
+args.SNPs_pickle = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_allelic_DP__2022-05-05--13-16-15_fg035ei_s2v0xea_tygpai5cxpelg/jobs/0/workspace/all_SNPs.pickle"
+args.segmentations_pickle = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_allelic_DP__2022-05-05--13-16-15_fg035ei_s2v0xea_tygpai5cxpelg/jobs/0/workspace/segmentations.pickle"
+args.repl_pickle = "gs://opriebe-tmp/GSE137764_H1.hg19_liftover.pickle"
+args.faire_pickle = "/mnt/j/proj/cnv/20201018_hapseg2/covars/FAIRE_GM12878.smooth5.hg19.pickle"
+
+args.allelic_sample = None
+
+# Richter's 2 (with symlinked inputs)
+args.coverage_csv = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/coverage_cat.bed" 
+args.allelic_clusters_object  = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/allelic_DP_SNP_clusts_and_phase_assignments.npz" 
+args.SNPs_pickle  = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/all_SNPs.pickle"
+args.segmentations_pickle = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/segmentations.pickle"
+args.repl_pickle = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/GSE137764_H1.hg19_liftover.pickle"
+args.faire_pickle  = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/FAIRE_GM12878.hg19.pickle"
+args.ref_fasta = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--12-14-09_040rmzi_1kaanny_0w3oyu5xxnfwe/jobs/0/inputs/Homo_sapiens_assembly19.fasta"
+args.bin_width = 2000
+
+# Richter's 3 (with failing stats and fixed FAIRE + RT)
+args.coverage_csv = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/gather_coverage__2022-07-27--23-28-37_g414gwy_tbhx1ki_iv55adsv4snga/jobs/0/workspace/coverage_cat.bed"
+args.faire_pickle  = "/mnt/j/proj/cnv/20201018_hapseg2/covars/FAIRE/coverage.dedup.raw.10kb.pickle"
+args.repl_pickle = "/mnt/j/proj/cnv/20201018_hapseg2/covars/RT.raw.hg19.pickle"
+
+# platinum
+args.coverage_csv = "/mnt/nfs/workspace/Hapaseg_prepare_coverage_mcmc__2022-08-01--14-47-27_k3t2mia_m4uwnti_erz1xgdjuiefy/jobs/0/inputs/wgs_sim_1_coverage_hapaseg_format.bed"
+args.allelic_clusters_object = "/mnt/nfs/workspace/Hapaseg_prepare_coverage_mcmc__2022-08-01--14-47-27_k3t2mia_m4uwnti_erz1xgdjuiefy/jobs/0/inputs/allelic_DP_SNP_clusts_and_phase_assignments.npz"
+args.SNPs_pickle = "/mnt/nfs/workspace/Hapaseg_prepare_coverage_mcmc__2022-08-01--14-47-27_k3t2mia_m4uwnti_erz1xgdjuiefy/jobs/0/inputs/all_SNPs.pickle"
+args.segmentations_pickle = "/mnt/nfs/workspace/Hapaseg_prepare_coverage_mcmc__2022-08-01--14-47-27_k3t2mia_m4uwnti_erz1xgdjuiefy/jobs/0/inputs/segmentations.pickle"
+args.repl_pickle = "/mnt/j/proj/cnv/20201018_hapseg2/covars/RT.raw.hg38.pickle" # "gs://opriebe-tmp/GSE137764_H1.hg38.pickle",
+args.ref_fasta = "/mnt/j/db/hg38/ref/hg38.analysisSet.fa"
+args.faire_pickle = None
+args.bin_width = 2000
+
+# VIP exome
+args.SNPs_pickle="/mnt/nfs/mel_VIP/mel/Hapaseg_prepare_coverage_mcmc__2022-08-07--08-56-44_xwcw0ti_c3z12rq_xbrlktnvipu14/jobs/0/inputs/all_SNPs.pickle"
+args.allelic_clusters_object="/mnt/nfs/mel_VIP/mel/Hapaseg_prepare_coverage_mcmc__2022-08-07--08-56-44_xwcw0ti_c3z12rq_xbrlktnvipu14/jobs/0/inputs/allelic_DP_SNP_clusts_and_phase_assignments.npz"
+args.coverage_csv="/mnt/nfs/mel_VIP/mel/Hapaseg_prepare_coverage_mcmc__2022-08-07--08-56-44_xwcw0ti_c3z12rq_xbrlktnvipu14/jobs/0/inputs/coverage_cat.bed"
+args.faire_pickle="/mnt/nfs/mel_VIP/mel/Hapaseg_prepare_coverage_mcmc__2022-08-07--08-56-44_xwcw0ti_c3z12rq_xbrlktnvipu14/jobs/0/inputs/coverage.dedup.raw.10kb.pickle"
+args.ref_fasta="/mnt/nfs/mel_VIP/mel/Hapaseg_prepare_coverage_mcmc__2022-08-07--08-56-44_xwcw0ti_c3z12rq_xbrlktnvipu14/jobs/0/inputs/Homo_sapiens_assembly19.fasta"
+args.repl_pickle="/mnt/nfs/mel_VIP/mel/Hapaseg_prepare_coverage_mcmc__2022-08-07--08-56-44_xwcw0ti_c3z12rq_xbrlktnvipu14/jobs/0/inputs/RT.raw.hg19.pickle"
+args.segmentations_pickle="/mnt/nfs/mel_VIP/mel/Hapaseg_prepare_coverage_mcmc__2022-08-07--08-56-44_xwcw0ti_c3z12rq_xbrlktnvipu14/jobs/0/inputs/segmentations.pickle"
+args.normal_coverage_csv = "/mnt/nfs/mel_VIP/mel/gather_coverage__2022-08-12--09-08-26_g414gwy_tbhx1ki_2zbvyxhtwuc52/outputs/0/coverage/coverage_cat.bed"
+args.bin_width = 1
+args.wgs = False
+
+# run manually
+
+cov_mcmc_runner = hapaseg.run_coverage_MCMC.CoverageMCMCRunner(
+  args.coverage_csv,
+  args.allelic_clusters_object,
+  args.SNPs_pickle,
+  args.segmentations_pickle,
+  f_repl=args.repl_pickle,
+  f_faire=args.faire_pickle,
+  f_Ncov=args.normal_coverage_csv,
+ # ref_fasta = "/mnt/j/db/hg38/ref/hg38.analysisSet.fa", # ALCH
+  ref_fasta = args.ref_fasta, #"/mnt/j/db/hg19/ref/hs37d5.fa", # Richter's
+  bin_width = args.bin_width,
+  wgs = args.wgs if "wgs" in args.__dict__ else True
+)
+Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
+
+# run with wrapper
+import itertools, sys
+from hapaseg import __main__ as main
+sys.argv = ["__", "--output_dir", "genome/CH1001LN-CH1001GL/cov_prep", "coverage_mcmc_preprocess"] + list(itertools.chain(*[[f"--{k}", f"{v}"] for k, v in args.__dict__.items()]))
+main.main()
+
+# run with wolF (if Docker is up-to-date)
+from wolF import tasks
+run = tasks.Hapaseg_prepare_coverage_mcmc(
+  inputs = {
+    "coverage_csv" : args.coverage_csv,
+    "allelic_clusters_object" : args.allelic_clusters_object
+    "SNPs_pickle" : args.SNPs_pickle,
+    "segmentations_pickle" : args.segmentations_pickle,
+    "repl_pickle" : args.repl_pickle,
+    "faire_pickle" : args.faire_pickle,
+    "ref_fasta" : "/mnt/j/db/hg38/ref/hg38.analysisSet.fa"
+  }
+)
+
+# run platinum
+pt = tasks.Hapaseg_prepare_coverage_mcmc(
+  inputs = {
+    "coverage_csv" : "gs://jh-xfer/HapASeg_platinum/coverage/wgs_sim_1_coverage_hapaseg_format.bed",
+    "allelic_clusters_object" : "gs://jh-xfer/HapASeg_platinum/coverage/allelic_DP_SNP_clusts_and_phase_assignments.npz",
+    "SNPs_pickle" : "gs://jh-xfer/HapASeg_platinum/coverage/all_SNPs.pickle",
+    "segmentations_pickle" : "gs://jh-xfer/HapASeg_platinum/coverage/segmentations.pickle",
+    "repl_pickle" : "/mnt/j/proj/cnv/20201018_hapseg2/covars/RT.raw.hg38.pickle", # "gs://opriebe-tmp/GSE137764_H1.hg38.pickle",
+    "ref_fasta" : "/mnt/j/db/hg38/ref/hg38.analysisSet.fa"
+  }
+)
+pt_results = pt.run()
+
+# plots {{{
+f, axs = plt.subplots(2, 1, num = 13, sharey=True,sharex=True, figsize = [16, 4])
+axs[0].scatter(cov_df["start_g"], r, s= 0.1)
+for i in range(cov_df["seg_idx"].max()):
+    idx = cov_df["seg_idx"] == i
+    axs[1].scatter(cov_df.loc[idx, "start_g"], np.exp(np.log(r[idx]) - C[idx]@global_beta), s=0.1)
+    #axs[1].scatter(cov_df.loc[idx, "start_g"], np.exp(Pi[idx]@all_mu + C[idx]@global_beta), s=0.1)
+
+plt.figure(14, figsize = [16, 4]); plt.clf()
+f, axs = plt.subplots(2, 1, num = 14, sharex=True, figsize = [16, 4])
+ph = self.allelic_clusters["snps_to_phases"]
+for i in range(cov_df["allelic_cluster"].max() + 1):
+    idx = cov_df["allelic_cluster"] == i
+    x = axs[0].scatter(cov_df.loc[idx, "start_g"], np.exp(np.log(r[idx]) - C[idx, :]@global_beta)/2000, s=1, marker = ".", alpha = 0.2)
+    idx = (self.SNPs["clust_choice"] == i) & self.allelic_clusters["snps_to_phases"][self.allelic_sample]
+    axs[1].scatter(self.SNPs.loc[idx, "pos_gp"], self.SNPs.loc[idx, "maj"]/self.SNPs.loc[idx, ["min", "maj"]].sum(1), color = x.get_facecolor(), s = 0.01)
+    idx = (self.SNPs["clust_choice"] == i) & ~self.allelic_clusters["snps_to_phases"][self.allelic_sample]
+    axs[1].scatter(self.SNPs.loc[idx, "pos_gp"], self.SNPs.loc[idx, "min"]/self.SNPs.loc[idx, ["min", "maj"]].sum(1), color = x.get_facecolor(), s = 0.01)
+plt.sca(axs[0])
+axs[0].set_title("Coverage segmentation")
+axs[0].set_ylabel("Coverage")
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg19/ref/cytoBand.txt")
+plt.sca(axs[1])
+axs[1].set_title("Haplotypic imbalance segmentation")
+axs[1].set_ylabel("Haplotypic imbalance")
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg19/ref/cytoBand.txt")
+
+axs[0].set_xlim([0, cov_df["start_g"].max() ])
+
+plt.tight_layout()
+
+plt.figure(15, figsize = [16, 4]); plt.clf()
+for j, i in enumerate(cov_df["seg_idx"].unique()):
+    idx = (self.SNPs["seg_idx"] == i) & self.allelic_clusters["snps_to_phases"][self.allelic_sample]
+    n = self.SNPs.loc[idx, "maj"].sum()
+    d = self.SNPs.loc[idx, ["min", "maj"]].sum().sum()
+    idx = (self.SNPs["seg_idx"] == i) & ~self.allelic_clusters["snps_to_phases"][self.allelic_sample]
+    n += self.SNPs.loc[idx, "min"].sum()
+    d += self.SNPs.loc[idx, ["min", "maj"]].sum().sum()
+    p = cov_df.loc[cov_df["allelic_cluster"] == j, "start_g"].iloc[[0, -1]]
+    plt.plot(p, np.r_[1, 1]*np.exp(all_mu[j])*n/d, color = "r", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+    plt.plot(p, np.r_[1, 1]*np.exp(all_mu[j])*(1 - n/d), color = "b", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+
+
+f, axs = plt.subplots(2, 1, num = 14, sharex=True, figsize = [16, 4])
+ph = self.allelic_clusters["snps_to_phases"]
+for i in range(cov_df["allelic_cluster"].max() + 1):
+    idx = cov_df["allelic_cluster"] == i
+    x = axs[0].scatter(cov_df.loc[idx, "start_g"], np.exp(np.log(r[idx]) - C[idx, :]@global_beta)/2000, s=1, marker = ".", alpha = 0.2)
+    idx = (self.SNPs["clust_choice"] == i) & self.allelic_clusters["snps_to_phases"][self.allelic_sample]
+    axs[1].scatter(self.SNPs.loc[idx, "pos_gp"], self.SNPs.loc[idx, "maj"]/self.SNPs.loc[idx, ["min", "maj"]].sum(1), color = x.get_facecolor(), s = 0.01)
+    idx = (self.SNPs["clust_choice"] == i) & ~self.allelic_clusters["snps_to_phases"][self.allelic_sample]
+    axs[1].scatter(self.SNPs.loc[idx, "pos_gp"], self.SNPs.loc[idx, "min"]/self.SNPs.loc[idx, ["min", "maj"]].sum(1), color = x.get_facecolor(), s = 0.01)
+plt.sca(axs[0])
+axs[0].set_title("Coverage segmentation")
+axs[0].set_ylabel("Coverage")
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg19/ref/cytoBand.txt")
+plt.sca(axs[1])
+axs[1].set_title("Haplotypic imbalance segmentation")
+axs[1].set_ylabel("Haplotypic imbalance")
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg19/ref/cytoBand.txt")
+
+axs[0].set_xlim([0, cov_df["start_g"].max() ])
+
+plt.tight_layout()
+
+##
+
+plt.figure(15, figsize = [16, 4]); plt.clf()
+f, axs = plt.subplots(2, 1, num = 15, sharex=True, figsize = [16, 4])
+ph = self.allelic_clusters["snps_to_phases"]
+for i in range(cov_df["seg_idx"].max() + 1):
+    idx = cov_df["seg_idx"] == i
+    axs[0].scatter(cov_df.loc[idx, "start_g"], np.exp(np.log(r[idx]) - C[idx, :]@global_beta)/2000, s=0.01, marker = ".", alpha = 1, color = ["orangered", "limegreen", "dodgerblue"][i % 3])
+for i in range(cov_df["allelic_cluster"].max() + 1): 
+    idx = (self.SNPs["clust_choice"] == i) & self.allelic_clusters["snps_to_phases"][self.allelic_sample]
+    x = axs[1].scatter(self.SNPs.loc[idx, "pos_gp"], self.SNPs.loc[idx, "maj"]/self.SNPs.loc[idx, ["min", "maj"]].sum(1), s = 0.01)
+    idx = (self.SNPs["clust_choice"] == i) & ~self.allelic_clusters["snps_to_phases"][self.allelic_sample]
+    axs[1].scatter(self.SNPs.loc[idx, "pos_gp"], self.SNPs.loc[idx, "min"]/self.SNPs.loc[idx, ["min", "maj"]].sum(1), color = x.get_facecolor(), s = 0.01)
+plt.sca(axs[0])
+axs[0].set_title("Coverage segmentation")
+axs[0].set_ylabel("Coverage")
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg19/ref/cytoBand.txt")
+plt.sca(axs[1])
+axs[1].set_title("Haplotypic imbalance segmentation")
+axs[1].set_ylabel("Haplotypic imbalance")
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg19/ref/cytoBand.txt")
+
+axs[0].set_xlim([0, cov_df["start_g"].max() ])
+
+plt.tight_layout()
+
+# }}}
