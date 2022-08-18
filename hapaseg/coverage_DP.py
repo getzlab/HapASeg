@@ -224,17 +224,6 @@ class Run_Cov_DP:
             self.clust_prior_ML = None
     
     @staticmethod
-    def stats_ll_nbinom(r, mu, C, beta, lepsi, bin_exposure):
-        r = r.flatten()
-        epsi = np.exp(lepsi)
-        exposure = np.log(bin_exposure)
-        bc = (C @ beta).flatten() + exposure
-        exp = np.exp(mu + bc).flatten()
-        return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
-                (r * (mu + bc - np.log(epsi + exp))) +
-                (epsi * np.log(epsi / (epsi + exp)))).sum()
-    
-    @staticmethod
     def ll_nbinom(r, mu, C, beta, lepsi, bin_exposure=1):
         return covLNP_ll(r[:,None], mu, lepsi, C, beta, np.log(bin_exposure)).sum()
     
