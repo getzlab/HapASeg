@@ -252,7 +252,7 @@ class Hapaseg_collect_coverage_mcmc(wolf.Task):
         "cov_collected_data":'cov_mcmc_collected_data.npz'   
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v964"
     resources = {"cpus-per-task": 4, "mem" : "12G"} # need high mem for poisson regression on massive Pi matrix
 
 class Hapaseg_coverage_dp(wolf.Task):
