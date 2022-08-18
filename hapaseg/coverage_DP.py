@@ -162,7 +162,7 @@ class Run_Cov_DP:
     def _init_segments(self):
         num_segments = 0
         for ID, seg_df in self.cov_df.groupby('segment_ID'):
-            seg = seg_df['covcorr'].values
+            seg = seg_df['fragcorr'].values
             seg_len = len(seg)
             self.segment_r_list[ID] = seg
             
