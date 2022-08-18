@@ -241,15 +241,17 @@ class Hapaseg_collect_coverage_mcmc(wolf.Task):
         "cov_mcmc_files":None,
         "cov_df_pickle":None,
         "seg_indices_pickle":None,
-        "bin_width":1
+        "bin_width":1,
+        "cytoband_file":None
      }
 
     script = """
-    hapaseg collect_cov_mcmc --seg_indices_pickle ${seg_indices_pickle} --cov_mcmc_files ${cov_mcmc_files} --cov_df_pickle ${cov_df_pickle} --bin_width ${bin_width}
+    hapaseg collect_cov_mcmc --seg_indices_pickle ${seg_indices_pickle} --cov_mcmc_files ${cov_mcmc_files} --cov_df_pickle ${cov_df_pickle} --bin_width ${bin_width} --cytoband_file ${cytoband_file}
     """
     
     output_patterns={
-        "cov_collected_data":'cov_mcmc_collected_data.npz'   
+        "cov_collected_data":'cov_mcmc_collected_data.npz',
+        "seg_plot":'figures/segs.png',
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v964"

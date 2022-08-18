@@ -658,7 +658,8 @@ def workflow(
         "cov_mcmc_files":[cov_mcmc_scatter_task["cov_segmentation_data"]],
         "cov_df_pickle":prep_cov_mcmc_task["cov_df_pickle"],
         "seg_indices_pickle":prep_cov_mcmc_task["allelic_seg_groups"],
-        "bin_width":bin_width
+        "bin_width":bin_width,
+        "cytoband_file":localization_task["cytoband_file"]
         }
     )
     

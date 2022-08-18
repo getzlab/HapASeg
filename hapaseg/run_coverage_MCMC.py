@@ -507,13 +507,13 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     Pi = np.zeros((len(MAP_seg), int(MAP_seg.max()) + 1), dtype=np.float16)
     Pi[range(len(MAP_seg)), MAP_seg.astype(int)] = 1.
     ## generate covars
-    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("(?:^C_.*z$|C_log_len)")])
+    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("(?:^C_.*_l?z$|C_log_len)")])
     C = np.c_[cov_df[covar_columns]]
     ## do regression
     pois_regr = PoissonRegression(r, C, Pi)
     mu_refit, beta_refit = pois_regr.fit()
 
-    return coverage_segmentation, beta_refit, ll_samples
+    return coverage_segmentation, mu_refit, beta_refit, ll_samples
 
 def aggregate_burnin_files(file_list, cluster_num):
     file_captures = []
