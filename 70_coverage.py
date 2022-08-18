@@ -627,3 +627,167 @@ axs[0].set_xlim([0, cov_df["start_g"].max() ])
 plt.tight_layout()
 
 # }}}
+
+#
+# coverage MCMC
+#
+
+## run with wrapper
+import itertools, sys
+from hapaseg import __main__ as main
+
+args = lambda:None
+args.allelic_seg_idx = 0
+args.allelic_seg_indices = "/mnt/nfs/mel_VIP/mel/Hapaseg_coverage_mcmc_by_Aseg__2022-08-12--13-12-07_jqizvca_matpo2a_duoyxhs1m4jna/jobs/0/inputs/allelic_seg_groups.pickle"
+args.preprocess_data = "/mnt/nfs/mel_VIP/mel/Hapaseg_coverage_mcmc_by_Aseg__2022-08-12--13-12-07_jqizvca_matpo2a_duoyxhs1m4jna/jobs/0/inputs/preprocess_data.npz"
+args.num_draws = 5
+args.bin_width = 1
+
+sys.argv = ["__", "--output_dir", "genome/CH1001LN-CH1001GL/cov_mcmc", "coverage_mcmc_shard"] + list(itertools.chain(*[[f"--{k}", f"{v}"] for k, v in args.__dict__.items()]))
+main.main()
+
+## load in results
+
+
+
+
+import hapaseg.NB_coverage_MCMC
+
+args = lambda:None
+args.allelic_seg_idx = 0 
+args.allelic_seg_indices = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_coverage_mcmc__2022-05-05--14-27-07_wd1mmdy_xkoahjy_hftgpk1k4qnwk/jobs/0/inputs/allelic_seg_groups.pickle"
+args.preprocess_data = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_coverage_mcmc__2022-05-05--14-27-07_wd1mmdy_xkoahjy_hftgpk1k4qnwk/jobs/0/inputs/preprocess_data.npz"
+args.num_draws = 50
+args.bin_width = 2000
+
+args = lambda:None
+args.allelic_seg_indices = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_coverage_mcmc__2022-05-16--15-39-20_kdo0bpa_x2kwcaa_hawbjnwiyqiby/jobs/0/inputs/allelic_seg_groups.pickle"
+args.allelic_seg_idx = 0
+args.bin_width = 2000
+args.num_draws = 50
+args.preprocess_data = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_coverage_mcmc__2022-05-16--15-39-20_kdo0bpa_x2kwcaa_hawbjnwiyqiby/jobs/0/inputs/preprocess_data.npz"
+
+# version that outputs Hessian and has per-ADP segment mu
+args = lambda:None
+args.allelic_seg_indices = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_coverage_mcmc__2022-06-14--15-53-31_kdo0bpa_nixvisi_ahq5skg4a5mhu/jobs/0/inputs/allelic_seg_groups.pickle"
+args.allelic_seg_idx = 0
+args.bin_width = 2000
+args.num_draws = 50
+args.preprocess_data = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_coverage_mcmc__2022-06-14--15-53-31_kdo0bpa_nixvisi_ahq5skg4a5mhu/jobs/0/inputs/preprocess_data.npz"
+
+# load preprocessed data
+preprocess_data = np.load(args.preprocess_data)
+
+# extract preprocessed data from this cluster
+Pi = preprocess_data['Pi']
+mu = preprocess_data["all_mu"]#[args.cluster_num]
+beta = preprocess_data["global_beta"]
+c_assignments = np.argmax(Pi, axis=1)
+#cluster_mask = (c_assignments == args.cluster_num)
+r = preprocess_data['r']#[cluster_mask]
+C = preprocess_data['C']#[cluster_mask]
+
+# load and (weakly) verify allelic segment indices
+seg_g_idx = pd.read_pickle(args.allelic_seg_indices)
+if len(np.hstack(seg_g_idx["indices"])) != C.shape[0]:
+    raise ValueError("Size mismatch between allelic segment assignments and coverage bin data!")
+
+# subset to a single allelic segment
+if args.allelic_seg_idx > len(seg_g_idx) - 1:
+    raise ValueError("Allelic segment index out of bounds!")
+
+seg_indices = seg_g_idx.iloc[args.allelic_seg_idx]
+
+mu = mu[seg_indices["allelic_cluster"]]
+C = C[seg_indices["indices"], :]
+r = r[seg_indices["indices"], :]
+
+#pois_regr = PoissonRegression(r, C, np.ones_like(r))
+#all_mu2, local_beta = pois_regr.fit()
+
+# run cov MCMC
+cov_mcmc = hapaseg.NB_coverage_MCMC.NB_MCMC_SingleCluster(args.num_draws, r, C, mu, beta, args.bin_width)
+cov_mcmc.run()
+
+for i in range(6):
+    plt.figure(i + 1000); plt.clf()
+    plt.title(covar_columns[i].replace("_", "\_"))
+    for j in seg_g_idx["indices"].iloc[:10]:
+        plt.scatter(C[j, i], np.log(r[j]) - Pi[j]@mu, s = 1)
+
+i = 0
+plt.figure(i + 10000); plt.clf()
+_, axs = plt.subplots(6, 8, num = i + 10000, sharex = True, sharey = True)
+axs = axs.ravel()
+plt.title(covar_columns[i].replace("_", "\_"))
+for k, j in enumerate(seg_g_idx["indices"]):
+    axs[k].plot(C[j, i], np.log(r[j]) - Pi[j]@mu, marker = ',', antialiased=False, linewidth = 0)
+plt.savefig("scatter.png", dpi = 400)
+
+Pi = preprocess_data['Pi']
+mu = preprocess_data["all_mu"]#[args.cluster_num]
+beta = preprocess_data["global_beta"]
+c_assignments = np.argmax(Pi, axis=1)
+cluster_mask = (c_assignments == args.cluster_num)
+r = preprocess_data['r']#[cluster_mask]
+C = preprocess_data['C']#[cluster_mask]
+
+i = 5
+plt.figure(i + 20000); plt.clf()
+_, axs = plt.subplots(6, 8, num = i + 20000, sharey = True)
+axs = axs.ravel()
+#plt.title(covar_columns[i].replace("_", "\_"))
+for k, j in enumerate(seg_g_idx["indices"]):
+    axs[k].plot(np.r_[0:len(j)], np.exp(np.log(r[j]) - Pi[j]@mu), marker = ',', antialiased=False, linewidth = 0)
+    #axs[k].plot(np.r_[0:len(j)], 5000 + np.exp(np.log(r[j]) - (Pi[j]@mu + C[j]@beta)), marker = ',', antialiased=False, linewidth = 0)
+    axs[k].plot(np.r_[0:len(j)], -600 + 400*C[j, i], marker = ',', antialiased=False, linewidth = 0)
+
+plt.figure(i + 30000); plt.clf()
+_, axs = plt.subplots(6, 8, num = i + 30000, sharey = True)
+axs = axs.ravel()
+#plt.title(covar_columns[i].replace("_", "\_"))
+for k, j in enumerate(seg_g_idx["indices"]):
+    axs[k].plot(np.r_[0:len(j)], r[j], marker = ',', antialiased=False, linewidth = 0)
+    axs[k].axhline(np.exp(Pi[j[0]]@mu + np.log(2000)), color = "r")
+    e_s = Pi[j[0]]@mu + C[j]@beta + np.log(2000)
+    lik_dens = (-np.exp(e_s).sum() + r[j].T@e_s - ss.gammaln(r[j] + 1).sum())/len(j)
+    axs[k].set_title(lik_dens[0, 0])
+    #axs[k].plot(np.r_[0:len(j)], np.exp(np.log(r[j]) - Pi[j]@mu), marker = ',', antialiased=False, linewidth = 0)
+
+plt.figure(i + 30200); plt.clf()
+_, axs = plt.subplots(6, 8, num = i + 30200, sharey = True)
+axs = axs.ravel()
+#plt.title(covar_columns[i].replace("_", "\_"))
+for k, j in enumerate(seg_g_idx["indices"]):
+    e_s = Pi[j[0]]@mu + C[j]@beta + np.log(2000)
+    axs[k].plot(np.r_[0:len(j)], np.exp(Pi[j[0]]@mu + np.log(2000)) + r[j] - np.exp(e_s), marker = ',', antialiased=False, linewidth = 0)
+    axs[k].axhline(np.exp(Pi[j[0]]@mu + np.log(2000)), color = "r")
+
+
+
+
+    lik_dens = (-np.exp(e_s).sum() + r[j].T@e_s - ss.gammaln(r[j] + 1).sum())/len(j)
+    axs[k].set_title(lik_dens[0, 0])
+
+# plots {{{
+
+f, axs = plt.subplots(2, 1, num = 131, sharey=True,sharex=True, figsize = [16, 4])
+axs[0].cla(); axs[1].cla()
+axs[0].scatter(np.r_[0:len(r)], r/2000, s= 0.5)
+axs[0].scatter(np.r_[0:len(r)], 10*C[:, 0], s= 0.5) # FAIRE
+axs[0].scatter(np.r_[0:len(r)], 10*C[:, 1] - 10, s= 0.5) # RT
+axs[0].scatter(np.r_[0:len(r)], 10*C[:, 2] - 10, s= 0.5) # RT
+#axs[0].scatter(np.r_[0:len(r)], 10*cfz_smooth[cov_df.index[seg_indices["indices"]]], s= 0.5)
+#axs[0].scatter(np.r_[0:len(r)], 10*C[:, 1], s= 0.5)
+#axs[0].scatter(np.r_[0:len(r)], 10*C[:, 3], s= 0.5)
+#axs[0].scatter(np.r_[0:len(r)], 10*C[:, 0], s= 0.5)
+#axs[1].scatter(np.r_[0:len(r)], (r - np.exp(Pi@all_mu + C@global_beta + np.log(2000)) + np.exp(Pi@all_mu + np.log(2000)))/2000, s=0.5, c = cov_df["allelic_cluster"].map(lambda x : ["dodgerblue", "darkorange", "springgreen"][x % 3]))
+axs[1].scatter(np.r_[0:len(r)], (r - np.exp(cov_mcmc.mu + C@cov_mcmc.beta + np.log(2000))), s=0.5)
+#axs[1].scatter(np.r_[0:len(r)], (r - np.exp(C@local_beta)*np.exp(mu))/2000, s=0.5)
+#axs[1].scatter(np.r_[0:len(r)], (r - np.exp(C@beta)*np.exp(mu))/2000, s=0.5)
+bdy = np.c_[cov_mcmc.F_samples[-1][:-1:2], cov_mcmc.F_samples[-1][1::2]]
+for st, en in bdy:
+    axs[1].plot([st, en], np.r_[1, 1]*np.exp(cov_mcmc.mu_i_samples[-1][st])/2000)
+#axs[1].scatter(np.r_[0:len(r)], np.exp(mu + cov_mcmc.mu_i_samples[-1][:, None] + C@beta)/2000, s=0.5)
+
+# }}}
