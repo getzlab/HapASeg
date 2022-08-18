@@ -368,12 +368,12 @@ class CovLNP_NR_prior:
         # make empirical estimate for mu starting point (log mean after removing residuals)
         if not init_prior:
             self.mu = np.log((x/np.exp(self.bce)).mean()) 
+            self.lgsigma = np.log((np.log(x) - self.bce).std())
         # use mu prior as starting point
         else:
             self.mu = self.mu_prior
-
-        # init sigma from sqrt(mode(inverse gamma prior))
-        self.lgsigma = np.log(beta_prior / (alpha_prior + 1)) / 2
+            # init sigma from sqrt(mode(inverse gamma prior)
+            self.lgsigma = np.log(beta_prior / (alpha_prior + 1)) / 2
         self.sigma = np.exp(self.lgsigma)
 
     def integral(self, x):

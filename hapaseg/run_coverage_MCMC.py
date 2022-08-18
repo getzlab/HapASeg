@@ -493,25 +493,25 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
             global_counter += len(np.unique(seg_results[seg][:,d]))
     
     # generate data to re-compute global beta
-    r = np.c_[cov_df["covcorr"]]
-    # we'll use the mu_is from the last segmentation sample
-    mu_is = mu_i_values[:,-1]
-    # compute new edogenous targets by subtracking out the mu_i values of the segments
-    # along with the bin exposure
-    endog = np.exp(np.log(r).flatten() - np.log(bin_width) - mu_is).reshape(-1,1)
-    # generate covars
-    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("^C_.*_z$|^C_log_len$")])
-    C = np.c_[cov_df[covar_columns]]
-    # do regression
-    pois_regr = PoissonRegression(endog, C, np.ones(endog.shape))
-    mu_refit, beta_refit = pois_regr.fit()
-    
     # calculate likelihoods of each sample
     ll_samples_arr = np.zeros((num_segments, num_draws))
-    for seg, ll_arr in ll_results.items():
-        ll_samples_arr[seg] = ll_arr
+    for ID, (seg, ll_arr) in enumerate(ll_results.items()):
+        ll_samples_arr[ID] = ll_arr
     
     ll_samples = ll_samples_arr.sum(0)
+    MAP_draw = np.nansum(ll_samples_arr, 0).argmax()
+    MAP_seg = coverage_segmentation[:, MAP_draw]  
+    # refitting beta
+    r = np.c_[cov_df["fragcorr"]]
+    ## create new intercept matrix using MAP coverage segmentation
+    Pi = np.zeros((len(MAP_seg), int(MAP_seg.max()) + 1), dtype=np.float16)
+    Pi[range(len(MAP_seg)), MAP_seg.astype(int)] = 1.
+    ## generate covars
+    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("(?:^C_.*z$|C_log_len)")])
+    C = np.c_[cov_df[covar_columns]]
+    ## do regression
+    pois_regr = PoissonRegression(r, C, Pi)
+    mu_refit, beta_refit = pois_regr.fit()
 
     return coverage_segmentation, beta_refit, ll_samples
 

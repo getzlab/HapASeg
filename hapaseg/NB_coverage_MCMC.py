@@ -85,8 +85,8 @@ class AllelicCluster:
 		#self.beta_prior = (self.alpha_prior + 1.5) * np.exp(2 * self.lepsi)
 		#self.alpha_prior = 1
 		#self.beta_prior = (self.alpha_prior + 1.5) * np.exp(2 * self.lepsi)
-		self.alpha_prior = 1
-		self.beta_prior = 5e-2
+		self.alpha_prior = 1e-5
+		self.beta_prior = 4e-3
 	# fit initial mu_k and epsilon_k for the cluster
 	def NR_init(self):
 		self.mu, self.lepsi = self.lnp_init()
