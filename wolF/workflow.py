@@ -567,7 +567,7 @@ def workflow(
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":ref_config["repl_file"],
-       # "faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
+        "faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
         "gc_pickle":ref_config["gc_file"],
         "normal_coverage_csv":normal_cov_gather_task["coverage"] if collect_normal_coverage else "",
         "ref_fasta":localization_task["ref_fasta"],
