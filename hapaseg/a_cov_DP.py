@@ -115,7 +115,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         print('concatenating dp run ', draw_num, flush=True)
         a_cov_seg_df = dp_data[0].copy()
 
-        covar_cols = sorted(a_cov_seg_df.columns[a_cov_seg_df.columns.str.contains("^C_.*_z$|^C_GC|^C_log_len$")])
+        covar_cols = sorted(a_cov_seg_df.columns[a_cov_seg_df.columns.str.contains("(?:^C_.*z$|C_log_len)")])
 
         # add dp cluster annotations
         a_cov_seg_df['cov_DP_cluster'] = -1
@@ -145,7 +145,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
                 acdp_clust = a_cov_seg_df.loc[a_cov_seg_df.cov_DP_cluster == cdp]
             r = acdp_clust.fragcorr.values
             C = np.c_[acdp_clust[covar_cols]]
-            lnp = CovLNP_NR_prior(r[:,None], beta, C, exposure = np.log(bin_width), alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior= r.mean(), lamda=1e-10, init_prior = True)
+            lnp = CovLNP_NR_prior(r[:,None], beta, C, exposure = np.log(bin_width), alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior= r.mean(), lamda=1e-10, init_prior = False)
             res = lnp.fit(ret_hess=True)
             mu = res[0]
             a_cov_seg_df.loc[
@@ -189,8 +189,13 @@ class AllelicCoverage_DP:
         self.seed_all_clusters = seed_all_clusters
         self.wgs = wgs
         self.draw_idx = draw_idx
+        self.default_draw = draw_idx if draw_idx is not None else 0
         self.lnp_data = lnp_data
 
+        # if draw_idx passed then only use those draws
+        if draw_idx is not None:
+            self.cov_df = self.cov_df.loc[self.cov_df.dp_draw == draw_idx]
+        
         self.num_segments = len(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
         self.segment_r_list = [None] * self.num_segments
         self.segment_V_list = np.zeros(self.num_segments)
@@ -235,10 +240,6 @@ class AllelicCoverage_DP:
 
         self.alpha = 0.5
         
-        # if draw_idx passed then only use those draws
-        if draw_idx is not None:
-            self.cov_df = self.cov_df.loc[self.cov_df.dp_draw == draw_index]
-        
     # initialize each segment object with its data
     def _init_segments(self):
         # keep a table of reads for each allelic cluster to fallback on if the tuple has too few bins (<10)
@@ -282,8 +283,9 @@ class AllelicCoverage_DP:
             # using joint
             lnp_res = self.lnp_data[(name[0], name[1], name[3])]
             
-            norm_samples =np.exp(np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = group_len))
-            r = np.array(s.poisson.rvs(s.norm.rvs(norm_samples[:,0], norm_samples[:,1]) * s.beta.rvs(a,b, size = group_len)))
+            norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = group_len)
+            r = np.array(s.poisson.rvs(np.exp(norm_samples[:,0]) * s.beta.rvs(a,b, size = group_len)))
+            #r = np.array(np.exp(s.norm.rvs(lnp_res[0] + np.log(s.beta.rvs(a,b, size = group_len)), np.exp(lnp_res[1]))))
             
             # linscale
             # V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a, b, size=10000)).var()
@@ -295,8 +297,9 @@ class AllelicCoverage_DP:
             #V = (np.array(s.poisson.rvs(np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a, b, size=10000)))).var()
             
             # using joint
-            norm_samples =np.exp(np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000))
-            V = np.array(s.poisson.rvs(s.norm.rvs(norm_samples[:,0], norm_samples[:,1]) * s.beta.rvs(a,b, size = 10000))).var()
+            norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000)
+            V = np.array(s.poisson.rvs(np.exp(norm_samples[:,0]) * s.beta.rvs(a,b, size = 10000))).var()
+            #V = np.array(np.exp(s.norm.rvs(lnp_res[0] + np.log(s.beta.rvs(a,b, size = 10000)), np.exp(lnp_res[1])))).var()
 
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r
@@ -307,7 +310,7 @@ class AllelicCoverage_DP:
         # go back through segments and greylist ones with high variance
         greylist_mask = np.ones(self.num_segments, dtype=bool)
         greylist_mask[self.greylist_segments] = False
-        cutoff = np.median(self.segment_V_list[greylist_mask]) * 10
+        cutoff = np.median(self.segment_V_list[greylist_mask]) * 20
         #self.alpha_0 = self.segment_counts[greylist_mask].mean()
         #self.beta_0 = self.alpha_0 / 2 * self.segment_V_list[greylist_mask].mean()
         self.alpha_0 = 1e-4
@@ -525,7 +528,7 @@ class AllelicCoverage_DP:
         n_b = n_b / self.seg_count_norm
         M = n_a + n_b
         split = 2 * np.log(self.alpha) + ss.gammaln(n_a) + ss.gammaln(n_b)
-        stay = np.log(self.alpha) + ss.gammaln(M - 1)
+        stay = np.log(self.alpha) + ss.gammaln(M)
         return split - stay
 
     # for assigning greylisted segments after the clustering is complete
@@ -976,7 +979,7 @@ class AllelicCoverage_DP:
         return {c : palette[i] for i, c in enumerate(chosen_draw.cov_DP_cluster.value_counts().index)}
 
     def _get_adp_colors(self):
-        chosen_draw = self.cov_df.loc[(self.cov_df.dp_draw == 0) & (self.cov_df.allele==1)]
+        chosen_draw = self.cov_df.loc[(self.cov_df.dp_draw == self.default_draw) & (self.cov_df.allele==1)]
         num_clusters = len(chosen_draw.allelic_cluster.unique())
         palette = self._get_color_palette(num_clusters)
         
@@ -991,7 +994,7 @@ class AllelicCoverage_DP:
         return centers, _f
     
     def _get_real_cov(self, df):
-        covar_cols = sorted(df.columns[df.columns.str.contains("^C_.*_z$|^C_GC|^C_log_len$")])
+        covar_cols = sorted(df.columns[df.columns.str.contains("(?:^C_.*z$|C_log_len)")])
         C = np.c_[df[covar_cols]]
         return np.exp(np.log(df.covcorr.values) - (C @ self.beta).flatten())
 
@@ -1025,9 +1028,12 @@ class AllelicCoverage_DP:
                    plot_SNP_imbalance=False,
                    cdp_draw=None):
     
+        if self.draw_idx is not None:
+            # override to use the only draw used
+            cdp_draw = self.draw_idx
         # precompute the fallback ADP counts
         ADP_dict = {}
-        for ADP, group in self.cov_df.loc[self.cov_df.dp_draw == 0].groupby('allelic_cluster'):
+        for ADP, group in self.cov_df.loc[self.cov_df.dp_draw == self.default_draw].groupby('allelic_cluster'):
             ADP_dict[ADP] = (group['maj_count'].sum(), group['min_count'].sum())
         
         # set up canvas according to options

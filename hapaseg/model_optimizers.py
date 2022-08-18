@@ -346,7 +346,7 @@ def covLNP_ll(x, mu, lgsigma, C, beta, exposure=np.array([[0]])):
 
 # with prior
 class CovLNP_NR_prior:
-    def __init__(self, x, beta, C, exposure=np.array([[0]]), extra_roots=False, init_prior=False, *, mu_prior, lamda, alpha_prior, beta_prior):
+    def __init__(self, x, beta, C, exposure=np.array([[0]]), extra_roots=False, init_prior=True, *, mu_prior, lamda, alpha_prior, beta_prior):
         """
         find posterior predictive over MCMC chains
         """
@@ -361,17 +361,19 @@ class CovLNP_NR_prior:
         self.beta_prior = beta_prior
         
         if extra_roots:
-                self.hr, self.hw = hr_extra, hw_extra
+            self.hr, self.hw = hr_extra, hw_extra
         else:
-                self.hr, self.hw = hr, hw
+            self.hr, self.hw = hr, hw
         
-        #make empirical estimates about mu and sigma
-        self.mu = (np.log(x) - self.bce).mean()
-        if init_prior:
-                self.lgsigma = np.log((np.log(x) - self.bce).std())
+        # make empirical estimate for mu starting point (log mean after removing residuals)
+        if not init_prior:
+            self.mu = np.log((x/np.exp(self.bce)).mean()) 
+            self.lgsigma = np.log((np.log(x) - self.bce).std())
+        # use mu prior as starting point
         else:
-        # use sigma prior as starting point
-                self.lgsigma = np.log(beta_prior / (alpha_prior + 1 + 0.5)) / 2
+            self.mu = self.mu_prior
+            # init sigma from sqrt(mode(inverse gamma prior)
+            self.lgsigma = np.log(beta_prior / (alpha_prior + 1)) / 2
         self.sigma = np.exp(self.lgsigma)
 
     def integral(self, x):

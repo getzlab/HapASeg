@@ -137,6 +137,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "segmentations_pickle": None,
         "repl_pickle": None,
         "faire_pickle": "", # TODO: make remote
+        "normal_coverage_csv": "",
         "gc_pickle":"",
         "allelic_sample":"",
         "ref_fasta": None,
@@ -159,6 +160,8 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
             script += " --faire_pickle ${faire_pickle}"
         if self.conf["inputs"]["gc_pickle"] != "":
             script += " --gc_pickle ${gc_pickle}"
+        if self.conf["inputs"]["normal_coverage_csv"] != "":
+            script += " --normal_coverage_csv ${normal_coverage_csv}"
         if self.conf["inputs"]["allelic_sample"] != "":
             script += " --allelic_sample ${allelic_sample}"
 
@@ -250,7 +253,7 @@ class Hapaseg_collect_coverage_mcmc(wolf.Task):
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
-
+    resources = {"cpus-per-task": 4, "mem" : "12G"} # need high mem for poisson regression on massive Pi matrix
 
 class Hapaseg_coverage_dp(wolf.Task):
     inputs = {
