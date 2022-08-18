@@ -114,7 +114,7 @@ def parse_args():
     dp = subparsers.add_parser("dp", help="Run DP clustering on allelic imbalance segments")
     dp.add_argument("--seg_dataframe", required = True)
     dp.add_argument("--ref_fasta", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
-    dp.add_argument("--cytoband_file", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
+    dp.add_argument("--cytoband_file", required = True)
   
     ## coverage MCMC
     coverage_mcmc = subparsers.add_parser("coverage_mcmc",
@@ -181,6 +181,7 @@ def parse_args():
                                   help="path to cov_df pickle file. Required for using --cov_mcmc_files option")
     collect_cov_mcmc.add_argument("--seg_indices_pickle", help='path to segment indices dataframe pickle', required=True)
     collect_cov_mcmc.add_argument("--bin_width", type=int, help="size of uniform bins if using. otherwise 1")
+    collect_cov_mcmc.add_argument("--cytoband_file", required = True)
 
     ## Coverage DP
     coverage_dp = subparsers.add_parser("coverage_dp", help="Run DP clustering on coverage segmentations")
