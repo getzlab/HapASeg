@@ -1134,3 +1134,148 @@ for st, en in bdy:
     print("{st}-{en}: {dif}".format(st = st, en = en, dif = lin_lik[0, 0] - nul_lik[0, 0]))
 
 # }}}
+
+## aggregate cov MCMC
+def nat_sort(lst): 
+        convert = lambda text: int(text) if text.isdigit() else text.lower()
+        alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
+        return sorted(lst, key=alphanum_key)
+
+allelic_seg_groups_pickle = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--15-35-16_040rmzi_pid3cty_0w3oyu5xxnfwe/jobs/0/workspace/allelic_seg_groups.pickle"
+
+cov_df_pickle = "/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_prepare_coverage_mcmc__2022-05-16--15-35-16_040rmzi_pid3cty_0w3oyu5xxnfwe/jobs/0/workspace/cov_df.pickle"
+cov_df = pd.read_pickle(cov_df_pickle)
+
+R = pd.read_pickle("/mnt/nfs/HapASeg_Richters/CH1001LN-CH1001GL/Hapaseg_coverage_mcmc__2022-05-17--16-43-11_kdo0bpa_1qbgw5i_hawbjnwiyqiby/WolfTaskResults.pickle")
+all_lines = R["cov_segmentation_data"].values
+read_files = []
+for l in all_lines:
+    to_add = l.rstrip('\n')
+    if to_add != "nan":
+        read_files.append(to_add)
+adp_seg_files = nat_sort(read_files)
+
+## plot
+cov_df["mu_i"] = mu_is
+
+SNPs = cov_mcmc_runner.SNPs.copy()
+ph = cov_mcmc_runner.allelic_clusters["snps_to_phases"][cov_mcmc_runner.allelic_sample]
+
+tidx = mut.map_mutations_to_targets(SNPs, cov_df, inplace=False)
+tidx = pd.Series(cov_df.index[tidx], index = tidx.index)
+SNPs["tidx2"] = -1
+SNPs.loc[tidx.index, "tidx2"] = tidx.values
+ph = ph[SNPs["tidx2"] != -1]
+SNPs = SNPs.loc[SNPs["tidx2"] != -1]
+
+SNPs = SNPs.merge(cov_df.loc[:, ["cov_seg_idx", "mu_i"]], left_on = "tidx2", right_index = True)
+
+plt.figure(10); plt.clf()
+for g, gidx in SNPs.groupby("cov_seg_idx").indices.items():
+    i = SNPs.iloc[gidx[0]]["clust"]
+    idx = (SNPs["clust"] == i) & ph
+    n = SNPs.loc[idx, "maj"].sum()
+    d = SNPs.loc[idx, ["min", "maj"]].sum().sum()
+    idx = (SNPs["clust"] == i) & ~ph
+    n += SNPs.loc[idx, "min"].sum()
+    d += SNPs.loc[idx, ["min", "maj"]].sum().sum()
+    p = SNPs.iloc[[gidx[0], gidx[-1]], :]["pos_gp"]
+    mu = mu_refit[0] + SNPs.iloc[gidx[0]]["mu_i"]
+    plt.plot(p, np.r_[1, 1]*np.exp(mu)*n/d, color = "r", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+    plt.plot(p, np.r_[1, 1]*np.exp(mu)*(1 - n/d), color = "b", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+
+## simple postprocessor {{{
+from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
+from hapaseg.model_optimizers import PoissonRegression
+from capy import seq
+
+chrlens = seq.get_chrlens(ref = args.ref_fasta)
+
+# 0. 1 allelic segment == 1 coverage segment, on the arm level
+
+# 1. split each allelic segment into bins
+allelic_clusters = cov_mcmc_runner.allelic_clusters
+ph = allelic_clusters["snps_to_phases"][cov_mcmc_runner.allelic_sample]
+SNPs = cov_mcmc_runner.SNPs
+
+binsize = 4000
+plt.figure(binsize, figsize = [16, 4]); plt.clf()
+ax = plt.gca()
+
+seg_file = []
+
+for (seg, _), seg_idxs in cov_df.groupby(["seg_idx", "chr"]).indices.items():
+    bdy = np.r_[seg_idxs[0]:seg_idxs[-1]:binsize, seg_idxs[-1]]
+    bdy = np.c_[bdy[:-1], bdy[1:]]
+
+    # get beta uncertainty for whole segment
+    snp_idx = SNPs["seg_idx"] == seg
+
+    den = SNPs.loc[snp_idx, ["min", "maj"]].sum().sum()
+    num = SNPs.loc[snp_idx & ph, "maj"].sum() + SNPs.loc[snp_idx & ~ph, "min"].sum()
+
+    # compute coverage segmentation on intervals
+    for st, en in bdy:
+        if en - st < 10:
+            continue
+        pois_regr = PoissonRegression(r[st:en], C[st:en], np.ones([en - st, 1]), np.log(2000) + C[st:en]@global_beta)
+        mu, beta = pois_regr.fit()
+
+        p = np.r_[cov_df["start_g"].iloc[st], cov_df["end_g"].iloc[en]]
+
+        # get uncertainty around mu
+        mu_post_sigma = np.linalg.inv(-pois_regr.hess())[0, 0]
+
+#        plt.plot(p, np.r_[1, 1]*np.exp(mu[0])*num/den, color = "r", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+#        plt.plot(p, np.r_[1, 1]*np.exp(mu[0])*(1 - num/den), color = "b", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+
+        # empirically compute min/maj segment uncertainty
+        maj_emp = s.beta.rvs(num + 1, den - num + 1, size = 1000)*np.exp(s.norm.rvs(mu, mu_post_sigma, size = 1000))
+        min_emp = (1 - s.beta.rvs(num + 1, den - num + 1, size = 1000))*np.exp(s.norm.rvs(mu, mu_post_sigma, size = 1000))
+        plt.plot(p, np.r_[1, 1]*maj_emp.mean(), color = "r", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+        plt.plot(p, np.r_[1, 1]*min_emp.mean(), color = "b", alpha = 0.5, linewidth = 10, solid_capstyle = "butt")
+
+        ## write entry to seg file
+        seg_file.append([
+          cov_df["chr"].iloc[st],    # Chromosome
+          cov_df["start"].iloc[st],  # Start.bp
+          cov_df["end"].iloc[en - 1],    # End.bp
+          en - st,                   # n_probes
+          cov_df["end_g"].iloc[en - 1] - cov_df["start_g"].iloc[st], # length
+          en - st, # n_hets (standin
+          num/den, # f
+          (maj_emp + min_emp).mean(), # tau (will be rescaled)
+          (maj_emp + min_emp).std(), # sigma.tau
+          min_emp.mean(), # mu.minor
+          min_emp.std(), # sigma.minor
+          maj_emp.mean(), # mu.major
+          maj_emp.std(), # sigma.major
+          0, # SegLabelCNLOH (not used?)
+        ])
+
+S = pd.DataFrame(seg_file, columns = ["Chromosome", "Start.bp", "End.bp", "n_probes", "length", "n_hets", "f", "tau", "sigma.tau", "mu.minor", "sigma.minor", "mu.major", "sigma.major", "SegLabelCNLOH"]).astype({ "Chromosome" : int, "Start.bp" : int, "End.bp" : int })
+
+# rescale such that mean = 2
+sf = S["length"]@S["tau"]/S["length"].sum()/2
+
+S.loc[:, ["tau", "sigma.tau", "mu.minor", "sigma.minor", "mu.major", "sigma.major"]] /= sf
+
+
+#        ax.add_patch(mpl.patches.Rectangle(
+#          (p[0], np.quantile(maj_emp, 0.05)),
+#          p[1] - p[0],
+#          np.maximum(0, np.diff(np.quantile(maj_emp, [0.05, 0.95]))[0]),
+#          facecolor = 'r',
+#          #edgecolor = 'k' if show_snps else None, linewidth = 0.5 if show_snps else None,
+#          fill = True, alpha = 0.5
+#        ))
+#        ax.add_patch(mpl.patches.Rectangle(
+#          (p[0], np.quantile(min_emp, 0.05)),
+#          p[1] - p[0],
+#          np.maximum(0, np.diff(np.quantile(min_emp, [0.05, 0.95]))[0]),
+#          facecolor = 'b',
+#          #edgecolor = 'k' if show_snps else None, linewidth = 0.5 if show_snps else None,
+#          fill = True, alpha = 0.5
+#        ))
+
+# }}}
