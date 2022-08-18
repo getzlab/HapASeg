@@ -5,6 +5,7 @@ import matplotlib as mpl
 import numpy as np
 import numpy_groupies as npg
 import pandas as pd
+import re
 import scipy.stats as s
 import scipy.special as ss
 import sortedcontainers as sc
@@ -328,6 +329,22 @@ plt.ylim([0, 300]);
 # -
 
 # Looks like a comb is starting to come together nicely, despite the fact that the coverage segmentation does not yet account for balanced gains! We can clearly see that balanced segments (brown segments at n = 1) are a little too high, not properly accounting for a genome doubled region somewhere.
+
+
+plt.figure(7); plt.clf()
+
+for i in range(Pi.shape[1]):
+    pidx = Pi[:, i] > 0.01
+    #covcorr = np.exp(np.log(r[pidx]) - (C[pidx, :]@beta + Pi[pidx]@mu))
+    covcorr = np.exp(np.log(r[pidx]) - (C[pidx, :]@beta))
+    #plt.scatter(f_prune[i] + 0.01*(np.random.rand(*covcorr.shape) - 0.5), covcorr, alpha = Pi[pidx, i], s = 1, color = np.array(colors)[i % len(colors)])
+    plt.scatter(f_prune[i] + 0.01*(np.random.rand(*covcorr.shape) - 0.5), covcorr, alpha = 0.1, s = Pi[pidx, i], color = np.array(colors)[i % len(colors)])
+
+plt.figure(8); plt.clf()
+for i in [5, 6]:
+    pidx = Pi[:, i] > 0.01
+    covcorr = np.exp(np.log(r[pidx]) - (C[pidx, :]@beta))
+    plt.hist(covcorr, 100, color = np.array(colors)[i % len(colors)], alpha = 0.5, density = True)
 
 # ## Residuals
 
