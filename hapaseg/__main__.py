@@ -734,7 +734,7 @@ def main():
         acdp.run(args.num_samples)
         print("visualizing run")
         
-        if wgs:
+        if args.wgs:
             acdp.visualize_ACDP('./acdp_agg_draws.png', use_cluster_stats=True)
         else:
             acdp.visualize_ACDP('./acdp_agg_draws.png', plot_real_cov=True, use_cluster_stats=True)
