@@ -174,7 +174,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "allelic_seg_idxs": "allelic_seg_idxs.txt"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v936"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v973"
     resources = { "mem" : "15G" }
 
 #scatter by allelic segment
@@ -204,7 +204,7 @@ class Hapaseg_coverage_mcmc_by_Aseg(wolf.Task):
         "cov_seg_figure": 'cov_mcmc_*_visual.png'
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v941"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v970"
     resources = {"cpus-per-task": 4, "mem" : "5G"}
 
 class Hapaseg_coverage_mcmc(wolf.Task):
@@ -254,7 +254,7 @@ class Hapaseg_collect_coverage_mcmc(wolf.Task):
         "seg_plot":'figures/segs.png',
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v967"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v969"
     resources = {"cpus-per-task": 4, "mem" : "12G"} # need high mem for poisson regression on massive Pi matrix
 
 class Hapaseg_coverage_dp(wolf.Task):
@@ -283,7 +283,7 @@ class Hapaseg_coverage_dp(wolf.Task):
         "cov_dp_object" : "Cov_DP_model*",
         "cov_dp_figure" : "cov_dp_visual_draw*"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v970"
     resources = {"cpus-per-task": 8, "mem" : "10G"} #potentially overkill and wont be necessary if cache table implemented
 
 class Hapaseg_acdp_generate_df(wolf.Task):
@@ -322,7 +322,7 @@ class Hapaseg_acdp_generate_df(wolf.Task):
         "opt_cdp_idx" : ("opt_cdp_draw.txt", wolf.read_file),
         "lnp_data_pickle": "lnp_data.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v970"
     resources = {"cpus-per-task": 8, "mem" : "15G"}
 
 class Hapaseg_run_acdp(wolf.Task):
@@ -359,5 +359,5 @@ class Hapaseg_run_acdp(wolf.Task):
         "acdp_genome_plots": 'acdp*draws.png',
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v970"
     resources = { "cpus-per-task":4, "mem" : "15G"}
