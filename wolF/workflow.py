@@ -309,14 +309,15 @@ def workflow(
     # otherwise, run M1 and get it from the BAM
     elif callstats_file is None and tumor_bam is not None and normal_bam is not None:
         # split het sites file uniformly
-#        split_het_sites = wolf.Task(
-#          name = "split_het_sites",
-#          inputs = { "snp_list" : localization_task["common_snp_list"] },
-#          script = """
-#          sed '/^@/d' ${snp_list} | split -l 10000 -d -a 4 - snp_list_chunk
-#          """,
-#          outputs = { "snp_list_shards" : "snp_list_chunk*" }
-#        )
+        split_het_sites = wolf.Task(
+          name = "split_het_sites",
+          inputs = { "snp_list" : localization_task["common_snp_list"] },
+          script = """
+          grep '^@' ${snp_list} > header
+          sed '/^@/d' ${snp_list} | split -l 10000 -d -a 4 --filter 'cat header /dev/stdin > $FILE' --additional-suffix '.picard' - snp_list_chunk
+          """,
+          outputs = { "snp_list_shards" : "snp_list_chunk*" }
+        )
 
         m1_task = mutect1.mutect1(inputs=dict(
           pairName = "het_coverage",
