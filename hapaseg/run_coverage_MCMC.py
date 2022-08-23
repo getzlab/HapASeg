@@ -364,6 +364,14 @@ class CoverageMCMCRunner:
         ## subset to targets containing SNPs
         Cov_overlap = self.full_cov_df.loc[self.full_cov_df["seg_idx"] != -1, :]
 
+        ## add allelic cluster annotations to expanded allelic segments
+        acmap = Cov_overlap.loc[
+          Cov_overlap["allelic_cluster"] != -1, ["seg_idx", "allelic_cluster"]
+        ].drop_duplicates().set_index("seg_idx")
+
+        with pd.option_context('mode.chained_assignment', None): # suppress erroneous SettingWithCopyWarning
+            Cov_overlap.loc[:, "allelic_cluster"] = acmap.loc[Cov_overlap["seg_idx"]].values
+
         return Cov_overlap
 
     def make_regressors(self, cov_df):
