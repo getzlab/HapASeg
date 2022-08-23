@@ -147,6 +147,7 @@ class CoverageMCMCRunner:
 
             # map any unmapped SNPs to extended target boundaries, without exceeding Allelic segment Intervals
             AI = self.full_cov_df.groupby("allelic_seg_overlap").agg({ "start_g" : min, "end_g" : max })
+            AI.loc[-1, :] = np.nan
             self.full_cov_df["start_pad"] = seq.gpos2chrpos(np.maximum(
               self.full_cov_df["start_g"].values - 300,
               AI.loc[self.full_cov_df["allelic_seg_overlap"], "start_g"].values
@@ -155,7 +156,7 @@ class CoverageMCMCRunner:
               self.full_cov_df["end_g"].values + 300,
               AI.loc[self.full_cov_df["allelic_seg_overlap"], "end_g"].values
             ))[1]
-            tidx_ext = mut.map_mutations_to_targets(SNPs, self.full_cov_df, startcol = "start_pad", endcol = "end_pad", inplace = False)
+            tidx_ext = mut.map_mutations_to_targets(SNPs, self.full_cov_df, startcol = "start_pad", endcol = "end_pad", inplace = False).astype(int)
             unmap_idx = SNPs.index.isin(tidx_ext.index) & (SNPs["targ_idx"] == -1)
             SNPs.loc[unmap_idx, "targ_idx"] = tidx_ext.loc[unmap_idx]
         else:
