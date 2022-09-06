@@ -181,9 +181,37 @@ def generate_acdp_df(SNP_path, # path to SNP df
     # return the acdp df, the hessians dictionary, and the index of the best DP run
     return pd.concat(draw_dfs), data,  best_run
 
+def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx):
+    acdp_single = acdp_df.loc[acdp_df.dp_draw == opt_idx]
+    num_bins = (acdp_single.allele==1).sum()
+    row_idxs = [acdp_single.columns.get_loc(i) for i in ['chr', 'start', 'end', 'allelic_cluster', 'segment_ID', 'cov_DP_cluster', 'min_count', 'maj_count']]
+    min_df = acdp_single.iloc[num_bins:, row_idxs]
+
+    segs_df = pd.DataFrame.from_records(min_df.groupby(['chr', 'segment_ID']).apply(lambda x: {'chr': x.chr.values[0],
+                                                               'start': x.start.min(), 
+                                                                'end': x.end.max(), 
+                                                                'allelic_cluster':x.allelic_cluster.values[0], 
+                                                                'segment_ID': x.segment_ID.values[0],
+                                                                'cov_DP_cluster':x.cov_DP_cluster.values[0], 
+                                                                'min_count':x.min_count.sum(),
+                                                                'maj_count':x.maj_count.sum()}).values)
+    
+    segs_df.loc[:, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = np.nan
+    for i, row in segs_df.iterrows():
+        lnp_res = lnp_data[(row[3], row[5], 2)]
+        a,b = row[[6,7]]
+        norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000)
+        r_maj = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a,b, size = 10000)))
+        mu_maj, sigma_maj = r_maj.mean(), r_maj.std()
+        r_min = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(b,a, size = 10000)))
+        mu_min, sigma_min = r_min.mean(), r_min.std()
+        segs_df.loc[i, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = mu_maj, mu_min, sigma_maj, sigma_min
+    segs_df = segs_df.rename(columns={'chr':'Chromosome', 'start':'Start.bp', 'end':'End.bp'})     
+    segs_df.to_csv(filename, sep='\t', index=False)
+
 class AllelicCoverage_DP:
     def __init__(self, cov_df, beta, cytoband_file, lnp_data, wgs=False, draw_idx=None, seed_all_clusters=True):
-        self.cov_df = cov_df
+        self.cov_df = cov_df.copy()
         self.beta = beta
         self.cytoband_file = cytoband_file
         self.seed_all_clusters = seed_all_clusters
@@ -228,7 +256,7 @@ class AllelicCoverage_DP:
         self.loggamma_alpha_0 =0
         self.log_beta_0 = 0
         self.half_log2pi = np.log(2*np.pi) / 2
-        self.seg_count_norm = 1. 
+        self.seg_count_norm = 5. 
 
         self._init_segments()
         self._init_clusters()
@@ -244,8 +272,14 @@ class AllelicCoverage_DP:
     def _init_segments(self):
         # keep a table of reads for each allelic cluster to fallback on if the tuple has too few bins (<10)
         fallback_counts = sc.SortedDict({})
+        # keep track of acdp segment assignments for each bin
+        self.cov_df.loc[:, 'acdp_segID'] = -1
+        self.cov_df.loc[:, 'acdp_segID'] = self.cov_df['acdp_segID'].astype(int)
+
         for ID, (name, grouped) in enumerate(
                 self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw'])):
+            self.cov_df.loc[grouped.index, 'acdp_segID'] = ID
+
             mu = grouped['cov_DP_mu'].values[0]
             sigma = grouped['cov_DP_sigma'].values[0]
             group_len = len(grouped)
@@ -284,8 +318,8 @@ class AllelicCoverage_DP:
             lnp_res = self.lnp_data[(name[0], name[1], name[3])]
             
             norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = group_len)
-            r = np.array(s.poisson.rvs(np.exp(norm_samples[:,0]) * s.beta.rvs(a,b, size = group_len)))
-            #r = np.array(np.exp(s.norm.rvs(lnp_res[0] + np.log(s.beta.rvs(a,b, size = group_len)), np.exp(lnp_res[1]))))
+            #r = np.array(s.poisson.rvs(np.exp(norm_samples[:,0]) * s.beta.rvs(a,b, size = group_len)))
+            r = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a,b, size = group_len)))
             
             # linscale
             # V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a, b, size=10000)).var()
@@ -298,8 +332,9 @@ class AllelicCoverage_DP:
             
             # using joint
             norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000)
-            V = np.array(s.poisson.rvs(np.exp(norm_samples[:,0]) * s.beta.rvs(a,b, size = 10000))).var()
-            #V = np.array(np.exp(s.norm.rvs(lnp_res[0] + np.log(s.beta.rvs(a,b, size = 10000)), np.exp(lnp_res[1])))).var()
+            V = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a,b, size = 10000))).var()
+            #V = np.array(s.poisson.rvs(np.exp(norm_samples[:,0]) * s.beta.rvs(a,b, size = 10000))).var()
+            #V = np.array(np.exp(s.norm.rvs(lnp_res[0] + np.log(s.beta.rvs(a,b, size = 10000)), norm_samples[:,0].std()))).var()
 
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r
@@ -504,7 +539,8 @@ class AllelicCoverage_DP:
         
         ##normalize cluster counts
         cluster_vals = cluster_vals / self.seg_count_norm
-        
+        seg_size = seg_size / self.seg_count_norm
+ 
         N = cluster_vals.sum()
 
         loggamma_N_alpha = ss.loggamma(N + self.alpha)
@@ -902,7 +938,9 @@ class AllelicCoverage_DP:
 
         #assign the greylisted segments
         self.assign_greylist()
-
+        
+        ## add cluster information to the dataframe
+        self.prepare_df()
         # return the clusters from the last draw and the counts
         return self.clusters_to_segs
     
@@ -1056,7 +1094,7 @@ class AllelicCoverage_DP:
             ax_g2 = ax_g.twinx()
             ax_g2.set_ylabel('allelic imbalance')
         
-        cluster_stats = self.precompute_cluster_params()
+        cluster_stats = self.precompute_cluster_params(cdp_draw)
         
         cluster_colors = self._get_cluster_colors()
         cdp_colors = self._get_cdp_colors() if cdp_draw is None else self._get_cdp_colors(cdp_draw)
@@ -1149,7 +1187,7 @@ class AllelicCoverage_DP:
                         tup_width = x.iloc[intv[1]].end_g - x.iloc[intv[0]].start_g
                         tup_allele = x.iloc[0].allele
                         
-                        # draw the acdp segment
+                       # draw the acdp segment
                         ax_g.add_patch(mpl.patches.Rectangle(
                           (x.iloc[intv[0]].start_g, tup_mean - 1.95 * tup_std),
                           tup_width,
@@ -1288,3 +1326,44 @@ class AllelicCoverage_DP:
             counter += len(vals)
 
         plt.savefig(os.path.join(save_path, 'acdp_clusters_plot.png'), dpi=300)
+
+    # add allelic cluster information to the acdp df
+    def prepare_df(self):
+        cluster_stats = self.precompute_cluster_params()
+        self.cov_df.loc[:, 'acdp_cluster'] = -1
+        self.cov_df.loc[:, 'cluster_mu'] = -1
+        self.cov_df.loc[:, 'cluster_sigma'] = -1
+        for c in self.cluster_dict:
+            for seg in self.cluster_dict[c]:
+                self.cov_df.loc[self.cov_df.acdp_segID == seg, ['acdp_cluster', 'cluster_mu', 'cluster_sigma']] = c, cluster_stats[c]['mean'], cluster_stats[c]['std']
+
+    # create allelic copy state segment dataframe in allelic capseg format
+    # TODO: will only use the default/selected draw. Need to figure out how to handle inconsistant draws
+    def create_allelic_segs_df(self):
+        ## subset to defualt draw
+        df = self.cov_df.loc[self.cov_df.dp_draw == self.default_draw]
+        ## acdp_df is in format major allele bins (in genomic order), minor allele bins (in order)
+        ## and hence we can split halfway
+        num_bins = (df.allele == 1).sum()
+        
+        ## subset to relevant columns and convert to numpy for speed
+        row_idxs = [df.columns.get_loc(i) for i in ['chr', 'start', 'end', 'acdp_cluster', 'cluster_mu', 'cluster_sigma']]
+        maj_vals = df.iloc[:num_bins, row_idxs].values
+        min_vals = df.iloc[num_bins:, row_idxs].values
+        
+        collapsed = []
+        maj_chr, cur_start, cur_end, maj_cluster, maj_mu, maj_sigma = maj_vals[0]
+        _, _, _, min_cluster, min_mu, min_sigma = min_vals[0]
+        for i in range(num_bins):
+            cur_chr, cur_maj_cluster = maj_vals[i, [0, 3]]
+            cur_min_cluster = min_vals[i, 3]
+            
+            if cur_chr != maj_chr or cur_maj_cluster != maj_cluster or cur_min_cluster != min_cluster:
+                collapsed.append((maj_chr, cur_start, cur_end, maj_mu, maj_sigma, min_mu, min_sigma))
+                maj_chr, cur_start, cur_end, maj_cluster, maj_mu, maj_sigma = maj_vals[i]
+                _, _, _, min_cluster, min_mu, min_sigma = min_vals[i]
+            else:
+                cur_end = maj_vals[i, 2]
+        collapsed.append((maj_chr, cur_start, cur_end, maj_mu, maj_sigma, min_mu, min_sigma))
+        return pd.DataFrame(collapsed, columns = ["Chromosome", 'Start.bp', 'End.bp', 'mu.major', 'sigma.major', 'mu.minor', 'sigma.minor']).astype({'Chromosome':int, 'Start.bp':int, 'End.bp':int, 'mu.major':float, 'sigma.major':float, 'mu.minor':float, 'sigma.minor':float})
+
