@@ -214,7 +214,7 @@ def parse_args():
     ac_dp.add_argument("--acdp_df_path", help="path to acdp dataframe")
     ac_dp.add_argument("--num_samples", type=int, help="number of samples to take")
     ac_dp.add_argument("--cytoband_file", help="path to cytoband txt file")
-    ac_dp.add_argument("--opt_cdp_idx", help="index of best cdp run")
+    ac_dp.add_argument("--opt_cdp_idx", type=int, help="index of best cdp run")
     ac_dp.add_argument("--wgs", help="flag to determine if sample is whole genome", default=False, action='store_true')
     ac_dp.add_argument("--lnp_data_pickle", help="path to lnp data dictionary", required=True)
     ac_dp.add_argument("--use_single_draw", help="flag to force acdp to only use best draw", default=False, action='store_true')
@@ -714,7 +714,14 @@ def main():
         acdp.run(args.num_samples)
         print("visualizing run")
         
-        if wgs:
+        # save segmentation df
+        seg_df = acdp.create_allelic_segs_df()
+        seg_df.to_csv('./acdp_segfile.txt', sep = '\t', index = False)
+
+        # make visualizations
+        acdp.visualize_ACDP_clusters(output_dir)
+
+        if args.wgs:
             acdp.visualize_ACDP('./acdp_agg_draws.png', use_cluster_stats=True)
         else:
             acdp.visualize_ACDP('./acdp_agg_draws.png', plot_real_cov=True, use_cluster_stats=True)
@@ -723,7 +730,7 @@ def main():
             acdp.visualize_ACDP('./acdp_best_cdp_draw.png', use_cluster_stats=True, cdp_draw=int(args.opt_cdp_idx))
             acdp.visualize_ACDP('./acdp_all_draws.png')
         
-        acdp.visualize_ACDP_clusters(output_dir)
+        
         with open(os.path.join(output_dir, "acdp_model.pickle"), "wb") as f:
             pickle.dump(acdp, f)
 
