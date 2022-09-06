@@ -114,7 +114,7 @@ def parse_args():
     dp = subparsers.add_parser("dp", help="Run DP clustering on allelic imbalance segments")
     dp.add_argument("--seg_dataframe", required = True)
     dp.add_argument("--ref_fasta", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
-    dp.add_argument("--cytoband_file", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
+    dp.add_argument("--cytoband_file", required = True)
   
     ## coverage MCMC
     coverage_mcmc = subparsers.add_parser("coverage_mcmc",
@@ -181,6 +181,7 @@ def parse_args():
                                   help="path to cov_df pickle file. Required for using --cov_mcmc_files option")
     collect_cov_mcmc.add_argument("--seg_indices_pickle", help='path to segment indices dataframe pickle', required=True)
     collect_cov_mcmc.add_argument("--bin_width", type=int, help="size of uniform bins if using. otherwise 1")
+    collect_cov_mcmc.add_argument("--cytoband_file", required = True)
 
     ## Coverage DP
     coverage_dp = subparsers.add_parser("coverage_dp", help="Run DP clustering on coverage segmentations")
@@ -620,12 +621,12 @@ def main():
 
     elif args.command == "collect_cov_mcmc":
         if args.coverage_dir:
-            full_segmentation, beta, ll_samples = aggregate_clusters(coverage_dir=args.coverage_dir, cov_df_pickle=args.cov_df_pickle)
+            full_segmentation, mu, beta, ll_samples = aggregate_clusters(coverage_dir=args.coverage_dir, cov_df_pickle=args.cov_df_pickle)
 
         elif args.cov_mcmc_files:
             if args.cov_df_pickle is None:
                 raise ValueError("cov_df_pickle argument required for passing shard file")
-            full_segmentation, beta, ll_samples= aggregate_clusters(seg_indices_pickle= args.seg_indices_pickle, f_file_list=args.cov_mcmc_files, cov_df_pickle=args.cov_df_pickle, bin_width=args.bin_width)
+            full_segmentation, mu, beta, ll_samples= aggregate_clusters(seg_indices_pickle= args.seg_indices_pickle, f_file_list=args.cov_mcmc_files, cov_df_pickle=args.cov_df_pickle, bin_width=args.bin_width)
         else:
             # need to pass in one or the other
             raise ValueError("must pass in either a directory or a txt file listing mcmc results")
@@ -635,7 +636,26 @@ def main():
             np.savez(os.path.join(args.coverage_dir, 'cov_mcmc_collected_data'), seg_samples=full_segmentation,
                      beta=beta, ll_samples = ll_samples)
         else:
-            np.savez('./cov_mcmc_collected_data', seg_samples=full_segmentation, beta=beta, ll_samples = ll_samples)
+            np.savez(os.path.join(output_dir, 'cov_mcmc_collected_data'), seg_samples=full_segmentation, beta=beta, ll_samples = ll_samples)
+
+        ## visualize
+        cov_df = pd.read_pickle(args.cov_df_pickle)
+        covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("(?:^C_.*_l?z$|C_log_len)")])
+        emu = np.exp(mu)
+        C = np.c_[cov_df[covar_columns]]
+        seg_idx = full_segmentation[:, ll_samples.argmax()].astype(int)
+
+        f = plt.figure(figsize = [17.56, 5.67])
+        plt.scatter(cov_df["start_g"], cov_df["fragcorr"]/np.exp(C@beta).ravel(), marker = ".", s = 1, c = np.array(["dodgerblue", "orangered"])[seg_idx % 2], alpha = 0.5)
+        plt.scatter(cov_df["start_g"], emu[seg_idx].ravel(), marker = ".", s = 1, c = 'k')
+        
+        plt.xlim([0, cov_df["end_g"].max()])
+        plt.ylim([emu.min() - emu.std(), emu.max() + emu.std()])
+        hs_utils.plot_chrbdy(args.cytoband_file)
+
+        plt.ylabel("Corrected fragment coverage")
+        plt.title("Total copy segmentation")
+        plt.savefig(output_dir + "/figures/segs.png", dpi = 300)
 
     elif args.command == "coverage_dp":
         cov_df = pd.read_pickle(args.f_cov_df)

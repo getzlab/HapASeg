@@ -147,6 +147,7 @@ class CoverageMCMCRunner:
 
             # map any unmapped SNPs to extended target boundaries, without exceeding Allelic segment Intervals
             AI = self.full_cov_df.groupby("allelic_seg_overlap").agg({ "start_g" : min, "end_g" : max })
+            AI.loc[-1, :] = np.nan
             self.full_cov_df["start_pad"] = seq.gpos2chrpos(np.maximum(
               self.full_cov_df["start_g"].values - 300,
               AI.loc[self.full_cov_df["allelic_seg_overlap"], "start_g"].values
@@ -155,7 +156,7 @@ class CoverageMCMCRunner:
               self.full_cov_df["end_g"].values + 300,
               AI.loc[self.full_cov_df["allelic_seg_overlap"], "end_g"].values
             ))[1]
-            tidx_ext = mut.map_mutations_to_targets(SNPs, self.full_cov_df, startcol = "start_pad", endcol = "end_pad", inplace = False)
+            tidx_ext = mut.map_mutations_to_targets(SNPs, self.full_cov_df, startcol = "start_pad", endcol = "end_pad", inplace = False).astype(int)
             unmap_idx = SNPs.index.isin(tidx_ext.index) & (SNPs["targ_idx"] == -1)
             SNPs.loc[unmap_idx, "targ_idx"] = tidx_ext.loc[unmap_idx]
         else:
@@ -369,6 +370,14 @@ class CoverageMCMCRunner:
         ## subset to targets containing SNPs
         Cov_overlap = self.full_cov_df.loc[self.full_cov_df["seg_idx"] != -1, :]
 
+        ## add allelic cluster annotations to expanded allelic segments
+        acmap = Cov_overlap.loc[
+          Cov_overlap["allelic_cluster"] != -1, ["seg_idx", "allelic_cluster"]
+        ].drop_duplicates().set_index("seg_idx")
+
+        with pd.option_context('mode.chained_assignment', None): # suppress erroneous SettingWithCopyWarning
+            Cov_overlap.loc[:, "allelic_cluster"] = acmap.loc[Cov_overlap["seg_idx"]].values
+
         return Cov_overlap
 
     def make_regressors(self, cov_df):
@@ -512,13 +521,13 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     Pi = np.zeros((len(MAP_seg), int(MAP_seg.max()) + 1), dtype=np.float16)
     Pi[range(len(MAP_seg)), MAP_seg.astype(int)] = 1.
     ## generate covars
-    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("(?:^C_.*z$|C_log_len)")])
+    covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("(?:^C_.*_l?z$|C_log_len)")])
     C = np.c_[cov_df[covar_columns]]
     ## do regression
     pois_regr = PoissonRegression(r, C, Pi)
     mu_refit, beta_refit = pois_regr.fit()
 
-    return coverage_segmentation, beta_refit, ll_samples
+    return coverage_segmentation, mu_refit, beta_refit, ll_samples
 
 def aggregate_burnin_files(file_list, cluster_num):
     file_captures = []

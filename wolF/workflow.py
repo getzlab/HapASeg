@@ -309,14 +309,15 @@ def workflow(
     # otherwise, run M1 and get it from the BAM
     elif callstats_file is None and tumor_bam is not None and normal_bam is not None:
         # split het sites file uniformly
-#        split_het_sites = wolf.Task(
-#          name = "split_het_sites",
-#          inputs = { "snp_list" : localization_task["common_snp_list"] },
-#          script = """
-#          sed '/^@/d' ${snp_list} | split -l 10000 -d -a 4 - snp_list_chunk
-#          """,
-#          outputs = { "snp_list_shards" : "snp_list_chunk*" }
-#        )
+        split_het_sites = wolf.Task(
+          name = "split_het_sites",
+          inputs = { "snp_list" : localization_task["common_snp_list"] },
+          script = """
+          grep '^@' ${snp_list} > header
+          sed '/^@/d' ${snp_list} | split -l 10000 -d -a 4 --filter 'cat header /dev/stdin > $FILE' --additional-suffix '.picard' - snp_list_chunk
+          """,
+          outputs = { "snp_list_shards" : "snp_list_chunk*" }
+        )
 
         m1_task = mutect1.mutect1(inputs=dict(
           pairName = "het_coverage",
@@ -567,7 +568,7 @@ def workflow(
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":ref_config["repl_file"],
-       # "faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
+        "faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
         "gc_pickle":ref_config["gc_file"],
         "normal_coverage_csv":normal_cov_gather_task["coverage"] if collect_normal_coverage else "",
         "ref_fasta":localization_task["ref_fasta"],
@@ -658,7 +659,8 @@ def workflow(
         "cov_mcmc_files":[cov_mcmc_scatter_task["cov_segmentation_data"]],
         "cov_df_pickle":prep_cov_mcmc_task["cov_df_pickle"],
         "seg_indices_pickle":prep_cov_mcmc_task["allelic_seg_groups"],
-        "bin_width":bin_width
+        "bin_width":bin_width,
+        "cytoband_file":localization_task["cytoband_file"]
         }
     )
     

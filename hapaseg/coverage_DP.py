@@ -162,7 +162,7 @@ class Run_Cov_DP:
     def _init_segments(self):
         num_segments = 0
         for ID, seg_df in self.cov_df.groupby('segment_ID'):
-            seg = seg_df['covcorr'].values
+            seg = seg_df['fragcorr'].values
             seg_len = len(seg)
             self.segment_r_list[ID] = seg
             
@@ -222,17 +222,6 @@ class Run_Cov_DP:
             self.count_prior_sum = count_prior_sum.copy()
             self.next_cluster_index = np.r_[self.prior_clusters.keys()].max() + 1
             self.clust_prior_ML = None
-    
-    @staticmethod
-    def stats_ll_nbinom(r, mu, C, beta, lepsi, bin_exposure):
-        r = r.flatten()
-        epsi = np.exp(lepsi)
-        exposure = np.log(bin_exposure)
-        bc = (C @ beta).flatten() + exposure
-        exp = np.exp(mu + bc).flatten()
-        return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
-                (r * (mu + bc - np.log(epsi + exp))) +
-                (epsi * np.log(epsi / (epsi + exp)))).sum()
     
     @staticmethod
     def ll_nbinom(r, mu, C, beta, lepsi, bin_exposure=1):
