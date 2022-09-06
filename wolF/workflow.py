@@ -731,7 +731,7 @@ def workflow(
             "opt_cdp_idx" : gen_acdp_task["opt_cdp_idx"],
             "wgs": wgs,
             "lnp_data_pickle": gen_acdp_task["lnp_data_pickle"],
-            "use_single_idx":True # for now only use single best draw for wgs
+            "use_single_draw":True # for now only use single best draw for wgs
             }
         )
 
