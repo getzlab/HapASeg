@@ -355,6 +355,7 @@ class Hapaseg_run_acdp(wolf.Task):
         "acdp_clusters_plot": "acdp_clusters_plot.png",
         "acdp_tuples_plot": "acdp_tuples_plot.png",
         "acdp_genome_plots": 'acdp*draws.png',
+        "acdp_segfile" : "acdp_segfile.txt"
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
