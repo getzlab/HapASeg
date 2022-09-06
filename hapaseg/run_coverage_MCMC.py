@@ -291,9 +291,14 @@ class CoverageMCMCRunner:
         # remove covariate outliers (+- 6 sigma)
         z_norm_columns = Cslice.columns.str.contains("^C_.*z$")
         covar_6sig_idx = (Cslice.loc[:, z_norm_columns].abs() < 6).all(axis = 1)
-
+        
         # apply all filters
         cov_df = cov_df.loc[~naidx & ~outlier_mask & covar_6sig_idx]
+        
+        # now remove ADP clusters that are too small (along with respective bins)
+        small_clusters = cov_df.seg_idx.value_counts()[lambda x: x < 5].index
+        small_adp_mask = cov_df.seg_idx.isin(small_clusters)
+        cov_df = cov_df.loc[~small_adp_mask]
 
         return cov_df
 
