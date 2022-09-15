@@ -731,7 +731,7 @@ def main():
                                   wgs=args.wgs,
                                   draw_idx=draw_idx,
                                   seed_all_clusters=args.warmstart)
-        acdp.run(args.num_samples)
+        acdp_combined = acdp.run_seperated(args.num_samples)
         print("visualizing run")
         
         # save segmentation df
