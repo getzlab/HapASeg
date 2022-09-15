@@ -14,6 +14,8 @@ import pickle
 import os
 import distinctipy
 import tqdm
+from kneed import KneeLocator
+from scipy.signal import find_peaks
 
 from capy import seq, mut
 
@@ -209,7 +211,7 @@ def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx):
     segs_df = segs_df.rename(columns={'chr':'Chromosome', 'start':'Start.bp', 'end':'End.bp'})     
     segs_df.to_csv(filename, sep='\t', index=False)
 
-class AllelicCoverage_DP:
+class AllelicCoverage_DP_runner:
     def __init__(self, cov_df, beta, cytoband_file, lnp_data, wgs=False, draw_idx=None, seed_all_clusters=True):
         self.cov_df = cov_df.copy()
         self.beta = beta
@@ -232,42 +234,13 @@ class AllelicCoverage_DP:
         self.cluster_assignments = np.ones(self.num_segments, dtype=int) * -1
         self.segment_sums = np.zeros(self.num_segments)        
         self.segment_ssd = np.zeros(self.num_segments)
-
-        self.cluster_counts = sc.SortedDict({})
-        self.unassigned_segs = sc.SortedList(np.r_[0:self.num_segments])
-        self.cluster_dict = sc.SortedDict({})
-        self.cluster_MLs = sc.SortedDict({})
         self.greylist_segments = sc.SortedSet({})
-        self.cluster_sums = sc.SortedDict({})
-        self.cluster_ssd = sc.SortedDict({}) # sum of squared deviations
-        
-        self.prior_clusters = None
-        self.prior_r_list = None
-        self.prior_C_list = None
-        self.count_prior_sum = None
-        self.ML_total_history = []
-        self.DP_total_history = []
-        self.MLDP_total_history = []
-
-        # inverse gamma hyper parameter default values -- will be set later based on tuples
-        self.alpha_0 = 100
-        self.beta_0 = 30
-        self.kappa_0 = 1e-6
-        self.loggamma_alpha_0 =0
-        self.log_beta_0 = 0
-        self.half_log2pi = np.log(2*np.pi) / 2
-        self.seg_count_norm = 5. 
 
         self._init_segments()
-        self._init_clusters()
+   
+        single_allele = self.cov_df 
+        self.acdp = None
 
-        # containers for saving the MCMC trace_cov_dp
-        self.clusters_to_segs = []
-        self.bins_to_clusters = []
-        self.draw_indices = []
-
-        self.alpha = 0.5
-        
     # initialize each segment object with its data
     def _init_segments(self):
         # keep a table of reads for each allelic cluster to fallback on if the tuple has too few bins (<10)
@@ -343,9 +316,9 @@ class AllelicCoverage_DP:
             self.segment_ssd[ID] = ((r - r.mean())**2).sum()
 
         # go back through segments and greylist ones with high variance
-        greylist_mask = np.ones(self.num_segments, dtype=bool)
-        greylist_mask[self.greylist_segments] = False
-        cutoff = np.median(self.segment_V_list[greylist_mask]) * 20
+        #greylist_mask = np.ones(self.num_segments, dtype=bool)
+        #greylist_mask[self.greylist_segments] = False
+        #cutoff = np.median(self.segment_V_list[greylist_mask]) * 20
         #self.alpha_0 = self.segment_counts[greylist_mask].mean()
         #self.beta_0 = self.alpha_0 / 2 * self.segment_V_list[greylist_mask].mean()
         self.alpha_0 = 1e-4
@@ -354,17 +327,234 @@ class AllelicCoverage_DP:
         self.loggamma_alpha_0 = ss.loggamma(self.alpha_0)
         self.log_beta_0 = np.log(self.beta_0)
 
-        print(cutoff)
-        for i in set(range(self.num_segments)) - self.greylist_segments:
-            if self.segment_V_list[i] > cutoff:
-                self.greylist_segments.add(i)
-
+        #print(cutoff)
+        #for i in set(range(self.num_segments)) - self.greylist_segments:
+        #    if self.segment_V_list[i] > cutoff:
+        #        self.greylist_segments.add(i)
+        
+        # new method for greylisting segments checks if mean varaince relation
+        # holds for segments
+        means = np.array([self.segment_r_list[s].mean() for s in range(self.num_segments)])
+        slope, intercept = s.linregress(means, np.sqrt(self.segment_V_list))[:2]
+        median_mean, median_std = np.median(means), np.median(np.sqrt(self.segment_V_list))
+        boundary_intercept = (2.5 * median_std - (median_mean * slope + intercept)) + intercept
+        self.greylist_segments.update(np.r_[:self.num_segments][(means * slope + boundary_intercept < np.sqrt(self.segment_V_list))])
+     
         #self.seg_count_norm = self.segment_counts.mean() / 25
 
-    def _init_clusters(self):
+    # fit comb to allelic imbalances followed by allelic coverage levels to
+    # classify segments as confidently clonal/subclonal. Run acdp seperately
+    # on each group and merge for final results
+    def run_seperated(self, n_iter):
+        # allelic imbalance comb fitting
+        ## subset to single draw and major allele 
+        single_allele_df = self.cov_df.loc[(self.cov_df.dp_draw == self.default_draw) & (self.cov_df.allele == -1)]
+        ## aggregate het counts across allelic DP segments
+        snp_segments_df = single_allele_df.groupby('segment_ID').apply(lambda x:
+                                          pd.Series({'weight': len(x),
+                                                     'min_count':x['min_count'].sum(),
+                                                     'maj_count':x['maj_count'].sum(),
+                                                     'f':x['min_count'].sum() / (x['min_count'].sum() + x['maj_count'].sum())}))
+        ## instantiate beta distribution at each segment imbalance level
+        beta_dict = {c: s.beta(r.min_count, r.maj_count) for c, r in snp_segments_df.iterrows()}
+
+        ## compute allelic levels given purity, copy number and ploidy
+        def _imb(alpha, na, tau):
+            return (1 + alpha*(na - 1))/(2*(1 - alpha) + tau*alpha)
+        
+        ## we deploy a grid search over alpha (purity) values
+        alpha = np.linspace(0., 1., 10000)
+        ## generate clonal imbalance levels. By default do this up to ploidy 7
+        clonal_imbs = {}
+        for tau in range(1, 8):
+            for na in range(1, tau + 1):
+                if na < tau/2:
+                    continue
+                clonal_imbs[f"{na}/{tau}"] = _imb(alpha, na, tau)
+        clonal_arr = np.array(list(clonal_imbs.values()))
+        
+        purity_res = np.array([beta.logpdf(clonal_arr) for beta in beta_dict.values()]).transpose((2,1,0))
+        
+        opt_purity_idx = purity_res.max(1).sum(1).argmax()
+        opt_purity = alpha[opt_purity_idx]
+        
+        ## check to see if there are multiple potential purities; warn if so
+        opt_states = purity_res.max(1).sum(1)
+        purity_liks = np.exp(opt_states[find_peaks(opt_states, prominence=10, distance = 10)[0]] - opt_states.max())
+        if (purity_liks > 0.01).sum() > 1:
+            print(f"WARNING: multiple purities possible, using optimal purity {np.around(opt_purity, 4)}", flush=True)
+        else:
+            print(f"Optimal purity is {opt_purity}", flush = True)
+        
+        ## now take the segments most likely to be clonal by their beta likelihoods 
+        ## to avoid setting a hard theshold we take the elbow point as threshold
+        opt_max = purity_res[opt_purity_idx].max(0)
+        total_weight = snp_segments_df.weight.sum()
+        sorted_liks = np.array(sorted(zip(opt_max, snp_segments_df.weight)))
+        sorted_cum_weights = np.cumsum(sorted_liks[:,1]) / total_weight
+        kneedle = KneeLocator(1- sorted_cum_weights, sorted_liks[:,0], S=1.0, curve="concave", direction="decreasing")
+        clonal_lik_threshold = sorted_liks[np.where(1- sorted_cum_weights == kneedle.elbow)[0][0]][0]
+
+        clonal_segIDs = np.array(list(beta_dict.keys()))[purity_res.max(1)[opt_purity_idx] > clonal_lik_threshold]
+        clonal_segs = self.cov_df.loc[self.cov_df.segment_ID.isin(clonal_segIDs)].acdp_segID.unique()
+        
+        ## run acdp clustering on segs that pass the threshold
+        print("Clustering first pass clonal segments...", flush=True)
+        acdp_clonal_first = self.run(1, segs_to_use = clonal_segs)
+       
+        # fit allelic coverage comb
+ 
+        ## use this first pass clustering to fit constant for allelic coverage comb
+        clonal_datapoints = [np.hstack([acdp_clonal_first.segment_r_list[s] for s in acdp_clonal_first.cluster_dict[c]]) for c in acdp_clonal_first.cluster_dict]
+        ## grid search max is set to twice the median
+        max_k = 2 * int(np.median(np.hstack(clonal_datapoints)))
+        ks = np.r_[0:max_k:0.5]
+        consts = np.array([ks * ((1-opt_purity) + a * opt_purity) for a in range(0,6)])
+        sigmas = np.array([seg_datapoints.std() for seg_datapoints in clonal_datapoints])
+        print("fitting allelic coverage comb...")
+        covcomb_res = np.array([[(-np.log(sigmas[i]) - np.log(np.sqrt(2* np.pi)) - ((clonal_datapoints[i][:,None] - consts[a][None,:])**2 / (2 * sigmas[i]**2))).sum(0) for a in range(0,6)] for i in range(len(clonal_datapoints))])
+        opt_k = ks[covcomb_res.max(1).sum(0).argmax()]
+        opt_comb = covcomb_res.max(1).sum(0)
+        comb_liks = np.exp(opt_comb[find_peaks(opt_comb, prominence=10, distance = 10)[0]] - opt_comb.max())
+        if (comb_liks > 0.01).sum() > 1:
+            print(f"WARNING: multiple k values possible, using optimal k= {np.around(opt_k, 4)}", flush=True)
+        else:
+            print(f"Optimal k value is np.around(opt_k, 4)", flush=True)
+
+        # filter out non-clonal clusters that may have clonal f due to degeneracy
+        ## we also filter out small clusters (less than 1 percent of genomic mass)
+        opt_covcomb = covcomb_res[:,:, covcomb_res.max(1).sum(0).argmax()] # na liks for optimal k
+        opt_nA = opt_covcomb.argmax(1)
+
+        max_clonal_datapoint = np.hstack(clonal_datapoints).max()
+        clonal_sizes = np.array([len(s) for s in clonal_datapoints])
+        clonal_fraction = clonal_sizes / clonal_sizes.sum()
+
+        clonal_clusters = []
+        for i, c in enumerate(acdp_clonal_first.cluster_dict):
+            loglik = opt_covcomb[i, opt_nA[i]]
+            #null_lik = np.log(1/max_clonal_datapoint) * clonal_sizes[i]
+            null_lik = np.log(1/(clonal_datapoints[i].max() - clonal_datapoints[i].min())) * clonal_sizes[i]
+            if loglik > null_lik and clonal_fraction[i] > 0.01:
+                clonal_clusters.append(c)
+        ## this gives us our set of likely clonal clusters with cn < 6
+        
+        # re-assign segments based on fitted comb
+        ## we now see if any segments originally binned as subclonal wish to join a clonal cluster
+        ## compute target distributions for the clonal clusters
+        target_clonal_datapoints = [(c, np.hstack([self.segment_r_list[s] for s in acdp_clonal_first.cluster_dict[c]])) for c in clonal_clusters]
+        target_normals = {tc_data[0] : s.norm(tc_data[1].mean(), tc_data[1].std()) for tc_data in target_clonal_datapoints}
+        ## find the clonal comb levels to set null uniform dist limits
+        ## for every segment that was originally classified as subclonal (by allelic imbalance) we compare to each clonal distribution and the null dist
+        subclonal_single_segs = np.array(list(beta_dict.keys()))[purity_res.max(1)[opt_purity_idx] <= clonal_lik_threshold]
+        subclonal_segs = self.cov_df.loc[self.cov_df.segment_ID.isin(subclonal_single_segs)].acdp_segID.unique()
+        subclonal_segs_data = [(s, self.segment_r_list[s]) for s in subclonal_segs]
+
+        clonal_classified = []
+        subclonal_classified = []
+        for seg, seg_datapoints in subclonal_segs_data:
+            up, low = seg_datapoints.max(), seg_datapoints.min()
+            seg_res = {c:norm.logpdf(seg_datapoints).sum() for c, norm in target_normals.items()}
+            seg_res[-1] = np.log(1/ (up-low)) * len(seg_datapoints)
+            assgn = list(seg_res.keys())[np.array(list(seg_res.values())).argmax()]
+            if assgn == -1:
+                subclonal_classified.append(seg)
+            else:
+                clonal_classified.append(seg)
+       
+        # run acdp clustering on each set of segments
+        clonal_segs_final = np.r_[np.hstack([list(acdp_clonal_first.cluster_dict[c]) for c in clonal_clusters]), clonal_classified].astype(int)
+        subclonal_segs_final = np.array(list(set(range(self.num_segments)) - set(clonal_segs_final))).astype(int)
+        print("clustering final clonal segments...", flush=True)        
+        acdp_clonal = self.run(1, segs_to_use = clonal_segs_final)
+        print("clustering final subclonal segments...", flush=True)        
+        acdp_subclonal = self.run(1, segs_to_use = subclonal_segs_final)
+        
+        # merge acdp results from the two classes into a final acdp result
+        acdp_combined = AllelicCoverage_DP(self)
+        ## create set of unique cluster labels
+        unique_cluster_labels = {c:v for c,v in zip(*np.unique(np.r_[list(acdp_clonal.cluster_dict.keys()), list(acdp_subclonal.cluster_dict.keys())], return_index=True))}
+        combined_cluster_dict = {**{unique_cluster_labels[c]:v for c,v in acdp_clonal.cluster_dict.items()}, **{unique_cluster_labels[c]:v for c,v in acdp_subclonal.cluster_dict.items()}}
+        print("Merging cluster outputs...", flush=True)  
+        ## update fields with combined data
+        acdp_combined.cluster_dict = sc.SortedDict(combined_cluster_dict)
+        acdp_combined.next_cluster_index = len(acdp_combined.cluster_dict)
+        acdp_combined.cluster_counts = sc.SortedDict({c:acdp_combined.segment_counts[list(acdp_combined.cluster_dict[c])].sum() for c in acdp_combined.cluster_dict})
+        acdp_combined.cluster_sums = sc.SortedDict({c: v.sum() for c, v in [(c, np.hstack([acdp_combined.segment_r_list[s] for s in acdp_combined.cluster_dict[c]])) for c in acdp_combined.cluster_dict]})
+        acdp_combined.cluster_ssd = sc.SortedDict({c: v.var() * len(v) for c, v in [(c, np.hstack([acdp_combined.segment_r_list[s] for s in acdp_combined.cluster_dict[c]])) for c in acdp_combined.cluster_dict]})
+        for c in acdp_combined.cluster_dict:
+            acdp_combined.cluster_assignments[list(acdp_combined.cluster_dict[c])] = c
+        acdp_combined.cluster_MLs = sc.SortedDict({c:acdp_combined._ML_cluster_from_list(acdp_combined.cluster_dict[c]) for c in acdp_combined.cluster_dict})    
+    
+        return acdp_combined
+         
+    def run(self, n_iter, segs_to_use=None, return_res=False):
+        acdp = AllelicCoverage_DP(self, segs_to_use)
+        acdp_res = acdp.run(n_iter)
+        self.acdp = acdp
+        if return_res:
+            return acdp, acdp_res
+        else:
+            return acdp
+
+class AllelicCoverage_DP:
+    def __init__(self, runner_obj, segs_to_use=None, assign_greylist=False):
+        # load data from top-level runner
+        self.cov_df = runner_obj.cov_df
+        self.cytoband_file = runner_obj.cytoband_file
+        self.seed_all_clusters = runner_obj.seed_all_clusters
+        self.wgs = runner_obj.wgs
+        self.draw_idx = runner_obj.draw_idx
+        self.default_draw = runner_obj.default_draw
+        self.num_segments = runner_obj.num_segments
+        self.segment_r_list = runner_obj.segment_r_list
+        self.segment_V_list = runner_obj.segment_V_list
+        self.segment_counts = runner_obj.segment_counts
+        self.segment_allele = runner_obj.segment_allele
+        self.cluster_assignments = runner_obj.cluster_assignments
+        self.segment_sums = runner_obj.segment_sums
+        self.segment_ssd = runner_obj.segment_ssd
+        self.greylist_segments = runner_obj.greylist_segments
+        self.beta = runner_obj.beta
+        self.to_assign_greylist = assign_greylist
+        
+        if segs_to_use is None:
+            segs_to_use = sc.SortedSet(range(self.num_segments))
+        self.segments = sc.SortedSet(segs_to_use)
+
+        self.cluster_counts = sc.SortedDict({})
+        self.unassigned_segs = sc.SortedSet(self.segments)
+        self.cluster_dict = sc.SortedDict({})
+        self.cluster_MLs = sc.SortedDict({})
+        self.cluster_sums = sc.SortedDict({})
+        self.cluster_ssd = sc.SortedDict({}) # sum of squared deviations
+        
+        self.ML_total_history = []
+        self.DP_total_history = []
+        self.MLDP_total_history = []
+
+        # inverse gamma hyper parameter default values -- will be set later based on tuples
+        self.alpha_0 = 100
+        self.beta_0 = 30
+        self.kappa_0 = 1e-6
+        self.loggamma_alpha_0 =0
+        self.log_beta_0 = 0
+        self.half_log2pi = np.log(2*np.pi) / 2
+        self.seg_count_norm = 5. 
+
+        self._init_clusters(segs_to_use)
+
+        # containers for saving the MCMC trace_cov_dp
+        self.clusters_to_segs = []
+        self.bins_to_clusters = []
+        self.draw_indices = []
+
+        self.alpha = 0.5
+        
+    def _init_clusters(self, segs_to_use):
         [self.unassigned_segs.discard(s) for s in self.greylist_segments]
         if not self.seed_all_clusters:
-            first = (set(range(self.num_segments)) - self.greylist_segments)[0]
+            first = (self.segments - self.greylist_segments)[0]
             clusterID = 0
             self.cluster_counts[0] = self.segment_counts[0]
             self.unassigned_segs.discard(0)
@@ -376,7 +566,7 @@ class AllelicCoverage_DP:
             #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
             self.next_cluster_index = 1
         else:
-            for i in set(range(self.num_segments)) - self.greylist_segments:
+            for i in self.segments - self.greylist_segments:
                 self.cluster_counts[i] = self.segment_counts[i]
                 self.unassigned_segs.discard(i)
                 self.cluster_dict[i] = sc.SortedSet([i])
@@ -567,8 +757,10 @@ class AllelicCoverage_DP:
         stay = np.log(self.alpha) + ss.gammaln(M)
         return split - stay
 
-    # for assigning greylisted segments after the clustering is complete
-    def assign_greylist(self):
+    # old method for assigning greylisted segments after the clustering is complete
+    # ML greylist assignemnts were prone to assigning high variance segments 
+    # to the highest variance cluster. moved to likelihood
+    def assign_greylist_MLs(self):
         # keep a copy of this since it will remain static
         ML_C = np.array([ML for (ID, ML) in self.cluster_MLs.items()])
         # make a deep copy of the cluster dict since we dont want assignment of greylisted clusters to affect subsequent assignments
@@ -599,7 +791,37 @@ class AllelicCoverage_DP:
         # now set cluster dict to the one with the greylisted items assigned
         self.cluster_dict = greylist_added_dict
 
-    def run(self, n_iter, sample_num=0):
+    # assignes greylisted segments to clusters or discards based on gaussian
+    # likelyhoods
+    def assign_greylist(self):
+        clusters = np.array(list(self.cluster_dict.keys()))
+        norms = {c: s.norm(seg.mean(), seg.std()) for c, seg in [(c, np.hstack([self.segment_r_list[i] for i in self.cluster_dict[c]])) for c in clusters]}
+        for segID in self.greylist_segments:
+            r = self.segment_r_list[segID]
+    
+            log_liks = np.r_[[norm.logpdf(r).sum() for c, norm in norms.items()]]
+            null_lik = np.log(1 /(r.max() - r.min())) * len(r)
+            clusterID = clusters[log_liks.argmax()]
+            if log_liks.max() > null_lik:
+                print(f'segment {segID} assigned to cluster {clusterID}')
+                # we found a good match for this segment and we can add it to the cluster
+                self.cluster_dict[clusterID].add(segID)
+                self.cluster_assignments[segID] = clusterID
+                continue
+            else:
+                if len(r) > 25:
+                    print(f'segment {segID} given new cluster {self.next_cluster_index}')
+                    # if we have a farily large segment we let it form its own cluster
+                    self.cluster_dict[self.next_cluster_index] = sc.SortedSet([segID])
+                    self.cluster_assignments[segID] = self.next_cluster_index
+                    self.next_cluster_index += 1
+                else:
+                    # discard the segment by not assigning it a cluster
+                    print(f'segment {segID} discarded')
+                    continue
+
+
+    def run(self, n_iter):
 
         burned_in = False
         all_assigned = False
@@ -607,13 +829,13 @@ class AllelicCoverage_DP:
         n_it = 0
         n_it_last = 0
 
-        white_segments = set(range(self.num_segments)) - self.greylist_segments
+        white_segments = self.segments - self.greylist_segments
 
         while len(self.bins_to_clusters) < n_iter:
 
             self.save_ML_total()
             # status update
-            if not n_it % 250 and self.prior_clusters is None:
+            if not n_it % 250:
                 print("{} iterations; num_clusters: {}; ML:{}".format(n_it, len(self.cluster_dict.keys()), self.MLDP_total_history[-1]), flush=True)
 
             # start couting for burn in
@@ -623,7 +845,7 @@ class AllelicCoverage_DP:
                     all_assigned = True
                     n_it_last = n_it
                 # burn in after n_seg / n_clust iteration
-                if not burned_in and all_assigned and n_it - n_it_last > max(2000, self.num_segments):
+                if not burned_in and all_assigned and n_it - n_it_last > max(2000, len(self.segments)):
                     if np.diff(np.r_[self.MLDP_total_history[-2000:]]).mean() <= 0:
                         print('burnin', flush=True)
                         burned_in = True
@@ -633,7 +855,7 @@ class AllelicCoverage_DP:
             # pick segment
             if np.random.rand() < 0.5:
                 if len(self.unassigned_segs) > 0 and len(
-                        self.unassigned_segs) / self.num_segments < 0.1 and np.random.rand() < 0.5:
+                        self.unassigned_segs) / len(self.segments) < 0.1 and np.random.rand() < 0.5:
                     segID = np.random.choice(self.unassigned_segs)
                 else:
                     segID = np.random.choice(white_segments)
@@ -928,7 +1150,7 @@ class AllelicCoverage_DP:
                 
             # save draw after burn in for every n_seg / (n_clust / 2) iterations
             # if burned_in and n_it - n_it_last > self.num_segments / (len(self.cluster_counts) * 2):
-            if burned_in and n_it - n_it_last > self.num_segments:
+            if burned_in and n_it - n_it_last > len(self.segments):
                 self.bins_to_clusters.append(self.cluster_assignments.copy())
                 self.clusters_to_segs.append(self.cluster_dict.copy())
                 self.draw_indices.append(n_it)
@@ -937,7 +1159,8 @@ class AllelicCoverage_DP:
             n_it += 1
 
         #assign the greylisted segments
-        self.assign_greylist()
+        if self.to_assign_greylist:
+            self.assign_greylist()
         
         ## add cluster information to the dataframe
         self.prepare_df()
@@ -1331,8 +1554,8 @@ class AllelicCoverage_DP:
     def prepare_df(self):
         cluster_stats = self.precompute_cluster_params()
         self.cov_df.loc[:, 'acdp_cluster'] = -1
-        self.cov_df.loc[:, 'cluster_mu'] = -1
-        self.cov_df.loc[:, 'cluster_sigma'] = -1
+        self.cov_df.loc[:, 'cluster_mu'] = np.nan
+        self.cov_df.loc[:, 'cluster_sigma'] = np.nan
         for c in self.cluster_dict:
             for seg in self.cluster_dict[c]:
                 self.cov_df.loc[self.cov_df.acdp_segID == seg, ['acdp_cluster', 'cluster_mu', 'cluster_sigma']] = c, cluster_stats[c]['mean'], cluster_stats[c]['std']
