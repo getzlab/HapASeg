@@ -732,6 +732,9 @@ def main():
                                   draw_idx=draw_idx,
                                   seed_all_clusters=args.warmstart)
         acdp_combined = acdp.run_seperated(args.num_samples)
+        print("assigning flagged segments...", flush=True)
+        acdp_combined.assign_greylist()
+
         print("visualizing run")
         
         # save segmentation df
