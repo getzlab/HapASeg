@@ -382,7 +382,7 @@ class AllelicCoverage_DP_runner:
         opt_states = purity_res.max(1).sum(1)
         purity_liks = np.exp(opt_states[find_peaks(opt_states, prominence=10, distance = 10)[0]] - opt_states.max())
         if (purity_liks > 0.01).sum() > 1:
-            print(f"WARNING: multiple purities possible, using optimal purity {np.around(opt_purity, 4)}", flush=True)
+            print(f"WARNING: multiple purities possible, using optimal purity {opt_purity}", flush=True)
         else:
             print(f"Optimal purity is {opt_purity}", flush = True)
         
@@ -417,9 +417,9 @@ class AllelicCoverage_DP_runner:
         opt_comb = covcomb_res.max(1).sum(0)
         comb_liks = np.exp(opt_comb[find_peaks(opt_comb, prominence=10, distance = 10)[0]] - opt_comb.max())
         if (comb_liks > 0.01).sum() > 1:
-            print(f"WARNING: multiple k values possible, using optimal k= {np.around(opt_k, 4)}", flush=True)
+            print(f"WARNING: multiple k values possible, using optimal k= {opt_k}", flush=True)
         else:
-            print(f"Optimal k value is np.around(opt_k, 4)", flush=True)
+            print(f"Optimal k value is {opt_k}", flush=True)
 
         # filter out non-clonal clusters that may have clonal f due to degeneracy
         ## we also filter out small clusters (less than 1 percent of genomic mass)
@@ -807,6 +807,10 @@ class AllelicCoverage_DP:
                 # we found a good match for this segment and we can add it to the cluster
                 self.cluster_dict[clusterID].add(segID)
                 self.cluster_assignments[segID] = clusterID
+                self.cluster_counts[clusterID] += len(r)
+                self.cluster_sums[clusterID] += r.sum()
+                self.cluster_MLs[clusterID] = self._ML_cluster_add_one(clusterID, segID)
+                self.cluster_ssd[clusterID] = self._ssd_cluster_add_one(clusterID, segID)
                 continue
             else:
                 if len(r) > 25:
@@ -814,6 +818,10 @@ class AllelicCoverage_DP:
                     # if we have a farily large segment we let it form its own cluster
                     self.cluster_dict[self.next_cluster_index] = sc.SortedSet([segID])
                     self.cluster_assignments[segID] = self.next_cluster_index
+                    self.cluster_counts[self.next_cluster_index] = len(r)
+                    self.cluster_sums[self.next_cluster_index] = r.sum()
+                    self.cluster_ssd[self.next_cluster_index] = len(r) * r.var()
+                    self.cluster_MLs[self.next_cluster_index] = self._ML_cluster_direct(len(r), r.mean(), len(r) * r.var())
                     self.next_cluster_index += 1
                 else:
                     # discard the segment by not assigning it a cluster

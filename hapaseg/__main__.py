@@ -22,7 +22,7 @@ from . import utils as hs_utils
 from .NB_coverage_MCMC import NB_MCMC_SingleCluster
 from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters, aggregate_burnin_files 
 from .coverage_DP import Coverage_DP
-from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP
+from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP, AllelicCoverage_DP_runner
 
 
 def parse_args():
@@ -724,7 +724,7 @@ def main():
         with open(args.lnp_data_pickle, 'rb') as f:
             lnp_data = pickle.load(f) 
         draw_idx = args.opt_cdp_idx if args.use_single_draw else None
-        acdp = AllelicCoverage_DP(acdp_df, 
+        acdp = AllelicCoverage_DP_runner(acdp_df, 
                                   beta, 
                                   args.cytoband_file,
                                   lnp_data,
@@ -738,20 +738,20 @@ def main():
         print("visualizing run")
         
         # save segmentation df
-        seg_df = acdp.create_allelic_segs_df()
+        seg_df = acdp_combined.create_allelic_segs_df()
         seg_df.to_csv('./acdp_segfile.txt', sep = '\t', index = False)
 
         # make visualizations
-        acdp.visualize_ACDP_clusters(output_dir)
+        acdp_combined.visualize_ACDP_clusters(output_dir)
 
         if args.wgs:
-            acdp.visualize_ACDP('./acdp_agg_draws.png', use_cluster_stats=True)
+            acdp_combined.visualize_ACDP('./acdp_agg_draws.png', use_cluster_stats=True)
         else:
-            acdp.visualize_ACDP('./acdp_agg_draws.png', plot_real_cov=True, use_cluster_stats=True)
+            acdp_combined.visualize_ACDP('./acdp_agg_draws.png', plot_real_cov=True, use_cluster_stats=True)
         
         if not args.use_single_draw:
-            acdp.visualize_ACDP('./acdp_best_cdp_draw.png', use_cluster_stats=True, cdp_draw=int(args.opt_cdp_idx))
-            acdp.visualize_ACDP('./acdp_all_draws.png')
+            acdp_combined.visualize_ACDP('./acdp_best_cdp_draw.png', use_cluster_stats=True, cdp_draw=int(args.opt_cdp_idx))
+            acdp_combined.visualize_ACDP('./acdp_all_draws.png')
         
         
         with open(os.path.join(output_dir, "acdp_model.pickle"), "wb") as f:
