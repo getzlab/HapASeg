@@ -13,6 +13,7 @@ setup(
     packages = [
         'hapaseg',
     ],
+    scripts = ['benchmarking/generate_sim_data.py'],
 #    package_data={
 #        '':[
 #            'backends/slurm-gcp/*',
@@ -36,9 +37,10 @@ setup(
     #long_description_content_type = 'text/markdown',
     install_requires = [
         'pandas>=1.4.1',
-        'numpy>=1.18.0',
+        'numpy>=1.18.0, <1.23.0', # <1.23.0 to satisfy weird scipy incompatability
         'more-itertools>=8.10.0',
         'numpy_groupies>=0.9.14',
+        'h5py'
     ],
     classifiers = [
         "Development Status :: 4 - Beta",
