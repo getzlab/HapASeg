@@ -25,13 +25,13 @@ class ASCAT(wolf.Task):
         write.table(QC, './ascat_QC.txt', quote=FALSE);"
 """
     output_patterns = {
-    "ascat_corrected_data_normal" : "After_correction_sim_sample.germline.png",
-    "ascat_corrected_data_tumor" : "After_correction_sim_sample.tumour.png",
-    "ascat_profile_plot": "sim_sample.ASCATprofile.png",
-    "ascat_raw_profile" : "sim_sample.rawprofile.png",
-    "ascat_raw_segments" : "sim_sample.segments_raw.txt",
-    "ascat_segments" : "sim_sample.segments.txt",
-    "ascat_sunrise_plot" : "sim_sample.sunrise.png"
+    "ascat_corrected_data_normal" : "After_correction_*.germline.png",
+    "ascat_corrected_data_tumor" : "After_correction_*.tumour.png",
+    "ascat_profile_plot": "*.ASCATprofile.png",
+    "ascat_raw_profile" : "*.rawprofile.png",
+    "ascat_raw_segments" : "*.segments_raw.txt",
+    "ascat_segments" : "*.segments.txt",
+    "ascat_sunrise_plot" : "*.sunrise.png"
     }
     
     resources = {"cpus-per-task": 4, "mem" : "6G"}

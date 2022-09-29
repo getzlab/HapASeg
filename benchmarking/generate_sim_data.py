@@ -323,12 +323,13 @@ def generate_ascat_files(sim_profile_pickle=None,
     merged = merged.rename({'chr':'chrs'}, axis=1)
     # ascat expects the index to be in chr_pos form
     merged = merged.set_index(merged.apply(lambda x: x.chrs + '_' + str(x.pos), axis = 1))
-
+    
+    sample_name = '{}_{}_ascat'.format(out_label, purity)
     # ascat returns 4 seperate files each with one column of data
-    merged.rename({'tumorLogR':'sim_sample'}, axis=1)[['chrs', 'pos', 'sim_sample']].to_csv(os.path.join(out_dir, '{}_{}_ascat_tumor_LogR.txt'.format(out_label, purity)), sep='\t')
-    merged.rename({'normalLogR':'sim_sample'}, axis=1)[['chrs', 'pos', 'sim_sample']].to_csv(os.path.join(out_dir, '{}_{}_ascat_normal_LogR.txt'.format(out_label, purity)), sep='\t')
-    merged.rename({'tumorBAF':'sim_sample'}, axis=1)[['chrs', 'pos', 'sim_sample']].to_csv(os.path.join(out_dir, '{}_{}_ascat_tumor_BAF.txt'.format(out_label, purity)), sep='\t')
-    merged.rename({'normalBAF':'sim_sample'}, axis=1)[['chrs', 'pos', 'sim_sample']].to_csv(os.path.join(out_dir, '{}_{}_ascat_normal_BAF.txt'.format(out_label, purity)), sep='\t')
+    merged.rename({'tumorLogR':sample_name}, axis=1)[['chrs', 'pos', sample_name]].to_csv(os.path.join(out_dir, '{}_{}_ascat_tumor_LogR.txt'.format(out_label, purity)), sep='\t')
+    merged.rename({'normalLogR':sample_name}, axis=1)[['chrs', 'pos', sample_name]].to_csv(os.path.join(out_dir, '{}_{}_ascat_normal_LogR.txt'.format(out_label, purity)), sep='\t')
+    merged.rename({'tumorBAF':sample_name}, axis=1)[['chrs', 'pos', sample_name]].to_csv(os.path.join(out_dir, '{}_{}_ascat_tumor_BAF.txt'.format(out_label, purity)), sep='\t')
+    merged.rename({'normalBAF':sample_name}, axis=1)[['chrs', 'pos', sample_name]].to_csv(os.path.join(out_dir, '{}_{}_ascat_normal_BAF.txt'.format(out_label, purity)), sep='\t')
 
             
 if __name__ == "__main__":
