@@ -34,5 +34,5 @@ class ASCAT(wolf.Task):
     "ascat_sunrise_plot" : "*.sunrise.png"
     }
     
-    resources = {"cpus-per-task": 4, "mem" : "6G"}
+    resources = {"cpus-per-task": 4, "mem" : "8G"}
     docker = "gcr.io/broad-getzlab-workflows/ascat:v0"
