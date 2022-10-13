@@ -208,6 +208,7 @@ def parse_args():
                              help="npy file containing allelic dp segs-to-clusters results")
     gen_acdp_df.add_argument("--allelic_draw_index", help="index of ADP draw used for coverage MCMC", type=int, default=-1)
     gen_acdp_df.add_argument("--bin_width", help="size of uniform bins if using. Otherwise 1", default=1, type=int)
+    gen_acdp_df.add_argument("--wgs", action='store_true', default=False, help="wgs mode creates acdp df for only the best draw")
 
     # run acdp clustering 
     ac_dp = subparsers.add_parser("allelic_coverage_dp", help="Run DP clustering on allelic coverage tuples")
@@ -688,7 +689,8 @@ def main():
                                              args.allelic_clusters_object,
                                              cdp_object_path=args.cdp_object,
                                              bin_width=args.bin_width,
-                                             ADP_draw_index=args.allelic_draw_index)
+                                             ADP_draw_index=args.allelic_draw_index,
+                                             wgs=args.wgs)
         
         elif args.cdp_filepaths is not None:
             #all of our dp runs are in one object
@@ -696,7 +698,9 @@ def main():
                                              args.allelic_clusters_object,
                                              cdp_scatter_files=args.cdp_filepaths,
                                              bin_width=args.bin_width,
-                                             ADP_draw_index=args.allelic_draw_index)
+                                             ADP_draw_index=args.allelic_draw_index,
+                                             wgs=args.wgs)
+        
         # for running directly from cov_mcmc segments
         elif args.cov_df_pickle is not None and args.cov_seg_data is not None:
             acdp_df, lnp_data, opt_cdp_idx = generate_acdp_df(args.snp_dataframe,
@@ -704,7 +708,8 @@ def main():
                                              cov_df_path=args.cov_df_pickle,
                                              cov_mcmc_data_path =args.cov_seg_data,
                                              bin_width=args.bin_width,
-                                             ADP_draw_index=args.allelic_draw_index)
+                                             ADP_draw_index=args.allelic_draw_index,
+                                             wgs=args.wgs)
                         
         else:
             raise ValueError("must pass a cdp filepath, list of cdp filepaths or cov_df pickle and mcmc seg file")
@@ -755,7 +760,7 @@ def main():
         
         
         with open(os.path.join(output_dir, "acdp_model.pickle"), "wb") as f:
-            pickle.dump(acdp, f)
+            pickle.dump(acdp_combined, f)
 
 
 if __name__ == "__main__":

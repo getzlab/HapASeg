@@ -20,25 +20,11 @@ from scipy.signal import find_peaks
 from capy import seq, mut
 
 from.model_optimizers import CovLNP_NR_prior
-from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
 from .utils import *
 
 colors = mpl.cm.get_cmap("tab20").colors
 
-
-def LSE(x):
-    lmax = np.max(x)
-    return lmax + np.log(np.exp(x - lmax).sum())
-
-# quick allele counting using phasing
-def _Ssum_ph(S, mm_mat, seg_idx, flip_col, min = True):
-    flip = S.iloc[seg_idx, flip_col]
-    flip_n = ~flip
-    if min:
-        return mm_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(S)]].sum()
-    else:
-        return mm_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(S)]].sum()
 
 # method for concatenating dp draws into a single large df to be used by the acdp
 def generate_acdp_df(SNP_path, # path to SNP df
@@ -48,52 +34,64 @@ def generate_acdp_df(SNP_path, # path to SNP df
                  cov_df_path=None, #cov_df file if using segments directly from cov mcmc
                  cov_mcmc_data_path=None, #segmentation data if using segments from cov_mcmc
                  bin_width=1, #set to uniform bin width for wgs or 1 for exomes
-                 ADP_draw_index=-1): # index of ADP draw used in Coverage MCMC
+                 ADP_draw_index=-1, # index of ADP draw used in Coverage MCMC
+                 wgs=False # if wgs, will only create acdp df for best draw
+                 ):
 
     SNPs = pd.read_pickle(SNP_path)
     ADP_clusters = np.load(ADP_path)
-    #phases = ADP_clusters["snps_to_phases"][ADP_draw_index]
     alpha_prior = 1e-5
     beta_prior=4e-3
     
-    #S_flip_col = SNPs.columns.get_loc('flipped')
-    
-    # update phases with those from the selected draw
-    #SNPs.iloc[:, S_flip_col] = phases
-    #mm_mat = SNPs.loc[:, ["min", "maj"]].values.reshape(-1, order = "F")
-    
+    # load data
+    ## data can come from one of three sources, a CDP object containing all draws
+    ## a list of scattered cdp files, or a cov_df and cov_mcmc object for going 
+    ## directly from coverage segmentation to acdp
     dp_run_data = []
     if cdp_object_path is not None:
         with open(CDP_path, 'rb') as f:
             dp_pickle = pickle.load(f)
             DP_runs = dp_pickle.DP_runs
-        for dp_run in DP_runs:
-            dp_run_data.append((dp_run.cov_df, dp_run.bins_to_clusters[-1]))
+        for run_idx, dp_run in enumerate(DP_runs):
+            dp_run_data.append((run_idx, dp_run.cov_df, dp_run.bins_to_clusters[-1]))
         beta = dp_pickle.beta
         best_run = np.argmax([dp.ll_history[-1] for dp in DP_runs])
+    
+        # limit to best draw
+        if wgs:
+            dp_run_data = [dp_run_data[best_run]]
 
     elif cdp_scatter_files is not None:
         #load in the file names
         with open(cdp_scatter_files, 'r') as f:
             cdp_file_list = f.read().splitlines()
         #fill in dp objects from the scatter jobs
-        DP_runs = []
-        for cdp_file in cdp_file_list:
+        DP_lls = []
+        dp_run_data = []
+        for run_idx, cdp_file in enumerate(cdp_file_list):
              with open(cdp_file, 'rb') as cdp:
                 dp_pickle = pickle.load(cdp)
                 print("file {} : len dp runs: {}".format(cdp_file, len(dp_pickle.DP_runs)), flush=True)
-                dp_run = dp.pickle.DP_runs[0]
-                dp_run_data.append((dp_run.cov_df, dp_run.bins_to_clusters[-1]))
+                dp_run = dp_pickle.DP_runs[0]
+                dp_run_data.append((run_idx, dp_run.cov_df, dp_run.bins_to_clusters[-1]))
+                DP_lls.append(dp_run.ll_history[-1])
         beta = dp_pickle.beta
-        best_run = np.argmax([dp.ll_history[-1] for dp in DP_runs])
+        best_run = np.argmax(DP_lls)
+        
+        if wgs:
+            dp_run_data = [dp_run_data[best_run]]
 
     elif cov_df_path is not None and cov_mcmc_data_path is not None:
         seg_data = np.load(cov_mcmc_data_path)
         beta = seg_data['beta']
         seg_samples = seg_data['seg_samples']
         cov_df = pd.read_pickle(cov_df_path)
+        best_run = np.argmax(seg_data['ll_samples'])
+       
+        # only gather data from best run if in wgs mode
+        runs_considered = [best_run] if wgs else range(seg_samples.shape[1]) 
         
-        for run in range(seg_samples.shape[1]):
+        for run in runs_considered:
             cov_df_run = cov_df.copy()
             cov_df_run['segment_ID'] = seg_samples[:, run].astype(int)
             dp_assignments = seg_samples[:,run]
@@ -104,19 +102,19 @@ def generate_acdp_df(SNP_path, # path to SNP df
             dp_assignments = dp_assignments[~cov_df_run.segment_ID.isin(small_segs)]
             cov_df_run = cov_df_run.loc[~cov_df_run.segment_ID.isin(small_segs)]
 
-            dp_run_data.append((cov_df_run, dp_assignments))
-        best_run = np.argmax(seg_data['ll_samples'])
-        #best_run = 4
+            dp_run_data.append((run, cov_df_run, dp_assignments))
     else:
         raise ValueError("must pass in either a cdp object path or a txt file containing a list of object paths")
-    # save the hessians for bootstrapping 
+    
+    # save the hessians for bootstrapping in a dictionary
     data = {}
     # currently uses the last sample from every DP draw
     draw_dfs = []
-    for draw_num, dp_data in enumerate(dp_run_data):
+    for draw_num, cov_df_run, dp_assignments in dp_run_data:
         print('concatenating dp run ', draw_num, flush=True)
-        a_cov_seg_df = dp_data[0].copy()
+        a_cov_seg_df = cov_df_run
 
+        # columns containing z transformed covariates to use
         covar_cols = sorted(a_cov_seg_df.columns[a_cov_seg_df.columns.str.contains("(?:^C_.*z$|C_log_len)")])
 
         # add dp cluster annotations
@@ -124,7 +122,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
         
         if cov_df_path is None:
         # use the segs to clusts data
-            segs_to_clusts = dp_data[1]
+            segs_to_clusts = dp_assignments
             for seg in range(len(segs_to_clusts)):
                 a_cov_seg_df.loc[a_cov_seg_df['segment_ID'] == seg, 'cov_DP_cluster'] = segs_to_clusts[seg]
         
@@ -160,7 +158,6 @@ def generate_acdp_df(SNP_path, # path to SNP df
             mu_sigma = np.exp(res[1] - sigma_hinv**2)
             a_cov_seg_df.loc[(a_cov_seg_df.cov_DP_cluster == cdp) & (
                         a_cov_seg_df.allelic_cluster == adp), 'cov_DP_sigma'] = mu_sigma
-            resi = np.exp(np.log(r) - C@beta)
             res = (res[0], res[1], res[2])
             data[(adp, cdp, draw_num)] = res
         # duplicate segments to account for second allele
@@ -177,6 +174,8 @@ def generate_acdp_df(SNP_path, # path to SNP df
         a_cov_seg_df.iloc[num_bins:, allele_col_idx] = 1
 
         a_cov_seg_df['dp_draw'] = draw_num
+        
+        #draw_dfs.append(a_cov_seg_df.drop(covar_cols, axis=1))
         draw_dfs.append(a_cov_seg_df)
 
     print('completed ACDP dataframe generation')
@@ -213,7 +212,7 @@ def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx):
 
 class AllelicCoverage_DP_runner:
     def __init__(self, cov_df, beta, cytoband_file, lnp_data, wgs=False, draw_idx=None, seed_all_clusters=True):
-        self.cov_df = cov_df.copy()
+        self.cov_df = cov_df
         self.beta = beta
         self.cytoband_file = cytoband_file
         self.seed_all_clusters = seed_all_clusters
@@ -392,8 +391,8 @@ class AllelicCoverage_DP_runner:
         total_weight = snp_segments_df.weight.sum()
         sorted_liks = np.array(sorted(zip(opt_max, snp_segments_df.weight)))
         sorted_cum_weights = np.cumsum(sorted_liks[:,1]) / total_weight
-        kneedle = KneeLocator(1- sorted_cum_weights, sorted_liks[:,0], S=1.0, curve="concave", direction="decreasing")
-        clonal_lik_threshold = sorted_liks[np.where(1- sorted_cum_weights == kneedle.elbow)[0][0]][0]
+        kneedle = KneeLocator(sorted_cum_weights, sorted_liks[:,0], S=2.0, online=True)
+        clonal_lik_threshold = sorted_liks[np.where(sorted_cum_weights == kneedle.elbow)[0][0]][0]
 
         clonal_segIDs = np.array(list(beta_dict.keys()))[purity_res.max(1)[opt_purity_idx] > clonal_lik_threshold]
         clonal_segs = self.cov_df.loc[self.cov_df.segment_ID.isin(clonal_segIDs)].acdp_segID.unique()
@@ -409,10 +408,13 @@ class AllelicCoverage_DP_runner:
         ## grid search max is set to twice the median
         max_k = 2 * int(np.median(np.hstack(clonal_datapoints)))
         ks = np.r_[0:max_k:0.5]
+        # precompute the mus and sigmas
         consts = np.array([ks * ((1-opt_purity) + a * opt_purity) for a in range(0,6)])
         sigmas = np.array([seg_datapoints.std() for seg_datapoints in clonal_datapoints])
         print("fitting allelic coverage comb...")
-        covcomb_res = np.array([[(-np.log(sigmas[i]) - np.log(np.sqrt(2* np.pi)) - ((clonal_datapoints[i][:,None] - consts[a][None,:])**2 / (2 * sigmas[i]**2))).sum(0) for a in range(0,6)] for i in range(len(clonal_datapoints))])
+        # compute gaussian pdfs for each clonal cluster, at allelic copy 1 thorough 6 and all scale factors
+        covcomb_res = np.array([[[(-np.log(sigmas[i]) - np.log(np.sqrt(2* np.pi)) - ((clonal_datapoints[i] - consts[ac][k]**2) / (2 * sigmas[i]**2))).sum(0) for k in range(len(ks))] for ac in range (0,6)] for i in range(len(sigmas))])
+        
         opt_k = ks[covcomb_res.max(1).sum(0).argmax()]
         opt_comb = covcomb_res.max(1).sum(0)
         comb_liks = np.exp(opt_comb[find_peaks(opt_comb, prominence=10, distance = 10)[0]] - opt_comb.max())
@@ -433,7 +435,6 @@ class AllelicCoverage_DP_runner:
         clonal_clusters = []
         for i, c in enumerate(acdp_clonal_first.cluster_dict):
             loglik = opt_covcomb[i, opt_nA[i]]
-            #null_lik = np.log(1/max_clonal_datapoint) * clonal_sizes[i]
             null_lik = np.log(1/(clonal_datapoints[i].max() - clonal_datapoints[i].min())) * clonal_sizes[i]
             if loglik > null_lik and clonal_fraction[i] > 0.01:
                 clonal_clusters.append(c)
@@ -485,7 +486,9 @@ class AllelicCoverage_DP_runner:
         for c in acdp_combined.cluster_dict:
             acdp_combined.cluster_assignments[list(acdp_combined.cluster_dict[c])] = c
         acdp_combined.cluster_MLs = sc.SortedDict({c:acdp_combined._ML_cluster_from_list(acdp_combined.cluster_dict[c]) for c in acdp_combined.cluster_dict})    
-    
+        
+        acdp_combined.prepare_df()
+            
         return acdp_combined
          
     def run(self, n_iter, segs_to_use=None, return_res=False):
@@ -828,6 +831,11 @@ class AllelicCoverage_DP:
                     print(f'segment {segID} discarded')
                     continue
 
+    # save current state as a draw in mcmc run
+    def take_draw(self, n_it):
+        self.bins_to_clusters.append(self.cluster_assignments.copy())
+        self.clusters_to_segs.append(self.cluster_dict.copy())
+        self.draw_indices.append(n_it)
 
     def run(self, n_iter):
 
@@ -842,6 +850,15 @@ class AllelicCoverage_DP:
         while len(self.bins_to_clusters) < n_iter:
 
             self.save_ML_total()
+            
+            # check if only one segment, if so skip
+            if len(white_segments) < 2:
+                self.take_draw(n_it)
+                n_it_last = n_it
+                n_it += 1
+                continue
+            
+            
             # status update
             if not n_it % 250:
                 print("{} iterations; num_clusters: {}; ML:{}".format(n_it, len(self.cluster_dict.keys()), self.MLDP_total_history[-1]), flush=True)
@@ -954,8 +971,11 @@ class AllelicCoverage_DP:
                     self.cluster_ssd[choice] = self.segment_ssd[segID]
                     self.next_cluster_index += 1
                 else:
-                    # if remaining in same cluster, skip
+                    # if remaining in same cluster check if we should take a draw then continue
                     if clustID == choice:
+                        if burned_in and n_it - n_it_last > len(self.segments):
+                            self.take_draw(n_it)
+                            n_it_last = n_it
                         n_it += 1
                         continue
 
@@ -1156,12 +1176,8 @@ class AllelicCoverage_DP:
                         del self.cluster_sums[vacatingID]
                         del self.cluster_ssd[vacatingID]
                 
-            # save draw after burn in for every n_seg / (n_clust / 2) iterations
-            # if burned_in and n_it - n_it_last > self.num_segments / (len(self.cluster_counts) * 2):
             if burned_in and n_it - n_it_last > len(self.segments):
-                self.bins_to_clusters.append(self.cluster_assignments.copy())
-                self.clusters_to_segs.append(self.cluster_dict.copy())
-                self.draw_indices.append(n_it)
+                self.take_draw(n_it)
                 n_it_last = n_it
 
             n_it += 1
@@ -1179,7 +1195,7 @@ class AllelicCoverage_DP:
     def _get_tuple_intervals(self, x_ind, min_len=5):
         """Find runs of consecutive indices of length at least min_len"""
         run_intervals = []
-        prev_idx = None
+        prev_idx = 0
         prev_val = 0
         run_len = 0
         
@@ -1193,6 +1209,10 @@ class AllelicCoverage_DP:
                 run_len = 1
         
             prev_val = v
+        
+        # check if there is a unfinished run
+        if run_len >= min_len:
+            run_intervals += [prev_idx, i-1]
         return np.array(run_intervals).reshape(-1,2)
     
     def _get_seg_terr(self, df):
@@ -1265,7 +1285,7 @@ class AllelicCoverage_DP:
     def _get_real_cov(self, df):
         covar_cols = sorted(df.columns[df.columns.str.contains("(?:^C_.*z$|C_log_len)")])
         C = np.c_[df[covar_cols]]
-        return np.exp(np.log(df.covcorr.values) - (C @ self.beta).flatten())
+        return np.exp(np.log(df.fragcorr.values) - (C @ self.beta).flatten())
 
     def precompute_cluster_params(self, cdp_draw=None):
         
@@ -1486,7 +1506,8 @@ class AllelicCoverage_DP:
             if cluster_stats[c]['terr_fraction'] > 0.05:
                 ax_g.axhline(cluster_stats[c]['mean'], color=cluster_colors[i], alpha=0.3, linewidth=2)
     
-        round_max_acov = 25*int(np.ceil(max_acov / 25))
+        #round_max_acov = 25*int(np.ceil(max_acov / 25))
+        round_max_acov = 25 * int(np.ceil(max([d['mean'] + 4 * d['std'] for d in cluster_stats.values()]) / 25))
         
         #now that we know the maximum allelic coverage value we can set our bins and plot the histogram
         if plot_hist:
