@@ -116,6 +116,7 @@ def workflow(
 
   num_cov_seg_samples=5,
 
+  phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
   persistent_dry_run = False
 ):
     # alert for persistent dry run
@@ -303,9 +304,16 @@ def workflow(
           ref_fasta_dict = localization_task["ref_fasta_dict"],
           use_pod_genotyper = True
         )
-    elif hetsites_file is not None and genotype_file is not None:
-        hp_task = {"tumor_hets": hetsites_file, "normal_hets": "", "normal_genotype": genotype_file}
-
+    
+    # for benchmarking we pass a hetsites file
+    elif hetsites_file is not None:
+        if genotype_file is not None:
+            hp_task = {"tumor_hets": hetsites_file, "normal_hets": "", "normal_genotype": genotype_file}
+        elif phased_vcf is not None:
+            hp_task = {"tumor_hets": hetsites_file, "normal_hets": ""}
+        else:
+            raise ValueError("Must provide either genotype file to run phasing or phased vcf to skip phasing")
+    
     # otherwise, run M1 and get it from the BAM
     elif callstats_file is None and tumor_bam is not None and normal_bam is not None:
         # split het sites file uniformly
@@ -378,91 +386,94 @@ def workflow(
     else:
         raise ValueError("You must either provide a callstats file or tumor+normal BAMs to collect SNP coverage")
 
-    #
-    # shim task to convert output of het pulldown to VCF
-    convert_task = wolf.Task(
-      name = "convert_het_pulldown",
-      inputs = {
-        "genotype_file" : hp_task["normal_genotype"],
-        "sample_name" : "test", # TODO: allow to be specified
-        "ref_fasta" : localization_task["ref_fasta"],
-        "ref_fasta_idx" : localization_task["ref_fasta_idx"],
-        "ref_fasta_dict" : localization_task["ref_fasta_dict"],
-      }, 
-      script = r"""
-    set -x
-    bcftools convert --tsv2vcf ${genotype_file} -c CHROM,POS,AA -s ${sample_name} \
-      -f ${ref_fasta} -Ou -o all_chrs.bcf && bcftools index all_chrs.bcf
-    for chr in $(bcftools view -h all_chrs.bcf | ssed -nR '/^##contig/s/.*ID=(.*),.*/\1/p' | head -n24); do
-      bcftools view -Ou -r ${chr} -o ${chr}.chrsplit.bcf all_chrs.bcf && bcftools index ${chr}.chrsplit.bcf
-    done
-    """,
-      outputs = {
-        "bcf" : "*.chrsplit.bcf",
-        "bcf_idx" : "*.chrsplit.bcf.csi"
-      },
-      docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.5"
-    )
+    # run phasing if we don't have a phased vcf passed
+    if phased_vcf is None:
+        
+        # shim task to convert output of het pulldown to VCF
+        convert_task = wolf.Task(
+          name = "convert_het_pulldown",
+          inputs = {
+            "genotype_file" : hp_task["normal_genotype"],
+            "sample_name" : "test", # TODO: allow to be specified
+            "ref_fasta" : localization_task["ref_fasta"],
+            "ref_fasta_idx" : localization_task["ref_fasta_idx"],
+            "ref_fasta_dict" : localization_task["ref_fasta_dict"],
+          }, 
+          script = r"""
+        set -x
+        bcftools convert --tsv2vcf ${genotype_file} -c CHROM,POS,AA -s ${sample_name} \
+          -f ${ref_fasta} -Ou -o all_chrs.bcf && bcftools index all_chrs.bcf
+        for chr in $(bcftools view -h all_chrs.bcf | ssed -nR '/^##contig/s/.*ID=(.*),.*/\1/p' | head -n24); do
+          bcftools view -Ou -r ${chr} -o ${chr}.chrsplit.bcf all_chrs.bcf && bcftools index ${chr}.chrsplit.bcf
+        done
+        """,
+          outputs = {
+            "bcf" : "*.chrsplit.bcf",
+            "bcf_idx" : "*.chrsplit.bcf.csi"
+          },
+          docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.5"
+        )
 
-    #
-    # ensure that BCFs/indices/reference BCFs are in the same order
-    @prefect.task
-    def order_indices(bcf_path, bcf_idx_path, localization_task):
-        # BCFs
-        F = pd.DataFrame(dict(bcf_path = bcf_path))
-        F = F.set_index(F["bcf_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
+        #
+        # ensure that BCFs/indices/reference BCFs are in the same order
+        @prefect.task
+        def order_indices(bcf_path, bcf_idx_path, localization_task):
+            # BCFs
+            F = pd.DataFrame(dict(bcf_path = bcf_path))
+            F = F.set_index(F["bcf_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
 
-        # indices
-        F2 = pd.DataFrame(dict(bcf_idx_path = bcf_idx_path))
-        F2 = F2.set_index(F2["bcf_idx_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
+            # indices
+            F2 = pd.DataFrame(dict(bcf_idx_path = bcf_idx_path))
+            F2 = F2.set_index(F2["bcf_idx_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1"))
 
-        F = F.join(F2)
+            F = F.join(F2)
 
-        # prepend "chr" to F's index if it's missing
-        idx = ~F.index.str.contains("^chr")
-        if idx.any():
-            new_index = F.index.values
-            new_index[idx] = "chr" + F.index[idx]
-            F = F.set_index(new_index)
+            # prepend "chr" to F's index if it's missing
+            idx = ~F.index.str.contains("^chr")
+            if idx.any():
+                new_index = F.index.values
+                new_index[idx] = "chr" + F.index[idx]
+                F = F.set_index(new_index)
 
-        # reference panel BCFs
-        R = pd.DataFrame({ "path" : localization_task } ).reset_index()
-        F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*_bcf$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf" }), how = "inner")
-        F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*csi$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf_idx" }), how = "inner")
+            # reference panel BCFs
+            R = pd.DataFrame({ "path" : localization_task } ).reset_index()
+            F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*_bcf$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf" }), how = "inner")
+            F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*csi$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf_idx" }), how = "inner")
 
-        return F
+            return F
 
-    F = order_indices(convert_task["bcf"], convert_task["bcf_idx"], localization_task)
+        F = order_indices(convert_task["bcf"], convert_task["bcf_idx"], localization_task)
 
-    #
-    # run Eagle, per chromosome
-    eagle_task = phasing.eagle(
-      inputs = dict(
-        genetic_map_file = localization_task["genetic_map_file"],
-        vcf_in = F["bcf_path"],
-        vcf_idx_in = F["bcf_idx_path"],
-        vcf_ref = F["ref_bcf"],
-        vcf_ref_idx = F["ref_bcf_idx"],
-        output_file_prefix = "foo",
-        num_threads = 4,
-      ),
-      resources = { "cpus-per-task" : 4, "mem":'5G'}
-    )
+        #
+        # run Eagle, per chromosome
+        eagle_task = phasing.eagle(
+          inputs = dict(
+            genetic_map_file = localization_task["genetic_map_file"],
+            vcf_in = F["bcf_path"],
+            vcf_idx_in = F["bcf_idx_path"],
+            vcf_ref = F["ref_bcf"],
+            vcf_ref_idx = F["ref_bcf_idx"],
+            output_file_prefix = "foo",
+            num_threads = 4,
+          ),
+          resources = { "cpus-per-task" : 4, "mem":'5G'}
+        )
 
-    # TODO: run whatshap
-    # when we include this, define combine_task without inputs and call it twice,
-    # once for eagle, once for whatshap
+        # TODO: run whatshap
+        # when we include this, define combine_task without inputs and call it twice,
+        # once for eagle, once for whatshap
 
-    #
-    # combine VCFs
-    combine_task = wolf.Task(
-      name = "combine_vcfs",
-      inputs = { "vcf_array" : [eagle_task["phased_vcf"]] },
-      script = "bcftools concat -O u $(cat ${vcf_array} | tr '\n' ' ') | bcftools sort -O v -o combined.vcf",
-      outputs = { "combined_vcf" : "combined.vcf" },
-      docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.5"
-    )
-
+        #
+        # combine VCFs
+        combine_task = wolf.Task(
+          name = "combine_vcfs",
+          inputs = { "vcf_array" : [eagle_task["phased_vcf"]] },
+          script = "bcftools concat -O u $(cat ${vcf_array} | tr '\n' ' ') | bcftools sort -O v -o combined.vcf",
+          outputs = { "combined_vcf" : "combined.vcf" },
+          docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.5"
+        )
+    else:
+        combine_task = {"combined_vcf": phased_vcf}
     #
     # run HapASeg
 
@@ -568,7 +579,7 @@ def workflow(
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":ref_config["repl_file"],
-        "faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
+        #"faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
         "gc_pickle":ref_config["gc_file"],
         "normal_coverage_csv":normal_cov_gather_task["coverage"] if collect_normal_coverage else "",
         "ref_fasta":localization_task["ref_fasta"],
@@ -719,7 +730,8 @@ def workflow(
             "cov_seg_data":cov_mcmc_gather_task["cov_collected_data"],
             "ref_file_path":localization_task["ref_fasta"],
             "allelic_draw_index":adp_draw_num,
-            "bin_width":bin_width
+            "bin_width":bin_width,
+            "wgs":wgs
             }
        ) 
 
@@ -759,3 +771,5 @@ def workflow(
                   "upstream" : acdp_task["acdp_model_pickle"] # to prevent execution until acdp has run
         }
     )
+
+    return acdp_task["acdp_segfile"]
