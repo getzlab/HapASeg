@@ -1,5 +1,27 @@
 import wolf
 
+# generate ground truth seg file
+class Generate_Groundtruth_Segfile(wolf.Task):
+    inputs = {"sample_label" :None,
+              "purity":None,
+              "sim_profile":None,
+              "normal_vcf_path": None,
+              "hapaseg_hetsite_depth_path":None,
+              "hapaseg_coverage_tsv":None,
+              }
+
+    script = """
+    python3 -c "import pandas as pd; cnv_profile=pd.read_pickle('${sim_profile}');\
+                cnv_profile.generate_profile_seg_file('./${sample_label}_${purity}_gt_seg_file.tsv',
+                '${normal_vcf_path}', '${hapaseg_hetsite_depth_path}', '${hapaseg_coverage_tsv}', float(${purity}),
+                do_parallel=False)"
+            """
+    output_patterns = {"ground_truth_seg_file":"*_gt_seg_file.tsv"}
+   
+    resources = {"mem":"2G"}
+ 
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+
 # HapASeg
 class Downstream_HapASeg_Analysis(wolf.Task):
     inputs = {"hapaseg_seg_file": None,

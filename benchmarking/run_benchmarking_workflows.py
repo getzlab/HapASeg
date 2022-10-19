@@ -2,7 +2,7 @@ import wolf
 from benchmarking_workflows import *
 
 with wolf.Workflow(workflow=Run_Sim_Workflows) as w:
-    w.run(run_name='full_easy_sim_1',
+    w.run(run_name='recomb_easy_sim_1',
           sim_profile='/home/opriebe/data/cnv_sim/benchmarking/sim_samples/cnv_profiles/easy_profile_1.pickle',
           purity = 0.7,
           sample_label='easy_sim_1',
@@ -10,7 +10,6 @@ with wolf.Workflow(workflow=Run_Sim_Workflows) as w:
           ref_build = "hg38",
           ref_fasta = "/home/opriebe/data/ref/hg38/GRCh38.d1.vd1.fa",
           cytoband_file = "/home/opriebe/data/ref/hg38/cytoBand.txt",
-          ground_truth_seg_file= '/home/opriebe/data/cnv_sim/benchmarking/sim_samples/cnv_profiles/easy_sim_seg_file_0.7.tsv',
           hapaseg_hetsite_depth_path='/home/opriebe/data/cnv_sim/benchmarking/hapaseg/NA12878_hetsites_depth.tsv',
           hapaseg_covcollect_path='/home/opriebe/data/cnv_sim/NA12878/NA12878_2kb_coverage_num_reads_g300.bed',
           hapaseg_phased_vcf_path='/home/opriebe/data/cnv_sim/benchmarking/hapaseg/NA12878_eagle_phasing.vcf',

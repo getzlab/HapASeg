@@ -228,7 +228,6 @@ def Run_Sim_Workflows(sim_profile=None,
                       ref_build=None,
                       ref_fasta=None,
                       cytoband_file=None,
-                      ground_truth_seg_file=None, 
                       hapaseg_hetsite_depth_path=None,
                       hapaseg_covcollect_path=None,
                       hapaseg_target_list=2000,
@@ -248,7 +247,16 @@ def Run_Sim_Workflows(sim_profile=None,
                       ascat_GC_correction_file=None,
                       ascat_RT_correction_file=None
                       ):
-    
+    seg_file_gen_task = Generate_Groundtruth_Segfile(inputs= {
+                            "sample_label": sample_label,
+                            "purity":purity,
+                            "sim_profile":sim_profile,
+                            "normal_vcf_path":normal_vcf_path,
+                            "hapaseg_hetsite_depth_path": hapaseg_hetsite_depth_path,
+                            "hapaseg_coverage_tsv":hapaseg_covcollect_path
+                        }
+                    ) 
+
     HapASeg_Sim_Workflow(sim_profile = sim_profile,
                         purity = purity,
                         sample_label = sample_label,
@@ -259,7 +267,7 @@ def Run_Sim_Workflows(sim_profile=None,
                         ref_build=ref_build,
                         ref_fasta=ref_fasta,
                         cytoband_file=cytoband_file,
-                        ground_truth_seg_file=ground_truth_seg_file,
+                        ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"],
                         target_list = hapaseg_target_list
                         )
 
@@ -277,7 +285,7 @@ def Run_Sim_Workflows(sim_profile=None,
                       annotated_intervals = gatk_annotated_intervals,
                       ref_fasta=ref_fasta,
                       cytoband_file=cytoband_file,
-                      ground_truth_seg_file=ground_truth_seg_file
+                      ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"]
                       )
 
     Facets_Sim_Workflow(sim_profile=sim_profile,
@@ -288,7 +296,7 @@ def Run_Sim_Workflows(sim_profile=None,
                         filtered_variants_path = facets_filtered_variants_path,
                         ref_fasta=ref_fasta,
                         cytoband_file=cytoband_file,
-                        ground_truth_seg_file=ground_truth_seg_file
+                        ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"]
                         )
     
     ASCAT_Sim_Workflow(sim_profile = sim_profile,
@@ -301,6 +309,6 @@ def Run_Sim_Workflows(sim_profile=None,
                        RT_correction_file = ascat_RT_correction_file,
                        ref_fasta=ref_fasta,
                        cytoband_file=cytoband_file,
-                       ground_truth_seg_file=ground_truth_seg_file
+                       ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"]
                       )
 
