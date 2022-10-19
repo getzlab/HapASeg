@@ -78,7 +78,7 @@ def parse_args():
 
     ## load
     scatter = subparsers.add_parser("load_snps", help="Load in phased VCF")
-    scatter.add_argument("--chunk_size", default=5000)
+    scatter.add_argument("--chunk_size", default=10000)
     scatter.add_argument("--phased_VCF", required=True)
 
     scatter.add_argument("--read_backed_phased_VCF")
@@ -400,6 +400,9 @@ def main():
                 for k, v in Ras.results.seg_marg_liks.items():
                     A.seg_marg_liks[k + start] = v
             A.breakpoints = sc.SortedSet(np.hstack(breakpoints))
+
+            A.maj_arr = A.P.iloc[:, A.maj_idx].astype(int).values
+            A.min_arr = A.P.iloc[:, A.min_idx].astype(int).values
 
             A.marg_lik = np.full(A.n_iter, np.nan)  # n_iter and size of this array will be reset later
             A.marg_lik[0] = np.array(A.seg_marg_liks.values()).sum()
