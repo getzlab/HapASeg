@@ -128,7 +128,7 @@ class Hapaseg_allelic_DP(wolf.Task):
       "seg_plot" : "figures/segs_only.png",
     }
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
-    resources = { "mem" : "15G" }
+    resources = { "mem" : "4G" }
 
 class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     inputs = {
@@ -176,7 +176,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
-    resources = { "mem" : "15G" }
+    resources = { "mem" : "4G" }
 
 #scatter by allelic segment
 class Hapaseg_coverage_mcmc_by_Aseg(wolf.Task):
@@ -365,4 +365,4 @@ class Hapaseg_run_acdp(wolf.Task):
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
-    resources = { "cpus-per-task":2, "mem" : "4G"}
+    resources = { "cpus-per-task":4, "mem" : "6G"}
