@@ -6,6 +6,7 @@ from wolf.localization import LocalizeToDisk
 from gatk_wolf_task.gatk_wolf_task import GATK_CNV_Workflow
 from ascat_wolf_task.ascat_wolf_task import ASCAT
 from facets_wolf_task.facets_wolf_task import Facets
+from hatchet_wolf_task.hatchet_wolf_task import HATCHET_Depths, HATCHET_Main
 
 sys.path.append('../wolF/')
 from workflow import workflow as HapASeg_Workflow
@@ -153,6 +154,59 @@ def ASCAT_Sim_Workflow(sim_profile=None,
                                       "RT_correction_file": localization_task["RT_correction_file"]
                             })
 
+    
+# HATCHet
+def HATCHet_Sim_Workflow(sim_profile=None,
+                         purity=None,
+                         sample_label=None,
+                         normal_vcf_path=None,  # most be compressed VCF file
+                         reference_genome_path=None,  # FASTA  
+                         normal_bam=None,
+                         tumor_bam=None,
+                         sample_names = None,
+                         chromosomes = [],  # empty list if whole genome
+                         reference_genome_version=None,
+                         chr_notation = False,  # True if contigs have "chr" prefix
+                         phase_snps = True
+            ):
+    
+    localization_task = LocalizeToDisk(files = {"normal_vcf":normal_vcf_path,
+                                                "normal_bam": normal_bam,
+                                                "tumor_bam": tumor_bam,
+                                                "reference_genome_path": reference_genome_path
+                                })
+    
+    run_hatchet_depths_workflow = HATCHET_Depths( reference_genome_path = LocalizeToDisk["reference_genome_path"],  
+                     normal_bam = LocalizeToDisk["normal_bam"],
+                     tumor_bam = LocalizeToDisk["tumor_bam"],
+                     normal_vcf_path = LocalizeToDisk["normal_vcf_path"],
+                     sample_names = sample_names,
+                     chromosomes = chromosomes,
+                     reference_genome_version = reference_genome_version,
+                     chr_notation = chr_notation,
+                     phase_snps = phase_snps
+                     )
+    
+    
+    generate_hatchet_sim_task = Generate_HATCHet_Sim_Data(inputs = { 
+                                        "sim_profile": sim_profile,
+                                        "purity": purity,
+                                        "sample_label": sample_label,
+                                        "normal_vcf_path":localization_task["normal_vcf"],
+                                        "tumor_baf_path": run_hatchet_depths_workflow["count_alleles_task"]["tumor_snp_depths"],
+                                        "total_reads_paths": run_hatchet_depths_workflow["count_reads_task"]["coverage_totals"],
+                                        "thresholds_snps_paths": run_hatchet_depths_workflow["count_reads_task"]["snp_thresholds"],
+                                        "total_tsv_path": run_hatchet_depths_workflow["count_reads_task"]["total_counts_file"]
+                                        })
+
+    run_hatchet_main_workflow = HATCHET_Main(tumor_snp_depths = generate_hatchet_sim_task["hatchet_tumor_snp_depths"],
+                 count_reads_dir = generate_hatchet_sim_task["hatchet_total_bin_reads_dir"],  # todo - check
+                 total_counts_file = generate_hatchet_sim_task["hatchet_total_counts"],
+                 reference_genome_version = reference_genome_version,
+                 phase_snps = phase_snps,
+                 phased_vcf = None if not phase_snps else generate_hatchet_sim_task["phase_snps_task"]["phased_vcf"]
+                 )
+    
 # run all pipelines
 
 def Run_Sim_Workflows(sim_profile=None,
@@ -177,7 +231,15 @@ def Run_Sim_Workflows(sim_profile=None,
                       ascat_variant_depth_path=None,
                       ascat_filtered_variants_path=None,
                       ascat_GC_correction_file=None,
-                      ascat_RT_correction_file=None
+                      ascat_RT_correction_file=None,
+                      hatchet_reference_genome_path=None,
+                      hatchet_normal_bam=None,
+                      hatchet_tumor_bam=None,
+                      hatchet_sample_names = None,
+                      hatchet_chromosomes = [],
+                      hatchet_reference_genome_version="hg38",
+                      hatchet_chr_notation = False,
+                      hatchet_phase_snps = True
                       ):
     
    HapASeg_Sim_Workflow(sim_profile = sim_profile,
@@ -222,3 +284,16 @@ def Run_Sim_Workflows(sim_profile=None,
                        RT_correction_file = ascat_RT_correction_file
                       )
 
+    HATCHet_Sim_Workflow(sim_profile=sim_profile,
+                         purity=purity,
+                         sample_label=sample_label,
+                         normal_vcf_path=normal_vcf_path,
+                         reference_genome_path=hatchet_reference_genome_path,
+                         normal_bam=hatchet_normal_bam,
+                         tumor_bam=hatchet_tumor_bam,
+                         sample_names = hatchet_sample_names,
+                         chromosomes = hatchet_chromosomes,
+                         reference_genome_version=hatchet_reference_genome_version,
+                         chr_notation = hatchet_chr_notation,
+                         phase_snps = hatchet_phase_snps
+            )
