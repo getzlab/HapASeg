@@ -370,9 +370,13 @@ class CovLNP_NR_prior:
             emp = x/np.exp(self.bce)
             # log mean after removing residuals
             self.mu = np.log(emp.mean())
-            # match empirical observed variance to analytical expression for LNP variance
-            self.lgsigma = 0.5*(np.log(2) + (np.log(emp.var() - emp.mean()) - np.log(emp.mean() + 2*emp.mean()**2)))
-
+            if emp.mean() < emp.var():
+                # match empirical observed variance to analytical expression for LNP variance
+                self.lgsigma = 0.5*(np.log(2) + (np.log(emp.var() - emp.mean()) - np.log(emp.mean() + 2*emp.mean()**2)))
+            else:
+                # segment is under dispersed, fall back on prior sqrt(mode(inverse gamma prior))
+                self.lgsigma = np.log(beta_prior / (alpha_prior + 1)) / 2
+        
         # use priors as starting point
         else:
             self.mu = self.mu_prior

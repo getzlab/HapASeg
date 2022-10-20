@@ -210,8 +210,7 @@ def generate_facets_files(sim_profile_pickle=None,
                      'Alt', 'File1R', 'File1A', 'File1E',
                      'File1D', 'File2R', 'File2A', 'File2E', 'File2D']]
     merged.to_csv(os.path.join(out_dir, '{}_{}_facets_input_counts.csv'.format(out_label, purity)), index=False)
-        
-
+    
 # utility method for adding header back onto simulated allele count files
 # inputs: og_tsv: allelecounts file with header intact (outputted by gatk CollectAlleleCounts)
 #          sim_tsv: path to simulated allelecounts file witout header
@@ -322,7 +321,7 @@ def generate_ascat_files(sim_profile_pickle=None,
 
     merged = snv_df.merge(normal_df, on=['chr', 'pos'], how='inner').drop_duplicates()
     # calculate ascat input logR and BAF
-    merged['tumorLogR'] = merged['adjusted_depth'] / merged['total_reads']
+    merged['tumorLogR'] = merged['adjusted_depth'] / 30
     merged['tumorLogR'] = np.log2(merged['tumorLogR'] / merged['tumorLogR'].mean())
     # ascat passes around a normalLogR file but never actually defines these values (nor are they ever used)
     # we will make a dummy file 

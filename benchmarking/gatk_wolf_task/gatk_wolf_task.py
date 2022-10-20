@@ -115,3 +115,6 @@ def GATK_CNV_Workflow(sample_name = None,
                                                          "segments": gatk_model_segments_task["model_segments_post_smoothing"],
                                                          "seq_dictionary":sequence_dictionary,
                                                          "sample_name":sample_name})
+
+    return gatk_model_segments_task["model_segments_post_smoothing"]
+

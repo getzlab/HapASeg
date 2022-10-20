@@ -268,6 +268,14 @@ class AllelicCluster:
 		mu_tot = mu + mu_i
 		return covLNP_ll(r, mu_tot, lepsi, C, beta, np.log(bin_exposure)).sum()
 
+	def _run_kernel(self, residuals, window):
+		r_arr = np.ones(2* window)
+		r_arr[:window] = 0
+		l_arr = np.ones(2*window)
+		l_arr[window:] = 0
+		conv_dif = np.abs(np.convolve(residuals, r_arr, mode='valid') - np.convolve(residuals,l_arr, mode='valid'))
+		return conv_dif
+
 	"""
 	method for convolving a change kernel with a given window across an array of residuals. This change kernel returns 
 	the absolute difference between the means of the residuals within windows on either side of a rolling change point.
@@ -276,10 +284,7 @@ class AllelicCluster:
 	"""
 	def _change_kernel(self, ind, residuals, window):
 		
-		difs = []
-		for i in np.r_[window:len(residuals) - window]:
-			difs.append(np.abs(residuals[i - window:i].mean() - residuals[i:i + window].mean()))
-		difs = np.r_[difs]
+		difs = self._run_kernel(residuals, window)
 		if window > 10:
 			x = np.r_[:len(difs)]
 			prior = np.exp(2 * np.abs(x - len(difs) / 2) / len(difs))
@@ -316,6 +321,8 @@ class AllelicCluster:
 		len_ind = ind[1]-ind[0]
 		if len_ind > 50000:
 			windows=np.array([1000])
+		elif len_ind > 10000:
+			windows=np.array([500])
 		elif len_ind > 5000:
 			windows=np.array([500,100,25])
 		elif len_ind > 1000:

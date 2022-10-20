@@ -393,7 +393,14 @@ class CoverageMCMCRunner:
         Pi = np.zeros([len(cov_df), cov_df["seg_idx"].max() + 1], dtype = np.float16)
         Pi[np.r_[0:len(cov_df)], cov_df["seg_idx"]] = 1
         Pi = Pi[:, Pi.sum(0) > 0] # prune zero columns in Pi (allelic segments that got totally eliminated)
-
+        
+        # remove non z-transformed covar cols
+        drop_cols = list(cov_df.columns[cov_df.columns.str.contains("^C_.*") & 
+                                       ~cov_df.columns.str.contains("^C_.*_z$|C_frag_len$")])
+        # also remove now useless coverage info
+        drop_cols += ['covcorr', 'C_frag_len', 'std_frag_len','num_frags', 'tot_reads', 'fail_reads', 'fail_reads_zt']
+        cov_df = cov_df.drop(drop_cols, axis=1)
+        
         # covariate matrix
         col_idx = cov_df.columns.str.contains("(?:^C_.*z$|C_log_len)")
         sorted_covar_columns = sorted(cov_df.columns[col_idx])

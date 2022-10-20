@@ -36,6 +36,9 @@ class A_MCMC:
         # column indices for iloc
         self.min_idx = self.P.columns.get_loc("MIN_COUNT")
         self.maj_idx = self.P.columns.get_loc("MAJ_COUNT")
+        
+        self.min_arr = self.P.iloc[:, self.min_idx].astype(int).values
+        self.maj_arr = self.P.iloc[:, self.maj_idx].astype(int).values
 
         # TODO: recompute CI's too? these are not actually used anywhere
         # TODO: we might want to have site-specific reference bias (inferred from post-burnin segs)
@@ -67,7 +70,7 @@ class A_MCMC:
 
         # breakpoints of current iteration. initialize with each SNP belonging
         # to its own breakpoint.
-        self.breakpoints = sc.SortedSet(range(0, len(self.P)))
+        self.breakpoints = sc.SortedSet(range(0, len(self.P) + 1))
 
         # count of all breakpoints ever created
         # breakpoint -> (number of times confirmed, number of times sampled)
@@ -211,15 +214,15 @@ class A_MCMC:
         ML_split = self.seg_marg_liks[st] + self.seg_marg_liks[mid]
 
         ML_join = ss.betaln(
-          self._Piloc(st, en, self.min_idx).sum() + 1 + self.betahyp,
-          self._Piloc(st, en, self.maj_idx).sum() + 1 + self.betahyp
+          self.min_arr[st:en].sum() + 1 + self.betahyp,
+          self.maj_arr[st:en].sum() + 1 + self.betahyp
         )
 
         # proposal dist. ratio
         _, _, split_probs = self.compute_cumsum(st, en)
         # q(split)/q(join) = p(picking mid as breakpoint)/
         #                    p(picking first segment)
-        log_q_rat = np.log(split_probs[mid - st]) - -np.log(len(self.breakpoints))
+        log_q_rat = np.log(split_probs[mid - st - 1]) - -np.log(len(self.breakpoints))
 
         # accept transition
         if np.log(np.random.rand()) < np.minimum(0, ML_join - ML_split + log_q_rat):
@@ -243,27 +246,11 @@ class A_MCMC:
             return mid
 
     def compute_cumsum(self, st, en):
-        # major
-        cs_MAJ = np.zeros(en - st, dtype = np.int)
-        cs_MAJ[0] = self.P.iat[st, self.maj_idx]
-        for i in range(st + 1, en):
-            cs_MAJ[i - st] = cs_MAJ[i - st - 1] + (self.P.iat[i, self.maj_idx] if self.P.iat[i, self.P.columns.get_loc("include")] else 0)
-        # minor
-        cs_MIN = np.zeros(en - st, dtype = np.int)
-        cs_MIN[0] = self.P.iat[st, self.min_idx]
-        for i in range(st + 1, en):
-            cs_MIN[i - st] = cs_MIN[i - st - 1] + (self.P.iat[i, self.min_idx] if self.P.iat[i, self.P.columns.get_loc("include")] else 0)
-
+        cs_MAJ = self.maj_arr[st:en].cumsum()
+        cs_MIN = self.min_arr[st:en].cumsum()
         # marginal likelihoods
         ml = ss.betaln(cs_MAJ + 1 + self.betahyp, cs_MIN + 1 + self.betahyp) + ss.betaln(cs_MAJ[-1] - cs_MAJ + 1 + self.betahyp, cs_MIN[-1] - cs_MIN + 1 + self.betahyp)
 
-        # prior
-        # TODO: allow user to specify
-#        if len(ml) > 1:
-#            ml[-1] += np.log(0.9)
-#            ml[:-1] += np.log(0.1) - np.log(len(ml) - 1)
-
-        # logsumexp to get probabilities
         m = np.max(ml)
         split_prob = np.exp(ml - (m + np.log(np.exp(ml - m).sum())))
 
@@ -283,7 +270,7 @@ class A_MCMC:
             return -1
 
         en = self.breakpoints[br]
-
+        
         # compute split probabilities for this segment
         # TODO: memoize; use global self.cs_MAJ/cs_MIN/split_probs
         _, _, split_probs = self.compute_cumsum(st, en)
@@ -291,12 +278,9 @@ class A_MCMC:
         b = np.random.choice(np.r_[0:len(split_probs)], p = split_probs)
         mid = b + st + 1
 
-        # chosen split point is either (a) the segment end, or (b) would result
-        # in a segment consisting only of pruned SNPs.
-        # either way, we're not splitting this segment
-        if b == len(split_probs) - 1 or \
-           not len(self._Piloc(st, mid, self.P.columns.get_loc("include"))) or \
-           not len(self._Piloc(mid, en, self.P.columns.get_loc("include"))):
+        # chosen split point is either (a) the segment end
+        # we won't split this segment
+        if b == len(split_probs) - 1:
             if self.burned_in:
                 self.incr_bp_counter(st = st, en = en)
             self.marg_lik[self.iter] = self.marg_lik[self.iter - 1]
@@ -304,12 +288,12 @@ class A_MCMC:
 
         # M-H acceptance
         seg_lik_1 = ss.betaln(
-          self._Piloc(st, mid, self.min_idx).sum() + 1 + self.betahyp,
-          self._Piloc(st, mid, self.maj_idx).sum() + 1 + self.betahyp
+          self.min_arr[st:mid].sum() + 1 + self.betahyp,
+          self.maj_arr[st:mid].sum() + 1 + self.betahyp
         )
         seg_lik_2 = ss.betaln(
-          self._Piloc(mid, en, self.min_idx).sum() + 1 + self.betahyp,
-          self._Piloc(mid, en, self.maj_idx).sum() + 1 + self.betahyp
+          self.min_arr[mid:en].sum() + 1 + self.betahyp,
+          self.maj_arr[mid:en].sum() + 1 + self.betahyp
         )
 
         ML_split = seg_lik_1 + seg_lik_2
@@ -515,7 +499,9 @@ class A_MCMC:
         pos_col = self.P.columns.get_loc("pos")
         for st, en in bpl:
             ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], self.P.iloc[st:en, self.maj_idx].sum() + 1, self.P.iloc[st:en, self.min_idx].sum() + 1)
-            ax.add_patch(mpl.patches.Rectangle((self.P.iloc[st, pos_col], ci_lo), self.P.iloc[en, pos_col] - self.P.iloc[st, pos_col], ci_hi - ci_lo, fill = True, facecolor = 'lime', alpha = 0.4, zorder = 1000))
+            ax.add_patch(mpl.patches.Rectangle((self.P.iloc[st, pos_col], ci_lo), 
+                         self.P.iloc[min(en, len(self.P) - 1), pos_col] - self.P.iloc[st, pos_col],
+                         ci_hi - ci_lo, fill = True, facecolor = 'lime', alpha = 0.4, zorder = 1000))
 
         # 50:50 line
         ax.axhline(0.5, color = 'k', linestyle = ":")

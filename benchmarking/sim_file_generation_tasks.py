@@ -45,6 +45,7 @@ class Generate_GATK_Sim_Data(wolf.Task):
     """
 
     output_patterns = {
+    "tumor_coverage_tsv": "*_gatk_sim_tumor_cov.tsv",
     "tumor_allele_counts": "*_gatk_allele.counts.tsv",
     "normal_allele_counts": "*_gatk_sim_normal_allele.counts.tsv",
     "tumor_frag_counts": "*_gatk_sim_tumor.frag.counts.hdf5"

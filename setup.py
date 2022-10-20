@@ -13,7 +13,7 @@ setup(
     packages = [
         'hapaseg',
     ],
-    scripts = ['benchmarking/generate_sim_data.py'],
+    scripts = ['benchmarking/generate_sim_data.py', 'benchmarking/compare_outputs.py'],
 #    package_data={
 #        '':[
 #            'backends/slurm-gcp/*',

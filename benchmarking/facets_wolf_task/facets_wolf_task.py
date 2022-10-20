@@ -20,5 +20,5 @@ class Facets(wolf.Task):
     "facets_output_plot": "Rplots.pdf"
     }
     
-    resources = {"cpus-per-task": 4, "mem" : "6G"}
+    resources = {"cpus-per-task": 4, "mem" : "8G"}
     docker = "gcr.io/broad-getzlab-workflows/facets:v0"
