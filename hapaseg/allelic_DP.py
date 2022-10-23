@@ -49,8 +49,8 @@ class A_DP:
             clust_offset += i
 
             # bug in segmentation omits final SNP?
-            S = S.iloc[:-1]
-            assert (S["clust"] != -1).all()
+            #S = S.iloc[:-1]
+            #assert (S["clust"] != -1).all()
 
             self.SNPs.append(S)
 
@@ -576,7 +576,7 @@ class DPinstance:
                 break
 
             # poll every 100 iterations for various statuses
-            if not n_it % 100:
+            if not n_it % min(len(self.breakpoints), 100):
                 # have >95% of segments been touched?
                 if (1 - (1 - 1/len(self.breakpoints))**n_it) > 0.95:
                     touch90 = True
@@ -902,7 +902,7 @@ class DPinstance:
             snp_idx = sc.SortedSet([self.breakpoints[b] for b in break_idx])
             update_idx = sc.SortedSet()
             for snp in snp_idx_bi:
-                if snp < len(self.S) and self.clusts[snp - 1] == self.clusts[snp]:
+                if snp < len(self.S) and snp != 0 and self.clusts[snp - 1] == self.clusts[snp]:
                     snp_idx.discard(snp) # discard rather than remvoe because this could be in snp_idx + 1
                     self.breakpoints.remove(snp)
                     self.seg_sums.pop(snp)
