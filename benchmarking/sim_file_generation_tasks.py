@@ -103,3 +103,29 @@ class Generate_ASCAT_Sim_Data(wolf.Task):
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
 
 
+# HATCHet
+class Generate_HATCHet_Sim_Data(wolf.Task):
+    inputs = {"sim_profile": None,
+              "purity": None,
+              "sample_label": None,
+              "normal_vcf_path": None,
+              "tumor_baf_path": None,
+              "total_reads_paths": None,
+              "thresholds_snps_paths": None,
+              "total_tsv_path": None}
+    
+    script = """
+    generate_sim_data.py --sim_profile ${sim_profile} --purity ${purity} \
+    --output_dir . --out_label ${sample_label} hatchet --normal_vcf_path ${normal_vcf_path}\
+    --tumor_baf_path ${tumor_baf_path} --total_reads_paths ${total_reads_paths}\
+    --thresholds_snps_paths ${thresholds_snps_paths} --total_tsv_path ${total_tsv_path}
+    """
+
+    output_patterns = {
+    "hatchet_total_bin_reads_dir" : "./rdr/",
+    "hatchet_tumor_snp_depths" : "*_tumor.1bed",
+    "hatchet_total_counts" : "*_total.tsv"
+    }
+    
+    resources = {"cpus-per-task":2, "mem":"6G"}
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
