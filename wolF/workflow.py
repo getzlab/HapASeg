@@ -536,24 +536,31 @@ def workflow(
 #    n_samps_range = get_arm_samples_range(hapaseg_arm_concat_task["num_samples_obj"])
 
     # concat arm level results
-    @prefect.task
-    def concat_arm_level_results(arm_results):
-        A = []
-        for arm_file in arm_results:
-            with open(arm_file, "rb") as f:
-                H = pickle.load(f)
-                A.append(pd.Series({ "chr" : H.P["chr"].iloc[0], "start" : H.P["pos"].iloc[0], "end" : H.P["pos"].iloc[-1], "results" : H }))
+    arm_concat = wolf.Task(name = "concat_arm_level_results",
+                           inputs = {"arm_results": "arm_results"},
+                           script = """ python -c "
+import pickle
+import pandas as pd
+import tempfile
 
-        # get into order
-        A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(drop = True)
+arm_results = open('${arm_results}', 'r').read().split()
+A = []
+for arm_file in arm_results:
+    with open(arm_file, "rb") as f:
+        H = pickle.load(f)
+        A.append(pd.Series({ "chr" : H.P["chr"].iloc[0], "start" : H.P["pos"].iloc[0], "end" : H.P["pos"].iloc[-1], "results" : H }))
 
-        # save
-        _, tmpfile = tempfile.mkstemp(  )
-        A.to_pickle(tmpfile)
+# get into order
+A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(drop = True)
 
-        return tmpfile
+# save
+A.to_pickle('./concat_arms.pickle')
+"
+""",
 
-    arm_concat = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
+outputs = {"arm_level_MCMC": "concat_arms.pickle"},
+docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
+)
 
     ## run DP
 
