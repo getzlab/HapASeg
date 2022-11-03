@@ -31,7 +31,7 @@ phasing = wolf.ImportTask(
 
 # for Hapaseg itself
 hapaseg = wolf.ImportTask(
-  task_path = "../", # TODO: make remote
+  task_path = "git@github.com:getzlab/HapASeg.git", # TODO: make remote
   task_name = "hapaseg"
 )
 
