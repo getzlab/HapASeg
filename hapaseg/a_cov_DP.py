@@ -183,6 +183,9 @@ def generate_acdp_df(SNP_path, # path to SNP df
     return pd.concat(draw_dfs), data,  best_run
 
 def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx):
+    if opt_idx is None:
+        opt_idx = acdp_df.dp_draw.unique[0]
+
     acdp_single = acdp_df.loc[acdp_df.dp_draw == opt_idx]
     num_bins = (acdp_single.allele==1).sum()
     row_idxs = [acdp_single.columns.get_loc(i) for i in ['chr', 'start', 'end', 'allelic_cluster', 'segment_ID', 'cov_DP_cluster', 'min_count', 'maj_count']]
@@ -489,7 +492,7 @@ class AllelicCoverage_DP_runner:
         
         acdp_combined.prepare_df()
             
-        return acdp_combined
+        return acdp_combined, opt_purity, opt_k
          
     def run(self, n_iter, segs_to_use=None, return_res=False):
         acdp = AllelicCoverage_DP(self, segs_to_use)

@@ -361,7 +361,9 @@ class Hapaseg_run_acdp(wolf.Task):
         "acdp_clusters_plot": "acdp_clusters_plot.png",
         "acdp_tuples_plot": "acdp_tuples_plot.png",
         "acdp_genome_plots": 'acdp*draws.png',
-        "acdp_segfile" : "acdp_segfile.txt"
+        "acdp_segfile" : "acdp_segfile.txt",
+        "unclustered_segs": "unclustered_segs.txt",
+        "opt_fit_params": "optimal_fit_params.txt"
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1018"
