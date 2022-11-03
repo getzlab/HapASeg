@@ -117,7 +117,8 @@ def workflow(
   num_cov_seg_samples=5,
 
   phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
-  persistent_dry_run = False
+  persistent_dry_run = False,
+  cleanup_disks=True
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -748,28 +749,29 @@ def workflow(
             "use_single_draw":True # for now only use single best draw for wgs
             }
         )
-
-    #cleanup by deleting bam disks. we make seperate tasks for the bams
-    if not persistent_dry_run and tumor_bam is not None and tumor_bai is not None:
-        delete_tbams_task = DeleteDisk(
-          inputs = {
-            "disk" : [tumor_bam_localization_task["t_bam"], tumor_bam_localization_task["t_bai"]],
-            "upstream" : m1_task["mutect1_cs"] if callstats_file is None else tumor_cov_gather_task["coverage"] 
-          }
-     )
-     
-    if not persistent_dry_run and normal_bam is not None and normal_bai is not None:
-        delete_nbams_task = DeleteDisk(
-          inputs = {
-            "disk" : [normal_bam_localization_task["n_bam"], normal_bam_localization_task["n_bai"]],
-            "upstream" : m1_task["mutect1_cs"]
-          }
-    )
-    #also delete the cached files disk
-    delete_file_disk_task = DeleteDisk(
-        inputs = {"disk" : [localization_task["cytoband_file"]],
+    if cleanup_disks:
+        #cleanup by deleting bam disks. we make seperate tasks for the bams
+        if not persistent_dry_run and tumor_bam is not None and tumor_bai is not None:
+            delete_tbams_task = DeleteDisk(
+              inputs = {
+                "disk" : [tumor_bam_localization_task["t_bam"], tumor_bam_localization_task["t_bai"]],
+                "upstream" : m1_task["mutect1_cs"] if callstats_file is None else tumor_cov_gather_task["coverage"] 
+              }
+         )
+         
+        if not persistent_dry_run and normal_bam is not None and normal_bai is not None:
+            delete_nbams_task = DeleteDisk(
+              inputs = {
+                "disk" : [normal_bam_localization_task["n_bam"], normal_bam_localization_task["n_bai"]],
+                "upstream" : m1_task["mutect1_cs"]
+              }
+        )
+        
+        #also delete the cached files disk
+        delete_file_disk_task = DeleteDisk(
+            inputs = {"disk" : [localization_task["cytoband_file"]],
                   "upstream" : acdp_task["acdp_model_pickle"] # to prevent execution until acdp has run
-        }
-    )
+                    }
+                )
 
     return acdp_task["acdp_segfile"]
