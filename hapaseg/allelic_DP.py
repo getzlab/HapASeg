@@ -49,8 +49,8 @@ class A_DP:
             clust_offset += i
 
             # bug in segmentation omits final SNP?
-            S = S.iloc[:-1]
-            assert (S["clust"] != -1).all()
+            #S = S.iloc[:-1]
+            #assert (S["clust"] != -1).all()
 
             self.SNPs.append(S)
 
@@ -82,19 +82,18 @@ class A_DP:
         return self.snps_to_clusters, self.snps_to_phases, self.likelihoods
 
 class DPinstance:
-    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), alpha = 1, temperature = 1, dp_count_scale_factor = 1):
+    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), alpha = 1, dp_count_scale_factor = 1):
         self.S = S
         self.clust_prior = clust_prior.copy()
         self.clust_count_prior = clust_count_prior.copy()
         self.alpha = alpha
-        self.temperature = temperature
         self.dp_count_scale_factor = dp_count_scale_factor
 
         self.mm_mat = self.S.loc[:, ["min", "maj"]].values.reshape(-1, order = "F") # numpy for speed
         self.ref_mat = self.S.loc[:, ["A_ref", "B_ref"]].values.reshape(-1, order = "F")
         self.alt_mat = self.S.loc[:, ["A_alt", "B_alt"]].values.reshape(-1, order = "F")
 
-        self.betahyp = 10
+        self.betahyp = self.S.loc[:, ["min", "maj"]].sum(1).mean()/2
 
         #
         # define column indices
@@ -577,7 +576,7 @@ class DPinstance:
                 break
 
             # poll every 100 iterations for various statuses
-            if not n_it % 100:
+            if not n_it % min(len(self.breakpoints), 100):
                 # have >95% of segments been touched?
                 if (1 - (1 - 1/len(self.breakpoints))**n_it) > 0.95:
                     touch90 = True
@@ -836,8 +835,6 @@ class DPinstance:
                   + log_count_prior  # p(clust) (DP prior on clust counts)
                   + log_phase_prob)  # p(phase)
 
-            num /= self.temperature # scale by temperature for replica-exchange
-
             num -= num.max() # avoid underflow in sum-exp
 
             # p(clust,phase|X)
@@ -905,7 +902,7 @@ class DPinstance:
             snp_idx = sc.SortedSet([self.breakpoints[b] for b in break_idx])
             update_idx = sc.SortedSet()
             for snp in snp_idx_bi:
-                if snp < len(self.S) and self.clusts[snp - 1] == self.clusts[snp]:
+                if snp < len(self.S) and snp != 0 and self.clusts[snp - 1] == self.clusts[snp]:
                     snp_idx.discard(snp) # discard rather than remvoe because this could be in snp_idx + 1
                     self.breakpoints.remove(snp)
                     self.seg_sums.pop(snp)
@@ -981,10 +978,11 @@ class DPinstance:
         T["terr"] = T["gp_end"] - T["gp_st"]
         T["clust"] = self.S.loc[T["snp_st"], "clust"].values
 
-        clust_terr = T.groupby("clust")["terr"].sum().sort_values(ascending = False)
-        si = clust_terr.index.argsort()
-
-        # color any cluster larger than 10Mb (~0.003 of total genomic territory)
+        clust_terr = T.groupby("clust")["terr"].sum()
+        # we only need distinct colors for those larger than 10Mb (~0.003 of total genomic territory)
+        sig_clusts = (clust_terr/clust_terr.sum() >= 0.003)
+        sig_clust_terr = clust_terr.loc[sig_clusts].sort_values(ascending = False)
+        si = sig_clust_terr.index.argsort()
         base_colors = np.array([
           [0.368417, 0.506779, 0.709798],
           [0.880722, 0.611041, 0.142051],
@@ -1004,12 +1002,11 @@ class DPinstance:
         ])
         extra_colors = np.array(
           distinctipy.distinctipy.get_colors(
-            (clust_terr/clust_terr.sum() >= 0.003).sum() - base_colors.shape[0],
+            sig_clusts.sum() - base_colors.shape[0],
             exclude_colors = [list(x) for x in np.r_[np.c_[0, 0, 0], np.c_[1, 1, 1], np.c_[0.5, 0.5, 0.5], np.c_[1, 0, 1], base_colors]],
             rng = 1234
           )
         )
-
         return np.r_[base_colors, extra_colors if extra_colors.size > 0 else np.empty([0, 3])][si]
 
     def visualize_segs(self, f = None, use_clust = False, show_snps = False, chrom = None):

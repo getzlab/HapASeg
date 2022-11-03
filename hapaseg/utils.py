@@ -5,7 +5,13 @@ import pandas as pd
 _chrmap = dict(zip(["chr" + str(x) for x in list(range(1, 23)) + ["X", "Y"]], range(1, 25)))
 
 def parse_cytoband(cytoband):
-    cband = pd.read_csv(cytoband, sep = "\t", names = ["chr", "start", "end", "band", "stain"])
+    # some cytoband files have a header, some don't; we need to check
+    has_header = False
+    with open(cytoband, "r") as f:
+        if f.readline().startswith("chr\t"):
+            has_header = True
+
+    cband = pd.read_csv(cytoband, sep = "\t", names = ["chr", "start", "end", "band", "stain"] if not has_header else None)
     cband["chr"] = cband["chr"].apply(lambda x : _chrmap[x])
 
     chrs = cband["chr"].unique()
@@ -40,11 +46,14 @@ def plot_chrbdy(cytoband_file):
     chrbdy = parse_cytoband(cytoband_file)
 
     # plot chromosome boundaries
+    yl_0 = plt.ylim()[0]
+    yl_1 = plt.ylim()[1]
     chr_ends = chrbdy.loc[1::2, "end"].cumsum()
     for end in chr_ends[:-1]:
         plt.axvline(end, color = 'k')
     for st, en in np.c_[chr_ends[:-1:2], chr_ends[1::2]]:
-        plt.fill_between([st, en], 0, 1, color = [0.9, 0.9, 0.9], zorder = 0)
+        plt.fill_between([st, en], yl_0, yl_1, color = [0.9, 0.9, 0.9], zorder = 0)
+    plt.ylim([yl_0, yl_1])
 
     # plot centromere locations
     for cent in (np.c_[chrbdy.loc[1::2, "start"], chrbdy.loc[::2, "end"]] + np.c_[np.r_[0, chr_ends[:-1]]]).ravel():

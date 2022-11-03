@@ -1,2 +1,5 @@
 **/*.bam
 **/*.call_stats.txt
+covars
+genome
+.git

@@ -58,3 +58,26 @@ with wolf.Workflow(workflow = workflow.workflow, conf = { "clust_frac" : 0.5 }, 
       normal_bai = "gs://fc-secure-e2772064-386d-4911-b242-d6ade82bf172/360c5959-3827-4b24-92e3-d57dbc5de2f6/gdc_api_file_download/15788922-9cf8-4c83-8040-47fa60b7d374/call-download_file/98e061cd-0586-4e56-85fb-c6cc6688dbff_wgs_gdc_realn.bai",
       target_list = 200
     )
+
+# Richter's test (hg19)
+import wolf
+from wolF import workflow
+
+import dalmatian
+wm = dalmatian.WorkspaceManager("broad-firecloud-ibmwatson/Getz_Wu_Richters_WGS_UK")
+
+wic = wolf.fc.WorkspaceInputConnector("broad-firecloud-ibmwatson/Getz_Wu_Richters_WGS_UK")
+Pj = wic.get_pairs_as_joint_samples()
+
+with wolf.Workflow(workflow = workflow.workflow, namespace = "HapASeg_Richters") as w:
+    for pair, p in Pj.loc[Pj["sample_type_T"] == "Richter"].iterrows():
+        w.run(
+          RUN_NAME = pair,
+          tumor_bam = p["output_bam_T"],
+          tumor_bai = p["output_bam_index_T"],
+          normal_bam = p["output_bam_N"],
+          normal_bai = p["output_bam_index_N"],
+          target_list = 2000,
+          ref_genome_build = "hg19"
+        )
+        break
