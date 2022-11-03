@@ -7,7 +7,7 @@ from wolf.localization import LocalizeToDisk
 from gatk_wolf_task.gatk_wolf_task import GATK_CNV_Workflow
 from ascat_wolf_task.ascat_wolf_task import ASCAT
 from facets_wolf_task.facets_wolf_task import Facets
-from hatchet_wolf_task.hatchet_wolf_task import HATCHET_Depths, HATCHET_Main
+#from hatchet_wolf_task.hatchet_wolf_task import HATCHET_Depths, HATCHET_Main
 
 sys.path.append('../wolF/')
 from workflow import workflow as HapASeg_Workflow
@@ -25,7 +25,8 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                          ref_fasta=None,
                          cytoband_file=None,
                          ground_truth_seg_file=None,
-                         target_list=2000
+                         target_list=2000,
+                         cleanup_disks=False
                 ):
     localization_task = LocalizeToDisk(files = {
                                     "normal_vcf":normal_vcf_path,
@@ -49,7 +50,8 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                                    tumor_coverage_bed = generate_hapaseg_files_task["hapaseg_coverage_bed"],
                                    phased_vcf = localization_task["phased_vcf"],
                                    ref_genome_build = ref_build,
-                                   target_list = target_list if isinstance(target_list, int) else localization_task["target_list"]
+                                   target_list = target_list if isinstance(target_list, int) else localization_task["target_list"],
+                                   cleanup_disks=cleanup_disks
                                    )
     
     hapaseg_downstream = Downstream_HapASeg_Analysis(inputs = {
@@ -209,6 +211,17 @@ def ASCAT_Sim_Workflow(sim_profile=None,
                                     }
                          )
     
+    ascat_downstream = Downstream_ASCAT_Analysis(
+                                inputs={"ascat_t_logr": generate_ascat_data_task["ascat_tumor_logR"],
+                                        "ascat_t_baf": generate_ascat_data_task["ascat_tumor_BAF"],
+                                        "ascat_seg_file": run_ascat_task["ascat_raw_segments"],
+                                        "ground_truth_seg_file": ground_truth_seg_file,
+                                        "sample_name": f"{sample_label}_{purity}",
+                                        "ref_fasta": localization_task["ref_fasta"],
+                                        "cytoband_file": localization_task["cytoband_file"]
+                                       }
+                                )
+    
 # HATCHet
 def HATCHet_Sim_Workflow(sim_profile=None,
                          purity=None,
@@ -260,17 +273,6 @@ def HATCHet_Sim_Workflow(sim_profile=None,
                  phase_snps = phase_snps,
                  phased_vcf = None if not phase_snps else generate_hatchet_sim_task["phase_snps_task"]["phased_vcf"]
                  )
-    
-    ascat_downstream = Downstream_ASCAT_Analysis(
-                                inputs={"ascat_t_logr": generate_ascat_data_task["ascat_tumor_logR"],
-                                        "ascat_t_baf": generate_ascat_data_task["ascat_tumor_BAF"],
-                                        "ascat_seg_file": run_ascat_task["ascat_raw_segments"],
-                                        "ground_truth_seg_file": ground_truth_seg_file,
-                                        "sample_name": f"{sample_label}_{purity}",
-                                        "ref_fasta": localization_task["ref_fasta"],
-                                        "cytoband_file": localization_task["cytoband_file"]
-                                       }
-                                )
             
 # run all pipelines
 
@@ -285,6 +287,7 @@ def Run_Sim_Workflows(sim_profile=None,
                       hapaseg_covcollect_path=None,
                       hapaseg_target_list=2000,
                       hapaseg_phased_vcf_path=None, # path to cached eagle combined output
+                      hapaseg_cleanup_disks=False,
                       gatk_variant_depth_path = None,
                       gatk_coverage_tsv_path = None,
                       gatk_sim_normal_allelecounts_path=None,
@@ -329,7 +332,8 @@ def Run_Sim_Workflows(sim_profile=None,
                         ref_fasta=ref_fasta,
                         cytoband_file=cytoband_file,
                         ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"],
-                        target_list = hapaseg_target_list
+                        target_list = hapaseg_target_list,
+                        cleanup_disks = hapaseg_cleanup_disks
                         )
 
     GATK_Sim_Workflow(sim_profile=sim_profile,
@@ -373,16 +377,16 @@ def Run_Sim_Workflows(sim_profile=None,
                        ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"]
                       )
 
-    HATCHet_Sim_Workflow(sim_profile=sim_profile,
-                         purity=purity,
-                         sample_label=sample_label,
-                         normal_vcf_path=normal_vcf_path,
-                         reference_genome_path=hatchet_reference_genome_path,
-                         normal_bam=hatchet_normal_bam,
-                         tumor_bam=hatchet_tumor_bam,
-                         sample_names = hatchet_sample_names,
-                         chromosomes = hatchet_chromosomes,
-                         reference_genome_version=hatchet_reference_genome_version,
-                         chr_notation = hatchet_chr_notation,
-                         phase_snps = hatchet_phase_snps
-            )
+#    HATCHet_Sim_Workflow(sim_profile=sim_profile,
+#                         purity=purity,
+#                         sample_label=sample_label,
+#                         normal_vcf_path=normal_vcf_path,
+#                         reference_genome_path=hatchet_reference_genome_path,
+#                         normal_bam=hatchet_normal_bam,
+#                         tumor_bam=hatchet_tumor_bam,
+#                         sample_names = hatchet_sample_names,
+#                         chromosomes = hatchet_chromosomes,
+#                         reference_genome_version=hatchet_reference_genome_version,
+#                         chr_notation = hatchet_chr_notation,
+#                         phase_snps = hatchet_phase_snps
+#            )
