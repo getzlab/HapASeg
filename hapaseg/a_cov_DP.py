@@ -199,7 +199,7 @@ def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx):
     
     segs_df.loc[:, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = np.nan
     for i, row in segs_df.iterrows():
-        lnp_res = lnp_data[(row[3], row[5], 2)]
+        lnp_res = lnp_data[(row[3], row[5], opt_idx)]
         a,b = row[[6,7]]
         norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000)
         r_maj = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a,b, size = 10000)))
