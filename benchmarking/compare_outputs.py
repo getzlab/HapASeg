@@ -218,9 +218,9 @@ def plot_ascat_sim_input(sim_ascat_t_logr, # ascat simulated tumor logR tsv
                          savepath): # path to save plot
 
     logr_df = pd.read_csv(sim_ascat_t_logr, sep='\t', usecols=[1,2,3], low_memory=False) 
-    logr_df = logr_df.rename({'easy_sim_1_0.7_ascat': 'logr'}, axis=1)
+    logr_df = logr_df.rename({logr_df.columns[-1]: 'logr'}, axis=1)
     baf_df = pd.read_csv(sim_ascat_t_baf, sep='\t', usecols=[1,2,3], low_memory=False)    
-    baf_df = baf_df.rename({'easy_sim_1_0.7_ascat': 'aimb'}, axis=1)
+    baf_df = baf_df.rename({baf_df.columns[-1]: 'aimb'}, axis=1)
     baf_df = baf_df.loc[(baf_df.aimb < 0.99) & (baf_df.aimb > 0.01)]
     
     ascat_df = logr_df.merge(baf_df, on=['chrs', 'pos'], how='inner')
