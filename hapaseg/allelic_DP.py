@@ -795,7 +795,7 @@ class DPinstance:
                 prior_idx = np.r_[
                   np.r_[[self.clust_prior.index(x) for x in prior_diff]],
                   np.r_[[self.clust_prior.index(x) if x in self.clust_prior else 0 for x in (prior_com | prior_null)]]
-                ]
+                ].astype(int)
 
                 # prior marginal likelihoods for both phase orientations
                 prior_MLs = ss.betaln( # prior clusters + segment
