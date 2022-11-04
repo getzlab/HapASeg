@@ -971,7 +971,8 @@ class DPinstance:
 
     def get_colors(self):
         s2cu, s2cu_j = self.get_unique_clust_idxs()
-
+        if len(self.breakpoints):
+            return np.r_[np.c_[0.368417, 0.506779, 0.709798]]
         T = pd.DataFrame(np.c_[np.r_[self.breakpoints[:-2]], np.r_[self.breakpoints[1:-1]]], columns = ["snp_st", "snp_end"])
         T["gp_st"] = self.S.loc[T["snp_st"], "pos_gp"].values
         T["gp_end"] = self.S.loc[T["snp_end"], "pos_gp"].values
