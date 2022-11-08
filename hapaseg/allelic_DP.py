@@ -590,9 +590,11 @@ class DPinstance:
                         likelihood_ready = True
 
                 # check if likelihood has stabilized enough to consider us "burned in"
+                # also include contingency if we've unambiguously converged on an optimum and chain has not moved at all
                 if likelihood_ready and not burned_in and len(self.lik_trace) > 500:
                     lt = np.vstack(self.lik_trace).sum(1)
-                    if (np.convolve(np.diff(lt), np.ones(500)/500, mode = "same") < 0).sum() > 2:
+                    if (np.convolve(np.diff(lt), np.ones(500)/500, mode = "same") < 0).sum() > 2 or\
+                        (np.diff(lt[-500:]) == 0).all():
                         print("BURNED IN")
                         burned_in = True
                         self.burnin_iteration = len(self.lik_trace)
@@ -971,7 +973,7 @@ class DPinstance:
 
     def get_colors(self):
         s2cu, s2cu_j = self.get_unique_clust_idxs()
-        if len(self.breakpoints):
+        if len(self.breakpoints) == 2:
             return np.r_[np.c_[0.368417, 0.506779, 0.709798]]
         T = pd.DataFrame(np.c_[np.r_[self.breakpoints[:-2]], np.r_[self.breakpoints[1:-1]]], columns = ["snp_st", "snp_end"])
         T["gp_st"] = self.S.loc[T["snp_st"], "pos_gp"].values
