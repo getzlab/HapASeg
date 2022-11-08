@@ -46,7 +46,7 @@ def convert_facets_output(facets_df, # facets segments file
         raise ValueError("expected cnlr.median and mafR columns. Are you sure a Facets segments file was passed?")
     
     facets_df['mu.major'] = np.exp2(facets_df['cnlr.median']) * np.exp(facets_df['mafR'])
-    facets_df['mu.minor'] = np.exp2(facets_df['cnlr.median']) * (1/np.exp(facets_df['mafR']))
+    facets_df['mu.minor'] = np.exp2(facets_df['cnlr.median']) * (1-np.exp(facets_df['mafR']))
 
     facets_df = facets_df.rename({'chrom':'Chromosome', 'start':'Start.bp', 'end':'End.bp'}, axis=1)
     facets_df = facets_df[['Chromosome', 'Start.bp', 'End.bp', 'mu.major', 'mu.minor']]
