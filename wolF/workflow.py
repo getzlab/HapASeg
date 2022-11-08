@@ -87,7 +87,7 @@ def _hg38_config_gen(wgs):
         ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
-        cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg19/cytoBand.txt',
+        cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt',
         repl_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/RT.raw.hg38.pickle',
         ref_panel_1000g = hg38_ref_dict
     )
@@ -455,9 +455,10 @@ def workflow(
             vcf_ref = F["ref_bcf"],
             vcf_ref_idx = F["ref_bcf_idx"],
             output_file_prefix = "foo",
-            num_threads = 4,
+            num_threads = 2,
           ),
-          resources = { "cpus-per-task" : 4, "mem":'5G'}
+          resources = { "cpus-per-task" : 2, "mem":'4G'},
+          outputs = {"phased_vcf" : "foo.vcf"}
         )
 
         # TODO: run whatshap
@@ -537,7 +538,7 @@ def workflow(
 
     # concat arm level results
     arm_concat = wolf.Task(name = "concat_arm_level_results",
-                           inputs = {"arm_results": "arm_results"},
+                           inputs = {"arm_results": [hapaseg_arm_AMCMC_task["arm_level_MCMC"]]},
                            script = """ python -c "
 import pickle
 import pandas as pd
@@ -546,19 +547,19 @@ import tempfile
 arm_results = open('${arm_results}', 'r').read().split()
 A = []
 for arm_file in arm_results:
-    with open(arm_file, "rb") as f:
+    with open(arm_file, 'rb') as f:
         H = pickle.load(f)
-        A.append(pd.Series({ "chr" : H.P["chr"].iloc[0], "start" : H.P["pos"].iloc[0], "end" : H.P["pos"].iloc[-1], "results" : H }))
+        A.append(pd.Series({ 'chr' : H.P['chr'].iloc[0], 'start' : H.P['pos'].iloc[0], 'end' : H.P['pos'].iloc[-1], 'results' : H }))
 
 # get into order
-A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(drop = True)
+A = pd.concat(A, axis = 1).T.sort_values(['chr', 'start', 'end']).reset_index(drop = True)
 
 # save
 A.to_pickle('./concat_arms.pickle')
 "
 """,
 
-outputs = {"arm_level_MCMC": "concat_arms.pickle"},
+outputs = {"all_arms_obj": "concat_arms.pickle"},
 docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
 )
 
@@ -566,7 +567,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
 
     hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
      inputs = {
-       "seg_dataframe" : arm_concat,
+       "seg_dataframe" : arm_concat["all_arms_obj"],
        #"seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
        "cytoband_file" : localization_task["cytoband_file"],
        "ref_fasta" : localization_task["ref_fasta"],
@@ -600,7 +601,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
     #   (coverage MCMC will be scattered over each allelic segment)
     @prefect.task
     def get_N_seg_groups(idx_file):
-        indices = np.genfromtxt(idx_file, delimiter='\n', dtype=int)
+        indices = np.r_[np.genfromtxt(idx_file, delimiter='\n', dtype=int)]
         return list(indices)
 
     cov_mcmc_shards_list = get_N_seg_groups(prep_cov_mcmc_task["allelic_seg_idxs"])
