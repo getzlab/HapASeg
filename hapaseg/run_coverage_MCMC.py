@@ -396,7 +396,7 @@ class CoverageMCMCRunner:
         
         # remove non z-transformed covar cols
         drop_cols = list(cov_df.columns[cov_df.columns.str.contains("^C_.*") & 
-                                       ~cov_df.columns.str.contains("^C_.*_z$|C_frag_len$")])
+                                       ~cov_df.columns.str.contains("^C_.*z$|C_frag_len$")])
         # also remove now useless coverage info
         drop_cols += ['covcorr', 'C_frag_len', 'std_frag_len','num_frags', 'tot_reads', 'fail_reads', 'fail_reads_zt']
         cov_df = cov_df.drop(drop_cols, axis=1)
@@ -466,15 +466,24 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     else:
         if cov_df_pickle is None:
             raise ValueError("Need to pass in cov_df file")
-        # read in files from f_file_list
-        read_files = []
-        with open(f_file_list, 'r') as f:
-            all_lines = f.readlines()
-            for l in all_lines:
-                to_add = l.rstrip('\n')
-                if to_add != "nan":
-                    read_files.append(to_add)
-        seg_files = nat_sort(read_files)
+        file_ext = os.path.splitext(os.path.basename(f_file_list))[1]
+        if file_ext == '.txt':
+            # read in files from f_file_list
+            read_files = []
+            with open(f_file_list, 'r') as f:
+                all_lines = f.readlines()
+                for l in all_lines:
+                    to_add = l.rstrip('\n')
+                    if to_add != "nan":
+                        read_files.append(to_add)
+        
+            seg_files = nat_sort(read_files)
+        elif file_ext == '.npz':
+            # handle case of single input file which is not in a txt list
+            seg_files = [f_file_list]
+        else:
+            raise ValueError(f"Could not process file list {f_file_list}")
+    
         seg_idxs = []
         for f in seg_files:
             search = re.search(".*allelic_seg_(\d+).npz.*", f)
