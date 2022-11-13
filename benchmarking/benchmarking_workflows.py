@@ -283,6 +283,7 @@ def Run_Sim_Workflows(sim_profile=None,
                       ref_build=None,
                       ref_fasta=None,
                       cytoband_file=None,
+                      ground_truth_purity=None, # compare all samples to a standard purity gt for MAD score consistancy
                       hapaseg_hetsite_depth_path=None,
                       hapaseg_covcollect_path=None,
                       hapaseg_target_list=2000,
@@ -313,7 +314,7 @@ def Run_Sim_Workflows(sim_profile=None,
                       ):
     seg_file_gen_task = Generate_Groundtruth_Segfile(inputs= {
                             "sample_label": sample_label,
-                            "purity":purity,
+                            "purity":ground_truth_purity,
                             "sim_profile":sim_profile,
                             "normal_vcf_path":normal_vcf_path,
                             "hapaseg_hetsite_depth_path": hapaseg_hetsite_depth_path,
