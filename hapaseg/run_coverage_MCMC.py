@@ -296,6 +296,10 @@ class CoverageMCMCRunner:
         # apply all filters
         cov_df = cov_df.loc[~naidx & ~outlier_mask & covar_6sig_idx]
         
+        # remove outlier bins at ends of segments
+        outlier_idxs = edge_outliers(cov_df)
+        cov_df = cov_df.loc[~cov_df.index.isin(outlier_idxs)]
+
         # now remove ADP clusters that are too small (along with respective bins)
         small_clusters = cov_df.seg_idx.value_counts()[lambda x: x < 5].index
         small_adp_mask = cov_df.seg_idx.isin(small_clusters)
@@ -450,7 +454,32 @@ def nat_sort(lst):
         alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
         return sorted(lst, key=alphanum_key)
 
+# find outliers at ends of allelic segments using segment mean +- sigma * segment_std
+# as threshold, excluding the first and last two bins. bins are only thrown out 
+# if the second to the end bin does not cross the threshold
+def edge_outliers(cov_df, sigma=5):
+    idx_lst = []
+    for idx, seg_df in list(cov_df.groupby('seg_idx')):
+        if len(seg_df) < 5:
+            # will filter segment anyways
+            continue
+        f_arr = seg_df.fragcorr.values
+        seg_mean = f_arr[2:].mean()
+        seg_std = f_arr[2:].std()
+        if f_arr[0] < seg_mean - sigma * seg_std or f_arr[0] > seg_mean + sigma * seg_std:
+            # check if second bin is also outlier
+            if not(f_arr[1] < seg_mean - sigma * seg_std or f_arr[1] > seg_mean + sigma * seg_std):
+                idx_lst.append(seg_df.index[0])
+        # check end of segment
+        seg_mean = f_arr[:-2].mean()
+        seg_std = f_arr[:-2].std()
+        if f_arr[-1] < seg_mean - sigma * seg_std or f_arr[-1] > seg_mean + sigma * seg_std:
+            # check if second to last bin is also outlier
+            if not(f_arr[-2] < seg_mean - sigma * seg_std or f_arr[-2] > seg_mean + sigma * seg_std):
+                idx_lst.append(seg_df.index[-1])
+    return idx_lst
 
+    
 # function for collecting coverage mcmc results from each ADP cluster
 def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=None, cov_df_pickle=None, bin_width=1):
     if coverage_dir is None and f_file_list is None:
