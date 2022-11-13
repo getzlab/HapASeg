@@ -757,6 +757,16 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             "use_single_draw":True # for now only use single best draw for wgs
             }
         )
+
+    @prefect.task
+    def determine_output_segfile(opt_txt_file, clustered_segs, unclustered_segs):
+        purity = pd.read_csv(opt_txtfile, sep='\t').iloc[0]['purity']
+        if purity > 0.25:
+            return clustered_segs
+        else:
+            return unclustered_segs
+    out_segfile = determine_output_segfile(acdp_task["opt_fit_params"], acdp_task["acdp_segfile", acdp_task["unclustered_segs"])
+
     if cleanup_disks:
         #cleanup by deleting bam disks. we make seperate tasks for the bams
         if not persistent_dry_run and tumor_bam is not None and tumor_bai is not None:
@@ -782,4 +792,4 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                     }
                 )
 
-    return acdp_task["acdp_segfile"]
+    return out_segfile
