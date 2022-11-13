@@ -91,7 +91,7 @@ def plot_output_comp(overlap_seg_file, # seg file output from acr_compare
                      truth_index=2): # index of ground truth segs (i.e. order of gt passed to acr_compare)
     
     seg_df = pd.read_csv(overlap_seg_file, sep='\t')
-    fig = plt.figure(1, (14,8))
+    fig = plt.figure(figsize=(14,8))
     ax = plt.gca()
     
     gt_mu_major = f'mu.major_{truth_index}'
@@ -159,7 +159,6 @@ def plot_facets_sim_input(sim_facets_input_file, # facets input counts file
                           savepath): # path to save plot
     facets_input_counts = pd.read_csv(sim_facets_input_file)    
     facets_input_counts.loc[:, "gpos"] = seq.chrpos2gpos(facets_input_counts['Chromosome'], facets_input_counts['Position'], ref = ref_genome)
-    fig = plt.figure(1, figsize=(14,8))
     
     facets_counts = facets_input_counts['File2R'] + facets_input_counts['File2A']
     facets_alt_imb = facets_input_counts['File2A']/ facets_counts
@@ -236,6 +235,7 @@ def plot_ascat_sim_input(sim_ascat_t_logr, # ascat simulated tumor logR tsv
 
 #### downstream comparison analysis functions ####
 # converts method output to common segfile format
+# optionally rescales the ground truth segments to 100% purity
 ## computes MAD scores
 ### plots method segs and ground truth segments
 #### plots method inputs for sanity checking
@@ -246,7 +246,7 @@ def facets_downstream_analysis(facets_sim_input_file, # path to facets input cou
                                sample_name, # sample name. should be in sampleLabel_purity format
                                ref_fasta, # reference fasta
                                cytoband_file, # reference cytoband file
-                               outdir='./' # directory to save outputs
+                               outdir='./', # directory to save outputs
                                ):
     
     if not os.path.isdir(outdir):
@@ -257,15 +257,15 @@ def facets_downstream_analysis(facets_sim_input_file, # path to facets input cou
     convert_facets_output(facets_output_segs, converted_seg_outpath)
 
     # compare seg file to ground truth + compute MAD
-    mad_score, opt_scale_factor, opt_purity, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
+    mad_score, opt_lb, opt_ub, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_facets_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     
     # save other data
     mad_results_outpath = os.path.join(outdir, f'{sample_name}_facets_comparison_results.txt')
     mad_res_df = pd.DataFrame({'mad_score':[mad_score],
-                               'optimal_scale_factor':[opt_scale_factor],
-                               'optimal_purity':[opt_purity],
+                               'optimal_lower_bound':[opt_lb],
+                               'optimal_upper_bound':[opt_ub],
                                'non_overlap_length':[non_ov_len],
                                'overlap_length':[ov_len]})
     mad_res_df.to_csv(mad_results_outpath, sep='\t', index=False)
@@ -297,15 +297,15 @@ def ascat_downstream_analysis(ascat_sim_t_logr, # path to ascat sim tumor logr f
     convert_ascat_output(ascat_output_segs, converted_seg_outpath)
 
     # compare seg file to ground truth + compute MAD
-    mad_score, opt_scale_factor, opt_purity, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
+    mad_score, opt_lb, opt_ub, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_ascat_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     
     # save other data
     mad_results_outpath = os.path.join(outdir, f'{sample_name}_ascat_comparison_results.txt')
     mad_res_df = pd.DataFrame({'mad_score':[mad_score],
-                               'optimal_scale_factor':[opt_scale_factor],
-                               'optimal_purity':[opt_purity],
+                               'optimal_lower_bound':[opt_lb],
+                               'optimal_upper_bound':[opt_ub],
                                'non_overlap_length':[non_ov_len],
                                'overlap_length':[ov_len]})
     mad_res_df.to_csv(mad_results_outpath, sep='\t', index=False)
@@ -337,15 +337,15 @@ def gatk_downstream_analysis(sim_gatk_cov_tsv, # gatk simulated tumor coverage d
     convert_gatk_output(gatk_output_segs, converted_seg_outpath)
 
     # compare seg file to ground truth + compute MAD
-    mad_score, opt_scale_factor, opt_purity, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
+    mad_score, opt_lb, opt_ub, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_gatk_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     
     # save other acr_compare data
     mad_results_outpath = os.path.join(outdir, f'{sample_name}_gatk_comparison_results.txt')
     mad_res_df = pd.DataFrame({'mad_score':[mad_score],
-                               'optimal_scale_factor':[opt_scale_factor],
-                               'optimal_purity':[opt_purity],
+                               'optimal_lower_bound':[opt_lb],
+                               'optimal_upper_bound':[opt_ub],
                                'non_overlap_length':[non_ov_len],
                                'overlap_length':[ov_len]})
     mad_res_df.to_csv(mad_results_outpath, sep='\t', index=False)
@@ -373,16 +373,18 @@ def hapaseg_downstream_analysis(hapaseg_seg_file, # hapaseg output seg file
         os.mkdir(outdir)
     
     # hapaseg output is already in proper format so doesnt need to be converted
-    # output is on same scale as ground truth so no parameter fitting necessary
-    mad_score, opt_scale_factor, opt_purity, non_ov_len, ov_len, seg_df = acr_compare(hapaseg_seg_file, gt_segfile, fit_params=False)
+    # while the hapaseg outputs are on the scale as the ground truth at the same purity,
+    # we may want to compare results to a ground truth at a different purity, which requires
+    # rescaling the outputs
+    mad_score, opt_lb, opt_ub, non_ov_len, ov_len, seg_df = acr_compare(hapaseg_seg_file, gt_segfile, fit_params=True)
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_hapaseg_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     
     # save other acr compare data
     mad_results_outpath = os.path.join(outdir, f'{sample_name}_hapaseg_comparison_results.txt')
     mad_res_df = pd.DataFrame({'mad_score':[mad_score],
-                               'optimal_scale_factor':[opt_scale_factor],
-                               'optimal_purity':[opt_purity],
+                               'optimal_lower_bound':[opt_lb],
+                               'optimal_upper_bound':[opt_ub],
                                'non_overlap_length':[non_ov_len],
                                'overlap_length':[ov_len]})
     mad_res_df.to_csv(mad_results_outpath, sep='\t', index=False)
