@@ -95,6 +95,7 @@ def _hg38_config_gen(wgs):
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
         cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt',
         repl_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/RT.raw.hg38.pickle',
+        faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle',
         ref_panel_1000g = hg38_ref_dict
     )
     #if we're using whole genome we can use the precomputed gc file for 200 bp bins
@@ -124,7 +125,8 @@ def workflow(
 
   phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
   persistent_dry_run = False,
-  cleanup_disks=True
+  cleanup_disks=True,
+  is_ffpe = False # use FAIRE as covariate
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -594,7 +596,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":ref_config["repl_file"],
-        #"faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
+        "faire_pickle":ref_config["faire_file"] if is_ffpe else "",
         "gc_pickle":ref_config["gc_file"],
         "normal_coverage_csv":normal_cov_gather_task["coverage"] if collect_normal_coverage else "",
         "ref_fasta":localization_task["ref_fasta"],
