@@ -760,12 +760,13 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
 
     @prefect.task
     def determine_output_segfile(opt_txt_file, clustered_segs, unclustered_segs):
-        purity = pd.read_csv(opt_txtfile, sep='\t').iloc[0]['purity']
+        purity = pd.read_csv(opt_txt_file, sep='\t').iloc[0]['purity']
         if purity > 0.25:
             return clustered_segs
         else:
             return unclustered_segs
-    out_segfile = determine_output_segfile(acdp_task["opt_fit_params"], acdp_task["acdp_segfile", acdp_task["unclustered_segs"])
+    
+    out_segfile = determine_output_segfile(acdp_task["opt_fit_params"], acdp_task["acdp_segfile"], acdp_task["unclustered_segs"])
 
     if cleanup_disks:
         #cleanup by deleting bam disks. we make seperate tasks for the bams
