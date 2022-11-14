@@ -48,8 +48,8 @@ class HapASeg_Preprocess_Callstats(wolf.Task):
               "sample_name":None
              }
     script = """
-    preprocess_raw_data.py --callstats ${callstats} --sample_name ${sample_name}\
-    --outdir ./ hapaseg
+    preprocess_raw_data.py --sample_name ${sample_name}\
+    --outdir ./ hapaseg --callstats ${callstats}
     """
     output_patterns = {"hapaseg_hetsite_depths": "*depth.tsv",
                        "hapaseg_filtered_cs": "*_filtered.tsv" 
@@ -64,8 +64,8 @@ class Facets_Preprocess_Callstats(wolf.Task):
               "db_snp_vcf":None,
              }
     script = """
-    preprocess_raw_data.py --callstats ${callstats} --sample_name ${sample_name}\
-    --outdir ./ facets --db_snp_vcf ${db_snp_vcf}
+    preprocess_raw_data.py --sample_name ${sample_name}\
+    --outdir ./ facets --callstats ${callstats} --db_snp_vcf ${db_snp_vcf}
     """
     output_patterns = {
                         "facets_variant_depths": "*variant_depths.tsv",
@@ -81,8 +81,8 @@ class ASCAT_Preprocess_Callstats(wolf.Task):
                "ascat_loci_list": None
              }
     script = """
-    preprocess_raw_data.py --callstats ${callstats} --sample_name ${sample_name}\
-    --outdir ./ ascat --ascat_loci_list ${ascat_loci_list}
+    preprocess_raw_data.py --sample_name ${sample_name}\
+    --outdir ./ ascat --callstats ${callstats} --ascat_loci_list ${ascat_loci_list}
     """
     output_patterns = {
                         "ascat_variant_depths": "*variant_depths.tsv",

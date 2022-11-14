@@ -4,6 +4,8 @@ import argparse
 import pandas as pd
 import numpy as np
 import scipy.stats as s
+import h5py
+
 
 ###################
 # these functions take the raw coverage and callstats files and filter them according
@@ -111,10 +113,56 @@ def ascat_cs_filtering(callstats_file = None,
 
     D = CS[['chr', 'pos', 'total_reads']]
     D.to_csv(os.path.join(outdir, f'ascat_{sample_name}_cs_variant_depths.tsv'), sep='\t', header=None, index=False)
+   
+# GATK 
+
+## utility methods
+def convert_gatkCov_to_hapasegCov_format(hdf5_file):
+    f = h5py.File(hdf5_file, 'r')
+    chromosomes = np.array([chrom.decode() for chrom in f['intervals/indexed_contig_names'][:]])
+    interval_data = f['intervals/transposed_index_start_end'][:].astype(int)
+    cov_formatted = pd.DataFrame({'chr': chromosomes[interval_data[0]], 'start':interval_data[1], 'end':interval_data[2], 'covcorr': f['counts/values'][0].astype(int), 'mean_fraglen':0, 'sqrt_avg_fragvar':0, 'tot_reads':0, 'fail_reads':0})
+    return cov_formatted
+
+def generate_gatkCov_dummy_normal(hdf5_in, hdf5_out):
+    f = h5py.File(hdf5_in, 'r')
+    new_f = h5py.File(hdf5_out, 'a')
+    # copy all groups over to replicate the metadata
+    for k in f.keys():
+        new_f.copy(f[k], k)
+    # set all counts to the mean
+    new_f['counts/values'][:] = new_f['counts/values'][0].mean()
+    # close files
+    f.close()
+    new_f.close()
+
+def convert_gatkAlleleCounts_to_Hapaseg(gatk_allelecounts_tsv_path):
+    df = pd.read_csv(gatk_allelecounts_tsv_path, comment='@', sep='\t', low_memory=False)
+    variant_depths = df['REF_COUNT'] + df['ALT_COUNT']
+    variant_depths_df = pd.DataFrame({'CHROM': df['CONTIG'], 'POS': df['POSITION'], 'DEPTH':variant_depths})
     
+    sim_normal_df = df.copy()
+    non_zero_mask = (df['REF_COUNT'] + df['ALT_COUNT']) > 0
+    sim_altcount = s.binom.rvs(30, df.loc[non_zero_mask,'ALT_COUNT'] / (df.loc[non_zero_mask, 'REF_COUNT'] + df.loc[non_zero_mask, 'ALT_COUNT']))
+    sim_refcount = 30 - sim_altcount
+    sim_normal_df.loc[non_zero_mask, 'ALT_COUNT'] = sim_altcount
+    sim_normal_df.loc[non_zero_mask, 'REF_COUNT'] = sim_refcount
+    return variant_depths_df, sim_normal_df
+
+def gatk_preprocessing(gatk_fragcounts = None,
+                       gatk_allelecounts = None,
+                       sample_name = None,
+                       outdir = './'):
+    
+    gatk_cov_df = convert_gatkCov_to_hapasegCov_format(gatk_fragcounts)
+    gatk_cov_df.to_csv(os.path.join(outdir, f'{sample_name}_gatk_cov_counts.tsv'), sep='\t', index = False, header=False)
+    generate_gatkCov_dummy_normal(gatk_fragcounts, os.path.join(outdir, f'{sample_name}_gatk_sim_normal_frag.counts.hdf5'))
+    gatk_var_depth, gatk_sim_normal_allele_counts = convert_gatkAlleleCounts_to_Hapaseg(gatk_allelecounts)
+    gatk_var_depth.to_csv(os.path.join(outdir, f'{sample_name}_gatk_var_depth.tsv'), sep='\t', index=False)
+    gatk_sim_normal_allele_counts.to_csv(os.path.join(outdir, f'{sample_name}_gatk_sim_normal_allele_counts.tsv'), sep='\t', index=False)
+
 def parse_args():
     parser = argparse.ArgumentParser(description = "preprocess callstats file for benchmarking methods use")
-    parser.add_argument("--callstats", required = True, help="path to mutect call stats file")
     parser.add_argument("--sample_name", required = True, help="name of sample for file naming")
     parser.add_argument("--outdir", default="./", help="directory in which to save output files")
 
@@ -122,14 +170,22 @@ def parse_args():
     
     # hapaseg -- no additional args
     hapaseg_cs = subparsers.add_parser("hapaseg", help = "preprocess callstats file for hapaseg")
+    hapaseg_cs.add_argument("--callstats", required = True, help="path to mutect call stats file")
     
     # facets
     facets_cs = subparsers.add_parser("facets", help = "preprocess callstats file for facets")
     facets_cs.add_argument("--db_snp_vcf", required=True, help="path to db_snp vcf file containing common variants")
+    facets_cs.add_argument("--callstats", required = True, help="path to mutect call stats file")
 
     # ascat
     ascat_cs = subparsers.add_parser("ascat", help = "preprocess callstats file for ascat")
     ascat_cs.add_argument("--ascat_loci_list", required = True, help="ascat WGS loci list")
+    ascat_cs.add_argument("--callstats", required = True, help="path to mutect call stats file")
+
+    # GATK
+    gatk = subparsers.add_parser("gatk", help="preprocess gatk raw data")
+    gatk.add_argument("--frag_counts", required=True, help="path to gatk frag counts hdf5 file")
+    gatk.add_argument("--allele_counts", required=True, help="path to gatk allele counts file")
 
     args = parser.parse_args()
     
@@ -160,8 +216,14 @@ def main():
                             sample_name = args.sample_name,
                             db_snp_file = args.db_snp_vcf,
                             outdir = output_dir)
+    
+    elif args.command == "gatk":
+        print("processing gatk raw data for benchmarking...", flush=True)
+        gatk_preprocessing(gatk_fragcounts = args.frag_counts, 
+                          gatk_allelecounts = args.allele_counts,
+                          sample_name = args.sample_name,
+                          outdir=output_dir)
     else:
         raise ValueError(f"could not recognize command {args.command}")
-
 if __name__ == "__main__":
     main()
