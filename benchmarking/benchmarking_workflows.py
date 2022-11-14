@@ -1,5 +1,6 @@
 import wolf
 import sys
+import numpy as np
 
 from sim_file_generation_tasks import *
 from output_comparison_tasks import *
@@ -57,7 +58,7 @@ def HapASeg_Sim_Workflow(sim_profile=None,
     hapaseg_downstream = Downstream_HapASeg_Analysis(inputs = {
                                    "hapaseg_seg_file": hapaseg_seg_file,
                                    "ground_truth_seg_file": ground_truth_seg_file,
-                                   "sample_name": f"{sample_label}_{purity}",
+                                   "sample_name": f"{sample_label}_{np.around(purity, 2)}",
                                    "ref_fasta": localization_task["ref_fasta"],
                                    "cytoband_file": localization_task["cytoband_file"]
                         })
@@ -109,7 +110,7 @@ def GATK_Sim_Workflow(sim_profile = None,
                         "raw_gatk_coverage_path":localization_task["raw_gatk_coverage"]
                        }
                 )    
-    gatk_segfile = GATK_CNV_Workflow(sample_name = sample_label + f'_{purity}',
+    gatk_segfile = GATK_CNV_Workflow(sample_name = sample_label + f'_{np.around(purity, 2)}',
                       tumor_frag_counts_hdf5 = generate_gatk_data_task["tumor_frag_counts"],
                       tumor_allele_counts = generate_gatk_data_task["tumor_allele_counts"],
                       count_panel = localization_task["count_panel"] if count_panel != "" else "",
@@ -122,7 +123,7 @@ def GATK_Sim_Workflow(sim_profile = None,
                       "gatk_sim_acounts" : generate_gatk_data_task["tumor_allele_counts"],
                       "gatk_seg_file" : gatk_segfile,
                       "ground_truth_seg_file": ground_truth_seg_file,
-                      "sample_name": f"{sample_label}_{purity}",
+                      "sample_name": f"{sample_label}_{np.around(purity, 2)}",
                       "ref_fasta": localization_task["ref_fasta"],
                       "cytoband_file": localization_task["cytoband_file"]
                     }
@@ -162,7 +163,7 @@ def Facets_Sim_Workflow(sim_profile = None,
                             inputs={"facets_input_counts": generate_facets_data_task["facets_input_counts"],
                                     "facets_seg_file": run_facets_task["facets_seg_file"],
                                      "ground_truth_seg_file": ground_truth_seg_file,
-                                     "sample_name": f"{sample_label}_{purity}",
+                                     "sample_name": f"{sample_label}_{np.around(purity, 2)}",
                                      "ref_fasta": localization_task["ref_fasta"],
                                      "cytoband_file": localization_task["cytoband_file"]
                                    }
@@ -216,7 +217,7 @@ def ASCAT_Sim_Workflow(sim_profile=None,
                                         "ascat_t_baf": generate_ascat_data_task["ascat_tumor_BAF"],
                                         "ascat_seg_file": run_ascat_task["ascat_raw_segments"],
                                         "ground_truth_seg_file": ground_truth_seg_file,
-                                        "sample_name": f"{sample_label}_{purity}",
+                                        "sample_name": f"{sample_label}_{np.around(purity, 2)}",
                                         "ref_fasta": localization_task["ref_fasta"],
                                         "cytoband_file": localization_task["cytoband_file"]
                                        }
@@ -283,7 +284,7 @@ def Run_Sim_Workflows(sim_profile=None,
                       ref_build=None,
                       ref_fasta=None,
                       cytoband_file=None,
-                      ground_truth_purity=None, # compare all samples to a standard purity gt for MAD score consistancy
+                      ground_truth_purity=0.7, # compare all samples to a standard purity gt for MAD score consistancy
                       hapaseg_hetsite_depth_path=None,
                       hapaseg_covcollect_path=None,
                       hapaseg_target_list=2000,
@@ -314,7 +315,7 @@ def Run_Sim_Workflows(sim_profile=None,
                       ):
     seg_file_gen_task = Generate_Groundtruth_Segfile(inputs= {
                             "sample_label": sample_label,
-                            "purity":ground_truth_purity,
+                            "purity":ground_truth_purity if ground_truth_purity is not None else purity,
                             "sim_profile":sim_profile,
                             "normal_vcf_path":normal_vcf_path,
                             "hapaseg_hetsite_depth_path": hapaseg_hetsite_depth_path,
