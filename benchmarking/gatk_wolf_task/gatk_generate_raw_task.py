@@ -120,6 +120,25 @@ class GATK_DenoiseReadCounts(wolf.Task):
 
     docker = "broadinstitute/gatk:4.0.1.1"
 
+class GATK_Preprocess_Data(wolf.Task):
+    inputs = {
+               "frag_counts": None,
+               "allele_counts": None,
+               "sample_name": None
+             }
+
+    script = """
+    preprocess_raw_data.py --sample_name ${sample_name}\
+    --outdir ./ gatk --frag_counts ${frag_counts} --allele_counts ${allele_counts}
+    """
+    output_patterns = {
+                        "gatk_cov_counts": "*_gatk_cov_counts.tsv",
+                        "gatk_sim_normal_cov_counts": "*_gatk_sim_normal_frag.counts.hdf5",
+                        "gatk_var_depth" : "*_gatk_var_depth.tsv",
+                        "gatk_sim_normal_allele_counts" : "*_gatk_sim_normal_allele_counts.tsv"
+                      }
+    resources = {"mem": "12G"}
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
 
 def GATK_Generate_Raw_Data(input_bam=None,
                            input_bai=None,
@@ -133,12 +152,14 @@ def GATK_Generate_Raw_Data(input_bam=None,
                            bin_length=1000,
                            exclude_sex=False,
                            panel_of_normals=None,
-                           upload_bucket=None
+                           upload_bucket=None,
+                           persistent_dry_run = False # skip localization of files
                           ):
    
     bam_localization_task = LocalizeToDisk(files = {"bam" : input_bam,
                                                     "bai" : input_bai
-                                                    }
+                                                    },
+                                           persistent_disk_dry_run = persistent_dry_run
                                            )
  
     localization_task = LocalizeToDisk(files = {
@@ -147,7 +168,7 @@ def GATK_Generate_Raw_Data(input_bam=None,
                                 "ref_fasta_idx": ref_fasta_idx,
                                 "ref_fasta_dict": ref_fasta_dict,
                                 "panel_of_normals": panel_of_normals if panel_of_normals is not None else ""
-                                }  
+                                }
                             )
 
     preprocess_intervals_task = GATK_Preprocess_Intervals(inputs = {
@@ -224,11 +245,22 @@ def GATK_Generate_Raw_Data(input_bam=None,
         return outpath
 
     reformatted_dict = fix_seq_headers(collect_fragcounts_task["frag_counts_hdf"], interval_annotation_task["gatk_annotated_intervals"], exclude_sex)
-    
+
+    # process the raw data counts into formats the simulator can interpret
+    preprocess_raw_task = GATK_Preprocess_Data( inputs = {"frag_counts": collect_fragcounts_task["frag_counts_hdf"],
+                                                          "allele_counts": collect_acounts_task["allele_counts_tsv"],
+                                                          "sample_name": sample_name
+                                                         }
+                                              )
+
     if upload_bucket is not None:
         upload_task = UploadToBucket(files = [collect_acounts_task["allele_counts_tsv"],
                                               collect_fragcounts_task["frag_counts_hdf"],
-                                              reformatted_dict],
+                                              reformatted_dict,
+                                              preprocess_raw_task["gatk_cov_counts"],
+                                              preprocess_raw_task["gatk_sim_normal_cov_counts"],
+                                              preprocess_raw_task["gatk_var_depth"],
+                                              preprocess_raw_task["gatk_sim_normal_allele_counts"]],
                                      bucket = upload_bucket
                                     )
 
