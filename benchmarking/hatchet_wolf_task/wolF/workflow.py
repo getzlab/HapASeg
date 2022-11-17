@@ -2,10 +2,7 @@ import wolf
 from wolf.localization import LocalizeToDisk
 import prefect
 
-hatchet = wolf.ImportTask(
-  task_path = "../",
-  task_name = "hatchet"
-)
+from tasks import *
 
 def HATCHET_Normal_Depths(ref_fasta=None, # ref genome fasta file
                    ref_fasta_idx=None, # ref genome fai file  
@@ -50,7 +47,7 @@ def HATCHET_Normal_Depths(ref_fasta=None, # ref genome fasta file
                                        )
     
     # since hatchet needs a tumor to run on, we'll just subsample the normal to .01x
-    subsample_task = hatchet.subsample_bam(inputs = {"bam": bam_localization_task["n_bam"]})
+    subsample_task = subsample_bam(inputs = {"bam": bam_localization_task["n_bam"]})
 
     # if running on one sample, make normal into tumor (processing is done seperately on each bam)
     # hatchet only runs on autosome
@@ -59,7 +56,7 @@ def HATCHET_Normal_Depths(ref_fasta=None, # ref genome fasta file
      
     if normal_vcf_path == "":
         # no genotype passed, must genotype normal    
-        genotype_snps_task = hatchet.HATCHET_genotype_snps(inputs = {"ref_fasta": localization_task["ref_fasta"],
+        genotype_snps_task = HATCHET_genotype_snps(inputs = {"ref_fasta": localization_task["ref_fasta"],
                                                          "normal_bam": bam_localization_task["n_bam"], 
                                                          "normal_bai": bam_localization_task["n_bai"],
                                                          "vcf_file": localization_task["common_snp_vcf"],
@@ -82,7 +79,7 @@ def HATCHET_Normal_Depths(ref_fasta=None, # ref genome fasta file
                                 )
 
     
-    count_alleles_task = hatchet.HATCHET_count_alleles(inputs = {"ref_fasta": localization_task["ref_fasta"],
+    count_alleles_task = HATCHET_count_alleles(inputs = {"ref_fasta": localization_task["ref_fasta"],
                                                          "normal_bam": bam_localization_task["n_bam"],
                                                          "normal_bai": bam_localization_task["n_bai"],
                                                          "tumor_bam": subsample_task["subsampled_bam"],
@@ -93,7 +90,7 @@ def HATCHET_Normal_Depths(ref_fasta=None, # ref genome fasta file
                                                          "chromosomes": chromosomes})
   
     
-    count_reads_task = hatchet.HATCHET_count_reads(inputs = {"reference_genome_version": reference_genome_version,
+    count_reads_task = HATCHET_count_reads(inputs = {"reference_genome_version": reference_genome_version,
                                                              "normal_bam": bam_localization_task["n_bam"],
                                                              "normal_bai": bam_localization_task["n_bai"],
                                                              "tumor_bam": subsample_task["subsampled_bam"],
@@ -107,8 +104,8 @@ def HATCHET_Normal_Depths(ref_fasta=None, # ref genome fasta file
                    'count_reads_task': count_reads_task}
     
     if phase_snps:
-        download_phasing_panel_task = hatchet.HATCHET_download_phasing_panel()
-        phase_snps_task = hatchet.HATCHET_phase_snps(inputs = {"ref_fasta": localization_task["ref_fasta"],
+        download_phasing_panel_task = HATCHET_download_phasing_panel()
+        phase_snps_task = HATCHET_phase_snps(inputs = {"ref_fasta": localization_task["ref_fasta"],
                                                        "ref_fasta_idx": localization_task["ref_fasta_idx"],
                                                        "ref_fasta_dict": localization_task["ref_fasta_dict"],
                                                        "reference_panel_dir": [download_phasing_panel_task["ref_panel_dir"]],
@@ -129,7 +126,7 @@ def HATCHET_Normal_Depths(ref_fasta=None, # ref genome fasta file
         outputs = {"all_snps": "all_snps.txt"}
      )
 
-    post_process_totals_task = hatchet.reformat_hatchet_depth_outputs(inputs = {
+    post_process_totals_task = reformat_hatchet_depth_outputs(inputs = {
                                                             "all_depths_paths": [count_reads_task["total_counts_file"]],
                                                             "sample_path": count_reads_task["sample_names_file"][0]
                                                             }
@@ -144,15 +141,15 @@ def HATCHET_Main(tumor_snp_depths=None,
                  reference_genome_version="hg38",
                  phased_vcf = None):
     
-    combine_counts_task = hatchet.HATCHET_combine_counts(inputs = {"tumor_baf": tumor_snp_depths,
+    combine_counts_task = HATCHET_combine_counts(inputs = {"tumor_baf": tumor_snp_depths,
                                                            "count_reads_dir": count_reads_dir,
                                                            "total_counts_file": total_counts_file,
                                                            "reference_genome_version": reference_genome_version,
                                                            "phased_vcf_file": phased_vcf})
     
-    cluster_bins_task = hatchet.HATCHET_cluster_bins(inputs = {"bb_file": combine_counts_task["binned_counts_file"]})
+    cluster_bins_task = HATCHET_cluster_bins(inputs = {"bb_file": combine_counts_task["binned_counts_file"]})
     
-    plot_bins_task = hatchet.HATCHET_plot_bins(inputs = {
+    plot_bins_task = HATCHET_plot_bins(inputs = {
                                                            "clustered_bins": cluster_bins_task["clustered_bins"],
                                                            "clustered_segs": cluster_bins_task["clustered_segments"]
                                                         }
