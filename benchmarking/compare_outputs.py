@@ -77,9 +77,54 @@ def convert_gatk_output(gatk_df, # GATK finalModel.seg file
     gatk_df.to_csv(outpath, sep='\t', index=False)
     
 
-def convert_hatchet_output(hatchet_df, outpath):
-    pass
+# utility method for converting contiguous hatchet bins into segments based on cluster ID
+def hatchet_split_segs(chr_df, chrom):
+    cur_start = 0
+    cur_end = 0
+    cur_cluster=-1
+    segs = []
+    for i, (start, end, cluster) in chr_df.iloc[:, [1,2,-1]].iterrows():
+        if cluster != cur_cluster:
+            if cur_cluster != -1:
+                segs.append((chrom, cur_start, cur_end, cur_cluster))
+            cur_start = start
+            cur_end = end
+            cur_cluster = cluster
+        else:
+            cur_end = end
+    segs.append((chrom, cur_start, cur_end, cur_cluster))
+    return segs
+            
+def convert_hatchet_output(hatchet_seg_file, hatchet_bin_file, outpath):
+    
+    hatchet_bin_df = pd.read_csv(hatchet_bin_file, sep='\t')
+    hatchet_seg_df = pd.read_csv(hatchet_seg_file, sep='\t')
+    
+    if '#CHR' not in hatchet_bin_df.columns or 'RD' not in hatchet_seg_df.columns:
+        raise ValueError("expected CHR and RD columns. Are you sure the Hatchet clustered bins outputs were passed?")
+  
+    segs = []
+    for chrom, chr_df in hatchet_bin_df.groupby('#CHR'):
+        segs += hatchet_split_segs(chr_df, chrom)
+    
+    segs_df = pd.DataFrame(segs, columns = ['chr', 'start', 'end', 'cluster'])
+    
+    # now get the segment allelic coverage levels from the cluster attributes
+    segs_df['RD'] = np.nan
+    segs_df['BAF'] = np.nan
+    for clust, row in hatchet_seg_df.iterrows():
+        segs_df.loc[segs_df.cluster == row['#ID'], ['RD', 'BAF']] = row[['RD', 'BAF']].values
 
+    segs_df['mu.minor'] = segs_df['RD'] * segs_df['BAF']
+    segs_df['mu.major'] = segs_df['RD'] * (1 - segs_df['BAF'])
+    segs_df['sigma.major'] = segs_df['mu.major'] / 10
+    segs_df['sigma.minor'] = segs_df['mu.minor'] / 10
+    
+    #rename to follow conventions
+    segs_df.loc[:, 'chr']  = mut.convert_chr(segs_df['chr'])
+    segs_df = segs_df.rename({'chr': 'Chromosome', 'start': 'Start.bp', 'end': 'End.bp'}, axis=1)
+    
+    segs_df.to_csv(outpath, sep='\t', index=False)
 
 #### plotting method output compared to ground truth ####
 
@@ -358,8 +403,44 @@ def gatk_downstream_analysis(sim_gatk_cov_tsv, # gatk simulated tumor coverage d
     plot_inputs_savepath = os.path.join(outdir, f'{sample_name}_gatk_input_plot.png')
     plot_gatk_sim_input(sim_gatk_cov_tsv, sim_gatk_acounts,  ref_fasta, cytoband_file, plot_inputs_savepath)
 
-def hatchet_downstream_analysis():
-    pass
+def hatchet_downstream_analysis(hatchet_seg_file, # cluster bins output with cluster info
+                                hatchet_bin_file, # cluster bins output with bin-wise info
+                                gt_segfile, # path to ground truth segfile
+                                sample_name, # sample name. should be in sampleLabel_purity format
+                                ref_fasta, # reference fasta
+                                cytoband_file, # reference cytoband file
+                                outdir='./' # directory to save outputs
+                                ):
+    
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+    
+    # convert method output to seg format
+    converted_seg_outpath = os.path.join(outdir, f'{sample_name}_hatchet_converted_seg_file.tsv')
+    convert_hatchet_output(hatchet_seg_file, hatchet_bin_file, converted_seg_outpath)
+    
+    # compare seg file to ground truth + compute MAD
+    mad_score, opt_lb, opt_ub, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
+    comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_gatk_comparison_segfile.tsv')
+    seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
+    
+    # save other acr_compare data
+    mad_results_outpath = os.path.join(outdir, f'{sample_name}_hatchet_comparison_results.txt')
+    mad_res_df = pd.DataFrame({'mad_score':[mad_score],
+                               'optimal_lower_bound':[opt_lb],
+                               'optimal_upper_bound':[opt_ub],
+                               'non_overlap_length':[non_ov_len],
+                               'overlap_length':[ov_len]})
+    mad_res_df.to_csv(mad_results_outpath, sep='\t', index=False)
+
+    # plot comparison to gt
+    plot_savepath = os.path.join(outdir, f'{sample_name}_hatchet_comparison_plot.png')
+    plot_output_comp(comparison_segfile_outpath, ref_fasta, cytoband_file, mad_score, plot_savepath)
+
+    # plot inputs for sanity check (not implemented currently -- output plots are informative)
+    #plot_inputs_savepath = os.path.join(outdir, f'{sample_name}_hatchet_input_plot.png')
+    #plot_gatk_sim_input(sim_gatk_cov_tsv, sim_gatk_acounts,  ref_fasta, cytoband_file, plot_inputs_savepath)
+    
 
 def hapaseg_downstream_analysis(hapaseg_seg_file, # hapaseg output seg file
                                 gt_segfile, # path to ground truth segfile
@@ -423,6 +504,10 @@ def parse_args():
     gatk_post.add_argument("--gatk_sim_acounts", help="gatk simulated allelic coverage")
     gatk_post.add_argument("--gatk_seg_file", help="gatk modelFinal seg file")
     
+    hatchet_post = subparsers.add_parser("hatchet", help="run hatchet post-processing")
+    hatchet_post.add_argument("--hatchet_seg_file", help="hatchet seg tsv file from cluster bins outputs")
+    hatchet_post.add_argument("--hatchet_bin_file", help="hatchet bbc tsv bin file from cluster bins outputs")
+    
     args = parser.parse_args()
     
     return args
@@ -470,7 +555,17 @@ def main():
                                  args.ref_fasta,
                                  args.cytoband_file,
                                  args.outdir)
-        
+    
+    elif args.command == "hatchet":
+        print("running downstream analyses on hatchet", flush=True)
+        hatchet_downstream_analysis(args.hatchet_seg_file,
+                                    args.hatchet_bin_file,
+                                    args.ground_truth_segfile,
+                                    args.sample_name,
+                                    args.ref_fasta,
+                                    args.cytoband_file,
+                                    args.outdir)
+    
     else:
         raise ValueError(f"did not recognize command {args.command}")
 
