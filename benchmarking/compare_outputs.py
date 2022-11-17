@@ -421,7 +421,7 @@ def hatchet_downstream_analysis(hatchet_seg_file, # cluster bins output with clu
     
     # compare seg file to ground truth + compute MAD
     mad_score, opt_lb, opt_ub, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
-    comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_gatk_comparison_segfile.tsv')
+    comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_hatchet_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     
     # save other acr_compare data
