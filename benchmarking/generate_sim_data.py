@@ -453,9 +453,14 @@ def generate_hatchet_files(sim_profile_pickle=None,
     # Adjust Normal read counts to be 30x coverage - can remove this if we want to use true normal values (have separate bam for tumor and normal)
     # each bin has (bin size) * 30x coverage / average_read_length
     read_combined_df['n_int_reads'] = (interval_corr_df['end'].values - interval_corr_df['start'].values) * 30 / 150
+    # acrocentric arms and centromeres can lead to long regions with no reads. 
+    # need to zero these out to avoid issues with read depth ratios
+    read_combined_df.loc[read_combined_df['t_int_reads'] == 0, 'n_int_reads'] = 0
+    
     read_combined_df['n_int_reads'] = read_combined_df['n_int_reads'].astype(int)
     # every position has 30x coverage
     read_combined_df['n_pos_reads'] = 30
+    read_combined_df.loc[read_combined_df['t_pos_reads'] == 0, 'n_pos_reads'] = 0
 
     print("converting back to hatchet format", flush=True)
     for total_fn in total_fn_list_contigs:
