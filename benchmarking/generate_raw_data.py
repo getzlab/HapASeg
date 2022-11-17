@@ -52,7 +52,8 @@ class HapASeg_Preprocess_Callstats(wolf.Task):
     --outdir ./ hapaseg --callstats ${callstats}
     """
     output_patterns = {"hapaseg_hetsite_depths": "*depth.tsv",
-                       "hapaseg_filtered_cs": "*_filtered.tsv" 
+                       "hapaseg_filtered_cs": "*_filtered.tsv", 
+                       "hapaseg_genotype": "*_genotype.tsv"
                       }
     resources = {"mem": "12G"}
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
@@ -109,7 +110,8 @@ def Generate_Hapaseg_Raw_Data_Workflow(
              wgs=True,
              db_snp_vcf=None, # for facets variant filtering
              ascat_loci_list=None, # for ascat variant filtering
-             upload_bucket_gs_path=None
+             upload_bucket_gs_path=None,
+             persistent_dry_run=False
              ):
     
     if ref_genome_build == "hg38":
@@ -127,6 +129,7 @@ def Generate_Hapaseg_Raw_Data_Workflow(
             "bam" : bam,
             "bai" : bai,
           },
+          persistent_disk_dry_run = persistent_dry_run
     )
     
     localization_task = wolf.LocalizeToDisk(
@@ -147,7 +150,7 @@ def Generate_Hapaseg_Raw_Data_Workflow(
                 # reference panel
                 **ref_config["ref_panel_1000g"]
                     )
-        ) 
+        )
     # create mutect scatter chunks
   
     split_vcf = wolf.Task(
@@ -236,44 +239,19 @@ def Generate_Hapaseg_Raw_Data_Workflow(
       outputs = { "cs_gather" : "*mutect_callstats.tsv" }
     )
 
+    # use hapaseg callstats filtering to grab the genotypes
+    hapaseg_cs_task = HapASeg_Preprocess_Callstats(inputs = {
+                                        "callstats": m1_gather["cs_gather"],
+                                        "sample_name": sample_name
+                                        }
+                                    )
 
     # phasing will be the same for all benchmarking runs so we will also cache this result
-    hp_scatter = het_pulldown.get_het_coverage_from_callstats(
-          callstats_file = m1_scatter["mutect1_cs"],
-          common_snp_list = localization_task["common_snp_list"],
-          ref_fasta = localization_task["ref_fasta"],
-          ref_fasta_idx = localization_task["ref_fasta_idx"],
-          ref_fasta_dict = localization_task["ref_fasta_dict"],
-          use_pod_genotyper = True
-        )
-
-    # gather het pulldown for eagle
-    hp_task = wolf.Task(
-          name = "hp_gather",
-          inputs = {
-            "tumor_hets" : [hp_scatter["tumor_hets"]],
-            "normal_hets" : [hp_scatter["normal_hets"]],
-            "normal_genotype" : [hp_scatter["normal_genotype"]],
-          },
-          script = """
-          cat <(cat $(head -n1 ${normal_genotype}) | head -n1) \
-            <(for f in $(cat ${normal_genotype}); do sed 1d $f; done | sort -k1,1V -k2,2n) > normal_genotype.txt
-          cat <(cat $(head -n1 ${normal_hets}) | head -n1) \
-            <(for f in $(cat ${normal_hets}); do sed 1d $f; done | sort -k1,1V -k2,2n) > normal_hets.txt
-          cat <(cat $(head -n1 ${tumor_hets}) | head -n1) \
-            <(for f in $(cat ${tumor_hets}); do sed 1d $f; done | sort -k1,1V -k2,2n) > tumor_hets.txt
-          """,
-          outputs = {
-            "tumor_hets" : "tumor_hets.txt",
-            "normal_hets" : "normal_hets.txt",
-            "normal_genotype" : "normal_genotype.txt",
-          }
-        )
 
     convert_task = wolf.Task(
       name = "convert_het_pulldown",
       inputs = {
-        "genotype_file" : hp_task["normal_genotype"],
+        "genotype_file" : hapaseg_cs_task["hapaseg_genotype"],
         "sample_name" : "test", # TODO: allow to be specified
         "ref_fasta" : localization_task["ref_fasta"],
         "ref_fasta_idx" : localization_task["ref_fasta_idx"],
@@ -334,9 +312,9 @@ def Generate_Hapaseg_Raw_Data_Workflow(
         vcf_ref = F["ref_bcf"],
         vcf_ref_idx = F["ref_bcf_idx"],
         output_file_prefix = "foo",
-        num_threads = 2,
+        num_threads = 1,
       ),
-      resources = { "cpus-per-task" : 2, "mem":'4G'},
+      resources = { "cpus-per-task" : 2, "mem":'8G'},
       outputs = {"phased_vcf" : "foo.vcf"}
     )
 
@@ -351,11 +329,6 @@ def Generate_Hapaseg_Raw_Data_Workflow(
     )
 
     # preprocess callstats
-    hapaseg_cs_task = HapASeg_Preprocess_Callstats(inputs = {
-                                        "callstats": m1_gather["cs_gather"],
-                                        "sample_name": sample_name
-                                        }
-                                    )
 
     facets_cs_task = Facets_Preprocess_Callstats(inputs = {
                                         "callstats": m1_gather["cs_gather"],
@@ -381,7 +354,8 @@ def Generate_Hapaseg_Raw_Data_Workflow(
                       )
 
         upload_hapaseg_task = UploadToBucket(files = [hapaseg_cs_task["hapaseg_hetsite_depths"],
-                                                      hapaseg_cs_task["hapaseg_filtered_cs"]],
+                                                      hapaseg_cs_task["hapaseg_filtered_cs"],
+                                                      hapaseg_cs_task["hapaseg_genotype"]],
                        bucket = upload_bucket_gs_path.rstrip('/') + '/hapaseg/'
                       )
 

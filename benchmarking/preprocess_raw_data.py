@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 import scipy.stats as s
 import h5py
-
+import subprocess
 
 ###################
 # these functions take the raw coverage and callstats files and filter them according
@@ -14,10 +14,11 @@ import h5py
 
 # read in callstats and trim useless columns
 def load_callstats(callstats_file):
-    CS = pd.read_csv(callstats_file, sep='\t', low_memory=False, comment="#")
-    CS = CS.loc[:, ['contig', 'position', 'ref_allele', 'alt_allele', 'total_reads', 'map_Q0_reads', 't_ref_count', 't_alt_count', 'n_ref_count', 'n_alt_count']]
-    CS = CS.rename({'contig':'chr', 'position':'pos', 'ref_allele':'ref', 'alt_allele':'alt', 'map_Q0_reads':'mapq0_reads', 't_ref_count': 't_refcount', 't_alt_count': 't_altcount', 'n_ref_count': 'n_refcount', 'n_alt_count':'n_altcount'}, axis=1)
-    CS = CS.astype({ "chr" : str, "pos" : np.uint32, "total_reads" : np.uint32, "mapq0_reads" : np.uint32, "t_refcount" : np.uint32, "t_altcount" : np.uint32, "n_refcount" : np.uint32, "n_altcount" : np.uint32 })
+    callstats_trimmed = subprocess.Popen("sed '1,2d' {} | cut -f1,2,4,5,16,17,26,27,38,39".format(callstats_file), shell = True, stdout = subprocess.PIPE)
+    CS = pd.read_csv(callstats_trimmed.stdout, sep = "\t",
+      names = ["chr", "pos", "ref", "alt", "total_reads", "mapq0_reads", "t_refcount", "t_altcount", "n_refcount", "n_altcount"],
+          dtype = { "chr" : str, "pos" : np.uint32, "total_reads" : np.uint32, "mapq0_reads" : np.uint32, "t_refcount" : np.uint32, "t_altcount" : np.uint32, "n_refcount" : np.uint32, "n_altcount" : np.uint32 }
+    )
     return CS
 
 # HapASeg
@@ -44,16 +45,28 @@ def hapaseg_cs_filtering(callstats_file = None,
     CS['bdens'] = s.beta.cdf(0.6, A + 1, B + 1) - s.beta.cdf(0.4, A + 1, B + 1)
     good_pod_idx = CS["log_pod"] < 2.15
     good_bdens_idx = CS['bdens'] > 0.7
-    good_idx = good_pod_idx & good_bdens_idx
-    CS = CS.loc[good_idx]
+    ample_cov = CS.loc[:, ["t_refcount", "t_altcount"]].sum(1) > 8
+    CS['bden_hom'] =  1 - s.beta.cdf(0.95, A + 1, B + 1)
+   
+    good_idx = good_pod_idx & good_bdens_idx & ample_cov
 
-    # posterior odds are not influenced by coverage, so still need to filter out poorly covered snps
-    CS = CS.loc[CS.total_reads > 8]
-    V = CS[['chr', 'pos', 't_refcount', 't_altcount']]
+    V = CS.loc[good_idx, ['chr', 'pos', 't_refcount', 't_altcount']]
     V.to_csv(os.path.join(outdir, f'./hapaseg_{sample_name}_hetsites_cs_filtered.tsv'), sep = '\t', index=False)
-    D = CS[['chr', 'pos', 'total_reads']]
+    D = CS.loc[good_idx, ['chr', 'pos', 'total_reads']]
     D.to_csv(os.path.join(outdir, f'./hapaseg_{sample_name}_hetsites_depth.tsv'), sep = '\t', header=None,index=False)
 
+    # also return genotype
+    hom_idx = CS['bden_hom'] > 0.7
+    genotype_idxs = ample_cov & ((good_pod_idx & good_bdens_idx) | hom_idx)
+    
+    G = CS.loc[genotype_idxs, ['chr', 'pos', 'ref', 'alt']]
+    
+    alleles = np.c_[G.alt.values, G.ref.values]
+    # create genotype for confidently homozygous sites
+    alleles[hom_idx[genotype_idxs], 1] = alleles[hom_idx[genotype_idxs], 0]
+    
+    G['genotype'] =  [ref + alt for alt, ref in alleles]
+    G[['chr', 'pos', 'genotype']].to_csv(os.path.join(outdir, f'./hapaseg_{sample_name}_genotype.tsv'), sep = '\t', index=False)
 
 # Facets
 
