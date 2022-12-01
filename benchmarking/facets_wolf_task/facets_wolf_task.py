@@ -1,5 +1,53 @@
 import wolf
+from wolf.localization import LocalizeToDisk, UploadToBucket
 
+class Facets_SNP_Pileup(wolf.Task):
+    inputs = {"vcf": None,
+              "normal_bam": None,
+              "normal_bai": None,
+              "tumor_bam" : None,
+              "tumor_bai" : None
+             }
+    script = """
+    snp-pileup -q15 -Q20 -P100 -r25,0 ${vcf} -p ./facets_allelecounts.txt ${normal_bam} ${tumor_bam}
+    """
+    output_patterns = {
+    "facets_allelecounts" : "facets_allelecounts.txt",
+    }
+    
+    resources = {"cpus-per-task": 4, "mem" : "12G"}
+    docker = "gcr.io/broad-getzlab-workflows/facets:v1"
+
+def Facets_Generate_Raw(vcf = None,
+                        normal_bam=None,
+                        normal_bai=None,
+                        tumor_bam=None,
+                        tumor_bai=None,
+                        upload_bucket=None):
+    
+    t_bam_localization_task = wolf.LocalizeToDisk(
+        files = {
+            "bam" : tumor_bam,
+            "bai" : tumor_bai
+                }
+        )
+    n_bam_localization_task = wolf.LocalizeToDisk(
+        files = {
+            "bam" : normal_bam,
+            "bai" : normal_bai
+                }
+        )
+
+    pileups_task = Facets_SNP_Pileup(inputs = {"vcf": vcf,
+                                "normal_bam": n_bam_localization_task["bam"],
+                                "normal_bai": n_bam_localization_task["bai"],
+                                "tumor_bam": t_bam_localization_task["bam"],
+                                "tumor_bai": t_bam_localization_task["bai"]
+                               }
+                     )
+    if upload_bucket is not None:
+        upload_task = UploadToBucket(files = pileups_task["facets_allelecounts"],
+                                     bucket = upload_bucket.rstrip("/") + 'facets/')
 class Facets(wolf.Task):
     inputs = {'snp_counts': None}
     
