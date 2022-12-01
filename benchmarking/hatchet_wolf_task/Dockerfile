@@ -1,4 +1,4 @@
-FROM gcr.io/broad-getzlab-workflows/base_image:v0.0.5
+FROM gcr.io/broad-getzlab-workflows/base_image:v0.0.6
 
 WORKDIR /build
 
@@ -47,6 +47,8 @@ ENV HATCHET_BUILD_NOEXT 1
 RUN export HATCHET_BUILD_NOEXT
 ENV HATCHET_COMPUTE_CN_SOLVER cbc
 RUN export HATCHET_COMPUTE_CN_SOLVER
+
+ARG CACHE_INVALIDATE=2
 RUN git clone https://github.com/oliverpriebe/hatchet.git && cd hatchet && pip install .
 
 #
