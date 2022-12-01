@@ -118,3 +118,24 @@ class Downstream_Facets_Analysis(wolf.Task):
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
 
+class Downstream_Hatchet_Analysis(wolf.Task):
+    inputs = {"hatchet_seg_file": None,
+              "hatchet_bin_file": None,
+              "ground_truth_seg_file": None,
+              "sample_name": None,
+              "ref_fasta": None,
+              "cytoband_file": None,
+             }
+              
+    script = """
+    compare_outputs.py --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --ground_truth_segfile ${ground_truth_seg_file} --outdir . hatchet --hatchet_seg_file ${hatchet_seg_file} --hatchet_bin_file ${hatchet_bin_file} 
+    """
+
+    output_patterns = {"comparison_plot": "*_hatchet_comparison_plot.png",
+                       "comparison_results" : "*_hatchet_comparison_results.txt",
+                       "comparison_segfile": "*_hatchet_comparison_segfile.tsv",
+                      }
+
+    resources = {"mem":"2G"}
+
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
