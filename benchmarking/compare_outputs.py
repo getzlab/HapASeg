@@ -45,9 +45,13 @@ def convert_facets_output(facets_df, # facets segments file
     if 'cnlr.median' not in facets_df.columns or 'mafR' not in facets_df.columns:
         raise ValueError("expected cnlr.median and mafR columns. Are you sure a Facets segments file was passed?")
     
-    facets_df['mu.major'] = np.exp2(facets_df['cnlr.median']) * np.exp(facets_df['mafR'])
-    facets_df['mu.minor'] = np.exp2(facets_df['cnlr.median']) * (1-np.exp(facets_df['mafR']))
+    # FACETS outputs allelic imbalance as log-odds ratio; use inverse logit
+    # to convert to f \in [0, 1]
+    f = np.exp2(facets_df["mafR"])/(1 + np.exp2(facets_df["mafR"]))
 
+    facets_df['mu.major'] = np.exp2(facets_df['cnlr.median']) * f
+    facets_df['mu.minor'] = np.exp2(facets_df['cnlr.median']) * (1-f)
+    
     facets_df = facets_df.rename({'chrom':'Chromosome', 'start':'Start.bp', 'end':'End.bp'}, axis=1)
     facets_df = facets_df[['Chromosome', 'Start.bp', 'End.bp', 'mu.major', 'mu.minor']]
     facets_df.Chromosome = mut.convert_chr(facets_df.Chromosome)
