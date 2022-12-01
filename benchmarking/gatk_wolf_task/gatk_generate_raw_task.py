@@ -151,10 +151,11 @@ def GATK_Generate_Raw_Data(input_bam=None,
                            sample_name=None,
                            bin_length=1000,
                            exclude_sex=False,
-                           panel_of_normals=None,
                            upload_bucket=None,
-                           persistent_dry_run = False # skip localization of files
-                          ):
+                           persistent_dry_run = False, # skip localization of files
+                           preprocess_tumor_bam = True # if this bam will be used for generating sim tumor files
+                                                       # pass true to complete the requisite pre_processing   
+                        ):
    
     bam_localization_task = LocalizeToDisk(files = {"bam" : input_bam,
                                                     "bai" : input_bai
@@ -167,7 +168,6 @@ def GATK_Generate_Raw_Data(input_bam=None,
                                 "ref_fasta": ref_fasta,
                                 "ref_fasta_idx": ref_fasta_idx,
                                 "ref_fasta_dict": ref_fasta_dict,
-                                "panel_of_normals": panel_of_normals if panel_of_normals is not None else ""
                                 }
                             )
 
@@ -201,66 +201,71 @@ def GATK_Generate_Raw_Data(input_bam=None,
                                   "exclude_sex": exclude_sex
                                  }
                             )
-
-    interval_annotation_task = GATK_AnnotateIntervals(inputs = {
-                                  "ref_fasta": localization_task["ref_fasta"],
-                                  "ref_fasta_idx": localization_task["ref_fasta_idx"],
-                                  "ref_fasta_dict": localization_task["ref_fasta_dict"],
-                                  "interval_list": preprocess_intervals_task["gatk_interval_list"],
-                                  "interval_name":interval_name,
-                                 }
-                            )
-
-    # shim task for fixing annotation headers
-    @prefect.task
-    def fix_seq_headers(hdf_path, annot_interval_path, exclude_sex):
-        f = h5py.File(hdf_path, 'r')
-        dict_line = f['locatable_metadata/sequence_dictionary'][:][0].decode().split('\n')[1]
-        search_res = re.search(r".*\tUR:(.*?)\t.*$", dict_line)
-        if search_res is not None:
-            # if ur tag exists in the fragcounts meta replace it with the tag from the intervals
-            ur = search_res.groups()[0]
-            with open(annot_interval_path, 'r') as f:
-                lines = f.readlines()
-
-            newlines = [re.sub(r'UR:.*?\t', 'UR:' + ur + '\t', l) for l in lines] 
-        
-            outpath = annot_interval_path[:-4] + 'reformatted.tsv'
-            with open(outpath, 'w') as f:
-                for l in newlines:
-                    f.write(l)
-        else:
-            outpath = annot_interval_path    
     
-        if exclude_sex:
-            # remove sex chromosomes from annotated intervals 
-            # since GATK will otherwise throw error
-            autosomal_outpath = outpath[:-4] + '_no_sex.tsv'
-            subprocess.Popen(f"cat {outpath} | grep -v '^chrX' | grep -v 'chrY' > {autosomal_outpath}", shell=True)
+    if preprocess_tumor_bam:
+        interval_annotation_task = GATK_AnnotateIntervals(inputs = {
+                                      "ref_fasta": localization_task["ref_fasta"],
+                                      "ref_fasta_idx": localization_task["ref_fasta_idx"],
+                                      "ref_fasta_dict": localization_task["ref_fasta_dict"],
+                                      "interval_list": preprocess_intervals_task["gatk_interval_list"],
+                                      "interval_name":interval_name,
+                                     }
+                                )
+
+        # shim task for fixing annotation headers
+        @prefect.task
+        def fix_seq_headers(hdf_path, annot_interval_path, exclude_sex):
+            f = h5py.File(hdf_path, 'r')
+            dict_line = f['locatable_metadata/sequence_dictionary'][:][0].decode().split('\n')[1]
+            search_res = re.search(r".*\tUR:(.*?)\t.*$", dict_line)
             if search_res is not None:
-                # remove file with sex chromosomes
-                 subprocess.Popen(f"rm -f {outpath}", shell=True)
-            outpath = autosomal_outpath
-    
-        return outpath
+                # if ur tag exists in the fragcounts meta replace it with the tag from the intervals
+                ur = search_res.groups()[0]
+                with open(annot_interval_path, 'r') as f:
+                    lines = f.readlines()
 
-    reformatted_dict = fix_seq_headers(collect_fragcounts_task["frag_counts_hdf"], interval_annotation_task["gatk_annotated_intervals"], exclude_sex)
+                newlines = [re.sub(r'UR:.*?\t', 'UR:' + ur + '\t', l) for l in lines] 
+            
+                outpath = annot_interval_path[:-4] + 'reformatted.tsv'
+                with open(outpath, 'w') as f:
+                    for l in newlines:
+                        f.write(l)
+            else:
+                outpath = annot_interval_path    
+        
+            if exclude_sex:
+                # remove sex chromosomes from annotated intervals 
+                # since GATK will otherwise throw error
+                autosomal_outpath = outpath[:-4] + '_no_sex.tsv'
+                subprocess.Popen(f"cat {outpath} | grep -v '^chrX' | grep -v 'chrY' > {autosomal_outpath}", shell=True)
+                if search_res is not None:
+                    # remove file with sex chromosomes
+                     subprocess.Popen(f"rm -f {outpath}", shell=True)
+                outpath = autosomal_outpath
+        
+            return outpath
 
-    # process the raw data counts into formats the simulator can interpret
-    preprocess_raw_task = GATK_Preprocess_Data( inputs = {"frag_counts": collect_fragcounts_task["frag_counts_hdf"],
-                                                          "allele_counts": collect_acounts_task["allele_counts_tsv"],
-                                                          "sample_name": sample_name
-                                                         }
-                                              )
+        reformatted_dict = fix_seq_headers(collect_fragcounts_task["frag_counts_hdf"], interval_annotation_task["gatk_annotated_intervals"], exclude_sex)
+
+        # process the raw data counts into formats the simulator can interpret
+        preprocess_raw_task = GATK_Preprocess_Data( inputs = {"frag_counts": collect_fragcounts_task["frag_counts_hdf"],
+                                                              "allele_counts": collect_acounts_task["allele_counts_tsv"],
+                                                              "sample_name": sample_name
+                                                             }
+                                                  )
 
     if upload_bucket is not None:
+        # upload common outputs
         upload_task = UploadToBucket(files = [collect_acounts_task["allele_counts_tsv"],
-                                              collect_fragcounts_task["frag_counts_hdf"],
-                                              reformatted_dict,
-                                              preprocess_raw_task["gatk_cov_counts"],
-                                              preprocess_raw_task["gatk_sim_normal_cov_counts"],
-                                              preprocess_raw_task["gatk_var_depth"],
-                                              preprocess_raw_task["gatk_sim_normal_allele_counts"]],
+                                              collect_fragcounts_task["frag_counts_hdf"]],
                                      bucket = upload_bucket
                                     )
 
+        if preprocess_tumor_bam:
+            preprocess_upload_task = UploadToBucket(files = [reformatted_dict,
+                                                  preprocess_raw_task["gatk_cov_counts"],
+                                                  preprocess_raw_task["gatk_sim_normal_cov_counts"],
+                                                  preprocess_raw_task["gatk_var_depth"],
+                                                  preprocess_raw_task["gatk_sim_normal_allele_counts"]],
+                                         bucket = upload_bucket
+                                                   )
