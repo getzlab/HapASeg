@@ -174,6 +174,63 @@ def gatk_preprocessing(gatk_fragcounts = None,
     gatk_var_depth.to_csv(os.path.join(outdir, f'{sample_name}_gatk_var_depth.tsv'), sep='\t', index=False)
     gatk_sim_normal_allele_counts.to_csv(os.path.join(outdir, f'{sample_name}_gatk_sim_normal_allele_counts.tsv'), sep='\t', index=False)
 
+def hatchet_preprocessing(totals_file_paths_txt = None,
+                          thresholds_file_paths_txt = None,
+                          tumor_baf_path = None,
+                          sample_name = None,
+                          outdir = './' ):
+    
+    total_reads_paths = open(totals_file_paths_txt, 'r').read().split()
+    thresholds_snps_paths = open(thresholds_file_paths_txt, 'r').read().split()
+
+    if len(total_reads_paths) != len(thresholds_snps_paths):
+        raise ValueError("number of totals and thresholds files found did not match!")
+
+    interval_corr_lst = []
+    position_corr_lst = []
+    read_combined_lst = []
+
+    print("Reading in total and threshold counts by chromosome")
+    l_bname = lambda x: os.path.basename(x)
+    for total_fn, threshold_fn in zip(sorted(total_reads_paths, key = l_bname), sorted(thresholds_snps_paths, key = l_bname)):
+        if os.path.basename(total_fn).rstrip('total.gz') != os.path.basename(threshold_fn).rstrip('thresholds.gz'):
+            raise ValueError("chromosomes in total and thesholds files did no match up")
+
+        this_read_df = pd.read_csv(total_fn, sep=' ', header=None, names=['n_int_reads', 'n_pos_reads', 't_int_reads', 't_pos_reads'])
+        this_thresholds_df = pd.read_csv(threshold_fn, sep='\t', header=None, names=['threshold'])
+        
+        int_corr = pd.concat([this_thresholds_df['threshold'], pd.Series(np.append(this_thresholds_df.loc[1:, 'threshold'], this_thresholds_df.values[-1])), this_read_df['t_int_reads']], axis=1)
+        int_corr.columns = ['start', 'end', 'covcorr']
+        chrom = os.path.basename(total_fn).rstrip('total.gz')
+        int_corr['contig'] = chrom
+        pos_corr = pd.concat([this_thresholds_df['threshold'], this_thresholds_df['threshold'] + 1, this_read_df['t_pos_reads']], axis=1)
+        pos_corr.columns = ['start', 'end', 'covcorr']
+        pos_corr['contig'] = chrom
+
+        this_read_df['contig'] = chrom
+        interval_corr_lst.append(int_corr)
+        position_corr_lst.append(pos_corr)
+        read_combined_lst.append(this_read_df)
+
+    interval_corr_df = pd.concat(interval_corr_lst)
+    position_corr_df = pd.concat(position_corr_lst)
+    read_combined_df = pd.concat(read_combined_lst)
+    
+    #
+    int_counts_sim_fn = os.path.join(outdir, f'{sample_name}_interval_counts.for_simulation_input.txt')
+    pos_counts_sim_fn = os.path.join(outdir, f'{sample_name}_position_counts.for_simulation_input.txt')
+    snp_counts_sim_fn = os.path.join(outdir, f'{sample_name}_snp_counts.for_simulation_input.txt')
+    read_combined_fn = os.path.join(outdir, f'{sample_name}_read_combined_df.txt')
+
+    interval_corr_df.to_csv(int_counts_sim_fn, sep='\t', index=False, columns=['contig', 'start', 'end', 'covcorr'], header=False)
+    position_corr_df.to_csv(pos_counts_sim_fn, sep='\t', index=False, columns=['contig', 'start', 'end', 'covcorr'], header=False)
+    read_combined_df.to_csv(read_combined_fn, sep='\t', index=False)
+ 
+    snp_counts_1bed = pd.read_csv(tumor_baf_path, sep='\t', header=None, names=['contig', 'pos', 'sample', 'ref_count', 'alt_count'])
+    snp_counts_1bed['depth'] = snp_counts_1bed['ref_count'] + snp_counts_1bed['alt_count']
+    snp_counts_1bed.to_csv(snp_counts_sim_fn, sep='\t', index=False, columns=['contig', 'pos', 'depth'])
+
+    
 def parse_args():
     parser = argparse.ArgumentParser(description = "preprocess callstats file for benchmarking methods use")
     parser.add_argument("--sample_name", required = True, help="name of sample for file naming")
@@ -200,6 +257,11 @@ def parse_args():
     gatk.add_argument("--frag_counts", required=True, help="path to gatk frag counts hdf5 file")
     gatk.add_argument("--allele_counts", required=True, help="path to gatk allele counts file")
 
+    #Hatchet
+    hatchet = subparsers.add_parser("hatchet", help="preprocess hatchet raw data")
+    hatchet.add_argument("--totals_file_paths", required=True, help="path to txt file containing locations of chr{}.total files")
+    hatchet.add_argument("--thresholds_file_paths", required=True, help = "path to txt file containing locations of chr{}.thresholds files")
+    hatchet.add_argument("--tumor_baf_path", required=True, help= "path to hatchet allelecounts results")
     args = parser.parse_args()
     
     return args
@@ -236,6 +298,14 @@ def main():
                           gatk_allelecounts = args.allele_counts,
                           sample_name = args.sample_name,
                           outdir=output_dir)
+    
+    elif args.command == "hatchet":
+        print("processing hatchet raw data for benchmarking...", flush = True)
+        hatchet_preprocessing(totals_file_paths_txt = args.totals_file_paths,
+                              thresholds_file_paths_txt = args.thresholds_file_paths,
+                              tumor_baf_path = args.tumor_baf_path,
+                              sample_name = args.sample_name,
+                              outdir = output_dir)
     else:
         raise ValueError(f"could not recognize command {args.command}")
 if __name__ == "__main__":
