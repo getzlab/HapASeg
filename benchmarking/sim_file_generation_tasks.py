@@ -62,13 +62,21 @@ class Generate_Facets_Sim_Data(wolf.Task):
               "sample_label": None,
               "normal_vcf_path": None,
               "variant_depth_path": None,
-              "filtered_variants_path":None}
+              "filtered_variants_path": "",
+              "normal_callstats_path": ""}
     
-    script = """
-    generate_sim_data.py --sim_profile ${sim_profile} --purity ${purity} \
-    --output_dir . --out_label ${sample_label} facets --normal_vcf_path ${normal_vcf_path}\
-    --variant_depth_path ${variant_depth_path} --filtered_variants_path ${filtered_variants_path}\
-    """
+    def script(self):
+        script = """
+        generate_sim_data.py --sim_profile ${sim_profile} --purity ${purity} \
+        --output_dir . --out_label ${sample_label} facets --normal_vcf_path ${normal_vcf_path}\
+        --variant_depth_path ${variant_depth_path}"""
+        
+        if self.conf["inputs"]["filtered_variants_path"] != "":
+            script += " --filtered_variants_path ${filtered_variants_path}"
+        if self.conf["inputs"]["normal_callstats_path"] != "":
+            script += " --normal_callstats_path ${normal_callstats_path}"
+
+        return script
 
     output_patterns = {
     "facets_input_counts": "*_facets_input_counts.csv"
@@ -84,13 +92,21 @@ class Generate_ASCAT_Sim_Data(wolf.Task):
               "sample_label": None,
               "normal_vcf_path": None,
               "variant_depth_path": None,
-              "filtered_variants_path":None}
-    
-    script = """
-    generate_sim_data.py --sim_profile ${sim_profile} --purity ${purity} \
-    --output_dir . --out_label ${sample_label} ascat --normal_vcf_path ${normal_vcf_path}\
-    --variant_depth_path ${variant_depth_path} --filtered_variants_path ${filtered_variants_path}\
-    """
+              "filtered_variants_path": "",
+              "normal_callstats_path" : ""}
+   
+    def script(self): 
+        script = """
+        generate_sim_data.py --sim_profile ${sim_profile} --purity ${purity} \
+        --output_dir . --out_label ${sample_label} ascat --normal_vcf_path ${normal_vcf_path}\
+        --variant_depth_path ${variant_depth_path}"""
+        
+        if self.conf["inputs"]["filtered_variants_path"] != "":
+            script += " --filtered_variants_path ${filtered_variants_path}"
+        if self.conf["inputs"]["normal_callstats_path"] != "":
+            script += " --normal_callstats_path ${normal_callstats_path}"
+
+        return script
 
     output_patterns = {
     "ascat_tumor_logR" : "*_ascat_tumor_LogR.txt",
@@ -110,22 +126,29 @@ class Generate_HATCHet_Sim_Data(wolf.Task):
               "sample_label": None,
               "normal_vcf_path": None,
               "tumor_baf_path": None,
-              "total_reads_paths": None,
-              "thresholds_snps_paths": None,
-              "total_tsv_path": None}
+              "int_counts_file": None,
+              "pos_counts_file": None,
+              "snp_counts_file": None,
+              "read_combined_file": None
+             }
     
     script = """
     generate_sim_data.py --sim_profile ${sim_profile} --purity ${purity} \
     --output_dir . --out_label ${sample_label} hatchet --normal_vcf_path ${normal_vcf_path}\
-    --tumor_baf_path ${tumor_baf_path} --total_reads_paths ${total_reads_paths}\
-    --thresholds_snps_paths ${thresholds_snps_paths} --total_tsv_path ${total_tsv_path}
+    --tumor_baf_path ${tumor_baf_path} --int_counts_file ${int_counts_file}\
+    --pos_counts_file ${pos_counts_file} --snp_counts_file ${snp_counts_file}\
+    --read_combined_file ${read_combined_file}
     """
 
     output_patterns = {
-    "hatchet_total_bin_reads_dir" : "./rdr/",
-    "hatchet_tumor_snp_depths" : "*_tumor.1bed",
-    "hatchet_total_counts" : "*_total.tsv"
-    }
+                "samples_file" : "./hatchet_data/samples.txt",
+                "transformed_int_counts": "*_interval_counts.transformed.txt",
+                "transformed_pos_counts": "*_position_counts.transformed.txt",
+                "transformed_snp_counts": "*_snp_counts.transformed.txt",
+                "total_count": "./hatchet_data/total.tsv",
+                "tumor_snp_counts": "./hatchet_data/tumor.1bed",
+                "totals_files": "./hatchet_data/*.total.gz",
+                }
     
     resources = {"cpus-per-task":2, "mem":"6G"}
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
