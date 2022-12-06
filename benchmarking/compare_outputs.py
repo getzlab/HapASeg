@@ -378,7 +378,7 @@ def hapaseg_downstream_analysis(hapaseg_seg_file, # hapaseg output seg file
     
     # hapaseg output is already in proper format so doesnt need to be converted
     # output is on same scale as ground truth so no parameter fitting necessary
-    mad_score, opt_scale_factor, opt_purity, non_ov_len, ov_len, seg_df = acr_compare(hapaseg_seg_file, gt_segfile, fit_params=False)
+    mad_score, opt_scale_factor, opt_purity, non_ov_len, ov_len, seg_df = acr_compare(hapaseg_seg_file, gt_segfile, fit_params=True)
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_hapaseg_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     
