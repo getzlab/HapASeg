@@ -140,6 +140,36 @@ class GATK_Preprocess_Data(wolf.Task):
     resources = {"mem": "12G"}
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
 
+
+class Filter_GATK_Interval_List(wolf.Task):
+    inputs = {"interval_list": None,
+              "chrs_to_exclude": None
+             }
+
+    script = """
+    GREP_EXCLUSION_LIST=$(echo ${chrs_to_exclude} | sed "s/ /|/g")
+    cat ${interval_list} | grep -vE "^(${GREP_EXCLUSION_LIST})" > $(basename ${interval_list/.interval_list/.chrs_removed.interval_list})
+    """
+
+    output_patterns = {'interval_list': "*interval_list"}
+    docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.6"
+
+class GATK_create_single_normal_PoN(wolf.Task):
+    inputs = {'normal_read_counts_hdf5': None,
+              'annotation_file': None,
+              'sample_name': None}
+    
+    script = """\
+        gatk --java-options '-Xmx10g' CreateReadCountPanelOfNormals -I ${normal_read_counts_hdf5} \
+        -O ${sample_name}_normal_sample_PoN.hdf5 --annotated-intervals ${annotation_file} 
+    """
+    
+    output_patterns = {'PoN_hdf' :'*PoN.hdf5'}
+    
+    docker = 'broadinstitute/gatk:4.0.1.1'
+
+    resources = {"cpus-per-task": 4, 'mem': '12G'}
+
 def GATK_Generate_Raw_Data(input_bam=None,
                            input_bai=None,
                            vcf_file=None,
@@ -153,10 +183,17 @@ def GATK_Generate_Raw_Data(input_bam=None,
                            exclude_sex=False,
                            upload_bucket=None,
                            persistent_dry_run = False, # skip localization of files
-                           preprocess_tumor_bam = True # if this bam will be used for generating sim tumor files
+                           preprocess_tumor_bam = True, # if this bam will be used for generating sim tumor files
                                                        # pass true to complete the requisite pre_processing   
+                           exclude_chroms = "", # chromosomes to exclude, if any in space sep list
                         ):
    
+    if exclude_chroms != "":
+        filter_intv_list_task = Filter_GATK_Interval_List(inputs = {
+                                            "interval_list": interval_list,
+                                            "chrs_to_exclude": exclude_chroms
+                                            }
+                                        )
     bam_localization_task = LocalizeToDisk(files = {"bam" : input_bam,
                                                     "bai" : input_bai
                                                     },
@@ -172,7 +209,7 @@ def GATK_Generate_Raw_Data(input_bam=None,
                             )
 
     preprocess_intervals_task = GATK_Preprocess_Intervals(inputs = {
-                                  "interval_list":interval_list,
+                                  "interval_list":interval_list if exclude_chroms == "" else filter_intv_list_task["interval_list"],
                                   "ref_fasta":localization_task["ref_fasta"],
                                   "ref_fasta_idx":localization_task["ref_fasta_idx"],
                                   "ref_fasta_dict":localization_task["ref_fasta_dict"],
@@ -202,56 +239,64 @@ def GATK_Generate_Raw_Data(input_bam=None,
                                  }
                             )
     
-    if preprocess_tumor_bam:
-        interval_annotation_task = GATK_AnnotateIntervals(inputs = {
-                                      "ref_fasta": localization_task["ref_fasta"],
-                                      "ref_fasta_idx": localization_task["ref_fasta_idx"],
-                                      "ref_fasta_dict": localization_task["ref_fasta_dict"],
-                                      "interval_list": preprocess_intervals_task["gatk_interval_list"],
-                                      "interval_name":interval_name,
-                                     }
-                                )
+    interval_annotation_task = GATK_AnnotateIntervals(inputs = {
+                                  "ref_fasta": localization_task["ref_fasta"],
+                                  "ref_fasta_idx": localization_task["ref_fasta_idx"],
+                                  "ref_fasta_dict": localization_task["ref_fasta_dict"],
+                                  "interval_list": preprocess_intervals_task["gatk_interval_list"],
+                                  "interval_name":interval_name,
+                                 }
+                            )
 
-        # shim task for fixing annotation headers
-        @prefect.task
-        def fix_seq_headers(hdf_path, annot_interval_path, exclude_sex):
-            f = h5py.File(hdf_path, 'r')
-            dict_line = f['locatable_metadata/sequence_dictionary'][:][0].decode().split('\n')[1]
-            search_res = re.search(r".*\tUR:(.*?)\t.*$", dict_line)
+    # shim task for fixing annotation headers
+    @prefect.task
+    def fix_seq_headers(hdf_path, annot_interval_path, exclude_sex):
+        f = h5py.File(hdf_path, 'r')
+        dict_line = f['locatable_metadata/sequence_dictionary'][:][0].decode().split('\n')[1]
+        search_res = re.search(r".*\tUR:(.*?)\t.*$", dict_line)
+        if search_res is not None:
+            # if ur tag exists in the fragcounts meta replace it with the tag from the intervals
+            ur = search_res.groups()[0]
+            with open(annot_interval_path, 'r') as f:
+                lines = f.readlines()
+
+            newlines = [re.sub(r'UR:.*?\t', 'UR:' + ur + '\t', l) for l in lines] 
+        
+            outpath = annot_interval_path[:-4] + 'reformatted.tsv'
+            with open(outpath, 'w') as f:
+                for l in newlines:
+                    f.write(l)
+        else:
+            outpath = annot_interval_path    
+    
+        if exclude_sex:
+            # remove sex chromosomes from annotated intervals 
+            # since GATK will otherwise throw error
+            autosomal_outpath = outpath[:-4] + '_no_sex.tsv'
+            subprocess.Popen(f"cat {outpath} | grep -v '^chrX' | grep -v '^chrY' > {autosomal_outpath}", shell=True)
             if search_res is not None:
-                # if ur tag exists in the fragcounts meta replace it with the tag from the intervals
-                ur = search_res.groups()[0]
-                with open(annot_interval_path, 'r') as f:
-                    lines = f.readlines()
+                # remove file with sex chromosomes
+                 subprocess.Popen(f"rm -f {outpath}", shell=True)
+            outpath = autosomal_outpath
+    
+        return outpath
 
-                newlines = [re.sub(r'UR:.*?\t', 'UR:' + ur + '\t', l) for l in lines] 
-            
-                outpath = annot_interval_path[:-4] + 'reformatted.tsv'
-                with open(outpath, 'w') as f:
-                    for l in newlines:
-                        f.write(l)
-            else:
-                outpath = annot_interval_path    
-        
-            if exclude_sex:
-                # remove sex chromosomes from annotated intervals 
-                # since GATK will otherwise throw error
-                autosomal_outpath = outpath[:-4] + '_no_sex.tsv'
-                subprocess.Popen(f"cat {outpath} | grep -v '^chrX' | grep -v 'chrY' > {autosomal_outpath}", shell=True)
-                if search_res is not None:
-                    # remove file with sex chromosomes
-                     subprocess.Popen(f"rm -f {outpath}", shell=True)
-                outpath = autosomal_outpath
-        
-            return outpath
+    reformatted_dict = fix_seq_headers(collect_fragcounts_task["frag_counts_hdf"], interval_annotation_task["gatk_annotated_intervals"], exclude_sex)
 
-        reformatted_dict = fix_seq_headers(collect_fragcounts_task["frag_counts_hdf"], interval_annotation_task["gatk_annotated_intervals"], exclude_sex)
-
-        # process the raw data counts into formats the simulator can interpret
+    if preprocess_tumor_bam:
+    # process the raw data counts into formats the simulator can interpret
         preprocess_raw_task = GATK_Preprocess_Data( inputs = {"frag_counts": collect_fragcounts_task["frag_counts_hdf"],
                                                               "allele_counts": collect_acounts_task["allele_counts_tsv"],
                                                               "sample_name": sample_name
                                                              }
+                                                  )
+    else:
+        # create normal PoN hdf5
+        
+        normal_pon_task = GATK_create_single_normal_PoN(inputs = {
+                                                  'normal_read_counts_hdf5' : collect_fragcounts_task["frag_counts_hdf"],
+                                                   'annotation_file': reformatted_dict,
+                                                   'sample_name': sample_name}
                                                   )
 
     if upload_bucket is not None:
@@ -269,3 +314,7 @@ def GATK_Generate_Raw_Data(input_bam=None,
                                                   preprocess_raw_task["gatk_sim_normal_allele_counts"]],
                                          bucket = upload_bucket
                                                    )
+        else:
+            #upload normal pon
+            pon_upload_task = UploadToBucket(files = [normal_pon_task["PoN_hdf"]],
+                                             bucket = upload_bucket)
