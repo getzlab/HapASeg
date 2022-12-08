@@ -1,5 +1,5 @@
 import wolf
-from wolf.localization import LocalizeToDisk
+from wolf.localization import LocalizeToDisk, UploadToBucket
 
 class ASCAT_Prepare_HTS(wolf.Task):
     inputs = {"normal_bam": None,
@@ -56,7 +56,8 @@ def ASCAT_Generate_Raw(normal_bam = None,
                        chr_notation=True,
                        gender = None, #XX or XY
                        genome_version = None,
-                       num_threads = 8
+                       num_threads = 8,
+                       upload_bucket=None
                        ):
     
     t_bam_localization_task = wolf.LocalizeToDisk(
@@ -87,7 +88,13 @@ def ASCAT_Generate_Raw(normal_bam = None,
               "num_threads":num_threads
               },
               preemptible = False)
-    
+   
+    if upload_bucket is not None:
+        upload_task = UploadToBucket(files = [prepare_raw_task["tumor_BAF"],
+                                              prepare_raw_task["tumor_LogR"],
+                                              prepare_raw_task["normal_BAF"],
+                                              prepare_raw_task["normal_LogR"]],
+                                     bucket = upload_bucket.rstrip("/") + '/ascat/') 
 class ASCAT(wolf.Task):
     inputs = {'tumor_LogR': None,
               'tumor_BAF':None,
