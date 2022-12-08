@@ -61,25 +61,29 @@ class Generate_Facets_Sim_Data(wolf.Task):
               "purity": None,
               "sample_label": None,
               "normal_vcf_path": None,
-              "variant_depth_path": None,
+              "variant_depth_path": "",
+              "facets_allelecounts_path":"",
               "filtered_variants_path": "",
               "normal_callstats_path": ""}
     
     def script(self):
         script = """
         generate_sim_data.py --sim_profile ${sim_profile} --purity ${purity} \
-        --output_dir . --out_label ${sample_label} facets --normal_vcf_path ${normal_vcf_path}\
-        --variant_depth_path ${variant_depth_path}"""
+        --output_dir . --out_label ${sample_label} facets --normal_vcf_path ${normal_vcf_path}"""
         
         if self.conf["inputs"]["filtered_variants_path"] != "":
             script += " --filtered_variants_path ${filtered_variants_path}"
         if self.conf["inputs"]["normal_callstats_path"] != "":
             script += " --normal_callstats_path ${normal_callstats_path}"
+        if self.conf["inputs"]["facets_allelecounts_path"] != "":
+            script += " --facets_allelecounts_path ${facets_allelecounts_path}"
+        if self.conf["inputs"]["variant_depth_path"] != "":
+            script += " --variant_depth_path ${variant_depth_path}"
 
         return script
 
     output_patterns = {
-    "facets_input_counts": "*_facets_input_counts.csv"
+    "facets_input_counts": "*_facets_input_counts.csv*"
     }
     
     resources = {"cpus-per-task":2, "mem":"6G"}
