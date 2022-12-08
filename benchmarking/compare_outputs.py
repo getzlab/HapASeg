@@ -42,15 +42,13 @@ def convert_facets_output(facets_df, # facets segments file
                            outpath): # path to save converted seg file
     
     facets_df = pd.read_csv(facets_df, sep=' ')
-    if 'cnlr.median' not in facets_df.columns or 'mafR' not in facets_df.columns:
-        raise ValueError("expected cnlr.median and mafR columns. Are you sure a Facets segments file was passed?")
+    if 'tcn.em' not in facets_df.columns or 'lcn.em' not in facets_df.columns:
+        raise ValueError("expected tcn.em and lcn.em columns. Are you sure a Facets segments file was passed?")
     
-    # FACETS outputs allelic imbalance as log-odds ratio; use inverse logit
-    # to convert to f \in [0, 1]
-    f = np.exp2(facets_df["mafR"])/(1 + np.exp2(facets_df["mafR"]))
-
-    facets_df['mu.major'] = np.exp2(facets_df['cnlr.median']) * f
-    facets_df['mu.minor'] = np.exp2(facets_df['cnlr.median']) * (1-f)
+    # facets does not actually use Allele specific copy information anywhere in their method, other than
+    # in their final copy number estimates. Hence we are forced to use these estimates as mu
+    facets_df['mu.minor'] = facets_df['lcn.em']
+    facets_df['mu.major'] = facets_df['tcn.em'] - facets_df['lcn.em']
     
     facets_df = facets_df.rename({'chrom':'Chromosome', 'start':'Start.bp', 'end':'End.bp'}, axis=1)
     facets_df = facets_df[['Chromosome', 'Start.bp', 'End.bp', 'mu.major', 'mu.minor']]
@@ -151,7 +149,7 @@ def plot_output_comp(overlap_seg_file, # seg file output from acr_compare
     method_major = f'mu.major_{method_index}'
     method_minor = f'mu.minor_{method_index}'
     # get gpos for all segment starts
-    seg_df['start_gpos'] = seq.chrpos2gpos(seg_df['chromosome'], seg_df['Start.bp'], ref = ref_fasta)
+    seg_df['start_gpos'] = seq.chrpos2gpos(seg_df['Chromosome'], seg_df['Start.bp'], ref = ref_fasta)
     
     # plot ground truth segments
     for i, seg in seg_df.iterrows():
@@ -207,6 +205,7 @@ def plot_facets_sim_input(sim_facets_input_file, # facets input counts file
                           cytoband_file, # path to ref cytoband file
                           savepath): # path to save plot
     facets_input_counts = pd.read_csv(sim_facets_input_file)    
+    facets_input_counts['Chromosome'] = mut.convert_chr(facets_input_counts['Chromosome']).astype(int)
     facets_input_counts.loc[:, "gpos"] = seq.chrpos2gpos(facets_input_counts['Chromosome'], facets_input_counts['Position'], ref = ref_genome)
     
     facets_counts = facets_input_counts['File2R'] + facets_input_counts['File2A']
@@ -291,6 +290,7 @@ def plot_ascat_sim_input(sim_ascat_t_logr, # ascat simulated tumor logR tsv
 
 def facets_downstream_analysis(facets_sim_input_file, # path to facets input counts file
                                facets_output_segs, # path to facets output segments file
+                               sim_profile_pickle, # path to sim sample pickle file
                                gt_segfile, # path to groundtruth segfile
                                sample_name, # sample name. should be in sampleLabel_purity format
                                ref_fasta, # reference fasta
@@ -307,6 +307,11 @@ def facets_downstream_analysis(facets_sim_input_file, # path to facets input cou
 
     # compare seg file to ground truth + compute MAD
     mad_score, opt_lb, opt_ub, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
+    
+    # add ccf annotations
+    sim_profile = pd.read_pickle(sim_profile_pickle)
+    seg_df = sim_profile.add_ccf_annotations(seg_df)
+    
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_facets_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     
@@ -331,6 +336,7 @@ def facets_downstream_analysis(facets_sim_input_file, # path to facets input cou
 def ascat_downstream_analysis(ascat_sim_t_logr, # path to ascat sim tumor logr file
                               ascat_sim_t_baf, # path to ascat sim tumor baf file
                               ascat_output_segs, # path to ascat segments_raw output file
+                              sim_profile_pickle, # path to sim sample pickle file
                               gt_segfile, # path to groundtruth segfile
                               sample_name, # sample name. should be in sampleLabel_purity format
                               ref_fasta, # reference fasta
@@ -347,6 +353,11 @@ def ascat_downstream_analysis(ascat_sim_t_logr, # path to ascat sim tumor logr f
 
     # compare seg file to ground truth + compute MAD
     mad_score, opt_lb, opt_ub, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
+    
+    # add ccf annotations
+    sim_profile = pd.read_pickle(sim_profile_pickle)
+    seg_df = sim_profile.add_ccf_annotations(seg_df)
+    
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_ascat_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     
@@ -371,6 +382,7 @@ def ascat_downstream_analysis(ascat_sim_t_logr, # path to ascat sim tumor logr f
 def gatk_downstream_analysis(sim_gatk_cov_tsv, # gatk simulated tumor coverage data in hapaseg tsv format
                              sim_gatk_acounts, # gatk simulated tumor allele counts 
                              gatk_output_segs, # path to gatk modelFinal.seg file
+                             sim_profile_pickle, # path to sim sample pickle file
                              gt_segfile, # path to groundtruth segfile
                              sample_name, # sample name. should be in sampleLabel_purity format
                              ref_fasta, # reference fasta
@@ -387,6 +399,11 @@ def gatk_downstream_analysis(sim_gatk_cov_tsv, # gatk simulated tumor coverage d
 
     # compare seg file to ground truth + compute MAD
     mad_score, opt_lb, opt_ub, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
+    
+    # add ccf annotations
+    sim_profile = pd.read_pickle(sim_profile_pickle)
+    seg_df = sim_profile.add_ccf_annotations(seg_df)
+    
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_gatk_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     
@@ -409,6 +426,7 @@ def gatk_downstream_analysis(sim_gatk_cov_tsv, # gatk simulated tumor coverage d
 
 def hatchet_downstream_analysis(hatchet_seg_file, # cluster bins output with cluster info
                                 hatchet_bin_file, # cluster bins output with bin-wise info
+                                sim_profile_pickle, # path to sim sample pickle file
                                 gt_segfile, # path to ground truth segfile
                                 sample_name, # sample name. should be in sampleLabel_purity format
                                 ref_fasta, # reference fasta
@@ -425,6 +443,11 @@ def hatchet_downstream_analysis(hatchet_seg_file, # cluster bins output with clu
     
     # compare seg file to ground truth + compute MAD
     mad_score, opt_lb, opt_ub, non_ov_len, ov_len, seg_df = acr_compare(converted_seg_outpath, gt_segfile, fit_params=True)
+    
+    # add ccf annotations
+    sim_profile = pd.read_pickle(sim_profile_pickle)
+    seg_df = sim_profile.add_ccf_annotations(seg_df)
+    
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_hatchet_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     
@@ -447,6 +470,7 @@ def hatchet_downstream_analysis(hatchet_seg_file, # cluster bins output with clu
     
 
 def hapaseg_downstream_analysis(hapaseg_seg_file, # hapaseg output seg file
+                                sim_profile_pickle, # path to sim sample pickle file
                                 gt_segfile, # path to ground truth segfile
                                 sample_name, # sample name. should be in sampleLabel_purity format
                                 ref_fasta, # reference fasta
@@ -462,6 +486,12 @@ def hapaseg_downstream_analysis(hapaseg_seg_file, # hapaseg output seg file
     # we may want to compare results to a ground truth at a different purity, which requires
     # rescaling the outputs
     mad_score, opt_lb, opt_ub, non_ov_len, ov_len, seg_df = acr_compare(hapaseg_seg_file, gt_segfile, fit_params=True)
+    
+    # add ccf annotations
+    sim_profile = pd.read_pickle(sim_profile_pickle)
+    print(seg_df.head())
+    seg_df = sim_profile.add_ccf_annotations(seg_df)
+    
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_hapaseg_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     
@@ -484,6 +514,7 @@ def hapaseg_downstream_analysis(hapaseg_seg_file, # hapaseg output seg file
 def parse_args():
     
     parser = argparse.ArgumentParser(description = "post-process cnv method outputs and compare to ground truth")
+    parser.add_argument("--sim_profile", required=True, help="path to sim profile pickle file")
     parser.add_argument("--ref_fasta", required=True, help="path to reference fasta")
     parser.add_argument("--cytoband_file", required=True, help="path to reference cytoband file")
     parser.add_argument("--sample_name", required=True, help="sample name in sampleLabel_purity format")
@@ -522,6 +553,7 @@ def main():
     if args.command == "hapaseg":
         print("running downstream analyses on hapaseg", flush=True)
         hapaseg_downstream_analysis(args.hapaseg_seg_file,
+                                    args.sim_profile,
                                     args.ground_truth_segfile,
                                     args.sample_name,
                                     args.ref_fasta,
@@ -532,6 +564,7 @@ def main():
         print("running downstream analyses on facets", flush=True)
         facets_downstream_analysis(args.facets_input_counts,
                                    args.facets_seg_file,
+                                   args.sim_profile,
                                    args.ground_truth_segfile,
                                    args.sample_name,
                                    args.ref_fasta,
@@ -543,6 +576,7 @@ def main():
         ascat_downstream_analysis(args.ascat_t_logr,
                                   args.ascat_t_baf,
                                   args.ascat_seg_file,
+                                  args.sim_profile,
                                   args.ground_truth_segfile,
                                   args.sample_name,
                                   args.ref_fasta,
@@ -554,6 +588,7 @@ def main():
         gatk_downstream_analysis(args.gatk_sim_cov_input,
                                  args.gatk_sim_acounts,
                                  args.gatk_seg_file,
+                                 args.sim_profile,
                                  args.ground_truth_segfile,
                                  args.sample_name,
                                  args.ref_fasta,
@@ -564,6 +599,7 @@ def main():
         print("running downstream analyses on hatchet", flush=True)
         hatchet_downstream_analysis(args.hatchet_seg_file,
                                     args.hatchet_bin_file,
+                                    args.sim_profile,
                                     args.ground_truth_segfile,
                                     args.sample_name,
                                     args.ref_fasta,
