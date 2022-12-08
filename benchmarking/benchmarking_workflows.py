@@ -21,6 +21,7 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                          phased_vcf_path=None, # path to phased vcf (cached eagle output)
                          hetsite_depth_path=None,
                          covcollect_path=None,
+                         normal_covcollect_path="", # optional, will be used as covaraite if passed
                          genotype_file=None, # normal genotype of NA12878
                          ref_build=None,
                          ref_fasta=None,
@@ -33,6 +34,7 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                                     "normal_vcf":normal_vcf_path,
                                     "hetsite_depth":hetsite_depth_path,
                                     "covcollect": covcollect_path,
+                                    "normal_covcollect": normal_covcollect_path,
                                     "phased_vcf":phased_vcf_path,
                                     "target_list" : target_list if not isinstance(target_list, int) else "",
                                     "ref_fasta" : ref_fasta,
@@ -49,6 +51,7 @@ def HapASeg_Sim_Workflow(sim_profile=None,
 
     hapaseg_seg_file = HapASeg_Workflow(hetsites_file = generate_hapaseg_files_task["hapaseg_hets"],
                                    tumor_coverage_bed = generate_hapaseg_files_task["hapaseg_coverage_bed"],
+                                   normal_coverage_bed = localization_task["normal_covcollect"] if normal_covcollect_path != "" else None,
                                    phased_vcf = localization_task["phased_vcf"],
                                    ref_genome_build = ref_build,
                                    target_list = target_list if isinstance(target_list, int) else localization_task["target_list"],
@@ -56,6 +59,7 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                                    )
     
     hapaseg_downstream = Downstream_HapASeg_Analysis(inputs = {
+                                   "sim_profile" : sim_profile,
                                    "hapaseg_seg_file": hapaseg_seg_file,
                                    "ground_truth_seg_file": ground_truth_seg_file,
                                    "sample_name": sample_label,
@@ -119,7 +123,9 @@ def GATK_Sim_Workflow(sim_profile = None,
                      )
 
     gatk_downstream = Downstream_GATK_Analysis(
-              inputs={"gatk_sim_cov_input": generate_gatk_data_task["tumor_coverage_tsv"],
+              inputs={
+                      "sim_profile" : sim_profile,
+                      "gatk_sim_cov_input": generate_gatk_data_task["tumor_coverage_tsv"],
                       "gatk_sim_acounts" : generate_gatk_data_task["tumor_allele_counts"],
                       "gatk_seg_file" : gatk_segfile,
                       "ground_truth_seg_file": ground_truth_seg_file,
@@ -134,7 +140,8 @@ def Facets_Sim_Workflow(sim_profile = None,
                       purity = None,
                       sample_label = None,
                       normal_vcf_path = None,
-                      variant_depth_path = None,
+                      variant_depth_path = "",
+                      facets_allelecounts_path="", # pass facets raw counts instead of cs
                       filtered_variants_path = "", # pass tumor filtered cs to use fake normal counts
                       normal_callstats_path = "", # pass nomral cs to use real normal counts
                       ground_truth_seg_file=None,
@@ -144,6 +151,7 @@ def Facets_Sim_Workflow(sim_profile = None,
     localization_task = LocalizeToDisk(files = {"normal_vcf":normal_vcf_path,
                                                 "variant_depth":variant_depth_path,
                                                 "filtered_variants":filtered_variants_path,
+                                                "facets_allelecounts": facets_allelecounts_path,
                                                 "normal_callstats": normal_callstats_path,
                                                 "ref_fasta": ref_fasta,
                                                 "cytoband_file": cytoband_file
@@ -155,7 +163,8 @@ def Facets_Sim_Workflow(sim_profile = None,
                                     "purity": purity,
                                     "sample_label": sample_label,
                                     "normal_vcf_path":localization_task["normal_vcf"],
-                                    "variant_depth_path": localization_task["variant_depth"],
+                                    "variant_depth_path": localization_task["variant_depth"] if variant_depth_path != "" else "",
+                                    "facets_allelecounts_path": localization_task["facets_allelecounts"] if facets_allelecounts_path != "" else "",
                                     "filtered_variants_path": localization_task["filtered_variants"] if filtered_variants_path != "" else "",
                                     "normal_callstats_path": localization_task["normal_callstats"] if normal_callstats_path != "" else ""
                                     })
@@ -163,8 +172,10 @@ def Facets_Sim_Workflow(sim_profile = None,
     run_facets_task = Facets(inputs = {"snp_counts": generate_facets_data_task["facets_input_counts"]})
     
     facets_downstream = Downstream_Facets_Analysis(
-                            inputs={"facets_input_counts": generate_facets_data_task["facets_input_counts"],
-                                    "facets_seg_file": run_facets_task["facets_seg_file"],
+                            inputs={
+                                     "sim_profile" : sim_profile,
+                                     "facets_input_counts": generate_facets_data_task["facets_input_counts"],
+                                     "facets_seg_file": run_facets_task["facets_seg_file"],
                                      "ground_truth_seg_file": ground_truth_seg_file,
                                      "sample_name": sample_label,
                                      "ref_fasta": localization_task["ref_fasta"],
@@ -178,7 +189,7 @@ def ASCAT_Sim_Workflow(sim_profile=None,
                        purity=None,
                        sample_label=None,
                        normal_vcf_path=None,
-                       variant_depth_path=None,
+                       variant_depth_path="",
                        filtered_variants_path = "", # pass tumor filtered cs to use fake normal counts
                        normal_callstats_path = "", # pass nomral cs to use real normal counts
                        GC_correction_file=None,
@@ -219,7 +230,9 @@ def ASCAT_Sim_Workflow(sim_profile=None,
                          )
     
     ascat_downstream = Downstream_ASCAT_Analysis(
-                                inputs={"ascat_t_logr": generate_ascat_data_task["ascat_tumor_logR"],
+                                inputs={
+                                        "sim_profile" : sim_profile,
+                                        "ascat_t_logr": generate_ascat_data_task["ascat_tumor_logR"],
                                         "ascat_t_baf": generate_ascat_data_task["ascat_tumor_BAF"],
                                         "ascat_seg_file": run_ascat_task["ascat_raw_segments"],
                                         "ground_truth_seg_file": ground_truth_seg_file,
@@ -282,6 +295,7 @@ def Hatchet_Sim_Workflow(sim_profile=None,
                 )
     
     downstream_hatchet_workflow = Downstream_Hatchet_Analysis(inputs = { 
+                                        "sim_profile" : sim_profile,
                                         "hatchet_seg_file": hatchet_workflow_results["hatchet_seg_file"],
                                         "hatchet_bin_file": hatchet_workflow_results["hatchet_bin_file"], 
                                         "ground_truth_seg_file": ground_truth_seg_file,
@@ -334,13 +348,24 @@ def Run_Sim_Workflows(sim_profile=None,
                       hatchet_read_combined_file = None,
                       hatchet_phased_vcf = None 
                       ):
-    seg_file_gen_task = Generate_Groundtruth_Segfile(inputs= {
-                            "sample_label": sample_label,
-                            "purity":ground_truth_purity if ground_truth_purity is not None else purity,
+    # important to save space
+    gt_localization_task = LocalizeToDisk(inputs = {
                             "sim_profile":sim_profile,
                             "normal_vcf_path":normal_vcf_path,
                             "hapaseg_hetsite_depth_path": hapaseg_hetsite_depth_path,
                             "hapaseg_coverage_tsv":hapaseg_covcollect_path
+                            
+                            }
+                        )
+
+
+    seg_file_gen_task = Generate_Groundtruth_Segfile(inputs= {
+                            "sample_label": sample_label,
+                            "purity": ground_truth_purity if ground_truth_purity is not None else purity,
+                            "sim_profile": gt_localization_task["sim_profile"],
+                            "normal_vcf_path": gt_localization_task["normal_vcf_path"],
+                            "hapaseg_hetsite_depth_path": gt_localization_task["hapaseg_hetsite_depth_path"],
+                            "hapaseg_coverage_tsv": gt_localization_task["hapaseg_covcollect_path"]
                         }
                     ) 
 
@@ -350,7 +375,7 @@ def Run_Sim_Workflows(sim_profile=None,
                         normal_vcf_path = normal_vcf_path,
                         hetsite_depth_path = hapaseg_hetsite_depth_path,
                         covcollect_path = hapaseg_covcollect_path,
-                        normal_covcollect_path = hapasge_normal_covcollect_path,
+                        normal_covcollect_path = hapaseg_normal_covcollect_path,
                         phased_vcf_path = hapaseg_phased_vcf_path,
                         ref_build=ref_build,
                         ref_fasta=ref_fasta,
@@ -403,7 +428,7 @@ def Run_Sim_Workflows(sim_profile=None,
                        ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"]
                       )
 
-    HATCHet_Sim_Workflow(sim_profile=sim_profile,
+    Hatchet_Sim_Workflow(sim_profile=sim_profile,
                          purity=purity,
                          sample_label=sample_label,
                          normal_vcf_path=normal_vcf_path,
@@ -416,5 +441,6 @@ def Run_Sim_Workflows(sim_profile=None,
                          snp_counts_sim_file=hatchet_snp_counts_file,
                          read_combined_file=hatchet_read_combined_file,
                          hatchet_phased_vcf=hatchet_phased_vcf, 
+                         cytoband_file=cytoband_file,
                          ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"],
             )
