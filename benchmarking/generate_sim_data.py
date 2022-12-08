@@ -37,7 +37,8 @@ def parse_args():
     ## facets
     facets_gen = subparsers.add_parser("facets", help="generate facets inputs")
     facets_gen.add_argument("--normal_vcf_path", required=True, help="path to normal sample vcf file")
-    facets_gen.add_argument("--variant_depth_path", required=True, help="path to variant depth file")
+    facets_gen.add_argument("--variant_depth_path", required=False, help="path to callstats derived variant depth file")
+    facets_gen.add_argument("--facets_allelecounts_path", required=False, help="path to facets allelecounts file")
     facets_gen.add_argument("--filtered_variants_path", required=False, help="path to filtered variants file to generate fake allelecounts")
     facets_gen.add_argument("--normal_callstats_path", required=False, help="path to normal callstats file to use real allelecounts")
     ## gatk
@@ -100,6 +101,7 @@ def main():
                              purity = args.purity,
                              normal_vcf_path = args.normal_vcf_path,
                              variant_depth_path = args.variant_depth_path,
+                             facets_allelecounts_path = args.facets_allelecounts_path,
                              filtered_variants_path = args.filtered_variants_path,
                              normal_callstats_path = args.normal_callstats_path,
                              out_dir = output_dir,
@@ -182,54 +184,114 @@ def generate_hapaseg_files(sim_profile_pickle = None,
             'sqrt_avg_fragvar', 'n_frags',
             'tot_reads', 'reads_flagged']].to_csv(os.path.join(out_dir, '{}_{}_hapaseg_coverage.bed'.format(out_label, purity)), sep='\t', index=False, header=False)
 
+# generate simulated facets files
+## user can pass either a variants depth path derived from mutect1 callstats file
+## or a facets allecounts file to use as counts for the simulation. When passing in a variants
+## depth path from mutect, the normal counts can either be derived from a normal sample
+## by passing a normal callstats file (unfiltered) or by passing a filtered version of the 
+## tumor callstats file, which will be used to generate uniform 30x coverage fake normal counts
 def generate_facets_files(sim_profile_pickle=None,
                           purity = None,
                           normal_vcf_path=None,
                           variant_depth_path=None,
+                          facets_allelecounts_path=None,
                           filtered_variants_path=None,
                           normal_callstats_path = None,
                           out_dir=None,
                           out_label=None,
                           parallel=False):
 
+    if not os.path.isdir(out_dir):
+        os.path.mkdir(out_dir)
+
+    generated_depths_file = False
+    
+    if variant_depth_path is None:
+        # we will try to use the facets allelecounts instead
+        if facets_allelecounts_path is None:
+            raise ValueError("need to pass either a variant depth path or facets allelecounts")
+        facets_df = pd.read_csv(facets_allelecounts_path)
+        facets_df['depth'] = facets_df['File2A'] + facets_df['File2R']
+        variant_depth_path = os.path.join(out_dir, 'facets_var_depths.tsv')
+        facets_df[['Chromosome', 'Position', 'depth']].to_csv(variant_depth_path, header=False, sep='\t', index=False)
+        generated_depths_file = True
+    
     default_profile=pd.read_pickle(sim_profile_pickle)
     # generate snvs
     snv_df, correct_phase_interval_trees = default_profile.generate_snvs(normal_vcf_path, variant_depth_path, purity, do_parallel=parallel)
     snv_df = snv_df.loc[(snv_df.REF.apply(lambda x : len(x)) == 1) & (snv_df.ALT.apply(lambda x : len(x)) == 1)]
-
-    snv_df = snv_df.rename({'CHROM':'chr', 'POS':'pos',
-                            'ref_count':'File2R',
-                            'alt_count':'File2A'}, axis=1)[['chr', 'pos',
-                                                            'REF', 'ALT',
-                                                            'File2R', 'File2A']]
-    snv_df['chr'] = mut.convert_chr(snv_df['chr']).astype(int)
-
     
-    if normal_callstats_path is not None:
-        # use allele counts from normal
-        normal_df = load_callstats(normal_callstats_path)
-        normal_df = normal_df[['chr', 'pos', 't_refcount', 't_altcount']]
-        normal_df = normal_df.rename({'t_refcount': 'File1R', 't_altcount':'File1A'}, axis=1)
-        normal_df['chr'] = mut.convert_chr(normal_df['chr'])
-    
-    elif filtered_variants_path is not None:
-        # generate fake normal using binomial with N=30
-        normal_df = pd.read_csv(filtered_variants_path, sep='\t')
-        normal_df['File1A'] = s.binom.rvs(30, normal_df['t_altcount'] / normal_df['total_reads'])
-        normal_df['File1R'] = 30 - normal_df['File1A']
-        normal_df = normal_df.drop(['t_refcount', 't_altcount', 'total_reads'], axis=1)
-        normal_df['chr'] = mut.convert_chr(normal_df['chr'])
+    if generated_depths_file:
+        # remove this now useless file to save space
+        os.remove(variant_depth_path) 
+   
+    if facets_allelecounts_path is not None:
+        # use facets allelecounts for normal
+        snv_df = snv_df.rename({'CHROM':'Chromosome', 'POS':'Position',
+                                'ref_count':'File2R',
+                                'alt_count':'File2A'}, axis=1)[['Chromosome', 'Position',
+                                                                'File2R', 'File2A']]
+        facets_df = facets_df.drop(['File2R', 'File2A'], axis=1)
+        snv_df = snv_df[['Chromosome', 'Position', 'File2A', 'File2R']]
+        snv_df.loc[:, 'Chromosome'] = mut.convert_chr_back(snv_df['Chromosome'].astype(int))
+        facets_df = facets_df.merge(snv_df, on = ['Chromosome', 'Position'], how = 'left')
+        del snv_df
+         
+        # the additional loci that facets adds for coverage probes will be thrown out by the snp
+        # simulator. simulate these seperately with coverage gen
+        cov_df = facets_df.loc[facets_df['File2A'].isnull()]
+        cov_df = cov_df.loc[:, ['Chromosome', 'Position', 'depth']]
+        cov_df['end'] = cov_df['Position'] + 1
+        cov_df = cov_df.rename({'Chromosome':'chrom', 'Position':'start', 'depth':'covcorr'}, axis = 1)
 
+        out_df = default_profile.compute_coverage(cov_df, 0.7, do_parallel = parallel)
+        out_df['chrom'] = mut.convert_chr_back(out_df['chrom'].astype(int))
+        out_df = out_df.drop(['end', 'ploidy', 'covcorr_original'], axis=1)
+        out_df = out_df.rename({'chrom':'Chromosome', 'start':'Position'}, axis=1)
+        facets_df = facets_df.merge(out_df, on = ['Chromosome', 'Position'], how = 'left')
+        facets_df.loc[facets_df['File2A'].isnull(), 'File2R'] = facets_df.loc[facets_df['File2A'].isnull(), 'covcorr']
+        facets_df.loc[facets_df['File2A'].isnull(), 'File2A'] = 0
+        facets_df['File2A'] = facets_df['File2A'].astype(int)
+    
+        facets_df = facets_df[['Chromosome', 'Position', 'Ref',
+                         'Alt', 'File1R', 'File1A', 'File1E',
+                         'File1D', 'File2R', 'File2A', 'File2E', 'File2D']]
+        facets_df.to_csv(os.path.join(out_dir, '{}_{}_facets_input_counts.csv.gz'.format(out_label, purity)), index=False)
+        
     else:
-        raise ValueError("normal callstats or filtered variants file must be passed")
+        snv_df = snv_df.rename({'CHROM':'chr', 'POS':'pos',
+                                'ref_count':'File2R',
+                                'alt_count':'File2A'}, axis=1)[['chr', 'pos',
+                                                                'REF', 'ALT',
+                                                                'File2R', 'File2A']]
+        snv_df['chr'] = mut.convert_chr(snv_df['chr']).astype(int)
 
-    merged = snv_df.merge(normal_df, on=['chr', 'pos'], how='inner').drop_duplicates()
-    merged.loc[:, ['File1E', 'File1D', 'File2E', 'File2D']] = 0
-    merged = merged.rename({'chr':'Chromosome', 'pos': 'Position', 'REF':'Ref', 'ALT':'Alt'}, axis=1)
-    merged = merged[['Chromosome', 'Position', 'Ref',
-                     'Alt', 'File1R', 'File1A', 'File1E',
-                     'File1D', 'File2R', 'File2A', 'File2E', 'File2D']]
-    merged.to_csv(os.path.join(out_dir, '{}_{}_facets_input_counts.csv'.format(out_label, purity)), index=False)
+        
+        if normal_callstats_path is not None:
+            # use allele counts from normal
+            normal_df = load_callstats(normal_callstats_path)
+            normal_df = normal_df[['chr', 'pos', 't_refcount', 't_altcount']]
+            normal_df = normal_df.rename({'t_refcount': 'File1R', 't_altcount':'File1A'}, axis=1)
+            normal_df['chr'] = mut.convert_chr(normal_df['chr'])
+        
+        elif filtered_variants_path is not None:
+            # generate fake normal using binomial with N=30
+            normal_df = pd.read_csv(filtered_variants_path, sep='\t')
+            normal_df['File1A'] = s.binom.rvs(30, normal_df['t_altcount'] / normal_df['total_reads'])
+            normal_df['File1R'] = 30 - normal_df['File1A']
+            normal_df = normal_df.drop(['t_refcount', 't_altcount', 'total_reads'], axis=1)
+            normal_df['chr'] = mut.convert_chr(normal_df['chr'])
+
+        else:
+            raise ValueError("normal callstats or filtered variants file must be passed")
+
+        merged = snv_df.merge(normal_df, on=['chr', 'pos'], how='inner').drop_duplicates()
+        merged.loc[:, ['File1E', 'File1D', 'File2E', 'File2D']] = 0
+        merged = merged.rename({'chr':'Chromosome', 'pos': 'Position', 'REF':'Ref', 'ALT':'Alt'}, axis=1)
+        merged = merged[['Chromosome', 'Position', 'Ref',
+                         'Alt', 'File1R', 'File1A', 'File1E',
+                         'File1D', 'File2R', 'File2A', 'File2E', 'File2D']]
+        merged.to_csv(os.path.join(out_dir, '{}_{}_facets_input_counts.csv'.format(out_label, purity)), index=False)
     
 # utility method for adding header back onto simulated allele count files
 # inputs: og_tsv: allelecounts file with header intact (outputted by gatk CollectAlleleCounts)
@@ -331,7 +393,7 @@ def generate_ascat_files(sim_profile_pickle=None,
                                                                  't_refcount', 't_altcount',
                                                                  'adjusted_depth']]
     snv_df['chr'] = mut.convert_chr(snv_df['chr']).astype(int)
-    snv_df = snv_df.loc[snv_df.adjusted_depth > 0]
+    snv_df = snv_df.loc[snv_df.adjusted_depth > 1] # ascat uses a min of two count in tumor
 
     if normal_callstats_path is not None:
         # use allele counts from normal
@@ -354,8 +416,12 @@ def generate_ascat_files(sim_profile_pickle=None,
         raise ValueError("either a normal callstats file or a filtered variants path must be passed")
 
     merged = snv_df.merge(normal_df, on=['chr', 'pos'], how='inner').drop_duplicates()
+
+    # use conservative ascat filter for sites covered by normal > 20 counts 
+    merged = merged.loc[merged.normal_totalcount > 20]
+    
     # calculate ascat input logR and BAF
-    merged['tumorLogR'] = merged['adjusted_depth'] / normal_df['normal_totalcount']
+    merged['tumorLogR'] = merged['adjusted_depth'] / merged['normal_totalcount']
     merged['tumorLogR'] = np.log2(merged['tumorLogR'] / merged['tumorLogR'].mean())
     # ascat passes around a normalLogR file but never actually defines these values (nor are they ever used)
     # we will make a dummy file 
@@ -415,22 +481,25 @@ def generate_hatchet_files(sim_profile_pickle=None,
     read_combined_df = pd.read_csv(read_combined_fn, sep='\t')
  
     default_profile = pd.read_pickle(sim_profile_pickle)   
-    
+
+    interval_df = pd.read_csv(int_counts_sim_fn, sep='\t', names = ['chrom', 'start', 'end', 'covcorr'])
+    pos_df = pd.read_csv(pos_counts_sim_fn, sep='\t', names = ['chrom', 'start', 'end', 'covcorr'])
+        
     int_counts_tr_fn = os.path.join(out_dir, f'{out_label}_interval_counts.transformed.txt')
     pos_counts_tr_fn = os.path.join(out_dir, f'{out_label}_position_counts.transformed.txt')
     snp_counts_tr_fn = os.path.join(out_dir, f'{out_label}_snp_counts.transformed.txt')
 
     print("simulating coverage profile", flush=True)
     # alter total counts based on profile, for intervals (between SNP thresholds) and at SNP thresholds
-    default_profile.save_coverage_file(int_counts_tr_fn, purity, int_counts_sim_fn, do_parallel=parallel)
-    default_profile.save_coverage_file(pos_counts_tr_fn, purity, pos_counts_sim_fn, do_parallel=parallel)
+    interval_corr_df_transformed = default_profile.compute_coverage(interval_df, purity, do_parallel=parallel)
+    position_corr_df_transformed = default_profile.compute_coverage(pos_df, purity, do_parallel=parallel)
+    
+    # save these transformed dfs for posterity
+    interval_corr_df_transformed.to_csv(int_counts_tr_fn, sep = '\t')
+    position_corr_df_transformed.to_csv(pos_counts_tr_fn, sep = '\t')
+    
     # alter SNP counts based on profile in tumor.1bed
     default_profile.save_hets_file(snp_counts_tr_fn, normal_vcf_path, snp_counts_sim_fn, purity, do_parallel=parallel)
-    
-    # Read back in
-    # Read Depths
-    interval_corr_df_transformed = pd.read_csv(int_counts_tr_fn, sep='\t', header=0, usecols=['chr', 'start', 'end', 'covcorr'])
-    position_corr_df_transformed = pd.read_csv(pos_counts_tr_fn, sep='\t', header=0, usecols=['chr', 'start', 'end', 'covcorr'])
     
     # need to reset index to set new column series
     read_combined_df = read_combined_df.reset_index(drop=True)
