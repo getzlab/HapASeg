@@ -27,12 +27,13 @@ class Downstream_HapASeg_Analysis(wolf.Task):
     inputs = {"hapaseg_seg_file": None,
               "ground_truth_seg_file":None,
               "sample_name":None,
+              "sim_profile":None,
               "ref_fasta":None,
               "cytoband_file":None,
              }
     
     script = """
-    compare_outputs.py --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --ground_truth_segfile ${ground_truth_seg_file} --outdir . hapaseg --hapaseg_seg_file ${hapaseg_seg_file}
+    compare_outputs.py --sim_profile ${sim_profile} --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --ground_truth_segfile ${ground_truth_seg_file} --outdir . hapaseg --hapaseg_seg_file ${hapaseg_seg_file}
     """
 
     output_patterns = {"comparison_plot": "*_hapaseg_comparison_plot.png",
@@ -48,6 +49,7 @@ class Downstream_HapASeg_Analysis(wolf.Task):
 class Downstream_GATK_Analysis(wolf.Task):
     inputs = {"gatk_sim_cov_input": None,
               "gatk_sim_acounts": None,
+              "sim_profile":None,
               "gatk_seg_file": None,
               "ground_truth_seg_file": None,
               "sample_name": None,
@@ -56,7 +58,7 @@ class Downstream_GATK_Analysis(wolf.Task):
              }
     
     script = """
-    compare_outputs.py --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --ground_truth_segfile ${ground_truth_seg_file} --outdir . gatk --gatk_sim_cov_input ${gatk_sim_cov_input} --gatk_sim_acounts ${gatk_sim_acounts} --gatk_seg_file ${gatk_seg_file}
+    compare_outputs.py --sim_profile ${sim_profile} --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --ground_truth_segfile ${ground_truth_seg_file} --outdir . gatk --gatk_sim_cov_input ${gatk_sim_cov_input} --gatk_sim_acounts ${gatk_sim_acounts} --gatk_seg_file ${gatk_seg_file}
     """
 
     output_patterns = {"comparison_plot": "*_gatk_comparison_plot.png",
@@ -76,12 +78,13 @@ class Downstream_ASCAT_Analysis(wolf.Task):
               "ascat_seg_file": None,
               "ground_truth_seg_file": None,
               "sample_name": None,
+              "sim_profile":None,
               "ref_fasta": None,
               "cytoband_file": None,
              }
     
     script = """
-    compare_outputs.py --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --ground_truth_segfile ${ground_truth_seg_file} --outdir . ascat --ascat_t_logr ${ascat_t_logr} --ascat_t_baf ${ascat_t_baf} --ascat_seg_file ${ascat_seg_file}
+    compare_outputs.py --sim_profile ${sim_profile} --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --ground_truth_segfile ${ground_truth_seg_file} --outdir . ascat --ascat_t_logr ${ascat_t_logr} --ascat_t_baf ${ascat_t_baf} --ascat_seg_file ${ascat_seg_file}
     """
 
     output_patterns = {"comparison_plot": "*_ascat_comparison_plot.png",
@@ -100,12 +103,13 @@ class Downstream_Facets_Analysis(wolf.Task):
               "facets_seg_file": None,
               "ground_truth_seg_file": None,
               "sample_name": None,
+              "sim_profile":None,
               "ref_fasta": None,
               "cytoband_file": None,
              }
     
     script = """
-    compare_outputs.py --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --ground_truth_segfile ${ground_truth_seg_file} --outdir . facets --facets_input_counts ${facets_input_counts} --facets_seg_file ${facets_seg_file} 
+    compare_outputs.py --sim_profile ${sim_profile} --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --ground_truth_segfile ${ground_truth_seg_file} --outdir . facets --facets_input_counts ${facets_input_counts} --facets_seg_file ${facets_seg_file} 
     """
 
     output_patterns = {"comparison_plot": "*_facets_comparison_plot.png",
@@ -114,7 +118,7 @@ class Downstream_Facets_Analysis(wolf.Task):
                        "input_plot": "*_facets_input_plot.png"
                       }
 
-    resources = {"mem":"2G"}
+    resources = {"cpus-per-task": 4, "mem":"14G"}
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
 
@@ -123,12 +127,13 @@ class Downstream_Hatchet_Analysis(wolf.Task):
               "hatchet_bin_file": None,
               "ground_truth_seg_file": None,
               "sample_name": None,
+              "sim_profile":None,
               "ref_fasta": None,
               "cytoband_file": None,
              }
               
     script = """
-    compare_outputs.py --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --ground_truth_segfile ${ground_truth_seg_file} --outdir . hatchet --hatchet_seg_file ${hatchet_seg_file} --hatchet_bin_file ${hatchet_bin_file} 
+    compare_outputs.py --sim_profile ${sim_profile} --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --ground_truth_segfile ${ground_truth_seg_file} --outdir . hatchet --hatchet_seg_file ${hatchet_seg_file} --hatchet_bin_file ${hatchet_bin_file} 
     """
 
     output_patterns = {"comparison_plot": "*_hatchet_comparison_plot.png",
