@@ -47,7 +47,8 @@ def Facets_Generate_Raw(vcf = None,
                      )
     if upload_bucket is not None:
         upload_task = UploadToBucket(files = pileups_task["facets_allelecounts"],
-                                     bucket = upload_bucket.rstrip("/") + 'facets/')
+                                     bucket = upload_bucket.rstrip("/") + '/facets/')
+
 class Facets(wolf.Task):
     inputs = {'snp_counts': None}
     
