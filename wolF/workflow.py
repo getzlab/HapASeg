@@ -15,7 +15,7 @@ from wolf.localization import LocalizeToDisk, DeleteDisk
 # for genotyping het sites/getting het site coverage
 het_pulldown = wolf.ImportTask(
   task_path = 'git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git',
-  task_name = "het_pulldown"
+  commit = "5c733d2" # TODO: use latest commit; will require slightly modifying syntax in workflow
 )
 
 mutect1 = wolf.ImportTask(
