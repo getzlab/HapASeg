@@ -33,6 +33,10 @@ def parse_args():
     ascat_gen.add_argument("--variant_depth_path", required=True, help = "path to variant depth file")
     ascat_gen.add_argument("--filtered_variants_path", required=False, help="path to filtered variants file to generate fake allelecounts")
     ascat_gen.add_argument("--normal_callstats_path", required=False, help="path to normal callstats file to use real allelecounts")
+    ascat_gen.add_argument("--unmatched_normal_callstats", required=False, default=True,
+                               dest='matched_normal_callstats', action='store_false',
+                               help="flag for indicating normal callstats file is not matched to the normal vcf and hence normal het counts should be simulated"
+                            )
     
     ## facets
     facets_gen = subparsers.add_parser("facets", help="generate facets inputs")
@@ -41,6 +45,10 @@ def parse_args():
     facets_gen.add_argument("--facets_allelecounts_path", required=False, help="path to facets allelecounts file")
     facets_gen.add_argument("--filtered_variants_path", required=False, help="path to filtered variants file to generate fake allelecounts")
     facets_gen.add_argument("--normal_callstats_path", required=False, help="path to normal callstats file to use real allelecounts")
+    facets_gen.add_argument("--unmatched_normal_callstats", required=False, default=True,
+                               dest='matched_normal_callstats', action='store_false',
+                               help="flag for indicating normal callstats file is not matched to the normal vcf and hence normal het counts should be simulated"
+                            )
     ## gatk
     gatk_gen = subparsers.add_parser("gatk", help="generate gatk inputs")
     gatk_gen.add_argument("--normal_vcf_path", required=True, help="path to normal sample vcf file")
@@ -83,6 +91,7 @@ def main():
                                out_dir = output_dir,
                                out_label = args.out_label,
                                parallel = args.parallel)
+
     elif args.command == "ascat":
         print("generating ascat simulated files...")
         generate_ascat_files(sim_profile_pickle = args.sim_profile,
@@ -91,6 +100,7 @@ def main():
                              variant_depth_path = args.variant_depth_path,
                              filtered_variants_path = args.filtered_variants_path,
                              normal_callstats_path = args.normal_callstats_path,
+                             matched_normal_callstats = args.matched_normal_callstats,
                              out_dir = output_dir,
                              out_label = args.out_label,
                              parallel = args.parallel)
@@ -104,6 +114,7 @@ def main():
                              facets_allelecounts_path = args.facets_allelecounts_path,
                              filtered_variants_path = args.filtered_variants_path,
                              normal_callstats_path = args.normal_callstats_path,
+                             matched_normal_callstats = args.matched_normal_callstats,
                              out_dir = output_dir,
                              out_label = args.out_label,
                              parallel = args.parallel)
@@ -121,6 +132,7 @@ def main():
                         out_dir=output_dir,
                         out_label=args.out_label,
                         parallel = args.parallel)
+
     elif args.command == "hatchet":
         print("generating hatchet simulated files...")
         generate_hatchet_files(sim_profile_pickle=args.sim_profile,
@@ -184,12 +196,18 @@ def generate_hapaseg_files(sim_profile_pickle = None,
             'sqrt_avg_fragvar', 'n_frags',
             'tot_reads', 'reads_flagged']].to_csv(os.path.join(out_dir, '{}_{}_hapaseg_coverage.bed'.format(out_label, purity)), sep='\t', index=False, header=False)
 
-# generate simulated facets files
-## user can pass either a variants depth path derived from mutect1 callstats file
-## or a facets allecounts file to use as counts for the simulation. When passing in a variants
-## depth path from mutect, the normal counts can either be derived from a normal sample
-## by passing a normal callstats file (unfiltered) or by passing a filtered version of the 
-## tumor callstats file, which will be used to generate uniform 30x coverage fake normal counts
+"""
+generate simulated facets files
+
+user can pass either a variants depth path derived from mutect1 callstats file
+or a facets allecounts file to use as counts for the simulation. When passing in a variants
+depth path from mutect, the normal counts can either be derived from a sepearte normal sample
+by passing a normal callstats file (unfiltered) or by passing a filtered version of the 
+tumor callstats file, which will be used to generate uniform 30x coverage fake normal counts. 
+if a seperate normal sample is passed which does not match the normal vcf, make sure to 
+set mathed_normal_callstats to False to ensure that normal allele counts are generated using 
+a binomial with N= depth at SNP site in seperate normal and p=.5
+"""
 def generate_facets_files(sim_profile_pickle=None,
                           purity = None,
                           normal_vcf_path=None,
@@ -197,6 +215,7 @@ def generate_facets_files(sim_profile_pickle=None,
                           facets_allelecounts_path=None,
                           filtered_variants_path=None,
                           normal_callstats_path = None,
+                          matched_normal_callstats=True,
                           out_dir=None,
                           out_label=None,
                           parallel=False):
@@ -271,7 +290,18 @@ def generate_facets_files(sim_profile_pickle=None,
             # use allele counts from normal
             normal_df = load_callstats(normal_callstats_path)
             normal_df = normal_df[['chr', 'pos', 't_refcount', 't_altcount']]
-            normal_df = normal_df.rename({'t_refcount': 'File1R', 't_altcount':'File1A'}, axis=1)
+            if matched_normal_callstats:
+                # the tumor callstats at the vcf variant sites will correspond
+                #  to hets so we use them directly
+                normal_df = normal_df.rename({'t_refcount': 'File1R', 't_altcount':'File1A'}, axis=1)
+            else:
+                # the tumor callstats counts are likely not hets since this normal is unmatched
+                # we must generate het site counts to allow facets to use these sites
+                normal_df['depth'] = normal_df['t_refcount'] + normal_df['t_altcount']
+                normal_df['new_ref'] = s.binom.rvs(normal_df['depth'], 0.5)
+                normal_df['new_alt'] = normal_df['depth'] - normal_df['new_ref']
+                normal_df = normal_df.rename({'new_ref': 'File1R', 'new_alt':'File1A'}, axis=1)
+                normal_df = normal_df.drop(columns = ['depth', 't_refcount', 't_altcount'])
             normal_df['chr'] = mut.convert_chr(normal_df['chr'])
         
         elif filtered_variants_path is not None:
@@ -376,6 +406,7 @@ def generate_ascat_files(sim_profile_pickle=None,
                          variant_depth_path=None,
                          filtered_variants_path=None,
                          normal_callstats_path=None,
+                         matched_normal_callstats=True, # set to false if normal vcf does not match normal callstats
                          out_dir = None,
                          out_label=None,
                          parallel=False):
@@ -399,7 +430,17 @@ def generate_ascat_files(sim_profile_pickle=None,
         # use allele counts from normal
         normal_df = load_callstats(normal_callstats_path)
         normal_df = normal_df[['chr', 'pos', 't_refcount', 't_altcount']]
-        normal_df = normal_df.rename({'t_refcount': 'n_refcount', 't_altcount':'n_altcount'}, axis=1)
+        if matched_normal_callstats:
+            # t ref and alt counts match the vcf and hence should be het sites that we can use directly
+            normal_df = normal_df.rename({'t_refcount': 'n_refcount', 't_altcount':'n_altcount'}, axis=1)
+        else:
+            # counts at vcf sites are not hets and hence we need to generate het looking counts using binomial
+            normal_df['depth'] = normal_df['t_refcount'] + normal_df['t_altcount']
+            normal_df['new_ref'] = s.binom.rvs(normal_df['depth'], 0.5)
+            normal_df['new_alt'] = normal_df['depth'] - normal_df['new_ref']
+            normal_df = normal_df.rename({'new_ref': 'n_refcount', 'new_alt':'n_altcount'}, axis=1)
+            normal_df = normal_df.drop(['depth', 't_refcount', 't_altcount'], axis=1)
+            
         normal_df['chr'] = mut.convert_chr(normal_df['chr'])
         normal_df['normal_totalcount'] = normal_df['n_refcount'] + normal_df['n_altcount']
         normal_df = normal_df.loc[normal_df['normal_totalcount'] > 0]

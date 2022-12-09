@@ -144,6 +144,7 @@ def Facets_Sim_Workflow(sim_profile = None,
                       facets_allelecounts_path="", # pass facets raw counts instead of cs
                       filtered_variants_path = "", # pass tumor filtered cs to use fake normal counts
                       normal_callstats_path = "", # pass nomral cs to use real normal counts
+                      unmatched_normal_callstats = False, # pass true if normal does not match vcf
                       ground_truth_seg_file=None,
                       ref_fasta=None,
                       cytoband_file=None
@@ -166,8 +167,9 @@ def Facets_Sim_Workflow(sim_profile = None,
                                     "variant_depth_path": localization_task["variant_depth"] if variant_depth_path != "" else "",
                                     "facets_allelecounts_path": localization_task["facets_allelecounts"] if facets_allelecounts_path != "" else "",
                                     "filtered_variants_path": localization_task["filtered_variants"] if filtered_variants_path != "" else "",
-                                    "normal_callstats_path": localization_task["normal_callstats"] if normal_callstats_path != "" else ""
-                                    })
+                                    "normal_callstats_path": localization_task["normal_callstats"] if normal_callstats_path != "" else "",
+                                    "unmatched_normal_callstats":unmatched_normal_callstats                      
+              })
 
     run_facets_task = Facets(inputs = {"snp_counts": generate_facets_data_task["facets_input_counts"]})
     
@@ -192,6 +194,7 @@ def ASCAT_Sim_Workflow(sim_profile=None,
                        variant_depth_path="",
                        filtered_variants_path = "", # pass tumor filtered cs to use fake normal counts
                        normal_callstats_path = "", # pass nomral cs to use real normal counts
+                       unmatched_normal_callstats = False, # pass true if normal does not match vcf
                        GC_correction_file=None,
                        RT_correction_file=None,
                        ground_truth_seg_file=None,
@@ -217,7 +220,8 @@ def ASCAT_Sim_Workflow(sim_profile=None,
                                         "normal_vcf_path":localization_task["normal_vcf"],
                                         "variant_depth_path": localization_task["variant_depth"],
                                         "filtered_variants_path": localization_task["filtered_variants"] if filtered_variants_path != "" else "",
-                                        "normal_callstats_path": localization_task["normal_callstats"] if normal_callstats_path != "" else ""
+                                        "normal_callstats_path": localization_task["normal_callstats"] if normal_callstats_path != "" else "",
+                                        "unmatched_normal_callstats": unmatched_normal_callstats
                                         })
 
     run_ascat_task = ASCAT(inputs = {"tumor_LogR" : generate_ascat_data_task["ascat_tumor_logR"],
@@ -315,6 +319,7 @@ def Run_Sim_Workflows(sim_profile=None,
                       cytoband_file=None,
                       ground_truth_purity=0.7, # compare all samples to a standard purity gt for MAD score consistancy
                       normal_callstats_path = "", # path to mutect callstats file for the normal sample. will be used as normal allelecounts if passed
+                      unmatched_normal_callstats=False, # pass true if normal does not match vcf (e.g. ffpe with NA12878 normal)
                       # HapASeg
                       hapaseg_hetsite_depth_path=None,
                       hapaseg_covcollect_path=None,
@@ -333,10 +338,10 @@ def Run_Sim_Workflows(sim_profile=None,
                       gatk_annotated_intervals="",
                       # facets
                       facets_variant_depth_path = None,
-                      facets_filtered_variants_path = None, # will be used to generate fake normal allelecounts if normal_cs not passed
+                      facets_filtered_variants_path = "", # will be used to generate fake normal allelecounts if normal_cs not passed
                       # ascat
                       ascat_variant_depth_path=None,
-                      ascat_filtered_variants_path=None, # will be used to generate fake normal allelecounts if normal_cs not passed
+                      ascat_filtered_variants_path="", # will be used to generate fake normal allelecounts if normal_cs not passed
                       ascat_GC_correction_file=None,
                       ascat_RT_correction_file=None,
                       # hatchet
@@ -349,12 +354,11 @@ def Run_Sim_Workflows(sim_profile=None,
                       hatchet_phased_vcf = None 
                       ):
     # important to save space
-    gt_localization_task = LocalizeToDisk(inputs = {
+    gt_localization_task = LocalizeToDisk(files = {
                             "sim_profile":sim_profile,
                             "normal_vcf_path":normal_vcf_path,
                             "hapaseg_hetsite_depth_path": hapaseg_hetsite_depth_path,
-                            "hapaseg_coverage_tsv":hapaseg_covcollect_path
-                            
+                            "hapaseg_covcollect_path":hapaseg_covcollect_path
                             }
                         )
 
@@ -409,6 +413,7 @@ def Run_Sim_Workflows(sim_profile=None,
                         variant_depth_path = facets_variant_depth_path,
                         filtered_variants_path = facets_filtered_variants_path,
                         normal_callstats_path = normal_callstats_path,
+                        unmatched_normal_callstats = unmatched_normal_callstats,
                         ref_fasta=ref_fasta,
                         cytoband_file=cytoband_file,
                         ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"]
@@ -421,6 +426,7 @@ def Run_Sim_Workflows(sim_profile=None,
                        variant_depth_path = ascat_variant_depth_path,
                        filtered_variants_path = ascat_filtered_variants_path,
                        normal_callstats_path = normal_callstats_path,
+                       unmatched_normal_callstats = unmatched_normal_callstats,
                        GC_correction_file = ascat_GC_correction_file,
                        RT_correction_file = ascat_RT_correction_file,
                        ref_fasta=ref_fasta,

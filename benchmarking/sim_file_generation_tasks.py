@@ -64,7 +64,8 @@ class Generate_Facets_Sim_Data(wolf.Task):
               "variant_depth_path": "",
               "facets_allelecounts_path":"",
               "filtered_variants_path": "",
-              "normal_callstats_path": ""}
+              "normal_callstats_path": "",
+              "unmatched_normal_callstats":False} # pass true if ffpe normal does not match vcf
     
     def script(self):
         script = """
@@ -79,6 +80,8 @@ class Generate_Facets_Sim_Data(wolf.Task):
             script += " --facets_allelecounts_path ${facets_allelecounts_path}"
         if self.conf["inputs"]["variant_depth_path"] != "":
             script += " --variant_depth_path ${variant_depth_path}"
+        if self.conf["inputs"]["unmatched_normal_callstats"]:
+            script += " --unmatched_normal_callstats"
 
         return script
 
@@ -97,7 +100,8 @@ class Generate_ASCAT_Sim_Data(wolf.Task):
               "normal_vcf_path": None,
               "variant_depth_path": None,
               "filtered_variants_path": "",
-              "normal_callstats_path" : ""}
+              "normal_callstats_path" : "",
+              "unmatched_normal_callstats":False} # pass true if ffpe normal does not match vcf
    
     def script(self): 
         script = """
@@ -109,7 +113,8 @@ class Generate_ASCAT_Sim_Data(wolf.Task):
             script += " --filtered_variants_path ${filtered_variants_path}"
         if self.conf["inputs"]["normal_callstats_path"] != "":
             script += " --normal_callstats_path ${normal_callstats_path}"
-
+        if self.conf["inputs"]["unmatched_normal_callstats"]:
+            script += " --unmatched_normal_callstats"
         return script
 
     output_patterns = {
