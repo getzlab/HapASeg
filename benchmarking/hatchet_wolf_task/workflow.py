@@ -138,7 +138,7 @@ def Hatchet_Generate_Raw(sample_name = None,
                                                    "tumor_name" : sample_names.split(' ')[2], 
                                                    "tumor_snps": gather_allelecounts["tumor_snps"]
                                                   },
-                                         script = """python -c "import pandas as pd; df = pd.read_csv('${tumor_snps}', sep='\t', names=['CHR', 'POS', 'SAMPLE', 'REF', 'ALT']); normal_df = df.loc[df.SAMPLE =='${normal_name}']; tumor_df = df.loc[df.SAMPLE == '${tumor_name}']; tumor_df = tumor_df.merge(normal_df[['CHR', 'POS']], on = ['CHR', 'POS'], how='inner') tumor_df.to_csv('./tumor_snps.txt', index=False, header=False, sep='\t'); normal_df.to_csv('./normal_snps.txt', index=False, header=False, sep='\t')"
+                                         script = """python -c "import pandas as pd; df = pd.read_csv('${tumor_snps}', sep='\t', names=['CHR', 'POS', 'SAMPLE', 'REF', 'ALT']); normal_df = df.loc[df.SAMPLE =='${normal_name}']; tumor_df = df.loc[df.SAMPLE == '${tumor_name}']; tumor_df = tumor_df.merge(normal_df[['CHR', 'POS']], on = ['CHR', 'POS'], how='inner'); tumor_df.to_csv('./tumor_snps.txt', index=False, header=False, sep='\t'); normal_df.to_csv('./normal_snps.txt', index=False, header=False, sep='\t')"
                                                   """,
                                          
                                          outputs = {"tumor_snps": "tumor_snps.txt",
