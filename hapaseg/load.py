@@ -26,6 +26,12 @@ class HapasegSNPs:
 
         P = txt.parsein(P, 'hap', r'(.)[/|](.)', ["allele_A", "allele_B"]).astype({"allele_A" : int, "allele_B" : int })
         P["phased"] = P["hap"].str[1] == "|"
+        
+        # check if any homozygous phased sites have snuck through
+        if len(P.loc[P["phased"]].loc[lambda x: (x["hap"].str[0] == '1') & (x["hap"].str[2] == '1')]) > 0:
+            print("WARNING: Detected hetsites with homozygous phasing, is does the phasing match the allelecounts? Removing problematic sites.")
+            drop_idxs = P.loc[P["phased"]].loc[lambda x: (x["hap"].str[0] == '1') & (x["hap"].str[2] == '1')].index
+            P = P.drop(drop_idxs)
 
         # XXX: one day, we may support loading VCFs with misphasing probabilities
         #      already given. but today is not that day. this is just a placeholder
