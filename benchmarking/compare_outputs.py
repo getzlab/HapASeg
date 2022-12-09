@@ -154,21 +154,22 @@ def plot_output_comp(overlap_seg_file, # seg file output from acr_compare
     # plot ground truth segments
     for i, seg in seg_df.iterrows():
         # gt major
-        ax.add_patch(Rectangle((seg['start_gpos'], seg[gt_mu_major] - 1.95 * seg[gt_sigma_major]),
-                                seg['length'], seg[gt_sigma_major] * 2 * 1.95,
-                                fill = True, alpha = 0.1, facecolor='r',
-                                #edgecolor=(1.0, 0.0, 0.0, 0.2),
-                                #ls = (0, (0,5,5,0))
-                                ))
-        ax.plot((seg['start_gpos'], seg['start_gpos'] + seg['length']), (seg[gt_mu_major], seg[gt_mu_major]), color='k', alpha=0.2)
-        # gt minor
-        ax.add_patch(Rectangle((seg['start_gpos'], seg[gt_mu_minor] - 1.95 * seg[gt_sigma_minor]),
-                                seg['length'], seg[gt_sigma_minor] * 2 * 1.95,
-                                fill = True, alpha = 0.1, facecolor='b',
-    #                            edgecolor=(0.0, 0.0, 1.0, 0.2),
-     #                           ls = (0, (5,0,0,5))
-                                ))
-        ax.plot((seg['start_gpos'], seg['start_gpos'] + seg['length']), (seg[gt_mu_minor], seg[gt_mu_minor]), color='k', alpha=0.2)
+        if not seg['unique']:
+            ax.add_patch(Rectangle((seg['start_gpos'], seg[gt_mu_major] - 1.95 * seg[gt_sigma_major]),
+                                    seg['length'], seg[gt_sigma_major] * 2 * 1.95,
+                                    fill = True, alpha = 0.1, facecolor='r',
+                                    #edgecolor=(1.0, 0.0, 0.0, 0.2),
+                                    #ls = (0, (0,5,5,0))
+                                    ))
+            ax.plot((seg['start_gpos'], seg['start_gpos'] + seg['length']), (seg[gt_mu_major], seg[gt_mu_major]), color='k', alpha=0.2)
+            # gt minor
+            ax.add_patch(Rectangle((seg['start_gpos'], seg[gt_mu_minor] - 1.95 * seg[gt_sigma_minor]),
+                                    seg['length'], seg[gt_sigma_minor] * 2 * 1.95,
+                                    fill = True, alpha = 0.1, facecolor='b',
+        #                            edgecolor=(0.0, 0.0, 1.0, 0.2),
+         #                           ls = (0, (5,0,0,5))
+                                    ))
+            ax.plot((seg['start_gpos'], seg['start_gpos'] + seg['length']), (seg[gt_mu_minor], seg[gt_mu_minor]), color='k', alpha=0.2)
 
     # plot method vals
     method_segs = seg_df.loc[~seg_df.unique]
