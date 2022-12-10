@@ -280,6 +280,11 @@ class CoverageMCMCRunner:
         if "C_log_len" in cov_df.columns:
             cov_df["C_log_len"] -= cov_df["C_log_len"].mean()
 
+        ## drop faulty covariates that may be all nan with a warning
+        all_nan_cols = cov_df.columns[cov_df.isna().all(0)]
+        if len(all_nan_cols):
+            print("WARNING: detected covarriate with unusable values")
+            cov_df = cov_df.drop(all_nan_cols, axis=1)
         ## filter covariates
         Cslice = cov_df.loc[:, cov_df.columns.str.contains("(?:^C_.*z$|C_log_len)")]
 
