@@ -31,9 +31,11 @@ phasing = wolf.ImportTask(
 
 # for Hapaseg itself
 hapaseg = wolf.ImportTask(
-  task_path = "git@github.com:getzlab/HapASeg.git", # TODO: make remote
+#  task_path = "git@github.com:getzlab/HapASeg.git", # TODO: make remote
+  task_path = "../",
   task_name = "hapaseg"
 )
+
 
 # for coverage collection
 split_intervals = wolf.ImportTask(
@@ -87,6 +89,7 @@ def _hg38_config_gen(wgs):
         ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
+        faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle',
         cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt',
         repl_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/RT.raw.hg38.pickle',
         ref_panel_1000g = hg38_ref_dict
@@ -150,8 +153,11 @@ def workflow(
         ref_fasta_idx = ref_config["ref_fasta_idx"],
         ref_fasta_dict = ref_config["ref_fasta_dict"],
 
+        repl_file = ref_config["repl_file"],
+        faire_file = ref_config["faire_file"],
+        gc_file = ref_config["gc_file"],
+
         genetic_map_file = ref_config["genetic_map_file"],
-          
         common_snp_list = ref_config["common_snp_list"],
           
         cytoband_file = ref_config["cytoband_file"],
@@ -587,9 +593,9 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
         "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
-        "repl_pickle":ref_config["repl_file"],
-        #"faire_pickle":ref_config["faire_file"], # TODO: only use this for FFPE?
-        "gc_pickle":ref_config["gc_file"],
+        "repl_pickle":localization_task["repl_file"],
+        "faire_pickle":localization_task["faire_file"], # TODO: only use this for FFPE?
+        "gc_pickle":localization_task["gc_file"] if ref_config["gc_file"] != "" else "",
         "normal_coverage_csv":normal_cov_gather_task["coverage"] if collect_normal_coverage else "",
         "ref_fasta":localization_task["ref_fasta"],
         "bin_width":bin_width,
