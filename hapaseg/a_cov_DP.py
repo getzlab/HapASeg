@@ -816,7 +816,7 @@ class AllelicCoverage_DP:
                 self.cluster_counts[clusterID] += len(r)
                 self.cluster_sums[clusterID] += r.sum()
                 self.cluster_MLs[clusterID] = self._ML_cluster_add_one(clusterID, segID)
-                self.cluster_ssd[clusterID] = self._ssd_cluster_add_one(clusterID, segID)
+                self.cluster_ssd[clusterID] = self._ssd_cluster_add_one(clusterID, segID)[2]
                 continue
             else:
                 if len(r) > 25:
