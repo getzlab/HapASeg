@@ -27,7 +27,9 @@ def load_callstats(callstats_file):
 # callstats filtering is usually done as part of the hetpulldown in the workflow
 def hapaseg_cs_filtering(callstats_file = None,
                          sample_name = None,
-                         outdir='./'):
+                         outdir='./',
+                         dummy_normal=False #pass true to skip het site filtering
+                        ):
 
     CS = load_callstats(callstats_file)
     
@@ -37,36 +39,40 @@ def hapaseg_cs_filtering(callstats_file = None,
     frac_prefiltered = 1 - CS.loc[:, ["t_refcount", "t_altcount"]].sum(1)/tumor_total_reads
     prefilter_pass_idx = frac_prefiltered <= 0.1
     CS = CS.loc[mapq_pass_idx & prefilter_pass_idx]
-
-    # filter based on het site posterior odds 
-    A = CS["t_altcount"].values[:, None]
-    B = CS["t_refcount"].values[:, None]
-    CS["log_pod"] = np.abs(s.beta.logsf(0.5, A + 1, B + 1) - s.beta.logcdf(0.5, A + 1, B + 1))
-    CS['bdens'] = s.beta.cdf(0.6, A + 1, B + 1) - s.beta.cdf(0.4, A + 1, B + 1)
-    good_pod_idx = CS["log_pod"] < 2.15
-    good_bdens_idx = CS['bdens'] > 0.7
     ample_cov = CS.loc[:, ["t_refcount", "t_altcount"]].sum(1) > 8
-    CS['bden_hom'] =  1 - s.beta.cdf(0.95, A + 1, B + 1)
-   
-    good_idx = good_pod_idx & good_bdens_idx & ample_cov
+    
+    if not dummy_normal:
+    # filter based on het site posterior odds 
+        A = CS["t_altcount"].values[:, None]
+        B = CS["t_refcount"].values[:, None]
+        CS["log_pod"] = np.abs(s.beta.logsf(0.5, A + 1, B + 1) - s.beta.logcdf(0.5, A + 1, B + 1))
+        CS['bdens'] = s.beta.cdf(0.6, A + 1, B + 1) - s.beta.cdf(0.4, A + 1, B + 1)
+        good_pod_idx = CS["log_pod"] < 2.15
+        good_bdens_idx = CS['bdens'] > 0.7
+        CS['bden_hom'] =  1 - s.beta.cdf(0.95, A + 1, B + 1)
+        good_idx = good_pod_idx & good_bdens_idx & ample_cov
+
+    else:
+        good_idx = ample_cov
 
     V = CS.loc[good_idx, ['chr', 'pos', 't_refcount', 't_altcount']]
     V.to_csv(os.path.join(outdir, f'./hapaseg_{sample_name}_hetsites_cs_filtered.tsv'), sep = '\t', index=False)
     D = CS.loc[good_idx, ['chr', 'pos', 'total_reads']]
     D.to_csv(os.path.join(outdir, f'./hapaseg_{sample_name}_hetsites_depth.tsv'), sep = '\t', header=None,index=False)
 
-    # also return genotype
-    hom_idx = CS['bden_hom'] > 0.7
-    genotype_idxs = ample_cov & ((good_pod_idx & good_bdens_idx) | hom_idx)
-    
-    G = CS.loc[genotype_idxs, ['chr', 'pos', 'ref', 'alt']]
-    
-    alleles = np.c_[G.alt.values, G.ref.values]
-    # create genotype for confidently homozygous sites
-    alleles[hom_idx[genotype_idxs], 1] = alleles[hom_idx[genotype_idxs], 0]
-    
-    G['genotype'] =  [ref + alt for alt, ref in alleles]
-    G[['chr', 'pos', 'genotype']].to_csv(os.path.join(outdir, f'./hapaseg_{sample_name}_genotype.tsv'), sep = '\t', index=False)
+    if not dummy_normal:
+        # also return genotype
+        hom_idx = CS['bden_hom'] > 0.7
+        genotype_idxs = ample_cov & ((good_pod_idx & good_bdens_idx) | hom_idx)
+        
+        G = CS.loc[genotype_idxs, ['chr', 'pos', 'ref', 'alt']]
+        
+        alleles = np.c_[G.alt.values, G.ref.values]
+        # create genotype for confidently homozygous sites
+        alleles[hom_idx[genotype_idxs], 1] = alleles[hom_idx[genotype_idxs], 0]
+        
+        G['genotype'] =  [ref + alt for alt, ref in alleles]
+        G[['chr', 'pos', 'genotype']].to_csv(os.path.join(outdir, f'./hapaseg_{sample_name}_genotype.tsv'), sep = '\t', index=False)
 
 # Facets
 
@@ -178,8 +184,14 @@ def hatchet_preprocessing(totals_file_paths_txt = None,
                           thresholds_file_paths_txt = None,
                           tumor_baf_path = None,
                           sample_name = None,
+                          dummy_normal=False, # pass true to interpret normal as first the tumor sample and tumor as second tumor sample
                           outdir = './' ):
     
+    total_names = ['n_int_reads', 'n_pos_reads', 't_int_reads', 't_pos_reads']
+    if dummy_normal:
+        # throw out the first two columns
+        total_names = ["dummy_int_reads", "dummy_pos_reads"] + total_names
+
     total_reads_paths = open(totals_file_paths_txt, 'r').read().split()
     thresholds_snps_paths = open(thresholds_file_paths_txt, 'r').read().split()
 
@@ -196,7 +208,10 @@ def hatchet_preprocessing(totals_file_paths_txt = None,
         if os.path.basename(total_fn).rstrip('total.gz') != os.path.basename(threshold_fn).rstrip('thresholds.gz'):
             raise ValueError("chromosomes in total and thesholds files did no match up")
 
-        this_read_df = pd.read_csv(total_fn, sep=' ', header=None, names=['n_int_reads', 'n_pos_reads', 't_int_reads', 't_pos_reads'])
+        this_read_df = pd.read_csv(total_fn, sep=' ', header=None, names=total_names)
+        if dummy_normal:
+            this_read_df = this_read_df.drop(['dummy_int_reads', 'dummy_pos_reads'], axis=1)
+
         this_thresholds_df = pd.read_csv(threshold_fn, sep='\t', header=None, names=['threshold'])
         
         int_corr = pd.concat([this_thresholds_df['threshold'], pd.Series(np.append(this_thresholds_df.loc[1:, 'threshold'], this_thresholds_df.values[-1])), this_read_df['t_int_reads']], axis=1)
@@ -241,6 +256,7 @@ def parse_args():
     # hapaseg -- no additional args
     hapaseg_cs = subparsers.add_parser("hapaseg", help = "preprocess callstats file for hapaseg")
     hapaseg_cs.add_argument("--callstats", required = True, help="path to mutect call stats file")
+    hapaseg_cs.add_argument("--dummy_normal", required=False, default=False, action='store_true', help="flag to skip normal counts hetsite filtering")
     
     # facets
     facets_cs = subparsers.add_parser("facets", help = "preprocess callstats file for facets")
@@ -262,6 +278,7 @@ def parse_args():
     hatchet.add_argument("--totals_file_paths", required=True, help="path to txt file containing locations of chr{}.total files")
     hatchet.add_argument("--thresholds_file_paths", required=True, help = "path to txt file containing locations of chr{}.thresholds files")
     hatchet.add_argument("--tumor_baf_path", required=True, help= "path to hatchet allelecounts results")
+    hatchet.add_argument("--dummy_normal", required=False, default=False, action='store_true', help="flag to ignore normal counts and use first two tumors instead")
     args = parser.parse_args()
     
     return args
@@ -276,6 +293,7 @@ def main():
         print("filtering callstats for hapaseg...", flush=True)
         hapaseg_cs_filtering(callstats_file = args.callstats,
                              sample_name = args.sample_name,
+                             dummy_normal = args.dummy_normal,
                              outdir = output_dir)
 
     elif args.command == "ascat":
@@ -305,7 +323,8 @@ def main():
                               thresholds_file_paths_txt = args.thresholds_file_paths,
                               tumor_baf_path = args.tumor_baf_path,
                               sample_name = args.sample_name,
-                              outdir = output_dir)
+                              outdir = output_dir,
+                              dummy_normal=args.dummy_normal)
     else:
         raise ValueError(f"could not recognize command {args.command}")
 if __name__ == "__main__":
