@@ -353,7 +353,7 @@ class HATCHET_cluster_bins(wolf.Task):
     "clustered_segments": "clustered_bins.seg",
     }
     
-    resources = {"cpus-per-task": 4, "mem": "10G"}
+    resources = {"cpus-per-task": 4, "mem": "15G"}
     docker = "gcr.io/broad-getzlab-workflows/hatchet:v2"
     
 class HATCHET_compute_cn(wolf.Task):
