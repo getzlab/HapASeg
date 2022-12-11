@@ -16,6 +16,15 @@ from matplotlib.collections import LineCollection
 # use ipython limit of 3k instead
 sys.setrecursionlimit(3000)
 
+
+def add_gt_event_length_annotations(sample_profile, seg_df):
+    profile_df = sample_profile.cnv_profile_df.copy().reset_index(drop=True).astype({'Chromosome' : int})
+    seg_df['midpoint'] = seg_df['Start.bp'] + (seg_df['End.bp'] - seg_df['Start.bp']) / 2
+    mut.map_mutations_to_targets(seg_df, profile_df, chrcol='Chromosome', poscol='midpoint', startcol='Start.bp', endcol='End.bp')
+    seg_df['gt_event_length'] = profile_df.loc[seg_df['targ_idx'].values, 'lens'].values
+    seg_df = seg_df.drop(['targ_idx', 'midpoint'], axis=1)
+    return seg_df
+
 #### method output conversion tasks ####
 
 def convert_ascat_output(ascat_df, # ascat segments_raw output file
@@ -312,6 +321,7 @@ def facets_downstream_analysis(facets_sim_input_file, # path to facets input cou
     # add ccf annotations
     sim_profile = pd.read_pickle(sim_profile_pickle)
     seg_df = sim_profile.add_ccf_annotations(seg_df)
+    seg_df = add_gt_event_length_annotations(sim_profile, seg_df)
     
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_facets_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
@@ -358,6 +368,7 @@ def ascat_downstream_analysis(ascat_sim_t_logr, # path to ascat sim tumor logr f
     # add ccf annotations
     sim_profile = pd.read_pickle(sim_profile_pickle)
     seg_df = sim_profile.add_ccf_annotations(seg_df)
+    seg_df = add_gt_event_length_annotations(sim_profile, seg_df)
     
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_ascat_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
@@ -404,6 +415,7 @@ def gatk_downstream_analysis(sim_gatk_cov_tsv, # gatk simulated tumor coverage d
     # add ccf annotations
     sim_profile = pd.read_pickle(sim_profile_pickle)
     seg_df = sim_profile.add_ccf_annotations(seg_df)
+    seg_df = add_gt_event_length_annotations(sim_profile, seg_df)
     
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_gatk_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
@@ -448,6 +460,7 @@ def hatchet_downstream_analysis(hatchet_seg_file, # cluster bins output with clu
     # add ccf annotations
     sim_profile = pd.read_pickle(sim_profile_pickle)
     seg_df = sim_profile.add_ccf_annotations(seg_df)
+    seg_df = add_gt_event_length_annotations(sim_profile, seg_df)
     
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_hatchet_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
