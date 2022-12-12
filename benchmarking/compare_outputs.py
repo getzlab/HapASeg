@@ -21,6 +21,8 @@ def add_gt_event_length_annotations(sample_profile, seg_df):
     profile_df = sample_profile.cnv_profile_df.copy().reset_index(drop=True).astype({'Chromosome' : int})
     seg_df['midpoint'] = seg_df['Start.bp'] + (seg_df['End.bp'] - seg_df['Start.bp']) / 2
     mut.map_mutations_to_targets(seg_df, profile_df, chrcol='Chromosome', poscol='midpoint', startcol='Start.bp', endcol='End.bp')
+    # some methods might have errant segments that do not fall within our bounds, throw these out
+    seg_df = seg_df.loc[seg_df['targ_idx'] != -1]
     seg_df['gt_event_length'] = profile_df.loc[seg_df['targ_idx'].values, 'lens'].values
     seg_df = seg_df.drop(['targ_idx', 'midpoint'], axis=1)
     return seg_df
@@ -503,8 +505,8 @@ def hapaseg_downstream_analysis(hapaseg_seg_file, # hapaseg output seg file
     
     # add ccf annotations
     sim_profile = pd.read_pickle(sim_profile_pickle)
-    print(seg_df.head())
     seg_df = sim_profile.add_ccf_annotations(seg_df)
+    seg_df = add_gt_event_length_annotations(sim_profile, seg_df)
     
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_hapaseg_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
