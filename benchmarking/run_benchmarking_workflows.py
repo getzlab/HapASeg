@@ -8,7 +8,11 @@ import os
 profile_paths = glob.glob('/home/opriebe/data/cnv_sim/benchmarking/sim_samples/benchmarking_profiles/benchmarking_profile_*.pickle')
 purity_range = np.r_[0.1:1:0.1]
 
-with wolf.Workflow(workflow=Run_Sim_Workflows, namespace="benchmarking_dir", scheduler_processes=3) as w:
+with wolf.Workflow(workflow=Run_Sim_Workflows, 
+                   namespace="benchmarking_dir",
+                   scheduler_processes=32,
+                   max_concurrent_flow_tasks = 2,
+                   common_task_opts = { "retry" : 8 }) as w:
     for profile_path in profile_paths:
         for purity in purity_range:
             # Fresh frozen pcr free
