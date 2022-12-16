@@ -44,9 +44,13 @@ def convert_facets_output(facets_df, # facets segments file
     facets_df = pd.read_csv(facets_df, sep=' ')
     if 'cnlr.median' not in facets_df.columns or 'mafR' not in facets_df.columns:
         raise ValueError("expected cnlr.median and mafR columns. Are you sure a Facets segments file was passed?")
+
+    # FACETS outputs allelic imbalance as log-odds ratio; use inverse logit
+    # to convert to f \in [0, 1]
+    f = np.exp2(facets_df["mafR"])/(1 + np.exp2(facets_df["mafR"]))
     
-    facets_df['mu.major'] = np.exp2(facets_df['cnlr.median']) * np.exp(facets_df['mafR'])
-    facets_df['mu.minor'] = np.exp2(facets_df['cnlr.median']) * (1-np.exp(facets_df['mafR']))
+    facets_df['mu.major'] = np.exp2(facets_df['cnlr.median']) * f
+    facets_df['mu.minor'] = np.exp2(facets_df['cnlr.median']) * (1-f)
 
     facets_df = facets_df.rename({'chrom':'Chromosome', 'start':'Start.bp', 'end':'End.bp'}, axis=1)
     facets_df = facets_df[['Chromosome', 'Start.bp', 'End.bp', 'mu.major', 'mu.minor']]
@@ -374,7 +378,7 @@ def hapaseg_downstream_analysis(hapaseg_seg_file, # hapaseg output seg file
     
     # hapaseg output is already in proper format so doesnt need to be converted
     # output is on same scale as ground truth so no parameter fitting necessary
-    mad_score, opt_scale_factor, opt_purity, non_ov_len, ov_len, seg_df = acr_compare(hapaseg_seg_file, gt_segfile, fit_params=False)
+    mad_score, opt_scale_factor, opt_purity, non_ov_len, ov_len, seg_df = acr_compare(hapaseg_seg_file, gt_segfile, fit_params=True)
     comparison_segfile_outpath = os.path.join(outdir, f'{sample_name}_hapaseg_comparison_segfile.tsv')
     seg_df.to_csv(comparison_segfile_outpath, sep='\t', index=False)
     

@@ -217,7 +217,8 @@ for i, chrname in enumerate(["chr" + str(x) for x in list(range(1, 23)) + ["X", 
 
 ## FAIRE {{{
 
-## convert bigWig to FWB
+#
+# Approach 1: convert bigWig to FWB {{{
 
 # for some reason pyBigWig can't process this file
 # bw = pyBigWig.open("covars/wgEncodeOpenChromFaireGm12878BaseOverlapSignal.bigwig")
@@ -255,8 +256,10 @@ FAIRE_smooth = FAIRE.copy()
 FAIRE_smooth["FAIRE"] = np.convolve(FAIRE["FAIRE"], np.ones(5), mode = "same")/5
 FAIRE_smooth.to_pickle("covars/FAIRE_GM12878.smooth5.hg19.pickle")
 
+# }}}
+
 #
-# re-process all FAIRE files using samtools
+# Approach 2: re-process raw FAIRE BAM files using samtools {{{
 import wolf, itertools, glob, prefect
 
 ## make interval list
@@ -447,6 +450,140 @@ C100k = C.groupby(["chr", "index_r"]).agg({
 }).droplevel(1).reset_index().drop(columns = "index_r")
 
 C100k.to_pickle("covars/FAIRE/coverage.dedup.raw.100kb.pickle")
+
+## Realign FAIRE tracks to hg38 {{{
+
+alignment = wolf.ImportTask(
+  "/home/jhess/j/proj/pipe/20220831_wolfalign",
+  "alignment"
+)
+
+def realign(bam, bwa_index_dir, bucket_dir):
+    fastq = alignment.samtools_fastq(
+      inputs = { "bam" : bam, "has_readgroups" : False },
+      extra_localization_args = {
+        "localize_to_persistent_disk" : True,
+        "files_to_copy_to_outputs" : {"full_readgroup_name"}
+      }
+    )
+
+    aligned_bam = alignment.alignment_workflow(
+      fastq1s = fastq["unpaired"],
+      bwa_index_dir = bwa_index_dir,
+      readgroups = r"@RG\tID:dummy",
+      n_shard = 3
+    )
+
+    markdup = alignment.samtools_markdups(
+      inputs = { "bam" : aligned_bam }
+    )
+
+    bai = alignment.samtools_index(
+      inputs = { "bam" : markdup["bam"] }
+    )
+
+    wolf.UploadToBucket(
+      files = [markdup["bam"], bai["bai"]],
+      bucket = f"gs://jh-xfer/faire_hg38_v2/{bucket_dir}/"
+    )
+
+with wolf.Workflow(workflow = realign, namespace = "faire_realign") as w:
+    for _, bam, cell_line, rep in B.itertuples():
+        samp = cell_line + "_" + rep
+        w.run(
+          RUN_NAME = samp,
+          bam = base_url + bam,
+          bwa_index_dir = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/",
+          bucket_dir = samp
+        )
+
+# }}}
+
+## get coverage on realigned BAMs {{{
+import subprocess
+
+intervals = glob.glob("/mnt/j/proj/cnv/20201018_hapseg2/covars/FAIRE/intervals/*.bed")
+
+#w = wolf.Workflow(workflow = lambda:None, namespace = "faire_realign")
+#for _, bam, cell_line, rep in B.itertuples():
+#    w.load_results(RUN_NAME = cell_line + "_" + rep)
+#
+#F = w.tasks.loc[(slice(None), "UploadToBucket"), "results"].loc[w.tasks.loc[:, "success"] == True].droplevel(1)
+#F = F.apply(lambda x : x["cloud_path"]).rename(columns = { "0" : "bam", "1" : "bai" })
+#F = pd.concat([F.index.str.extract(r"(?P<cell_line>.*)_(?P<rep>\d+)"), F.reset_index()], axis = 1)
+bams = subprocess.run("gsutil ls gs://jh-xfer/faire_hg38_v2/*/*", shell = True, capture_output = True)
+bams = pd.Series(bams.stdout.decode().rstrip().split("\n"))
+bams = bams.str.extract(r"(?P<path>.*v2/(?P<cell_line>.*)_(?P<rep>\d+)/.*(?P<ext>bam|bai))$")
+bams = bams.pivot(columns = "ext", index = ["cell_line", "rep"], values = "path")
+
+# same workflow as on hg19, but no need to run MarkDuplicates
+def BedCovFlow(bam_list, bai_list, intervals):
+    BedCov = wolf.Task(
+      name = "BedCov",
+      inputs = { "intervals" : intervals, "bams" : [bam_list], "bais" : [bai_list] },
+      script = """
+      samtools bedcov -Q1 -X ${intervals} $(cat ${bams}) $(cat ${bais}) > coverage.bed
+      """,
+      outputs = { "coverage" : "coverage.bed" },
+      docker = "gcr.io/broad-getzlab-workflows/base_image:v0.0.5",
+      extra_localization_args = { "localize_to_persistent_disk" : True }
+    )
+
+    # gather BedCovs
+    BedCovGather = wolf.Task(
+      name = "BedCovGather",
+      inputs = { "beds" : [BedCov["coverage"]] },
+      script = """
+      cat $(cat ${beds}) | sort -k1,1V -k2,2n | \
+        awk -F'\t' 'BEGIN { OFS = FS } { tot = 0; for(i = 4; i <= NF; i++) { tot += $i }; print $0, tot }' > concat.bed
+      """,
+      outputs = { "concat" : "concat.bed" },
+    )
+
+with wolf.Workflow(workflow = BedCovFlow, namespace = "FAIRE_cov_hg38") as w:
+    for cell_line, b in bams.groupby(level = 0):
+        w.run(RUN_NAME = cell_line, bam_list = b["bam"], bai_list = b["bai"], intervals = intervals)
+
+# }}}
+
+## parse in hg38 coverage; make track {{{
+
+from capy import mut
+
+w = wolf.Workflow(workflow = lambda:None, namespace = "FAIRE_cov_hg38")
+for cell_line, b in bams.groupby(level = 0):
+    w.load_results(RUN_NAME = cell_line)
+
+T = w.tasks.loc[(slice(None), "BedCovGather"), ["results"]].droplevel(1)
+T["covpath"] = T["results"].apply(lambda x : x["concat"])
+
+for i, (cell_line, cov) in enumerate(T.iterrows()):
+    X = pd.read_csv(cov["covpath"], sep = "\t", header = None)
+    X = X.rename(columns = { len(X.columns) - 1 : cell_line })
+    # get common lines
+    if i == 0:
+        C = X.iloc[:, np.r_[0:3, -1]].rename(columns = { 0 : "chr", 1 : "start", 2 : "end" })
+    else:
+        C = pd.concat([C, X.iloc[:, -1]], axis = 1)
+
+C["chr"] = mut.convert_chr(C["chr"])
+
+C.to_pickle("covars/FAIRE/coverage.dedup.raw.hg38.pickle")
+
+# rebin to 10k
+C["index_r"] = C.index//5
+C10k = C.groupby(["chr", "index_r"]).agg({
+   "start" : min, "end" : max,
+   **{ k : sum for k in C.columns[3:] }
+}).droplevel(1).reset_index().drop(columns = "index_r")
+
+C10k.to_pickle("covars/FAIRE/coverage.dedup.raw.10kb.hg38.pickle")
+
+# gsutil cp covars/FAIRE/coverage.dedup.raw.10kb.hg38.pickle gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/
+
+# }}}
+ 
+# }}}
 
 # }}}
 

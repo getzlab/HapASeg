@@ -26,7 +26,8 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                          cytoband_file=None,
                          ground_truth_seg_file=None,
                          target_list=2000,
-                         cleanup_disks=False
+                         cleanup_disks=False,
+                         is_ffpe=False
                 ):
     localization_task = LocalizeToDisk(files = {
                                     "normal_vcf":normal_vcf_path,
@@ -51,7 +52,8 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                                    phased_vcf = localization_task["phased_vcf"],
                                    ref_genome_build = ref_build,
                                    target_list = target_list if isinstance(target_list, int) else localization_task["target_list"],
-                                   cleanup_disks=cleanup_disks
+                                   cleanup_disks=cleanup_disks,
+                                   is_ffpe=is_ffpe
                                    )
     
     hapaseg_downstream = Downstream_HapASeg_Analysis(inputs = {
@@ -288,6 +290,7 @@ def Run_Sim_Workflows(sim_profile=None,
                       hapaseg_target_list=2000,
                       hapaseg_phased_vcf_path=None, # path to cached eagle combined output
                       hapaseg_cleanup_disks=False,
+                      hapaseg_is_ffpe=False,
                       gatk_variant_depth_path = None,
                       gatk_coverage_tsv_path = None,
                       gatk_sim_normal_allelecounts_path=None,
@@ -333,7 +336,8 @@ def Run_Sim_Workflows(sim_profile=None,
                         cytoband_file=cytoband_file,
                         ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"],
                         target_list = hapaseg_target_list,
-                        cleanup_disks = hapaseg_cleanup_disks
+                        cleanup_disks = hapaseg_cleanup_disks,
+                        is_ffpe = hapaseg_is_ffpe
                         )
 
     GATK_Sim_Workflow(sim_profile=sim_profile,
