@@ -12,7 +12,7 @@ import scipy.stats as stats
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
 from .NB_coverage_MCMC import NB_MCMC_AllClusters, NB_MCMC_SingleCluster
-from .model_optimizers import PoissonRegression
+from .model_optimizers import PoissonRegression, CovLNP_NR_prior
 
 zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
 
@@ -51,6 +51,11 @@ class CoverageMCMCRunner:
         self.bin_width = bin_width
         self.wgs = wgs
 
+        # lnp hyperparameters - can make passable by arguments
+        self.alpha_prior = 1e-4
+        self.beta_prior = 4e-3
+        self.lamda = 1e-10
+
         self.allelic_clusters = np.load(f_allelic_clusters)
         with open(f_segs, "rb") as f:
             self.segmentations = pickle.load(f)
@@ -88,9 +93,12 @@ class CoverageMCMCRunner:
         Pi, r, C, filtered_cov_df = self.make_regressors(self.aseg_cov_df)
         pois_regr = PoissonRegression(r, C, Pi, log_exposure = np.log(self.bin_width))
         all_mu, global_beta = pois_regr.fit()
-
+        
+        # filter bins from each segment based on lnp convergence
+        full_mask = filter_segments(Pi, r, C, global_beta, exposure=np.log(self.bin_width), alpha_prior = self.alpha_prior, beta_prior = self.beta_prior, lamda=self.lamda)
+        
         # save these results to a numpy object
-        return Pi, r, C, all_mu, global_beta, filtered_cov_df, self.allelic_sample
+        return Pi[full_mask], r[full_mask], C[full_mask], all_mu, global_beta, filtered_cov_df.loc[full_mask], self.allelic_sample
 
     def load_coverage(self, coverage_csv):
         Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "mean_frag_len", "std_frag_len", "num_frags", "tot_reads", "fail_reads"], low_memory=False)
@@ -416,6 +424,49 @@ class CoverageMCMCRunner:
         C = np.c_[cov_df[sorted_covar_columns]]
 
         return Pi, r, C, pd.concat([cov_df.loc[:, ~col_idx], cov_df.loc[:, sorted_covar_columns]], axis = 1)
+
+# function tries to optimize the lnp, iteratively removing the most unlikely
+# bins until convergence or 5% of bins are thrown out. returns a boolean mask 
+# of length n, masking thrown out bins.
+def poisson_outlier_filter(r, C, beta, exposure=0., alpha_prior=1e-5, beta_prior=4e-3, lamda=1e-10):
+    r = r.flatten()
+    # set max removals to 5%, if exceeded the segment is thrown out
+    max_idxs_to_remove = max(2, int(len(r) / 20))
+    # filter based on the corrected coverage, so compute this
+    residuals = np.exp(np.log(r) - (C @ beta).flatten())
+    pois_log_liks = stats.poisson(mu = residuals.mean()).logpmf(residuals.astype(int))
+    idxs_to_remove = np.argsort(pois_log_liks)
+    mask = np.ones(len(r), dtype=bool)
+    # first try to see if we can converge without removing anything
+    try:
+        lnp = CovLNP_NR_prior(r[mask,None], beta, C[mask], exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior = r[mask].mean(), lamda=lamda, init_prior = False)
+        lnp.fit()
+        return mask
+    except:
+        pass
+    
+    # if not we try removing one bin at a time util convergence or the threshold
+    for idx_del in idxs_to_remove[:max_idxs_to_remove]:
+        mask[idx_del] = False
+        lnp = CovLNP_NR_prior(r[mask,None], beta, C[mask], exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior = r[mask].mean(), lamda=lamda, init_prior = False)
+        try:
+            lnp.fit()
+            #if we fit properly, then return mask
+            return mask
+        except:
+            continue
+    return np.zeros(len(r), dtype=bool)
+
+# runs poisson filtering on each segment, returning a final mask over all bins
+def filter_segments(Pi, r, C, beta, exposure=0., alpha_prior = 1e-4, beta_prior=4e-3, lamda=1e-10):
+    mask_lst = []
+    seg_labels = np.argmax(Pi, 1)
+    for seg_idx in sorted(np.unique(seg_labels)):
+        seg_mask = seg_labels==seg_idx
+        mask = poisson_outlier_filter(r[seg_mask, :], C[seg_mask], beta, exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, lamda=lamda)
+        mask_lst.append(mask)
+    final_mask = np.concatenate(mask_lst)
+    return final_mask
 
 #TODO switch to lnp
 # function for fitting nb model without covariates
