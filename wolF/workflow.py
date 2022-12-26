@@ -7,7 +7,7 @@ import prefect
 import subprocess
 import tempfile
 import wolf
-
+from wolf.fc import SyncToWorkspace
 from wolf.localization import LocalizeToDisk, DeleteDisk
 #
 # import tasks
@@ -108,6 +108,9 @@ def workflow(
   hetsites_file = None,
   genotype_file =None,
 
+  workspace = None,
+  workspace_pairname = None,
+
   tumor_bam = None,
   tumor_bai = None,
   tumor_coverage_bed = None,
@@ -126,7 +129,10 @@ def workflow(
   phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
   persistent_dry_run = False,
   cleanup_disks=True,
-  is_ffpe = False # use FAIRE as covariate
+  is_ffpe = False, # use FAIRE as covariate
+  sync = False,
+  annotation_postfix = 'WGS'
+
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -293,7 +299,7 @@ def workflow(
               )
             )
 
-            # gather normal coverage
+            # gather normal coveragz
             normal_cov_gather_task = wolf.Task(
               name = "gather_coverage",
               inputs = { "coverage_beds" : [normal_cov_collect_task["coverage"]] },
@@ -571,6 +577,9 @@ outputs = {"all_arms_obj": "concat_arms.pickle"},
 docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
 )
 
+    print('\nvars(hp_task["tumor_hets"]):\n ',vars(hp_task["tumor_hets"]))
+    print('\nhp_task["tumor_hets"]:\n ',hp_task["tumor_hets"])
+
     ## run DP
 
     hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
@@ -697,8 +706,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
     def _get_ADP_draw_num(preprocess_data_obj):
         return int(np.load(preprocess_data_obj)["adp_cluster"])
     
-    adp_draw_num = _get_ADP_draw_num(prep_cov_mcmc_task["preprocess_data"])
-    
+    adp_draw_num = _get_ADP_draw_num(prep_cov_mcmc_task["preprocess_data"])    
 
     # only run cov DP if using exomes. genomes should have enough bins in each segment
     if not wgs:
@@ -765,6 +773,46 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             "use_single_draw":True # for now only use single best draw for wgs
             }
         )
+    
+    if sync:
+        print("\nhp_task:\n",vars(hp_task))
+        print("\nacdp_task:\n",vars(acdp_task))
+        print('\nacdp_task["acdp_clusters_plot"]:\n',acdp_task["acdp_clusters_plot"])
+        
+        attr_map = {
+        #
+        # het site info {{{
+
+
+
+            'tumor_hets'         : hp_task["tumor_hets"],
+            'normal_hets'        : hp_task["normal_hets"],
+            'normal_genotype'    : hp_task["normal_genotype"],
+
+            #acdp_model_pickle  : acdp_task["acdp_model_pickle"],
+            'acdp_clusters_plot' : acdp_task["acdp_clusters_plot"],
+            'acdp_tuples_plot'   : acdp_task["acdp_tuples_plot"],
+            'acdp_genome_plots'  : acdp_task["acdp_agg_draws"],
+            'acdp_segfile'       : acdp_task["acdp_segfile"],
+            'unclustered_segs'   : acdp_task["unclustered_segs"],
+            'opt_fit_params'     : acdp_task["optimal_fit_params"],
+            'bin_width'          : bin_width
+
+        }
+
+        attr_map1 = attr_map
+        print("The original dictionary is : " + str(attr_map1))
+        attr_map  = {str(key) + "_" + annotation_postfix : val for key, val in attr_map1.items()}
+        print("The postfix dictionary is : " + str(attr_map))
+        
+        sync_task = SyncToWorkspace(
+            nameworkspace = workspace,
+            entity_type = "pair",
+            entity_name = workspace_pairname,
+            attr_map = attr_map
+        )    
+
+
     if cleanup_disks:
         #cleanup by deleting bam disks. we make seperate tasks for the bams
         if not persistent_dry_run and tumor_bam is not None and tumor_bai is not None:
