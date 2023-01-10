@@ -1011,10 +1011,12 @@ class DPinstance:
           )
         )
         return np.r_[base_colors, extra_colors if extra_colors.size > 0 else np.empty([0, 3])][si]
+    
+    def visualize_segs(self, f = None, ax = None, use_clust = False, show_snps = False, chrom = None):
+        if ax is None:
+            f = plt.figure(figsize = [16, 4]) if f is None else f
+            ax = plt.gca()
 
-    def visualize_segs(self, f = None, use_clust = False, show_snps = False, chrom = None):
-        f = plt.figure(figsize = [16, 4]) if f is None else f
-        ax = plt.gca()
         if chrom is None:
             ax.set_xlim([0, self.S["pos_gp"].max()])
         else:
@@ -1128,3 +1130,31 @@ class DPinstance:
         plt.legend(["Clust", "DP", "Seg", "Total"])
         plt.xlabel(r"Post-burnin iteration ($\times 100$)")
         plt.ylabel(r"$\Delta$ likelihood")
+        
+# helper method to allow user to reload a allelic DP object for plotting using
+# the output files. note that fields that are not essential for plotting may not
+# reflect the true end state of the ADP
+def load_DP_object_from_outputs(snps_path, dp_data_path, segmentation_path):
+    snps_df = pd.read_pickle(snps_path)
+    dp_data = np.load(dp_data_path)
+    segmentations = pd.read_pickle(segmentation_path)
+    
+    self = DPinstance(snps_df, dp_count_scale_factor = snps_df['clust'].value_counts().mean())
+    
+    # we need to repopulate fields that are only filled during runtime
+    self.breakpoints = sc.SortedSet(np.flatnonzero(np.diff(self.S["clust"]) != 0) + 1) | {0, len(self.S)}
+
+    self.clust_counts = sc.SortedDict(self.S["clust"].value_counts().drop(-1, errors = "ignore"))
+    Sgc = self.S.groupby(["clust", "flipped"])[["min", "maj"]].sum()
+    if (Sgc.droplevel(0).index == True).any():
+        Sgc.loc[(slice(None), True), ["min", "maj"]] = Sgc.loc[(slice(None), True), ["maj", "min"]].values
+    self.clust_sums = sc.SortedDict({**{ k : np.r_[v["min"], v["maj"]] for k, v in Sgc.groupby(level = "clust").sum().to_dict(orient = "index").items() },**{-1 : np.r_[0, 0]}})    
+    self.clust_members = sc.SortedDict({ k : set(v) for k, v in self.S.groupby("clust").groups.items() if k != -1 })
+    
+    self.segment_trace = segmentations
+    self.phase_orientations = dp_data['snps_to_phases']
+    self.likelihood_trace = dp_data['likelihoods']
+    self.snps_to_clusters = dp_data['snps_to_clusters']
+    self.clusts = self.S["clust"].values
+
+    return self
