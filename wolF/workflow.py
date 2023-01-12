@@ -118,6 +118,7 @@ def workflow(
   localization_token=None,
 
   num_cov_seg_samples=5,
+  run_cdp=False, # option to run coverage DP on WES data
 
   phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
   persistent_dry_run = False,
@@ -699,7 +700,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
     
 
     # only run cov DP if using exomes. genomes should have enough bins in each segment
-    if not wgs:
+    if not wgs and run_cdp:
         # coverage DP
         cov_dp_task = hapaseg.Hapaseg_coverage_dp(
         inputs = {

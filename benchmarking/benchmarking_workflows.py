@@ -28,6 +28,7 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                          cytoband_file=None,
                          ground_truth_seg_file=None,
                          target_list=2000,
+                         run_cdp=False, # only applies to  WES, optionaly run CDP before ACDP
                          cleanup_disks=False
                 ):
     localization_task = LocalizeToDisk(files = {
@@ -54,6 +55,7 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                                    normal_coverage_bed = localization_task["normal_covcollect"] if normal_covcollect_path != "" else None,
                                    phased_vcf = localization_task["phased_vcf"],
                                    ref_genome_build = ref_build,
+                                   run_cdp = run_cdp,
                                    target_list = target_list if isinstance(target_list, int) else localization_task["target_list"],
                                    cleanup_disks=cleanup_disks
                                    )
@@ -327,6 +329,7 @@ def Run_Sim_Workflows(sim_profile=None,
                       hapaseg_phased_vcf_path=None, # path to cached eagle combined output
                       hapaseg_cleanup_disks=False,
                       hapaseg_normal_covcollect_path="", # optional, will be used as coviatiate if passed
+                      hapaseg_run_cdp=False, # only applies to  WES, optionaly run CDP before ACDP
                       # GATK
                       gatk_variant_depth_path = None,
                       gatk_coverage_tsv_path = None,
@@ -386,6 +389,7 @@ def Run_Sim_Workflows(sim_profile=None,
                         cytoband_file=cytoband_file,
                         ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"],
                         target_list = hapaseg_target_list,
+                        run_cdp = hapaseg_run_cdp,
                         cleanup_disks = hapaseg_cleanup_disks
                         )
 
