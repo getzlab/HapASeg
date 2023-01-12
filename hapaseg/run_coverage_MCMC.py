@@ -124,6 +124,9 @@ class CoverageMCMCRunner:
         with pd.option_context('mode.chained_assignment', None): # suppress erroneous SettingWithCopyWarning
             Cov["fragcorr"] = np.round(Cov["covcorr"]/Cov["mean_frag_len"].mean())
         
+        # remove any fragcorr zero bins
+        Cov = Cov.loc[Cov.fragcorr > 0]
+
         return Cov.reset_index(drop = True)
 
     def load_SNPs(self, f_snps):
@@ -184,13 +187,11 @@ class CoverageMCMCRunner:
     def load_covariates(self, cov_df):
         cov_df = cov_df.copy()
         ## Target size
-
-        # we only need bin size if doing exomes but we can check by looking at the bin lengths
-        cov_df["C_log_len"] = np.log(cov_df["end"] - cov_df["start"] + 1)
-        # in case we are doing wgs these will all be the same and we must remove
-        # since it will ruin beta fitting
-        if self.wgs:
-            cov_df = cov_df.drop(['C_log_len'], axis=1)
+        
+        if not self.wgs:
+            # we only need bin size if doing exomes
+            cov_df["C_log_len"] = np.log(cov_df["end"] - cov_df["start"] + 1)
+            # for wgs these will all be the same and we must remove
 
         ## Fragment length
 
@@ -413,7 +414,7 @@ class CoverageMCMCRunner:
         
         # remove non z-transformed covar cols
         drop_cols = list(cov_df.columns[cov_df.columns.str.contains("^C_.*") & 
-                                       ~cov_df.columns.str.contains("^C_.*z$|C_frag_len$")])
+                                       ~cov_df.columns.str.contains("^C_.*z$|^C_frag_len$|^C_log_len")])
         # also remove now useless coverage info
         drop_cols += ['covcorr', 'C_frag_len', 'std_frag_len','num_frags', 'tot_reads', 'fail_reads', 'fail_reads_zt']
         cov_df = cov_df.drop(drop_cols, axis=1)
@@ -461,11 +462,13 @@ def poisson_outlier_filter(r, C, beta, exposure=0., alpha_prior=1e-5, beta_prior
 def filter_segments(Pi, r, C, beta, exposure=0., alpha_prior = 1e-4, beta_prior=4e-3, lamda=1e-10):
     mask_lst = []
     seg_labels = np.argmax(Pi, 1)
-    for seg_idx in sorted(np.unique(seg_labels)):
+    print("filtering outlier bins from segments...")
+    for seg_idx in tqdm.tqdm(sorted(np.unique(seg_labels))):
         seg_mask = seg_labels==seg_idx
         mask = poisson_outlier_filter(r[seg_mask, :], C[seg_mask], beta, exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, lamda=lamda)
         mask_lst.append(mask)
     final_mask = np.concatenate(mask_lst)
+    print(f"filtered {(~final_mask).sum()} bins")
     return final_mask
 
 #TODO switch to lnp
