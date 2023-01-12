@@ -46,6 +46,8 @@ class AllelicCluster:
 		self.mu_i_arr = np.zeros(len(self.r))
 
 		self.lamda = 1e-10
+		self.alpha_prior = 1e-5
+		self.beta_prior = 4e-3
 
 		# keep cache of previously computed breakpoints for fast splitting
 		sz = tuple(np.r_[1, 1]*(len(r) + 1))
@@ -81,12 +83,6 @@ class AllelicCluster:
 		self.lepsi_i_arr = np.ones(len(self.r)) * self.lepsi
 		self.epsi_i_arr = np.exp(self.lepsi_i_arr)
 		
-		#self.alpha_prior = len(self.r)
-		#self.beta_prior = (self.alpha_prior + 1.5) * np.exp(2 * self.lepsi)
-		#self.alpha_prior = 1
-		#self.beta_prior = (self.alpha_prior + 1.5) * np.exp(2 * self.lepsi)
-		self.alpha_prior = 1e-5
-		self.beta_prior = 4e-3
 	# fit initial mu_k and epsilon_k for the cluster
 	def NR_init(self):
 		self.mu, self.lepsi = self.lnp_init()
@@ -163,7 +159,7 @@ class AllelicCluster:
 
 	def lnp_init(self):
 		# now fit LNP
-		lnp = CovLNP_NR_prior(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure), init_prior=False, lamda = self.lamda, mu_prior = self.mu, alpha_prior = 1, beta_prior = 5e-2)
+		lnp = CovLNP_NR_prior(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure), init_prior=False, lamda = self.lamda, mu_prior = self.mu, alpha_prior = self.alpha_prior, beta_prior = self.beta_prior)
 		return lnp.fit()
 
 	# statsmodels NB BFGS optimizer is more stable than NR so we will use it until migration to LNP
