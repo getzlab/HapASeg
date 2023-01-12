@@ -184,7 +184,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
 
 def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx):
     if opt_idx is None:
-        opt_idx = acdp_df.dp_draw.unique[0]
+        opt_idx = acdp_df.dp_draw.unique()[0]
 
     acdp_single = acdp_df.loc[acdp_df.dp_draw == opt_idx]
     num_bins = (acdp_single.allele==1).sum()
@@ -215,7 +215,7 @@ def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx):
 
 class AllelicCoverage_DP_runner:
     def __init__(self, cov_df, beta, cytoband_file, lnp_data, wgs=False, draw_idx=None, seed_all_clusters=True):
-        self.cov_df = cov_df
+        self.cov_df = cov_df.reset_index()
         self.beta = beta
         self.cytoband_file = cytoband_file
         self.seed_all_clusters = seed_all_clusters
@@ -1292,19 +1292,32 @@ class AllelicCoverage_DP:
 
     def precompute_cluster_params(self, cdp_draw=None):
         
+        def _mean_uncertainty(arr):
+            # allelic cap seg format requires sigma to be the uncertainty on mu
+            # so we compute that variance here using the inverse of the gaussian fisher information matrix
+            return np.sqrt(arr.var() / len(arr))
+   
         clust_data = {}
         if cdp_draw is None:
-            full_df = list(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
+            working_df = self.cov_df.copy()
         else:
-            full_df = list(self.cov_df.loc[self.cov_df.dp_draw==cdp_draw].groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
+            working_df = self.cov_df.loc[self.cov_df.dp_draw==cdp_draw].copy()
         for i, c in enumerate(self.cluster_dict.keys()):
             clust_r = []
             clust_terr = 0
-            for tup in self.cluster_dict[c]:
-                clust_r.append(self.segment_r_list[tup])
-                clust_terr += self._get_seg_terr(full_df[tup][1])
-            clust_r_arr = np.concatenate(clust_r)
-            clust_data[c] = {'mean': clust_r_arr.mean(), 'std': clust_r_arr.std(), 'terr':clust_terr, 'datapoints':clust_r_arr}
+            segment_ids = self.cluster_dict[c]
+            subset = working_df.loc[working_df.acdp_segID.isin(segment_ids)]
+            # ids actually in the subset may be different if we are restricting the dp draw
+            subset_segment_ids = subset.acdp_segID.unique()
+            clust_r = [self.segment_r_list[tup] for tup in subset_segment_ids]
+            clust_terr = self._get_seg_terr(subset)
+            # this draw may not have any segments from this cluster, if so we skip
+            if len(clust_r) == 0:
+                continue 
+            clust_r_arr = np.concatenate(clust_r) 
+            clust_data[c] = {'mean': clust_r_arr.mean(), 'std': clust_r_arr.std(),
+                             'terr':clust_terr, 'datapoints':clust_r_arr,
+                             'mean_uncertainty': _mean_uncertainty(clust_r_arr)}
         clust_terrs = np.array([clust_data[c]['terr'] for c in clust_data.keys()])
         clust_ratios = clust_terrs / clust_terrs.sum()
         for i, c in enumerate(clust_data.keys()):
@@ -1358,7 +1371,7 @@ class AllelicCoverage_DP:
         full_df = list(self.cov_df.groupby(['allelic_cluster', 'cov_DP_cluster', 'allele', 'dp_draw']))
 
         max_acov = 0
-        for i, c in enumerate(self.cluster_dict.keys()):
+        for i, c in enumerate(cluster_stats.keys()):
             cluster_real_data = []
             for tup in self.cluster_dict[c]:
                 tup_data = full_df[tup]
@@ -1516,7 +1529,7 @@ class AllelicCoverage_DP:
         if plot_hist:
             real = []
             hist_bin_width = 1
-            for i, c in enumerate(self.cluster_dict.keys()):
+            for i, c in enumerate(cluster_stats.keys()):
                 ax_hist.hist(cluster_stats[c]['datapoints'], bins = np.r_[:round_max_acov:hist_bin_width], alpha = 0.5, orientation='horizontal', color= cluster_colors[i])
                 real.append(cluster_stats[c]['real_data'])
             ax_hist2=ax_hist.twiny()
@@ -1588,13 +1601,14 @@ class AllelicCoverage_DP:
         self.cov_df.loc[:, 'acdp_cluster'] = -1
         self.cov_df.loc[:, 'cluster_mu'] = np.nan
         self.cov_df.loc[:, 'cluster_sigma'] = np.nan
+        self.cov_df.loc[:, 'cluster_mu_uncertainty'] = np.nan
         for c in self.cluster_dict:
             for seg in self.cluster_dict[c]:
-                self.cov_df.loc[self.cov_df.acdp_segID == seg, ['acdp_cluster', 'cluster_mu', 'cluster_sigma']] = c, cluster_stats[c]['mean'], cluster_stats[c]['std']
+                self.cov_df.loc[self.cov_df.acdp_segID == seg, ['acdp_cluster', 'cluster_mu', 'cluster_sigma', 'cluster_mu_uncertainty']] = c, cluster_stats[c]['mean'], cluster_stats[c]['std'], cluster_stats[c]['mean_uncertainty']
 
     # create allelic copy state segment dataframe in allelic capseg format
     # TODO: will only use the default/selected draw. Need to figure out how to handle inconsistant draws
-    def create_allelic_segs_df(self):
+    def create_allelic_segs_df(self, absolute_format=False):
         ## subset to defualt draw
         df = self.cov_df.loc[self.cov_df.dp_draw == self.default_draw]
         ## acdp_df is in format major allele bins (in genomic order), minor allele bins (in order)
@@ -1602,23 +1616,47 @@ class AllelicCoverage_DP:
         num_bins = (df.allele == 1).sum()
         
         ## subset to relevant columns and convert to numpy for speed
-        row_idxs = [df.columns.get_loc(i) for i in ['chr', 'start', 'end', 'acdp_cluster', 'cluster_mu', 'cluster_sigma']]
+        row_idxs = [df.columns.get_loc(i) for i in ['chr', 'start', 'end', 'acdp_cluster', 'cluster_mu', 'cluster_sigma', 'cluster_mu_uncertainty']]
         maj_vals = df.iloc[:num_bins, row_idxs].values
         min_vals = df.iloc[num_bins:, row_idxs].values
         
         collapsed = []
-        maj_chr, cur_start, cur_end, maj_cluster, maj_mu, maj_sigma = maj_vals[0]
-        _, _, _, min_cluster, min_mu, min_sigma = min_vals[0]
+        maj_chr, cur_start, cur_end, maj_cluster, maj_mu, maj_sigma, maj_mu_unc = maj_vals[0]
+        _, _, _, min_cluster, min_mu, min_sigma, min_mu_unc = min_vals[0]
+        last_i = 0
         for i in range(num_bins):
             cur_chr, cur_maj_cluster = maj_vals[i, [0, 3]]
             cur_min_cluster = min_vals[i, 3]
             
             if cur_chr != maj_chr or cur_maj_cluster != maj_cluster or cur_min_cluster != min_cluster:
-                collapsed.append((maj_chr, cur_start, cur_end, maj_mu, maj_sigma, min_mu, min_sigma))
-                maj_chr, cur_start, cur_end, maj_cluster, maj_mu, maj_sigma = maj_vals[i]
-                _, _, _, min_cluster, min_mu, min_sigma = min_vals[i]
+                collapsed.append((maj_chr, cur_start, cur_end, maj_mu, maj_sigma, maj_mu_unc, min_mu, min_sigma, min_mu_unc, i - last_i))
+                maj_chr, cur_start, cur_end, maj_cluster, maj_mu, maj_sigma, maj_mu_unc = maj_vals[i]
+                _, _, _, min_cluster, min_mu, min_sigma, min_mu_unc = min_vals[i]
+                last_i = i
             else:
                 cur_end = maj_vals[i, 2]
-        collapsed.append((maj_chr, cur_start, cur_end, maj_mu, maj_sigma, min_mu, min_sigma))
-        return pd.DataFrame(collapsed, columns = ["Chromosome", 'Start.bp', 'End.bp', 'mu.major', 'sigma.major', 'mu.minor', 'sigma.minor']).astype({'Chromosome':int, 'Start.bp':int, 'End.bp':int, 'mu.major':float, 'sigma.major':float, 'mu.minor':float, 'sigma.minor':float})
+        collapsed.append((maj_chr, cur_start, cur_end, maj_mu, maj_sigma, maj_mu_unc, min_mu, min_sigma, min_mu_unc, i - last_i))
+        seg_df =  pd.DataFrame(collapsed, columns = ["Chromosome", 'Start.bp', 'End.bp', 'mu.major', 'sigma.major', 'mu_uncertainty.major', 'mu.minor', 'sigma.minor', 'mu_uncertainty.minor', 'num_bins']).astype({'Chromosome':int, 'Start.bp':int, 'End.bp':int, 'mu.major':float, 'sigma.major':float, 'mu_uncertainty.major': float, 'mu.minor':float, 'sigma.minor':float, 'mu_uncertainty.minor':float})
+        
+        # optionally convert to absolute format
+        if absolute_format:
+            # absolute expects the mean copy number to be scaled to 2
+            # also expects sigma to be the mu uncertainty
+            seg_df.loc[:, 'sigma.major'] = seg_df['mu_uncertainty.major']
+            seg_df.loc[:, 'sigma.minor'] = seg_df['mu_uncertainty.minor']
+            seg_df = seg_df.drop(['mu_uncertainty.major', 'mu_uncertainty.minor'], axis=1)
 
+            seg_df.loc[:, 'length'] = seg_df['End.bp'] - seg_df['Start.bp']
+            seg_df.loc[:, 'tau'] = seg_df['mu.major'] + seg_df['mu.minor']
+            seg_df.loc[:, 'sigma.tau'] = seg_df['sigma.major'] + seg_df['sigma.minor']
+            nan_mask = ~seg_df.isnull().any(1)
+            sf = seg_df.loc[nan_mask]['length'].values @ seg_df.loc[nan_mask]['tau'].values / seg_df.loc[nan_mask]['length'].sum() / 2
+            seg_df.loc[:, ["tau", "sigma.tau", "mu.minor", "sigma.minor", "mu.major", "sigma.major"]] /= sf
+            seg_df = seg_df.rename({'num_bins': 'n_probes'}, axis=1) # not used
+            seg_df.loc[:, 'n_hets'] = seg_df['n_probes'] # not used 
+            seg_df.loc[:, 'f'] = 0 # not used
+            seg_df.loc[:, 'SegLabelCNLOH'] = 0 # not used
+            return seg_df[["Chromosome", "Start.bp", "End.bp", "n_probes", "length", "n_hets", "f", "tau", "sigma.tau", "mu.minor","sigma.minor", "mu.major", "sigma.major", "SegLabelCNLOH"]].astype({ "Chromosome" : int, "Start.bp" : int, "End.bp" : int })
+        
+        else:
+            return seg_df[["Chromosome", 'Start.bp', 'End.bp', 'num_bins', 'mu.major', 'sigma.major', 'mu.minor', 'sigma.minor']]
