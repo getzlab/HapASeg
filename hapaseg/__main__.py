@@ -750,7 +750,7 @@ def main():
         seg_df.to_csv('./acdp_segfile.txt', sep = '\t', index = False)
         
         # save the unclustered segs
-        generate_unclustered_segs('./unclustered_segs.txt', acdp_df, lnp_data, draw_idx)
+        generate_unclustered_segs('./unclustered_segs.txt', acdp_df, lnp_data, args.opt_cdp_idx)
 
         # make visualizations
         acdp_combined.visualize_ACDP_clusters(output_dir)
