@@ -348,7 +348,7 @@ class Run_Cov_DP:
         self.cluster_assignments = greylist_cluster_assignments
         for clust in self.cluster_dict.keys():
             self.cluster_MLs[clust] = self._ML_cluster(self.cluster_dict[clust])
-            self.cluster_LLs[choice] = self._LL_cluster(self.cluster_dict[clust])
+            self.cluster_LLs[clust] = self._LL_cluster(self.cluster_dict[clust])
         #need to update the cluster counts as well
         self.cluster_counts = sc.SortedDict({c: self.segment_sizes[self.cluster_dict[c]].sum() for c in self.cluster_dict.keys()})
  
