@@ -4,7 +4,7 @@ import numpy as np
 import scipy.special as ss
 import sortedcontainers as sc
 
-from .model_optimizers import CovLNP_NR, covLNP_ll
+from .model_optimizers import CovLNP_NR_prior, covLNP_ll_prior
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
 from capy import seq
@@ -120,7 +120,7 @@ class Run_Cov_DP:
         self.seg_id_col = self.cov_df.columns.get_loc('segment_ID')
         self.beta = beta
         self.bin_exposure=bin_exposure
-        self.covar_cols = sorted(self.cov_df.columns[self.cov_df.columns.str.contains("^C_.*_z$|^C_log_len$")])
+        self.covar_cols = sorted(self.cov_df.columns[self.cov_df.columns.str.contains("^C_.*z$|^C_log_len$")])
         
         self.num_segments = self.cov_df.iloc[:, self.seg_id_col].max() + 1
         self.segment_r_list = [None] * self.num_segments
@@ -148,6 +148,11 @@ class Run_Cov_DP:
 
         # scale factor for dp prior to be set later
         self.dp_count_scale_factor = 1
+        
+        # lnp prior params
+        self.lamda = 1e-10
+        self.alpha_prior = 1e-5
+        self.beta_prior = 4e-3
         
         self._init_segments()
         self._init_clusters(prior_run, count_prior_sum)
@@ -223,9 +228,8 @@ class Run_Cov_DP:
             self.next_cluster_index = np.r_[self.prior_clusters.keys()].max() + 1
             self.clust_prior_ML = None
     
-    @staticmethod
-    def ll_nbinom(r, mu, C, beta, lepsi, bin_exposure=1):
-        return covLNP_ll(r[:,None], mu, lepsi, C, beta, np.log(bin_exposure)).sum()
+    def ll_lnp(self, r, mu, C, beta, lgsigma, bin_exposure=1):
+        return covLNP_ll_prior(r[:,None], mu, lgsigma, C, beta, exposure = np.log(bin_exposure), mu_prior = mu, lamda = self.lamda, alpha_prior = self.alpha_prior, beta_prior=self.beta_prior).sum()
     
     # main worker function for computing marginal likelihoods of clusters
     #TODO: move to a bounded size LFU chache over dictionary?
@@ -237,8 +241,8 @@ class Run_Cov_DP:
             # aggregate r and C arrays
             r = np.hstack([self.segment_r_list[i] for i in cluster_set])
             C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
-            mu_opt, lepsi_opt, H_opt = self.lnp_optimizer(r, C, ret_hess=True)
-            ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt, self.bin_exposure)
+            mu_opt, lsigma_opt, H_opt = self.lnp_optimizer(r, C, ret_hess=True)
+            ll_opt = self.ll_lnp(r, mu_opt, C, self.beta, lsigma_opt, self.bin_exposure)
             
             res = ll_opt + self._get_laplacian_approx(H_opt)
             self.cluster_ml_cache[fs] = res
@@ -249,8 +253,8 @@ class Run_Cov_DP:
         # aggregate r and C arrays
         r = np.hstack([self.segment_r_list[i] for i in cluster_set])
         C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
-        mu_opt, lepsi_opt = self.lnp_optimizer(r, C, ret_hess=False)
-        ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt, self.bin_exposure)
+        mu_opt, lgsigma_opt = self.lnp_optimizer(r, C, ret_hess=False)
+        ll_opt = self.ll_lnp(r, mu_opt, C, self.beta, lgsigma_opt, self.bin_exposure)
 
         return ll_opt
 
@@ -276,8 +280,8 @@ class Run_Cov_DP:
                 r = np.hstack([self.prior_r_list[i] for i in cluster_set])
                 C = np.concatenate([self.prior_C_list[i] for i in cluster_set])
 
-            mu_opt, lepsi_opt, H_opt = self.lnp_optimizer(r, C, ret_hess=True)
-            ll_opt = self.ll_nbinom(r, mu_opt, C, self.beta, lepsi_opt, self.bin_exposure)
+            mu_opt, lgsigma_opt, H_opt = self.lnp_optimizer(r, C, ret_hess=True)
+            ll_opt = self.ll_lnp(r, mu_opt, C, self.beta, lgsigma_opt, self.bin_exposure)
             res =  ll_opt + self._get_laplacian_approx(H_opt)
             self.cluster_prior_ml_cache[query] = res
             return res
@@ -300,13 +304,13 @@ class Run_Cov_DP:
             return res.params[0], -np.log(res.params[1])
     
     def lnp_optimizer(self, r, C, ret_hess=False):
-        lnp = CovLNP_NR(r[:,None], self.beta, C, exposure = np.log(self.bin_exposure))
+        lnp = CovLNP_NR_prior(r[:,None], self.beta, C, exposure = np.log(self.bin_exposure), mu_prior = np.log(r).mean(), lamda=self.lamda, alpha_prior=self.alpha_prior, beta_prior = self.beta_prior, init_prior=False)
         
         try:
             res = lnp.fit(ret_hess = ret_hess)
         except:
             try:
-                lnp = CovLNP_NR(r[:,None], self.beta, C, exposure = np.log(self.bin_exposure), extra_roots=True)
+                lnp = CovLNP_NR_prior(r[:,None], self.beta, C, exposure = np.log(self.bin_exposure), mu_prior = np.log(r).mean(), lamda=self.lamda, alpha_prior=self.alpha_prior, beta_prior = self.beta_prior, init_prior=False, extra_roots=True)
                 res = lnp.fit(ret_hess = ret_hess, extra_roots=True)
             except:
                 res = np.nan, np.nan, np.full((2,2), np.nan)
@@ -456,7 +460,7 @@ class Run_Cov_DP:
         
         white_segments = self.segment_idxs - self.greylist_segments
         while len(self.bins_to_clusters) < n_iter:
-            
+            print(n_it)
             # status update
             if not n_it % 250 and self.prior_clusters is None:
                 print("n clusters: {}".format(len(self.cluster_dict)), flush=True)
