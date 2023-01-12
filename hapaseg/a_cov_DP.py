@@ -205,9 +205,9 @@ def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx):
         lnp_res = lnp_data[(row[3], row[5], opt_idx)]
         a,b = row[[6,7]]
         norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000)
-        r_maj = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a,b, size = 10000)))
+        r_maj = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a + 1, b + 1, size = 10000)))
         mu_maj, sigma_maj = r_maj.mean(), r_maj.std()
-        r_min = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(b,a, size = 10000)))
+        r_min = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(b + 1, a + 1, size = 10000)))
         mu_min, sigma_min = r_min.mean(), r_min.std()
         segs_df.loc[i, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = mu_maj, mu_min, sigma_maj, sigma_min
     segs_df = segs_df.rename(columns={'chr':'Chromosome', 'start':'Start.bp', 'end':'End.bp'})     
@@ -280,36 +280,15 @@ class AllelicCoverage_DP_runner:
             else:
                 a = major
                 b = minor
-            # lin scale
-            #r = np.array(np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=group_len)) * s.beta.rvs(a, b, size=group_len))
-            #logscale
-            #r = np.array(s.norm.rvs(mu, np.sqrt(sigma), size=group_len) + np.log(s.beta.rvs(a, b, size=group_len)))
-            # experiment 1
-            #r = np.array(np.exp(s.norm.rvs(mu + np.log( s.beta.rvs(a, b, size=group_len)), np.sqrt(sigma), size=group_len)))
-            # lnp
-            #r = np.array(s.poisson.rvs(np.exp(s.norm.rvs(mu, sigma, size=group_len)) * s.beta.rvs(a, b, size=group_len)))
             
-            # using joint
             lnp_res = self.lnp_data[(name[0], name[1], name[3])]
             
             norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = group_len)
-            #r = np.array(s.poisson.rvs(np.exp(norm_samples[:,0]) * s.beta.rvs(a,b, size = group_len)))
-            r = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a,b, size = group_len)))
-            
-            # linscale
-            # V = (np.exp(s.norm.rvs(mu, np.sqrt(sigma), size=10000)) * s.beta.rvs(a, b, size=10000)).var()
-            # logscale
-            # V = (s.norm.rvs(mu, np.sqrt(sigma), size=10000) + np.log(s.beta.rvs(a, b, size=10000))).var()
-            # experiment 1
-            #V = (np.exp(s.norm.rvs(mu + np.log(s.beta.rvs(a, b, size=10000)), np.sqrt(sigma), size=10000))).var()
-            #lnp
-            #V = (np.array(s.poisson.rvs(np.exp(s.norm.rvs(mu, sigma, size=10000)) * s.beta.rvs(a, b, size=10000)))).var()
+            r = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a + 1, b + 1, size = group_len)))
             
             # using joint
             norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000)
-            V = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a,b, size = 10000))).var()
-            #V = np.array(s.poisson.rvs(np.exp(norm_samples[:,0]) * s.beta.rvs(a,b, size = 10000))).var()
-            #V = np.array(np.exp(s.norm.rvs(lnp_res[0] + np.log(s.beta.rvs(a,b, size = 10000)), norm_samples[:,0].std()))).var()
+            V = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a + 1, b + 1, size = 10000))).var()
 
             self.segment_V_list[ID] = V
             self.segment_r_list[ID] = r
@@ -317,23 +296,12 @@ class AllelicCoverage_DP_runner:
             self.segment_sums[ID] = r.sum()
             self.segment_ssd[ID] = ((r - r.mean())**2).sum()
 
-        # go back through segments and greylist ones with high variance
-        #greylist_mask = np.ones(self.num_segments, dtype=bool)
-        #greylist_mask[self.greylist_segments] = False
-        #cutoff = np.median(self.segment_V_list[greylist_mask]) * 20
-        #self.alpha_0 = self.segment_counts[greylist_mask].mean()
-        #self.beta_0 = self.alpha_0 / 2 * self.segment_V_list[greylist_mask].mean()
         self.alpha_0 = 1e-4
         self.beta_0 = 1e-4
 
         self.loggamma_alpha_0 = ss.loggamma(self.alpha_0)
         self.log_beta_0 = np.log(self.beta_0)
 
-        #print(cutoff)
-        #for i in set(range(self.num_segments)) - self.greylist_segments:
-        #    if self.segment_V_list[i] > cutoff:
-        #        self.greylist_segments.add(i)
-        
         # new method for greylisting segments checks if mean varaince relation
         # holds for segments
         means = np.array([self.segment_r_list[s].mean() for s in range(self.num_segments)])
@@ -358,7 +326,7 @@ class AllelicCoverage_DP_runner:
                                                      'maj_count':x['maj_count'].sum(),
                                                      'f':x['min_count'].sum() / (x['min_count'].sum() + x['maj_count'].sum())}))
         ## instantiate beta distribution at each segment imbalance level
-        beta_dict = {c: s.beta(r.min_count, r.maj_count) for c, r in snp_segments_df.iterrows()}
+        beta_dict = {c: s.beta(r.min_count + 1, r.maj_count + 1) for c, r in snp_segments_df.iterrows()}
 
         ## compute allelic levels given purity, copy number and ploidy
         def _imb(alpha, na, tau):

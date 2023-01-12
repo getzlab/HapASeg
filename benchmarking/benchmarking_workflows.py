@@ -57,7 +57,8 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                                    ref_genome_build = ref_build,
                                    run_cdp = run_cdp,
                                    target_list = target_list if isinstance(target_list, int) else localization_task["target_list"],
-                                   cleanup_disks=cleanup_disks
+                                   cleanup_disks=cleanup_disks,
+                                   is_ffpe=is_ffpe
                                    )
     
     hapaseg_downstream = Downstream_HapASeg_Analysis(inputs = {

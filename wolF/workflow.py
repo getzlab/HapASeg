@@ -15,7 +15,7 @@ from wolf.localization import LocalizeToDisk, DeleteDisk
 # for genotyping het sites/getting het site coverage
 het_pulldown = wolf.ImportTask(
   task_path = 'git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git',
-  task_name = "het_pulldown"
+  commit = "5c733d2" # TODO: use latest commit; will require slightly modifying syntax in workflow
 )
 
 mutect1 = wolf.ImportTask(
@@ -52,12 +52,21 @@ cov_collect = wolf.ImportTask(
 ####
 # defining reference config generators for hg19 and hg38
 
+# function to manually run to regenerate reference dicts:
+def make_ref_dict(bucket, build):
+    ref_panel = pd.DataFrame({ "path" : subprocess.check_output(f"gsutil ls {bucket}/*.bcf*", shell = True).decode().rstrip().split("\n") })
+    ref_panel = ref_panel.join(ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+).*(?P<ext>bcf(?:\.csi)?)"))
+    ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
+    pd.to_pickle(ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict(), f"ref_panel.{build}.pickle")
+
+# make_ref_dict("gs://getzlab-workflows-reference_files-oa/hg19/1000genomes", "hg19")
+# make_ref_dict("gs://getzlab-workflows-reference_files-oa/hg38/1000genomes", "hg38")
+
+CWD = os.path.dirname(os.path.abspath(__file__))
+
 #hg19
 def _hg19_config_gen(wgs):
-    hg19_ref_panel = pd.DataFrame({ "path" : subprocess.check_output("gsutil ls gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/*.bcf*", shell = True).decode().rstrip().split("\n") })
-    hg19_ref_panel = hg19_ref_panel.join(hg19_ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+).*(?P<ext>bcf(?:\.csi)?)"))
-    hg19_ref_panel["key"] = hg19_ref_panel["chr"] + "_" + hg19_ref_panel["ext"]
-    hg19_ref_dict = hg19_ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
+    hg19_ref_dict = pd.read_pickle(CWD + "/ref_panel.hg19.pickle")
     
     hg19_ref_config = dict(
         ref_fasta ="gs://getzlab-workflows-reference_files-oa/hg19/Homo_sapiens_assembly19.fasta",
@@ -78,10 +87,7 @@ def _hg19_config_gen(wgs):
 
 #hg38
 def _hg38_config_gen(wgs):
-    hg38_ref_panel = pd.DataFrame({ "path" : subprocess.check_output("gsutil ls gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/*.bcf*", shell = True).decode().rstrip().split("\n") })
-    hg38_ref_panel = hg38_ref_panel.join(hg38_ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+)\.(?P<ext>bcf(?:\.csi)?)"))
-    hg38_ref_panel["key"] = hg38_ref_panel["chr"] + "_" + hg38_ref_panel["ext"]
-    hg38_ref_dict = hg38_ref_panel.loc[:, ["key", "path"]].set_index("key")["path"].to_dict()
+    hg38_ref_dict = pd.read_pickle(CWD + "/ref_panel.hg38.pickle")
 
     hg38_ref_config= dict(
         ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
@@ -92,6 +98,7 @@ def _hg38_config_gen(wgs):
         faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle',
         cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt',
         repl_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/RT.raw.hg38.pickle',
+        faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle',
         ref_panel_1000g = hg38_ref_dict
     )
     #if we're using whole genome we can use the precomputed gc file for 200 bp bins
@@ -122,7 +129,8 @@ def workflow(
 
   phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
   persistent_dry_run = False,
-  cleanup_disks=True
+  cleanup_disks=True,
+  is_ffpe = False # use FAIRE as covariate
 ):
     # alert for persistent dry run
     if persistent_dry_run:
