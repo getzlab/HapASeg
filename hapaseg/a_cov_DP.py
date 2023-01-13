@@ -1577,6 +1577,8 @@ class AllelicCoverage_DP:
     # create allelic copy state segment dataframe in allelic capseg format
     # TODO: will only use the default/selected draw. Need to figure out how to handle inconsistant draws
     def create_allelic_segs_df(self, absolute_format=False):
+        # ensure that the dataframe data is fresh
+        self.prepare_df()
         ## subset to defualt draw
         df = self.cov_df.loc[self.cov_df.dp_draw == self.default_draw]
         ## acdp_df is in format major allele bins (in genomic order), minor allele bins (in order)
