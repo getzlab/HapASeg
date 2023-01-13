@@ -955,14 +955,24 @@ class NB_MCMC_SingleCluster:
 	def visualize_cluster_samples(self, savepath):
 		residuals = np.exp(np.log(self.cluster.r.flatten()) - (self.cluster.mu.flatten()) - np.log(self.bin_width) - (self.cluster.C@self.cluster.beta).flatten())
 		num_draws = len(self.F_samples)
-		fig, axs = plt.subplots(num_draws, figsize = (20,num_draws*8), sharex=True)
+		fig, axs = plt.subplots(num_draws, figsize = (8,num_draws*2), sharex=True, gridspec_kw = {'hspace':0,'wspace':0})
 		if isinstance(axs, np.ndarray):
 			ax_lst = axs.flatten()
 		else:
 			ax_lst = [axs]
 		for d in range(num_draws):
-			ax_lst[d].scatter(np.r_[:len(residuals)], residuals)
+			if d % 2:
+				# drop yaxis ticks for every other axis since they overlap
+				axs[d].set_yticks([])
+			ax_lst[d].scatter(np.r_[:len(residuals)], residuals, s=1)
+			ax_lst[d].set_xlim([0, len(residuals)])
+			ax_lst[d].set_ylim([residuals.min() - 0.05, residuals.max() + 0.05])
+
 			hist = np.array(self.F_samples[d]).reshape(-1,2)
 			for j, r in enumerate(hist):
-				ax_lst[d].add_patch(mpl.patches.Rectangle((r[0],0), r[1]-r[0], 2.3, fill=True, alpha=0.3, color = colors[j % 10]))
+				ax_lst[d].add_patch(mpl.patches.Rectangle((r[0],0), r[1]-r[0], residuals.max(), fill=True, alpha=0.3, color = colors[j % 10]))
+		axs[0].set_title('Segment Coverage MCMC Samples')
+		fig.text(0.0, 0.5, 'corrected coverage residuals', va='center', rotation='vertical')
+		axs[-1].set_xlabel('bin_position')
+		fig.tight_layout()
 		plt.savefig(savepath, dpi=150)
