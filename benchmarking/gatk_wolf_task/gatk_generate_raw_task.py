@@ -5,6 +5,21 @@ import h5py
 import re
 import subprocess
 
+
+class PICARD_bed_to_interval_list(wolf.Task):
+    inputs = {"input_bed": None,
+              "input_ref_dict" :None,
+              "interval_name":None
+             }
+
+    script = """
+    java -jar /app/picard.jar BedToIntervalList -I ${input_bed} -SD ${input_ref_dict} -O ${interval_name}.interval_list
+    """
+    
+    output_patterns = {"picard_intervals": "*.interval_list"}
+    
+    docker = "gcr.io/broad-getzlab-workflows/picard_wolf:v1"
+
 class GATK_Preprocess_Intervals(wolf.Task):
     inputs = {"interval_list":None,
               "ref_fasta":None,
