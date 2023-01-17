@@ -100,6 +100,7 @@ def parse_args():
     amcmc.add_argument("--stop_after_burnin", action="store_true")
     amcmc.add_argument("--ref_bias", default=1.0)
     amcmc.add_argument("--n_iter", default=20000)
+    amcmc.add_argument("--wgs", action="store_true", default=False)
 
     ## concat
     concat = subparsers.add_parser("concat", help="Concatenate burned-in chunks")
@@ -295,7 +296,8 @@ def main():
                 P.iloc[int(args.start):int(args.end)],
                 quit_after_burnin=args.stop_after_burnin,
                 ref_bias=float(args.ref_bias),
-                n_iter=int(args.n_iter)
+                n_iter=int(args.n_iter),
+                wgs=args.wgs
             )
 
         # loading from allelic MCMC results object produced by `hapaseg amcmc`
@@ -307,7 +309,8 @@ def main():
             H._set_ref_bias(float(args.ref_bias))
             H.n_iter = int(args.n_iter)
             H.quit_after_burnin = args.stop_after_burnin
-
+            H.wgs = args.wgs
+            H._set_betahyp()
             if len(H.marg_lik) > H.n_iter:
                 H.marg_lik = H.marg_lik[:H.n_iter]
 
@@ -748,7 +751,10 @@ def main():
         # save segmentation df
         seg_df = acdp_combined.create_allelic_segs_df()
         seg_df.to_csv('./acdp_segfile.txt', sep = '\t', index = False)
-        
+    
+        absolute_df = acdp_combined.create_allelic_segs_df(absolute_format=True)
+        absolute_df.to_csv('./absolute_segfile.txt', sep='\t', index=False)
+    
         # save the unclustered segs
         generate_unclustered_segs('./unclustered_segs.txt', acdp_df, lnp_data, args.opt_cdp_idx)
 
