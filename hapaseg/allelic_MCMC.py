@@ -24,7 +24,9 @@ class A_MCMC:
       quit_after_burnin = False,
       n_iter = 100000,
       ref_bias = 1.0,
+      wgs = False
     ):
+        self.wgs = wgs
         #
         # dataframe stuff
         self.P = P.copy().reset_index()
@@ -91,10 +93,9 @@ class A_MCMC:
         self.cs_MAJ = sc.SortedDict()
         self.cs_MIN = sc.SortedDict()
 
-        #
+        self._set_betahyp()
+        
         # marginal likelihoods
-
-        self.betahyp = (self.P["REF_COUNT"] + self.P["ALT_COUNT"]).mean()/4
 
         # log marginal likelihoods for each segment
         # initialize with each SNP comprising its own segment.
@@ -109,6 +110,12 @@ class A_MCMC:
         # total log marginal likelihood of all segments
         self.marg_lik = np.full(self.n_iter, np.nan)
         self.marg_lik[0] = np.array(self.seg_marg_liks.values()).sum()
+
+    # beta smoothing hyperparameter depends on modality
+    # TODO: estimate this based on SNP density?
+    def _set_betahyp(self):
+        betahyp_sf = 4.0 if self.wgs else 8.0
+        self.betahyp = (self.P["REF_COUNT"] + self.P["ALT_COUNT"]).mean()/betahyp_sf
 
     def _Piloc(self, st, en, col_idx, incl_idx = None):
         """
