@@ -98,7 +98,6 @@ def _hg38_config_gen(wgs):
         faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle',
         cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt',
         repl_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/RT.raw.hg38.pickle',
-        faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle',
         ref_panel_1000g = hg38_ref_dict
     )
     #if we're using whole genome we can use the precomputed gc file for 200 bp bins
@@ -517,8 +516,9 @@ def workflow(
      inputs = {
        "allele_counts" : hapaseg_load_snps_task["allele_counts"],
        "start" : chunks["start"],
-       "end" : chunks["end"]
-     }
+       "end" : chunks["end"],
+       "wgs": wgs
+        }
     )
 
     # concat burned in chunks, infer reference bias
@@ -533,8 +533,9 @@ def workflow(
     hapaseg_arm_AMCMC_task = hapaseg.Hapaseg_amcmc(
      inputs = {
        "amcmc_object" : hapaseg_concat_task["arms"],
-       "ref_bias" : hapaseg_concat_task["ref_bias"]
-     }
+       "ref_bias" : hapaseg_concat_task["ref_bias"],
+       "wgs": wgs
+        }
     )
     
 #    hapaseg_arm_concat_task = hapaseg.Hapaseg_concat_arms(
@@ -605,7 +606,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
         "repl_pickle":localization_task["repl_file"],
         "faire_pickle":localization_task["faire_file"], # TODO: only use this for FFPE?
         "gc_pickle":localization_task["gc_file"] if ref_config["gc_file"] != "" else "",
-        "normal_coverage_csv":normal_cov_gather_task["coverage"] if collect_normal_coverage else "",
+        "normal_coverage_csv":normal_cov_gather_task["coverage"] if use_normal_coverage else "",
         "ref_fasta":localization_task["ref_fasta"],
         "bin_width":bin_width,
         "wgs":wgs
