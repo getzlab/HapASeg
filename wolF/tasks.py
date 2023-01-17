@@ -44,19 +44,27 @@ class Hapaseg_load_snps(wolf.Task):
 
 class Hapaseg_burnin(wolf.Task):
     inputs = {
-      "allele_counts",
-      "start",
-      "end"
+      "allele_counts" : None,
+      "start" : None,
+      "end" : None,
+      "wgs" : True
     }
-    script = """
-    hapaseg amcmc --snp_dataframe ${allele_counts} \
-            --start ${start} \
-            --end ${end} \
-            --stop_after_burnin
-    """
+    
+    def script(self):
+        script = """
+        hapaseg amcmc --snp_dataframe ${allele_counts} \
+                --start ${start} \
+                --end ${end} \
+                --stop_after_burnin"""
+
+        if self.conf["inputs"]["wgs"] == True:
+            script += " --wgs"
+        return script
+
     output_patterns = {
       "burnin_MCMC" : "amcmc_results.pickle"
     }
+
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
 
 class Hapaseg_concat(wolf.Task):
@@ -79,12 +87,18 @@ class Hapaseg_amcmc(wolf.Task):
       "amcmc_object" : None,
       "ref_bias" : None,
       "n_iter" : 20000,
+      "wgs" : True
     }
-    script = """
-    hapaseg amcmc --amcmc_object ${amcmc_object} \
-            --ref_bias ${ref_bias} \
-            --n_iter ${n_iter}
-    """
+
+    def script(self):
+        script = """
+        hapaseg amcmc --amcmc_object ${amcmc_object} \
+                --ref_bias ${ref_bias} \
+                --n_iter ${n_iter}"""
+        if self.conf["inputs"]["wgs"] == True:
+            script += " --wgs"
+        return script
+        
     output_patterns = {
       "arm_level_MCMC" : "amcmc_results.pickle",
       "segmentation_plot" : "figures/MLE_segmentation.png",
@@ -362,6 +376,7 @@ class Hapaseg_run_acdp(wolf.Task):
         "acdp_tuples_plot": "acdp_tuples_plot.png",
         "acdp_genome_plots": 'acdp*draws.png',
         "acdp_segfile" : "acdp_segfile.txt",
+        "absolute_segfile": "absolute_segfile.txt",
         "unclustered_segs": "unclustered_segs.txt",
         "opt_fit_params": "optimal_fit_params.txt"
     }
