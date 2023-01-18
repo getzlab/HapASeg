@@ -96,12 +96,20 @@ class GATK_AnnotateIntervals(wolf.Task):
               "ref_fasta_dict":None,
               "interval_list":None,
               "interval_name":None,
+              "exclude_sex":False
              }
 
-    script = """
+    def script(self):
+        
+        script = """
         gatk AnnotateIntervals -R ${ref_fasta} -L ${interval_list} \
         --interval-merging-rule OVERLAPPING_ONLY -O ${interval_name}_gatk.annotated_intervals.tsv
         """
+        
+        if self.conf["inputs"]["exclude_sex"]:
+            script += " --exclude-intervals chrX --exclude-intervals chrY"
+
+        return script
 
     output_patterns = {"gatk_annotated_intervals":"*_gatk.annotated_intervals.tsv"}
     
