@@ -607,7 +607,7 @@ class AllelicCluster:
 		return 0
 
 
-class NB_MCMC_AllClusters:
+class Coverage_MCMC_AllClusters:
 
 	"""
 	This class is for running segmentation on all allelic clusters on the same node. Each iteration first randomly
@@ -765,7 +765,7 @@ class NB_MCMC_AllClusters:
 	node, hence the need for passing the full r, C, and Pi matrices to each call. In the future this should be pushed to
 	the initialization sequence in the run_coverage_mcmc class.
 	"""
-class NB_MCMC_SingleCluster:
+class Coverage_MCMC_SingleCluster:
 
 	def __init__(self, n_iter, r, C, mu, beta, bin_width=1):
 		self.n_iter = n_iter
