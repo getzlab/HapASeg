@@ -27,22 +27,22 @@ class AllelicCluster:
 		assert len(mu_0) == 1
 		self.mu = np.asscalar(mu_0)
 		self.beta = beta_0
-		self.lepsi = 1
-		self.epsi = np.exp(self.lepsi)
+		self.lsigma = 1 # log sigma lnp parameter
+		self.sigma = np.exp(self.lsigma) # sigma lnp parameter
 		
 		# bin width is set if were are dealing with uniform bin lengths
 		# we use this as an exposure to account for the lack of an explicit
 		# covaraiate
 		self.bin_exposure = bin_width
 
-		# individual segment params
+		# individual segment lnp params
 		self.mu_i = 0
-		self.epsi_i = 0
-		self.lepsi_i = 0
+		self.sigma_i = 0
+		self.lsigma_i = 0
 		self.exp = 0
 
 		# all segment params
-		self.lepsi_i_arr = np.ones(len(self.r))
+		self.lsigma_i_arr = np.ones(len(self.r))
 		self.mu_i_arr = np.zeros(len(self.r))
 
 		self.lamda = 1e-10
@@ -53,7 +53,7 @@ class AllelicCluster:
 		sz = tuple(np.r_[1, 1]*(len(r) + 1))
 		self.cache_LL_ptr = sp.dok_matrix(sz, dtype = np.int64); self.cache_LL = []
 		self.cache_mu_ptr = sp.dok_matrix(sz, dtype = np.int64); self.cache_mu = []
-		self.cache_lepsi_ptr = sp.dok_matrix(sz, dtype = np.int64); self.cache_lepsi = []
+		self.cache_lsigma_ptr = sp.dok_matrix(sz, dtype = np.int64); self.cache_lsigma = []
 		self.cache_hess_ptr = sp.dok_matrix(sz, dtype = np.int64); self.cache_hess = []			
 
 		# all intervals start out in one segment, which also means no breakpoints
@@ -73,20 +73,16 @@ class AllelicCluster:
 
 		self.opt_views = []
 		self.mui_views = []
-		self.lepsi_views = []
+		self.lsigma_views = []
 
 		self._init_params()
 
-	# fits NB model to this cluster using initial params as starting point
+	# fits lnp model to this cluster using initial params as starting point
 	def _init_params(self):
-		self.NR_init()
-		self.lepsi_i_arr = np.ones(len(self.r)) * self.lepsi
-		self.epsi_i_arr = np.exp(self.lepsi_i_arr)
+		self.mu, self.lgsigma = self.lnp_init()
+		self.lgsigma_i_arr = np.ones(len(self.r)) * self.lsigma
+		self.sigma_i_arr = np.exp(self.lsigma_i_arr)
 		
-	# fit initial mu_k and epsilon_k for the cluster
-	def NR_init(self):
-		self.mu, self.lepsi = self.lnp_init()
-
 	def get_seg_ind(self, seg):
 		return seg, seg + self.segment_lens[seg]
 
@@ -101,7 +97,7 @@ class AllelicCluster:
 			if (ptr := self.cache_LL_ptr[st, en]) != 0:
 				ll += self.cache_LL[ptr]
 			else:
-				ll += self.ll_segment([st, en], self.mu_i_arr[st], self.lepsi_i_arr[st])
+				ll += self.ll_segment([st, en], self.mu_i_arr[st], self.lsigma_i_arr[st])
 		return ll
 
 	# read in the merged cluster assignments from burnin scatter jobs and 
@@ -137,55 +133,32 @@ class AllelicCluster:
 		mu, beta = pois_regr.fit()
 		self.beta=beta
 	
-		# get new NB mu and lepsi values
+		# get new lnp values
 		self._init_params()
 
-		#now we need to update the lepsi and mu_i arrays based on the burnin segmentation
+		#now we need to update the lsigma and mu_i arrays based on the burnin segmentation
 		for row in np.array(self.F).reshape(-1,2):
-			mu_i, lepsi_i = self.lnp_optimizer(row)
+			mu_i, lsigma_i = self.lnp_optimizer(row)
 			self.mu_i_arr[row[0]:row[1]] = mu_i
-			self.lepsi_i_arr[row[0]:row[1]] = lepsi_i
+			self.lsigma_i_arr[row[0]:row[1]] = lsigma_i
 		
 		print("finished reading in burnin data")
 		
-	# use stats optimizer to set initial cluster mu and lepsi
-	def stats_init(self):
-		endog = self.r.flatten()
-		exog = np.ones(self.r.shape[0])
-		exposure = np.ones(self.r.shape[0]) * self.bin_exposure
-		sNB = statsNB(endog, exog, exposure=exposure, offset=(self.C @ self.beta).flatten())
-		res = sNB.fit(disp=0)
-		return res.params[0], -np.log(res.params[1])
-
 	def lnp_init(self):
-		# now fit LNP
+		# fit LNP
 		lnp = CovLNP_NR_prior(self.r, self.beta, self.C, exposure = np.log(self.bin_exposure), init_prior=False, lamda = self.lamda, mu_prior = self.mu, alpha_prior = self.alpha_prior, beta_prior = self.beta_prior)
 		return lnp.fit()
 
-	# statsmodels NB BFGS optimizer is more stable than NR so we will use it until migration to LNP
-	def stats_optimizer(self, ind, ret_hess=False):
-		endog = self.r[ind[0]:ind[1]].flatten()
-		exog = np.ones(self.r[ind[0]:ind[1]].shape[0])
-		exposure = np.ones(self.r[ind[0]:ind[1]].shape[0]) * self.bin_exposure
-		sNB = statsNB(endog, exog, exposure=exposure, offset=(self.C[ind[0]:ind[1]] @ self.beta).flatten() + self.mu)
-		res = sNB.fit(disp=0)
-
-		if ret_hess:
-			return res.params[0], -np.log(res.params[1]), sNB.hessian(res.params)
-		else:
-			return res.params[0], -np.log(res.params[1])
-	
 	def lnp_optimizer(self, ind, ret_hess = False):
 		if self.cache_mu_ptr[ind[0], ind[1]] != 0:
 			mu = self.cache_mu[self.cache_mu_ptr[ind[0], ind[1]]]
-			lepsi = self.cache_lepsi[self.cache_lepsi_ptr[ind[0], ind[1]]]
+			lsigma = self.cache_lsigma[self.cache_lsigma_ptr[ind[0], ind[1]]]
 			if ret_hess:
-				return mu, lepsi, self.cache_hess[self.cache_hess_ptr[ind[0], ind[1]]]
+				return mu, lsigma, self.cache_hess[self.cache_hess_ptr[ind[0], ind[1]]]
 			else:
-				return mu, lepsi
+				return mu, lsigma
 
 		# cache miss; compute values
-		#lnp = CovLNP_NR(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure) + self.mu)
 		lnp = CovLNP_NR_prior(self.r[ind[0]:ind[1]], self.beta, self.C[ind[0]:ind[1]], exposure = np.log(self.bin_exposure), mu_prior = self.mu, lamda = self.lamda, alpha_prior = self.alpha_prior, beta_prior = self.beta_prior, init_prior = False)
 		
 		try:	
@@ -200,7 +173,7 @@ class AllelicCluster:
 
 		# save to cache
 		self.cache_mu.append(res[0]); self.cache_mu_ptr[ind[0], ind[1]] = len(self.cache_mu) - 1
-		self.cache_lepsi.append(res[1]); self.cache_lepsi_ptr[ind[0], ind[1]] = len(self.cache_lepsi) - 1
+		self.cache_lsigma.append(res[1]); self.cache_lsigma_ptr[ind[0], ind[1]] = len(self.cache_lsigma) - 1
 		self.cache_hess.append(res[2]); self.cache_hess_ptr[ind[0], ind[1]] = len(self.cache_hess) - 1
 
 		if ret_hess:
@@ -215,61 +188,29 @@ class AllelicCluster:
 		mu, beta = pois_regr.fit()
 		self.beta=beta
 	
-		# get new NB mu and lepsi values
+		# get new lnp mu and lsigma values
 		self._init_params()
 	
-		# refit to segments to get lepsi_i and mu_i arrays
+		# refit to segments to get lsigma_i and mu_i arrays
 		for row in np.array(self.F).reshape(-1,2):
-			mu_i, lepsi_i = self.lnp_optimizer(row)
+			mu_i, lsigma_i = self.lnp_optimizer(row)
 			self.mu_i_arr[row[0]:row[1]] = mu_i
-			self.lepsi_i_arr[row[0]:row[1]] = lepsi_i
+			self.lsigma_i_arr[row[0]:row[1]] = lsigma_i
 
 	## caluculating overall ll of allelic cluster under lnp model
 	def ll_segment(self, ind, mu_i, lgsigma):
 		exposure = np.log(self.bin_exposure)
 		mu_tot = mu_i
 		ll = covLNP_ll_prior(self.r[ind[0]:ind[1]], mu_tot, lgsigma, self.C[ind[0]:ind[1]], self.beta, exposure = exposure, mu_prior = self.mu, lamda = self.lamda, alpha_prior=self.alpha_prior, beta_prior = self.beta_prior)
-		#ll = covLNP_ll(self.r[ind[0]:ind[1]], mu_tot, lgsigma, self.C[ind[0]:ind[1]], self.beta, exposure = exposure)
 		return ll
 
-	# method for calculating the overall log likelihood of an allelic cluster given a hypothetical mu_i and lepsi arrays
-	def NB_ll_cluster(self, mu_i_arr, lepsi_i_arr, take_sum=True):
-		mu_i_arr = mu_i_arr.flatten()
-		epsi_i_arr = np.exp(lepsi_i_arr).flatten()
-		exposure= np.log(self.bin_exposure)
-		bc = (self.C @ self.beta).flatten() + exposure
-		exp = np.exp(self.mu + bc + mu_i_arr).flatten()
-
-		lls = (ss.gammaln(self.r + epsi_i_arr) - ss.gammaln(self.r + 1) - ss.gammaln(epsi_i_arr) +
-			   (self.r * (self.mu + bc + mu_i_arr - np.log(epsi_i_arr + exp))) +
-			   (epsi_i_arr * np.log(epsi_i_arr / (epsi_i_arr + exp))))
-		if not take_sum:
-			return lls
-		return lls.sum()
-
-	# method for calculating the log likelihood of our NB model
-	@staticmethod
-	def NB_ll_nbinom(r, mu, C, beta, mu_i, lepsi, bin_exposure=1):
-		r = r.flatten()
-		epsi = np.exp(lepsi)
-		exposure = np.log(bin_exposure)
-		bc = (C @ beta).flatten() + exposure
-		exp = np.exp(mu + bc + mu_i).flatten()
-		return (ss.gammaln(r + epsi) - ss.gammaln(r + 1) - ss.gammaln(epsi) +
-				(r * (mu + bc + mu_i - np.log(epsi + exp))) +
-				(epsi * np.log(epsi / (epsi + exp)))).sum()
-	
-	@staticmethod
-	def ll_nbinom(r, mu, C, beta, mu_i, lepsi, bin_exposure=1):
-		mu_tot = mu + mu_i
-		return covLNP_ll(r, mu_tot, lepsi, C, beta, np.log(bin_exposure)).sum()
-
+	# method for fast difference kernel calculation
 	def _run_kernel(self, residuals, window):
 		r_arr = np.ones(2* window)
 		r_arr[:window] = 0
 		l_arr = np.ones(2*window)
 		l_arr[window:] = 0
-		conv_dif = np.abs(np.convolve(residuals, r_arr, mode='valid') - np.convolve(residuals,l_arr, mode='valid'))
+		conv_dif = np.abs(np.convolve(residuals, r_arr, mode='valid') - np.convolve(residuals, l_arr, mode='valid'))
 		return conv_dif
 
 	"""
@@ -286,7 +227,6 @@ class AllelicCluster:
 			prior = np.exp(2 * np.abs(x - len(difs) / 2) / len(difs))
 			difs = prior * difs
 		
-		#cutoff = difs.mean() + 2 * np.sqrt(difs.var())
 		cutoff = np.quantile(difs, 0.98)
 		
 		ind_len = ind[1]-ind[0]
@@ -345,29 +285,29 @@ class AllelicCluster:
 
 	"""
 	Given the indices of the segment and the proposed split indices to try, this method computes the likelihood of each
-	split proposal and saves the associated mu, lepsi and Hessian results associated to the split segments. 
+	split proposal and saves the associated mu, lsigma and Hessian results associated to the split segments. 
 	
 	Returns lists of likelihoods and optimal split parameters
 	"""
 	def _calculate_splits(self, ind, split_indices):
 		lls = []
 		mus = []
-		lepsis = []
+		lsigmas = []
 		Hs = []
 		for ix in split_indices:
 			if ix < 0:
 				# no split proposal
-				ll_join = self.ll_cluster(self.mu_i_arr, self.lepsi_i_arr)
+				ll_join = self.ll_cluster(self.mu_i_arr, self.lsigma_i_arr)
 				lls.append(ll_join)
 				mus.append(None)
-				lepsis.append(None)
+				lsigmas.append(None)
 				Hs.append(None)
 			else:
-				mu_l, lepsi_l, H_l = self.lnp_optimizer((ind[0], ix), True)
-				mu_r, lepsi_r, H_r = self.lnp_optimizer((ix, ind[1]), True)
+				mu_l, lsigma_l, H_l = self.lnp_optimizer((ind[0], ix), True)
+				mu_r, lsigma_r, H_r = self.lnp_optimizer((ix, ind[1]), True)
 
 				mus.append((mu_l, mu_r))
-				lepsis.append((lepsi_l, lepsi_r))
+				lsigmas.append((lsigma_l, lsigma_r))
 				Hs.append((H_l, H_r))
 
 				# lookup likelihoods in cache
@@ -375,18 +315,18 @@ class AllelicCluster:
 				if (ptr := self.cache_LL_ptr[ind[0], ix]) != 0:
 					ll_l = self.cache_LL[ptr]
 				else: 
-					ll_l = self.ll_segment([ind[0], ix], mu_l, lepsi_l)
+					ll_l = self.ll_segment([ind[0], ix], mu_l, lsigma_l)
 					self.cache_LL.append(ll_l); self.cache_LL_ptr[ind[0], ix] = len(self.cache_LL) - 1
 
 				# right:
 				if (ptr := self.cache_LL_ptr[ix, ind[1]]) != 0:
 					ll_r = self.cache_LL[ptr]
 				else:
-					ll_r = self.ll_segment([ix, ind[1]], mu_r, lepsi_r)
+					ll_r = self.ll_segment([ix, ind[1]], mu_r, lsigma_r)
 					self.cache_LL.append(ll_r); self.cache_LL_ptr[ix, ind[1]] = len(self.cache_LL) - 1
 
 				lls.append(ll_l + ll_r)
-		return lls, mus, lepsis, Hs
+		return lls, mus, lsigmas, Hs
 
 	"""
 	This method is simpler of the two options for refining the search space of possible splits, which is important for 
@@ -396,7 +336,7 @@ class AllelicCluster:
 	returns an amended list of likelihoods and optimal parameters for the original split indicies in addition to the 
 	ones sampled from the neighbors of the originals.
 	"""
-	def _neighborhood_sampling(self, ind, lls, split_indices, mus, lepsis, Hs):
+	def _neighborhood_sampling(self, ind, lls, split_indices, mus, lsigmas, Hs):
 
 		# find the most likely index and those indices within a significant range
 		# (rn 7 -> at least 1/1000th as likely)
@@ -415,14 +355,14 @@ class AllelicCluster:
 		
 		# no need to resample things we already calculated
 		extra_samples = list(extra_samples - set(significant))
-		lls_add, mus_add, lepsis_add, Hs_add = self._calculate_splits(ind, extra_samples)
+		lls_add, mus_add, lsigmas_add, Hs_add = self._calculate_splits(ind, extra_samples)
 		lls.extend(lls_add)
 		mus.extend(mus_add)
-		lepsis.extend(lepsis_add)
+		lsigmas.extend(lsigmas_add)
 		Hs.extend(Hs_add)
 		split_indices.extend(extra_samples)
 		
-		return lls, split_indices, mus, lepsis, Hs
+		return lls, split_indices, mus, lsigmas, Hs
 
 	"""
 		This method is used for refining the search space of possible splits, which is important for 
@@ -433,7 +373,7 @@ class AllelicCluster:
 		returns an amended list of likelihoods and optimal parameters for the original split indicies in addition to the 
 		ones sampled.
 		"""
-	def _detailed_sampling(self, ind, lls, split_indices, mus, lepsis, Hs):
+	def _detailed_sampling(self, ind, lls, split_indices, mus, lsigmas, Hs):
 		if ind[1] -ind[0] > 25000:
 			max_samples = 5
 		else:
@@ -456,12 +396,12 @@ class AllelicCluster:
 			while r_samples < max_samples:
 				if ix_l < ind[0] + 2:
 					break
-				ll_add, mu_add, lepsi_add, Hs_add = self._calculate_splits(ind, [ix_l])
+				ll_add, mu_add, lsigma_add, Hs_add = self._calculate_splits(ind, [ix_l])
 				if ll_add[0] > sig_threshold and ix_l not in sig_set:
 					split_indices.append(ix_l)
 					lls.extend(ll_add)
 					mus.extend(mu_add)
-					lepsis.extend(lepsi_add)
+					lsigmas.extend(lsigma_add)
 					Hs.extend(Hs_add)
 					
 					sig_set.add(ix_l)
@@ -477,12 +417,12 @@ class AllelicCluster:
 			while l_samples < max_samples:
 				if ix_r >= ind[1] -1:
 					break
-				ll_add, mu_add, lepsi_add, Hs_add = self._calculate_splits(ind, [ix_r])
+				ll_add, mu_add, lsigma_add, Hs_add = self._calculate_splits(ind, [ix_r])
 				if ll_add[0] > sig_threshold and ix_r not in sig_set:
 					split_indices.append(ix_r)
 					lls.extend(ll_add)
 					mus.extend(mu_add)
-					lepsis.extend(lepsi_add)
+					lsigmas.extend(lsigma_add)
 					Hs.extend(Hs_add)
 
 					sig_set.add(ix_r)
@@ -491,7 +431,7 @@ class AllelicCluster:
 					l_samples +=1
 				else:
 					break
-		return lls, split_indices, mus, lepsis, Hs
+		return lls, split_indices, mus, lsigmas, Hs
 
 	# function for calculating the log marginal likelihood of a split given the log likelihood and the hessians for
 	# the NB fit of each split segment
@@ -518,17 +458,17 @@ class AllelicCluster:
 		# if the cluster is sufficiently small we interrogate the whole space of splits
 		if ind_len < 150:
 			split_indices = list(np.r_[ind[0] + 2: ind[1] - 1])
-			lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
+			lls, mus, lsigmas, Hs = self._calculate_splits(ind, split_indices)
 		# otherwise we deploy our change kernel to limit our search space
 		else:
 			split_indices = self._find_difs(ind)
 
 			# get lls from the difference kernel guesses
-			lls, mus, lepsis, Hs = self._calculate_splits(ind, split_indices)
-			lls, split_indices, mus, lepsis, Hs = self._detailed_sampling(ind, lls, split_indices, mus, lepsis, Hs)
+			lls, mus, lsigmas, Hs = self._calculate_splits(ind, split_indices)
+			lls, split_indices, mus, lsigmas, Hs = self._detailed_sampling(ind, lls, split_indices, mus, lsigmas, Hs)
 		MLs = self._lls_to_MLs(lls, Hs)
 
-		return split_indices, MLs, mus, lepsis
+		return split_indices, MLs, mus, lsigmas
 
 	# computes ML component from hessian approximation for a single segment
 	def _get_log_ML_gaussint_join(self, Hess):
@@ -540,17 +480,17 @@ class AllelicCluster:
 
 	# computes the log ML of joining two segments
 	def _log_ML_join(self, ind, ret_opt_params=False):
-		mu_share, lepsi_share, H_share = self.lnp_optimizer(ind, True)
+		mu_share, lsigma_share, H_share = self.lnp_optimizer(ind, True)
 
 		# lookup cache
 		if (ptr := self.cache_LL_ptr[ind[0], ind[1]]) != 0:
 			ll_join = self.cache_LL[ptr]
 		else:
-			ll_join = self.ll_segment(ind, mu_share, lepsi_share)
+			ll_join = self.ll_segment(ind, mu_share, lsigma_share)
 
 			# add to cache
 			self.cache_LL.append(ll_join); self.cache_LL_ptr[ind[0], ind[1]] = len(self.cache_LL) - 1
-		return mu_share, lepsi_share, self._get_log_ML_gaussint_join(H_share) + ll_join
+		return mu_share, lsigma_share, self._get_log_ML_gaussint_join(H_share) + ll_join
 	
 	"""
 	Split segment method. This method chooses a segment at random
@@ -573,7 +513,7 @@ class AllelicCluster:
 
 		ind = self.get_seg_ind(seg)
 
-		split_indices, log_split_MLs, all_mus, all_lepsis = self._get_split_liks(ind, debug=debug)
+		split_indices, log_split_MLs, all_mus, all_lsigmas = self._get_split_liks(ind, debug=debug)
 		_, _, log_join_ML = self._log_ML_join(ind)
 
 		log_MLs = np.r_[log_split_MLs, log_join_ML]
@@ -590,7 +530,7 @@ class AllelicCluster:
 		if break_idx > 0:
 			# split the segments
 			mus = all_mus[choice_idx]
-			lepsis = all_lepsis[choice_idx]
+			lsigmas = all_lsigmas[choice_idx]
 			# update segment assignments for new segment
 			self.segment_ID[break_idx:ind[1]] = break_idx
 			self.segments.add(break_idx)
@@ -599,11 +539,11 @@ class AllelicCluster:
 			# update old seglen
 			self.segment_lens[ind[0]] = break_idx - ind[0]
 			
-			# update mu_i and lepsi_i values
+			# update mu_i and lsigma_i values
 			self.mu_i_arr[ind[0]:break_idx] = mus[0]
 			self.mu_i_arr[break_idx:ind[1]] = mus[1]
-			self.lepsi_i_arr[ind[0]:break_idx] = lepsis[0]
-			self.lepsi_i_arr[break_idx:ind[1]] = lepsis[1]
+			self.lsigma_i_arr[ind[0]:break_idx] = lsigmas[0]
+			self.lsigma_i_arr[break_idx:ind[1]] = lsigmas[1]
 
 			self.F.update([break_idx, break_idx])
 			self.phase_history.append(self.F.copy())
@@ -634,7 +574,7 @@ class AllelicCluster:
 
 		lls_split, _, _, Hs = self._calculate_splits(ind, [seg_r])
 		log_split_ML = lls_split[0] + self._get_log_ML_gaussint_split(Hs[0][0], Hs[0][1])
-		mu_share, lepsi_share, log_join_ML = self._log_ML_join(ind)
+		mu_share, lsigma_share, log_join_ML = self._log_ML_join(ind)
 
 		log_MLs = np.r_[log_split_ML, log_join_ML]
 		max_ML = max(log_MLs)
@@ -653,9 +593,9 @@ class AllelicCluster:
 			del self.segment_lens[seg_r]
 			self.segment_lens[seg_l] = ind[1] - ind[0]
 
-			# update mu_i and lepsi_i values
+			# update mu_i and lsigma_i values
 			self.mu_i_arr[ind[0]:ind[1]] = mu_share
-			self.lepsi_i_arr[ind[0]:ind[1]] = lepsi_share
+			self.lsigma_i_arr[ind[0]:ind[1]] = lsigma_share
 
 			# we need to discard twice since the breakpoint is saved
 			# both as an end to an interval and a start to the next interval
@@ -693,7 +633,7 @@ class NB_MCMC_AllClusters:
 		self.num_segments = np.ones(self.n_clusters)
 
 		self.mu_i_samples = []
-		self.lepsi_i_samples = []
+		self.lsigma_i_samples = []
 		self.F_samples = []
 
 		self.ll_clusters = np.zeros(self.n_clusters)
@@ -715,15 +655,15 @@ class NB_MCMC_AllClusters:
 
 	def save_sample(self):
 		mu_i_save = []
-		lepsi_i_save = []
+		lsigma_i_save = []
 		F_save = []
 
 		for clust in self.clusters:
 			mu_i_save.append(clust.mu_i_arr.copy())
-			lepsi_i_save.append(clust.lepsi_i_arr.copy())
+			lsigma_i_save.append(clust.lsigma_i_arr.copy())
 			F_save.append(clust.F.copy())
 		self.mu_i_samples.append(mu_i_save)
-		self.lepsi_i_samples.append(lepsi_i_save)
+		self.lsigma_i_samples.append(lsigma_i_save)
 		self.F_samples.append(F_save)
 
 	def pick_cluster(self, n_it):
@@ -845,7 +785,7 @@ class NB_MCMC_SingleCluster:
 		self.num_segments = 1
 
 		self.mu_i_samples = []
-		self.lepsi_i_samples = []
+		self.lsigma_i_samples = []
 		self.F_samples = []
 		self.ll_samples = []
 
@@ -871,7 +811,7 @@ class NB_MCMC_SingleCluster:
 
 	def save_sample(self):
 		self.mu_i_samples.append(self.cluster.mu_i_arr.copy())
-		self.lepsi_i_samples.append(self.cluster.lepsi_i_arr.copy())
+		self.lsigma_i_samples.append(self.cluster.lsigma_i_arr.copy())
 		self.F_samples.append(self.cluster.F.copy())
 		self.ll_samples.append(self.cluster.get_ll())
 
