@@ -375,10 +375,10 @@ class Hapaseg_run_acdp(wolf.Task):
         "acdp_clusters_plot": "acdp_clusters_plot.png",
         "acdp_tuples_plot": "acdp_tuples_plot.png",
         "acdp_genome_plots": 'acdp*draws.png',
-        "acdp_segfile" : "acdp_segfile.txt",
+        "hapaseg_segfile" : "hapaseg_segfile.txt",
         "absolute_segfile": "absolute_segfile.txt",
-        "unclustered_segs": "unclustered_segs.txt",
-        "opt_fit_params": "optimal_fit_params.txt"
+        "hapaseg_skip_acdp_segfile": "hapaseg_skip_acdp_segfile.txt",
+        "acdp_optimal_fit_params": "acdp_optimal_fit_params.txt"
     }
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"

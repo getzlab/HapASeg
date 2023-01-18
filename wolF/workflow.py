@@ -808,5 +808,15 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                   "upstream" : acdp_task["acdp_model_pickle"] # to prevent execution until acdp has run
                     }
                 )
+    
+    output_dict = {
+                   "acdp_optimal_fit_params": acdp_task["acdp_optimal_fit_params"],
+                   "acdp_clusters_plot": acdp_task["acdp_clusters_plot"],
+                   "acdp_tuples_plot": acdp_task["acdp_tuples_plot"],
+                   "acdp_genome_plots": acdp_task["acdp_genome_plots"],
+                   "hapaseg_segfile" : acdp_task["hapaseg_segfile"],
+                   "absolute_segfile" : acdp_task["absolute_segfile"],
+                   "hapaseg_skip_acdp_segfile": acdp_task["hapaseg_skip_acdp_segfile"]
+                  }
 
-    return out_segfile
+    return output_dict

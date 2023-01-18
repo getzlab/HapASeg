@@ -750,13 +750,13 @@ def main():
         
         # save segmentation df
         seg_df = acdp_combined.create_allelic_segs_df()
-        seg_df.to_csv('./acdp_segfile.txt', sep = '\t', index = False)
+        seg_df.to_csv('./hapaseg_segfile.txt', sep = '\t', index = False)
     
         absolute_df = acdp_combined.create_allelic_segs_df(absolute_format=True)
         absolute_df.to_csv('./absolute_segfile.txt', sep='\t', index=False)
     
         # save the unclustered segs
-        generate_unclustered_segs('./unclustered_segs.txt', acdp_df, lnp_data, args.opt_cdp_idx)
+        generate_unclustered_segs('./hapaseg_skip_acdp_segfile.txt', acdp_df, lnp_data, args.opt_cdp_idx)
 
         # make visualizations
         acdp_combined.visualize_ACDP_clusters(output_dir)
@@ -771,7 +771,7 @@ def main():
             acdp_combined.visualize_ACDP('./acdp_all_draws.png')
         
         # print opt purity and opt k
-        with open('./optimal_fit_params.txt', 'w') as f:
+        with open('./acdp_optimal_fit_params.txt', 'w') as f:
             f.write('purity\tk\n')
             f.write(f'{opt_purity}\t{opt_k}\n')
         
