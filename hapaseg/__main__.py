@@ -19,7 +19,7 @@ from .allelic_MCMC import A_MCMC
 from .allelic_DP import A_DP, DPinstance
 from . import utils as hs_utils
 
-from .NB_coverage_MCMC import NB_MCMC_SingleCluster
+from .coverage_MCMC import Coverage_MCMC_SingleCluster
 from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters, aggregate_burnin_files 
 from .coverage_DP import Coverage_DP
 from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP, AllelicCoverage_DP_runner, generate_unclustered_segs
@@ -567,7 +567,7 @@ def main():
         r = r[seg_indices["indices"], :]
         
         # run cov MCMC
-        cov_mcmc = NB_MCMC_SingleCluster(args.num_draws, r, C, mu, beta, args.bin_width)
+        cov_mcmc = Coverage_MCMC_SingleCluster(args.num_draws, r, C, mu, beta, args.bin_width)
 
 #        # if we get a range argument well be doing burnin on a subset of the coverage bins
 #        if args.range is not None:

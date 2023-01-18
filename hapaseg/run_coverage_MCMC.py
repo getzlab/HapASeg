@@ -11,7 +11,7 @@ from capy import mut, seq
 import scipy.stats as stats
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
-from .NB_coverage_MCMC import NB_MCMC_AllClusters, NB_MCMC_SingleCluster
+from .coverage_MCMC import Coverage_MCMC_AllClusters, Coverage_MCMC_SingleCluster
 from .model_optimizers import PoissonRegression, CovLNP_NR_prior
 
 zt = lambda x : (x - np.nanmean(x))/np.nanstd(x)
