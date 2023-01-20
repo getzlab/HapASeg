@@ -35,6 +35,8 @@ with wolf.Workflow(workflow = create_1kG_PoN.gatk_make_pon_workflow) as w:
               ref_genome = 'gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa',
               ref_index = 'gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai',
               ref_dict = 'gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict',
+              bin_length=0,
+              padding=250,
               pon_name = 'twist_hg38_PoN',
-              interval_list = 'gs://opriebe-tmp/HapASeg/benchmarking/NA12878_exome/broad_custom_exome_v1.Homo_sapiens_assembly38.targets.autosome.interval_list'
+              interval_list = 'gs://opriebe-tmp/HapASeg/benchmarking/NA12878_exome/broad_custom_exome_v1.Homo_sapiens_assembly38.targets.interval_list'
              )
