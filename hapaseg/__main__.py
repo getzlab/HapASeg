@@ -1,5 +1,6 @@
 import argparse
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 import multiprocessing
 import numpy as np
 import os
@@ -10,13 +11,13 @@ import scipy.special as ss
 import sortedcontainers as sc
 import traceback
 
-from capy import mut
+from capy import mut, seq
 
 from .load import HapasegSNPs
 from .run_allelic_MCMC import AllelicMCMCRunner
-from .allelic_MCMC import A_MCMC
+from .allelic_MCMC import A_MCMC 
 
-from .allelic_DP import A_DP, DPinstance
+from .allelic_DP import A_DP, DPinstance, load_DP_object_from_outputs
 from . import utils as hs_utils
 
 from .coverage_MCMC import Coverage_MCMC_SingleCluster
@@ -223,6 +224,15 @@ def parse_args():
     ac_dp.add_argument("--use_single_draw", help="flag to force acdp to only use best draw", default=False, action='store_true')
     ac_dp.add_argument("--warmstart", type=bool, default=True, help="run clustering with warmstart")
 
+    # final summary plot
+    fp = subparsers.add_parser("summary_plot", help = "summary plot of HapASeg results")
+    fp.add_argument("--snps_pickle", required=True, help="path to all SNPs pickle file")
+    fp.add_argument("--adp_results", required=True, help="path to the allelic DP results file")
+    fp.add_argument("--segmentations_pickle", required=True, help="path to final ADP segmentations")
+    fp.add_argument("--acdp_model", required=True, help="path to acdp model pickle")
+    fp.add_argument("--ref_fasta", required=True, help="path to matching reference fasta file")
+    fp.add_argument("--cytoband_file", required=True, help="path to cytoband file")
+    fp.add_argument("--hapaseg_segfile", required=True, help="path to hapaseg format segfile (can be clustered or unclustered)")
     args = parser.parse_args()
 
     # validate arguments
@@ -778,6 +788,60 @@ def main():
         with open(os.path.join(output_dir, "acdp_model.pickle"), "wb") as f:
             pickle.dump(acdp_combined, f)
 
+    elif args.command == "summary_plot":
+        adp_obj = load_DP_object_from_outputs(args.snps_pickle, args.adp_results, args.segmentations_pickle)
+        colors = mpl.cm.get_cmap("tab10").colors 
+        # adp results window
+        f, axs = plt.subplots(3,1, sharex=True)
+        adp_obj.visualize_segs(ax=axs[0], use_clust=True, show_snps=True)
+        plt.sca(axs[0])
+        plt.yticks(fontsize=6)
+        hs_utils.plot_chrbdy(args.cytoband_file)
+
+        # coverage segmentation results window
+        acdp = pd.read_pickle(args.acdp_model)
+        cov_df = acdp.cov_df.loc[acdp.cov_df.allele == -1]
+        covar_cols = sorted(cov_df.columns[cov_df.columns.str.contains("^C_.*z$|^C_log_len$")])
+        C = cov_df[covar_cols].values
+        residuals = np.exp(np.log(cov_df.fragcorr) - (C@acdp.beta).flatten())
+        
+        for i in cov_df.segment_ID.unique():
+            sub = cov_df.loc[cov_df.segment_ID == i]
+            axs[1].scatter(sub.start_g, residuals[sub.index], color = colors[i % 3], s= 1, alpha=0.2)
+        plt.sca(axs[1])
+        plt.yticks(fontsize=6)
+        hs_utils.plot_chrbdy(args.cytoband_file)
+
+        # plot acdp segment results window
+        seg_df = pd.read_csv(args.hapaseg_segfile, sep = '\t')
+        seg_df['start_g'] = seq.chrpos2gpos(seg_df['Chromosome'], seg_df['Start.bp'], ref=args.ref_fasta)
+        seg_df['end_g'] = seq.chrpos2gpos(seg_df['Chromosome'], seg_df['End.bp'], ref=args.ref_fasta)
+        for i, row in seg_df.iterrows():
+            seg_len = row['End.bp'] - row['Start.bp']
+            mu_major = mpl.patches.Rectangle((row['start_g'], row['mu.major'] - 2), seg_len, 4,  alpha=0.5, color='r')
+            axs[2].add_patch(mu_major)
+            ci_major = mpl.patches.Rectangle((row['start_g'], row['mu.major'] - 1.95 * row['sigma.major']), seg_len, 2 * 1.95 * row['sigma.major'], alpha=0.1, color='r')
+            axs[2].add_patch(ci_major)
+
+            mu_minor =  mpl.patches.Rectangle((row['start_g'], row['mu.minor'] - 2), seg_len, 4, alpha = 0.5, color='b')
+            axs[2].add_patch(mu_minor)
+            ci_minor = mpl.patches.Rectangle((row['start_g'], row['mu.minor'] - 1.95 * row['sigma.minor']), seg_len, 2 * 1.95 * row['sigma.minor'], alpha=0.1, color='b')
+            axs[2].add_patch(ci_minor)
+        
+        # for some reason patches won't plot unless we draw to the axis again
+        axs[2].scatter([0],[0], s=1, alpha=0) 
+        plt.sca(axs[2])
+        plt.yticks(fontsize=6)
+        hs_utils.plot_chrbdy(args.cytoband_file)
+        axs[0].set_title('Allelic DP Clusters', size = 8)
+        axs[0].set_ylabel('allelic imbalance', size = 8)
+        axs[1].set_title('Coverage Segmentation', size=8)
+        axs[1].set_ylabel('corrected coverage', size = 8)
+        axs[2].set_title('Allelic Coverage Segments', size=8)
+        axs[2].set_ylabel('corrected coverage', size = 8)
+        axs[2].set_xlabel('Chromosomes', size=8)
+        plt.tight_layout()
+        plt.savefig('./hapaseg_summary_plot.png', dpi=200)
 
 if __name__ == "__main__":
     main()
