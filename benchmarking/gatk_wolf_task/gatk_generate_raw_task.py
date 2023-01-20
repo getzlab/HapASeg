@@ -26,12 +26,14 @@ class GATK_Preprocess_Intervals(wolf.Task):
               "ref_fasta_idx":None,
               "ref_fasta_dict":None,
               "bin_length":1000,
-              "interval_name":None
+              "interval_name":None,
+              "padding": 250 # should be 250 for targeted (e.g. WES), 0 for WGS
              }
     
     script = """
     gatk PreprocessIntervals -L ${interval_list} -R ${ref_fasta} --bin-length ${bin_length}\
-    --interval-merging-rule OVERLAPPING_ONLY -O ${interval_name}.gatk.interval_list
+    --interval-merging-rule OVERLAPPING_ONLY -O ${interval_name}.gatk.interval_list\
+    --padding ${padding}
     """
     
     output_patterns = {"gatk_interval_list": "*.gatk.interval_list"}
@@ -86,7 +88,7 @@ class GATK_CollectFragmentCounts(wolf.Task):
     
     output_patterns = {"frag_counts_hdf" : "*_gatk.frag.counts.hdf5"}
     
-    resources = {"cpus-per-task":4, "mem":"4G"}
+    resources = {"cpus-per-task":4, "mem":"12G"}
 
     docker = "broadinstitute/gatk:4.0.1.1"
 
@@ -203,6 +205,7 @@ def GATK_Generate_Raw_Data(input_bam=None,
                            interval_name=None,
                            sample_name=None,
                            bin_length=1000,
+                           padding=250, # 250 for WES, 0 for WGS
                            exclude_sex=False,
                            upload_bucket=None,
                            persistent_dry_run = False, # skip localization of files
@@ -210,7 +213,10 @@ def GATK_Generate_Raw_Data(input_bam=None,
                                                        # pass true to complete the requisite pre_processing   
                            exclude_chroms = "", # chromosomes to exclude, if any in space sep list
                         ):
-   
+
+    if exclude_sex:
+        exclude_chroms += " chrX chrY"
+    
     if exclude_chroms != "":
         filter_intv_list_task = Filter_GATK_Interval_List(inputs = {
                                             "interval_list": interval_list,
@@ -236,7 +242,8 @@ def GATK_Generate_Raw_Data(input_bam=None,
                                   "ref_fasta":localization_task["ref_fasta"],
                                   "ref_fasta_idx":localization_task["ref_fasta_idx"],
                                   "ref_fasta_dict":localization_task["ref_fasta_dict"],
-                                  "bin_length":1000,
+                                  "bin_length":bin_length,
+                                  "padding":padding,
                                   "interval_name":interval_name
                                  })
 
