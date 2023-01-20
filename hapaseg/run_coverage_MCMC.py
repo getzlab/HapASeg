@@ -440,7 +440,7 @@ def poisson_outlier_filter(r, C, beta, exposure=0., alpha_prior=1e-5, beta_prior
     mask = np.ones(len(r), dtype=bool)
     # first try to see if we can converge without removing anything
     try:
-        lnp = CovLNP_NR_prior(r[mask,None], beta, C[mask], exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior = r[mask].mean(), lamda=lamda, init_prior = False)
+        lnp = CovLNP_NR_prior(r[mask,None], beta, C[mask], exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior = np.log(r[mask]).mean(), lamda=lamda, init_prior = False)
         lnp.fit()
         return mask
     except:
@@ -449,7 +449,7 @@ def poisson_outlier_filter(r, C, beta, exposure=0., alpha_prior=1e-5, beta_prior
     # if not we try removing one bin at a time util convergence or the threshold
     for idx_del in idxs_to_remove[:max_idxs_to_remove]:
         mask[idx_del] = False
-        lnp = CovLNP_NR_prior(r[mask,None], beta, C[mask], exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior = r[mask].mean(), lamda=lamda, init_prior = False)
+        lnp = CovLNP_NR_prior(r[mask,None], beta, C[mask], exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior = np.log(r[mask]).mean(), lamda=lamda, init_prior = False)
         try:
             lnp.fit()
             #if we fit properly, then return mask
@@ -459,7 +459,7 @@ def poisson_outlier_filter(r, C, beta, exposure=0., alpha_prior=1e-5, beta_prior
     return np.zeros(len(r), dtype=bool)
 
 # runs poisson filtering on each segment, returning a final mask over all bins
-def filter_segments(Pi, r, C, beta, exposure=0., alpha_prior = 1e-4, beta_prior=4e-3, lamda=1e-10):
+def filter_segments(Pi, r, C, beta, exposure=0., alpha_prior = 1e-5, beta_prior=4e-3, lamda=1e-10):
     mask_lst = []
     seg_labels = np.argmax(Pi, 1)
     print("filtering outlier bins from segments...")
