@@ -24,6 +24,7 @@ class A_MCMC:
       quit_after_burnin = False,
       n_iter = 100000,
       ref_bias = 1.0,
+      betahyp_divisor = 4
     ):
         #
         # dataframe stuff
@@ -94,7 +95,7 @@ class A_MCMC:
         #
         # marginal likelihoods
 
-        self.betahyp = (self.P["REF_COUNT"] + self.P["ALT_COUNT"]).mean()/20  # CHANGE: from 4 to 20, to try aggressive segmenting on exomes 
+        self.betahyp = (self.P["REF_COUNT"] + self.P["ALT_COUNT"]).mean()/betahyp_divisor  # expose parameter 
 
         # log marginal likelihoods for each segment
         # initialize with each SNP comprising its own segment.

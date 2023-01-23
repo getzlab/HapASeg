@@ -14,9 +14,12 @@ from wolf.localization import LocalizeToDisk, DeleteDisk
 
 # for genotyping het sites/getting het site coverage
 het_pulldown = wolf.ImportTask(
-  task_path = 'git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git',
-  commit = "5c733d2" # TODO: use latest commit; will require slightly modifying syntax in workflow
-)
+#   task_path = 'git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git',
+#   commit = "5c733d2" # TODO: use latest commit; will require slightly modifying syntax in workflow
+  task_path = 'git@github.com:ConorMesser/het_pulldown_from_callstats_TOOL.git', # move back to getzlab once pull request completed
+  task_name = 'get_het_coverage_from_callstats'
+  )
+
 
 mutect1 = wolf.ImportTask(
   task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
@@ -31,7 +34,7 @@ phasing = wolf.ImportTask(
 
 # for Hapaseg itself
 hapaseg = wolf.ImportTask(
-  task_path = "git@github.com:getzlab/HapASeg.git", # TODO: make remote
+  task_path = "../",  # "git@github.com:getzlab/HapASeg.git", # TODO: make remote
   task_name = "hapaseg"
 )
 
@@ -126,7 +129,10 @@ def workflow(
   phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
   persistent_dry_run = False,
   cleanup_disks=True,
-  is_ffpe = False # use FAIRE as covariate
+  is_ffpe = False, # use FAIRE as covariate
+  
+  a_mcmc_beta_divisor = 4,
+  a_dp_beta_divisor = 2
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -303,16 +309,17 @@ def workflow(
         else:
             normal_cov_gather_task = {"coverage":normal_coverage_bed}
 
+    run_mutect = False
     # get het site coverage/genotypes from callstats
     if callstats_file is not None:
-        hp_task = het_pulldown.get_het_coverage_from_callstats(
-          callstats_file = callstats_file,
-          common_snp_list = localization_task["common_snp_list"],
-          ref_fasta = localization_task["ref_fasta"],
-          ref_fasta_idx = localization_task["ref_fasta_idx"],
-          ref_fasta_dict = localization_task["ref_fasta_dict"],
-          use_pod_genotyper = True
-        )
+        hp_task = het_pulldown.get_het_coverage_from_callstats(inputs=dict(
+            callstats_file = callstats_file,
+            common_snp_list = localization_task["common_snp_list"],
+            ref_fasta = localization_task["ref_fasta"],
+            ref_fasta_idx = localization_task["ref_fasta_idx"],
+            ref_fasta_dict = localization_task["ref_fasta_dict"],
+            use_pod_genotyper = True
+        ))
     
     # for benchmarking we pass a hetsites file
     elif hetsites_file is not None:
@@ -325,6 +332,8 @@ def workflow(
     
     # otherwise, run M1 and get it from the BAM
     elif callstats_file is None and tumor_bam is not None and normal_bam is not None:
+        run_mutect = True
+        
         # split het sites file uniformly
         split_het_sites = wolf.Task(
           name = "split_het_sites",
@@ -360,14 +369,14 @@ def workflow(
           #force_calling = True,
         ))
 
-        hp_scatter = het_pulldown.get_het_coverage_from_callstats(
-          callstats_file = m1_task["mutect1_cs"],
-          common_snp_list = localization_task["common_snp_list"],
-          ref_fasta = localization_task["ref_fasta"],
-          ref_fasta_idx = localization_task["ref_fasta_idx"],
-          ref_fasta_dict = localization_task["ref_fasta_dict"],
-          use_pod_genotyper = True
-        )
+        hp_scatter = het_pulldown.get_het_coverage_from_callstats(inputs=dict(
+            callstats_file = m1_task["mutect1_cs"],
+            common_snp_list = localization_task["common_snp_list"],
+            ref_fasta = localization_task["ref_fasta"],
+            ref_fasta_idx = localization_task["ref_fasta_idx"],
+            ref_fasta_dict = localization_task["ref_fasta_dict"],
+            use_pod_genotyper = True
+        ))
 
         # gather het pulldown
         hp_task = wolf.Task(
@@ -510,7 +519,8 @@ def workflow(
      inputs = {
        "allele_counts" : hapaseg_load_snps_task["allele_counts"],
        "start" : chunks["start"],
-       "end" : chunks["end"]
+       "end" : chunks["end"],
+       "beta_divisor" : a_mcmc_beta_divisor
      }
     )
 
@@ -526,7 +536,8 @@ def workflow(
     hapaseg_arm_AMCMC_task = hapaseg.Hapaseg_amcmc(
      inputs = {
        "amcmc_object" : hapaseg_concat_task["arms"],
-       "ref_bias" : hapaseg_concat_task["ref_bias"]
+       "ref_bias" : hapaseg_concat_task["ref_bias"],
+       "beta_divisor" : a_mcmc_beta_divisor
      }
     )
     
@@ -570,17 +581,110 @@ A.to_pickle('./concat_arms.pickle')
 outputs = {"all_arms_obj": "concat_arms.pickle"},
 docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
 )
+    
+    ## add unphased SNPs if Exome
+    if wgs:
+        arm_concat_final = arm_concat
+    else:
+        if run_mutect:
+            all_hets_scatter = het_pulldown.get_het_coverage_from_callstats(inputs=dict(
+                callstats_file = m1_task["mutect1_cs"],
+                # no common_snp_list file (use all good het sites)
+                ref_fasta = localization_task["ref_fasta"],
+                ref_fasta_idx = localization_task["ref_fasta_idx"],
+                ref_fasta_dict = localization_task["ref_fasta_dict"],
+        #         log_pod_threshold = "2.5",
+        #         max_frac_mapq0 = "0.05",
+        #         max_frac_prefiltered = "0.1",
+                use_pod_genotyper = True
+            ))
+
+            # gather het pulldown
+            all_hets = wolf.Task(
+              name = "hp_gather",
+              inputs = {"tumor_hets" : [all_hets_scatter["tumor_hets"]]},
+              script = """
+              cat <(cat $(head -n1 ${tumor_hets}) | head -n1) \
+                <(for f in $(cat ${tumor_hets}); do sed 1d $f; done | sort -k1,1V -k2,2n) > tumor_hets.txt
+              """,
+              outputs = {"tumor_hets" : "tumor_hets.txt"}
+            )
+            
+        else:
+            all_hets = het_pulldown.get_het_coverage_from_callstats(inputs=dict(
+                callstats_file = callstats_file,
+                # no common_snp_list file (use all good het sites)
+                ref_fasta = localization_task["ref_fasta"],
+                ref_fasta_idx = localization_task["ref_fasta_idx"],
+                ref_fasta_dict = localization_task["ref_fasta_dict"],
+        #         log_pod_threshold = "2.5",
+        #         max_frac_mapq0 = "0.05",
+        #         max_frac_prefiltered = "0.1",
+                use_pod_genotyper = True
+            ))
+
+        arm_concat_final = wolf.Task(name = "add_unphased_hets",
+                                     inputs = {"all_hets": all_hets['tumor_hets'],
+                                               "all_arms_obj": arm_concat['all_arms_obj']},
+                                     script = """ python -c "
+import pickle
+import pandas as pd
+import numpy as np
+import sortedcontainers as sc
+
+all_arms_df = pickle.load(open('${all_arms_obj}', 'rb'))
+all_hets_df = pd.read_csv('${all_hets}', sep='\t')
+
+for _, a_mcmc_row in all_arms_df.iterrows():
+    a_mcmc_df = a_mcmc_row.results.P
+    use_final_chain = a_mcmc_row.results.breakpoints_MLE is None        
+    bpl = a_mcmc_row.results.breakpoints if use_final_chain else a_mcmc_row.results.breakpoints_MLE
+
+    a_mcmc_df['breakpoint'] = False
+    a_mcmc_df.loc[bpl[:-1], 'breakpoint'] = True
+
+    hets_df_arm = all_hets_df[(all_hets_df['CONTIG'] == a_mcmc_row['chr']) &
+                              (all_hets_df['POSITION'] >= a_mcmc_row['start']) &  # TODO relax this, to allow for unphased hets at ends of arms
+                              (all_hets_df['POSITION'] <= a_mcmc_row['end'])]
+    hets_df_arm.rename(columns={'CONTIG': 'chr', 'POSITION': 'pos'}, inplace=True)
+    hets_df_arm['REF_COUNT'] = hets_df_arm['REF_COUNT'] * a_mcmc_row.results.ref_bias
+    hets_df_arm = hets_df_arm[~hets_df_arm['pos'].isin(a_mcmc_df['pos'])]
+    hets_df_arm['phased'] = False
+    hets_df_arm['added_het'] = True
+    hets_df_arm['aidx'] = np.random.randint(2, size=hets_df_arm.shape[0]).astype(bool)
+    hets_df_arm.loc[hets_df_arm['aidx'], ['MIN_COUNT', 'MAJ_COUNT']] = hets_df_arm.loc[hets_df_arm['aidx'], ['REF_COUNT', 'ALT_COUNT']].values
+    hets_df_arm.loc[~hets_df_arm['aidx'], ['MAJ_COUNT', 'MIN_COUNT']] = hets_df_arm.loc[~hets_df_arm['aidx'], ['REF_COUNT', 'ALT_COUNT']].values
+
+    output_df = pd.concat([a_mcmc_df, hets_df_arm]).sort_values('pos', ignore_index=True)
+    a_mcmc_row.results.P = output_df
+
+    # Unphased hets will be placed in segment on their left. Breakpoints remain with original (phased) hets
+    bpl_final = output_df[output_df['breakpoint'] == True].index.tolist() + [output_df.shape[0]]
+    # only updating the MLE (or the final chain if no MLE)
+    if use_final_chain:
+        a_mcmc_row.results.breakpoint = sc.SortedSet(bpl_final)
+    else:
+        a_mcmc_row.results.breakpoint_MLE = sc.SortedSet(bpl_final)
+
+all_arms_df.to_pickle('./concat_arms_w_unphased_hets.pickle')
+"
+""",
+
+        outputs = {"all_arms_obj": "concat_arms_w_unphased_hets.pickle"},
+        docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
+        )
 
     ## run DP
 
     hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
      inputs = {
-       "seg_dataframe" : arm_concat["all_arms_obj"],
+       "seg_dataframe" : arm_concat_final["all_arms_obj"],
        #"seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
        "cytoband_file" : localization_task["cytoband_file"],
        "ref_fasta" : localization_task["ref_fasta"],
        "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
-       "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink
+       "ref_fasta_dict" : localization_task["ref_fasta_dict"],  # not used; just supplied for symlink
+       "beta_divisor" : a_dp_beta_divisor
      }
     )
 

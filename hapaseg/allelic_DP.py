@@ -16,7 +16,7 @@ import sortedcontainers as sc
 from capy import seq
 
 class A_DP:
-    def __init__(self, allelic_segs_pickle, ref_fasta = None):
+    def __init__(self, allelic_segs_pickle, ref_fasta = None, betahyp_divisor=2):
         # dataframe of allelic imbalance segmentation samples for each chromosome arm
         self.allelic_segs = pd.read_pickle(allelic_segs_pickle).dropna(axis = 0)
         # if some chromsome arms couldn't find the MLE, just use current state of chain
@@ -64,6 +64,9 @@ class A_DP:
         self.SNPs["flipped"] = False
 
         self.N_clust_samps = 100
+        
+        # save hyperparameter value
+        self.betahyp_divisor = betahyp_divisor
 
         # assignment of SNPs to DP clusters for each MCMC sample
         self.snps_to_clusters = None
@@ -75,14 +78,15 @@ class A_DP:
     def run(self):
         self.DP_run = DPinstance(
           self.SNPs,
-          dp_count_scale_factor = self.SNPs["clust"].value_counts().mean()
+          dp_count_scale_factor = self.SNPs["clust"].value_counts().mean(),
+          betahyp_divisor = self.betahyp_divisor
         )
         self.snps_to_clusters, self.snps_to_phases, self.likelihoods = self.DP_run.run(n_samps = self.N_clust_samps)
 
         return self.snps_to_clusters, self.snps_to_phases, self.likelihoods
 
 class DPinstance:
-    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), alpha = 1, dp_count_scale_factor = 1):
+    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), alpha = 1, dp_count_scale_factor = 1, betahyp_divisor=2):
         self.S = S
         self.clust_prior = clust_prior.copy()
         self.clust_count_prior = clust_count_prior.copy()
@@ -93,7 +97,7 @@ class DPinstance:
         self.ref_mat = self.S.loc[:, ["A_ref", "B_ref"]].values.reshape(-1, order = "F")
         self.alt_mat = self.S.loc[:, ["A_alt", "B_alt"]].values.reshape(-1, order = "F")
 
-        self.betahyp = self.S.loc[:, ["min", "maj"]].sum(1).mean()/2
+        self.betahyp = self.S.loc[:, ["min", "maj"]].sum(1).mean()/betahyp_divisor
 
         #
         # define column indices

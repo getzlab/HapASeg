@@ -100,6 +100,7 @@ def parse_args():
     amcmc.add_argument("--stop_after_burnin", action="store_true")
     amcmc.add_argument("--ref_bias", default=1.0)
     amcmc.add_argument("--n_iter", default=20000)
+    amcmc.add_argument("--beta_divisor", default=4)
 
     ## concat
     concat = subparsers.add_parser("concat", help="Concatenate burned-in chunks")
@@ -115,6 +116,7 @@ def parse_args():
     dp.add_argument("--seg_dataframe", required = True)
     dp.add_argument("--ref_fasta", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
     dp.add_argument("--cytoband_file", required = True)
+    dp.add_argument("--beta_divisor", default=2)
   
     ## coverage MCMC
     coverage_mcmc = subparsers.add_parser("coverage_mcmc",
@@ -295,7 +297,8 @@ def main():
                 P.iloc[int(args.start):int(args.end)],
                 quit_after_burnin=args.stop_after_burnin,
                 ref_bias=float(args.ref_bias),
-                n_iter=int(args.n_iter)
+                n_iter=int(args.n_iter),
+                betahyp_divisor=float(args.beta_divisor)
             )
 
         # loading from allelic MCMC results object produced by `hapaseg amcmc`
@@ -433,7 +436,7 @@ def main():
         
     elif args.command == "dp":
         # load allelic segmentation samples
-        A = A_DP(args.seg_dataframe, ref_fasta=args.ref_fasta)
+        A = A_DP(args.seg_dataframe, ref_fasta=args.ref_fasta, betahyp_divisor=float(args.beta_divisor))
 
         # run DP
         snps_to_clusters, snps_to_phases, likelihoods = A.run()

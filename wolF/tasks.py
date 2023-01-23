@@ -46,18 +46,20 @@ class Hapaseg_burnin(wolf.Task):
     inputs = {
       "allele_counts",
       "start",
-      "end"
+      "end",
+      "beta_divisor" : 4
     }
     script = """
     hapaseg amcmc --snp_dataframe ${allele_counts} \
             --start ${start} \
             --end ${end} \
-            --stop_after_burnin
+            --stop_after_burnin \
+            --beta_divisor ${beta_divisor}
     """
     output_patterns = {
       "burnin_MCMC" : "amcmc_results.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1024"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:exome_snps_v1046"
 
 class Hapaseg_concat(wolf.Task):
     inputs = {
@@ -72,24 +74,26 @@ class Hapaseg_concat(wolf.Task):
       "arms" : "AMCMC-arm*.pickle",
       "ref_bias" : ("ref_bias.txt", wolf.read_file)
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1024"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:exome_snps_v1046"
 
 class Hapaseg_amcmc(wolf.Task):
     inputs = {
       "amcmc_object" : None,
       "ref_bias" : None,
       "n_iter" : 20000,
+      "beta_divisor" : 4
     }
     script = """
     hapaseg amcmc --amcmc_object ${amcmc_object} \
             --ref_bias ${ref_bias} \
-            --n_iter ${n_iter}
+            --n_iter ${n_iter} \
+            --beta_divisor ${beta_divisor}
     """
     output_patterns = {
       "arm_level_MCMC" : "amcmc_results.pickle",
       "segmentation_plot" : "figures/MLE_segmentation.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1024"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:exome_snps_v1046"
 
 class Hapaseg_concat_arms(wolf.Task):
     inputs = {
@@ -111,13 +115,15 @@ class Hapaseg_allelic_DP(wolf.Task):
     inputs = {
       "seg_dataframe" : None,
       "ref_fasta" : None,
-      "cytoband_file" : None
+      "cytoband_file" : None,
+      "beta_divisor" : 2
     }
     script = """
     export CAPY_REF_FA=${ref_fasta}
     hapaseg dp --seg_dataframe ${seg_dataframe} \
             --ref_fasta ${ref_fasta} \
-            --cytoband_file ${cytoband_file}
+            --cytoband_file ${cytoband_file} \
+            --beta_divisor ${beta_divisor}
     """
     output_patterns = {
       "cluster_and_phase_assignments" : "allelic_DP_SNP_clusts_and_phase_assignments.npz",
@@ -127,7 +133,7 @@ class Hapaseg_allelic_DP(wolf.Task):
       "SNP_plot" : "figures/SNPs.png",
       "seg_plot" : "figures/segs_only.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1024"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:exome_snps_v1048"
     resources = { "mem" : "12G" }
 
 class Hapaseg_prepare_coverage_mcmc(wolf.Task):
