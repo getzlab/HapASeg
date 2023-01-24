@@ -774,15 +774,29 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             }
         )
 
-    @prefect.task
-    def determine_output_segfile(opt_txt_file, clustered_segs, unclustered_segs):
-        purity = pd.read_csv(opt_txt_file, sep='\t').iloc[0]['purity']
-        if purity > 0.25:
-            return clustered_segs
-        else:
-            return unclustered_segs
-    
-    out_segfile = determine_output_segfile(acdp_task["opt_fit_params"], acdp_task["acdp_segfile"], acdp_task["unclustered_segs"])
+        # create final summary plot
+        summary_plot_task = hapaseg.Hapaseg_summary_plot(
+            inputs = { 
+              "snps_pickle":hapaseg_allelic_DP_task['all_SNPs'],
+              "adp_results":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+              "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
+              "acdp_model":acdp_task["acdp_model_pickle"],
+              "ref_fasta":localization_task["ref_fasta"],
+              "cytoband_file":localization_task["cytoband_file"],
+              "hapaseg_segfile":acdp_task["hapaseg_segfile"]
+            }
+        )
+
+        
+#    @prefect.task
+#    def determine_output_segfile(opt_txt_file, clustered_segs, unclustered_segs):
+#        purity = pd.read_csv(opt_txt_file, sep='\t').iloc[0]['purity']
+#        if purity > 0.25:
+#            return clustered_segs
+#        else:
+#            return unclustered_segs
+#    
+#    out_segfile = determine_output_segfile(acdp_task["opt_fit_params"], acdp_task["acdp_segfile"], acdp_task["unclustered_segs"])
 
     if cleanup_disks:
         #cleanup by deleting bam disks. we make seperate tasks for the bams
@@ -816,7 +830,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                    "acdp_genome_plots": acdp_task["acdp_genome_plots"],
                    "hapaseg_segfile" : acdp_task["hapaseg_segfile"],
                    "absolute_segfile" : acdp_task["absolute_segfile"],
-                   "hapaseg_skip_acdp_segfile": acdp_task["hapaseg_skip_acdp_segfile"]
-                  }
+                   "hapaseg_skip_acdp_segfile": acdp_task["hapaseg_skip_acdp_segfile"],
+                   "hapaseg_summary_plot": summary_plot_task["hapaseg_summary_plot"] 
+                 }
 
     return output_dict

@@ -383,3 +383,28 @@ class Hapaseg_run_acdp(wolf.Task):
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
     resources = { "cpus-per-task":4, "mem" : "6G"}
+
+class Hapaseg_summary_plot(wolf.Task):
+    inputs = {
+              "snps_pickle":None,
+              "adp_results":None,
+              "segmentations_pickle":None,
+              "acdp_model":None,
+              "ref_fasta":None,
+              "cytoband_file":None,
+              "hapaseg_segfile":None
+             }
+
+    script = """
+    hapaseg summary_plot --snps_pickle ${snps_pickle} --adp_results ${adp_results}\
+    --segmentations_pickle ${segmentations_pickle} --acdp_model ${acdp_model}\
+    --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file}\
+    --hapaseg_segfile ${hapaseg_segfile} --outdir ./
+    """
+
+    output_patterns = {
+        "hapaseg_summary_plot": "hapaseg_summary_plot.png"
+    }
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    resources = { "cpus-per-task":2, "mem" : "6G"}
+
