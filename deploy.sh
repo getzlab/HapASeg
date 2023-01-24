@@ -20,8 +20,7 @@ if [[ $BRANCH == "master" ]]; then
 else
 	BRANCH+="_"
 fi
-#VERSION=${BRANCH}v${NCOMMIT}
-VERSION=coverage_mcmc_integration_lnp_jh_v623
+VERSION=${BRANCH}v${NCOMMIT}
 
 # build method docker
 docker build -t getzlab/$METHOD_NAME:${VERSION} ${EXTRA_DOCKER_BUILD_ARGS} ${DOCKER_BUILD_PATH}
