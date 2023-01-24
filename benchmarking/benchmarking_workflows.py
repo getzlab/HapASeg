@@ -50,7 +50,7 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                                     "covcollect_path":localization_task["covcollect"]
                                     })
 
-    hapaseg_seg_file = HapASeg_Workflow(hetsites_file = generate_hapaseg_files_task["hapaseg_hets"],
+    hapaseg_outputs = HapASeg_Workflow(hetsites_file = generate_hapaseg_files_task["hapaseg_hets"],
                                    tumor_coverage_bed = generate_hapaseg_files_task["hapaseg_coverage_bed"],
                                    normal_coverage_bed = localization_task["normal_covcollect"] if normal_covcollect_path != "" else None,
                                    phased_vcf = localization_task["phased_vcf"],
@@ -62,13 +62,21 @@ def HapASeg_Sim_Workflow(sim_profile=None,
     
     hapaseg_downstream = Downstream_HapASeg_Analysis(inputs = {
                                    "sim_profile" : sim_profile,
-                                   "hapaseg_seg_file": hapaseg_seg_file,
+                                   "hapaseg_seg_file": hapaseg_outputs["hapaseg_segfile"],
                                    "ground_truth_seg_file": ground_truth_seg_file,
                                    "sample_name": sample_label,
                                    "ref_fasta": localization_task["ref_fasta"],
                                    "cytoband_file": localization_task["cytoband_file"]
                         })
     
+    hapaseg_downstream_unclustered = Downstream_HapASeg_Analysis(inputs = {
+                                   "sim_profile" : sim_profile,
+                                   "hapaseg_seg_file": hapaseg_outputs["hapaseg_skip_acdp_segfile"],
+                                   "ground_truth_seg_file": ground_truth_seg_file,
+                                   "sample_name": sample_label + "_unclustered",
+                                   "ref_fasta": localization_task["ref_fasta"],
+                                   "cytoband_file": localization_task["cytoband_file"]
+                        })
 #GATK
 def GATK_Sim_Workflow(sim_profile = None,
                       purity = None,
