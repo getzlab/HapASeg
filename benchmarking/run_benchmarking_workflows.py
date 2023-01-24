@@ -300,7 +300,7 @@ with wolf.Workflow(workflow = comparison_workflow, namespace = "CNV_benchmark") 
 
 pd.to_pickle(w.flow_results, "benchmarking.50.rescale.pickle")
 
-## load in and plot results
+## re-run comparator with standardized purity
 
 F2 = pd.read_pickle("benchmarking.50.rescale.pickle")
 
@@ -343,3 +343,168 @@ plt.ylabel("MAD")
 
 plt.legend([l1, l2, l3, l4], ["HapASeg", "GATK4 CNV", "ASCAT", "FACETS"], loc = "lower center", ncol = 4)
 plt.ylim([0.07, 140])
+
+ent_quant = np.quantile(D["entropy"], [0.33, 0.66])
+
+plt.figure(
+
+## TODO: move elsewhere
+import sys
+from capy import plots, seq, mut
+
+# corrected coverage
+N = pd.read_csv(F["48214_21_0.2"]["GATK_CNV_denoise"]["std_copy_ratios"], comment = "@", sep = "\t")
+sys.path.append("/home/jhess/j/proj/cnv/20201018_hapseg2")
+import hapaseg.utils
+
+N["gpos"] = seq.chrpos2gpos(mut.convert_chr(N["CONTIG"]), N["START"])
+
+# raw coverage
+M = pd.read_csv(F["48214_21_0.2"]["Generate_GATK_Sim_Data"]["tumor_coverage_tsv"], comment = "@", sep = "\t")
+M["gpos"] = seq.chrpos2gpos(M["chr"], M["start"])
+
+plt.figure(1, figsize = (16, 4)); plt.clf()
+plots.pixplot(N["gpos"], np.exp2(N["LOG2_COPY_RATIO"]))
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg38/ref/cytoBand_primary.txt")
+
+plt.figure(2, figsize = (16, 4)); plt.clf()
+plots.pixplot(M["gpos"], M["covcorr"], color = "r")
+plt.ylim([0, 1000])
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg38/ref/cytoBand_primary.txt")
+
+# plot input caller
+
+C = pd.read_csv(F["48214_21_0.2"]["Generate_Groundtruth_Segfile"].results["inputs"]["hapaseg_coverage_tsv"][0], sep = "\t", names = ["chr", "start", "end", "covcorr", "x", "y", "z", "u", "v"])
+C = C.loc[C["chr"] != "chrM"]
+C["gpos"] = seq.chrpos2gpos(mut.convert_chr(C["chr"]), C["start"])
+
+plt.figure(3, figsize = (16, 4)); plt.clf()
+plots.pixplot(C["gpos"], C["covcorr"])
+plt.ylim([0, 300000])
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg38/ref/cytoBand_primary.txt")
+
+# hets
+H = pd.read_csv(F["48214_21_0.2"]["Generate_HapASeg_Sim_Data"]["hapaseg_hets"], sep = "\t")
+H["gpos"] = seq.chrpos2gpos(mut.convert_chr(H["CONTIG"]), H["POSITION"])
+
+# scaled coverage
+S = pd.read_csv(F["48214_21_0.2"]["Generate_HapASeg_Sim_Data"]["hapaseg_coverage_bed"], sep = "\t", names = ["chr", "start", "end", "covcorr", "x", "y", "z", "u", "v"])
+S = S.loc[S["chr"] != "chrM"]
+S["gpos"] = seq.chrpos2gpos(mut.convert_chr(S["chr"]), S["start"])
+
+plt.figure(4, figsize = (16, 4)); plt.clf()
+plots.pixplot(S["gpos"], S["covcorr"])
+plt.ylim([0, 300000])
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg38/ref/cytoBand_primary.txt")
+
+plt.figure(5, figsize = (16, 4)); plt.clf()
+plots.pixplot(H["gpos"], H["ALT_COUNT"]/H[["REF_COUNT", "ALT_COUNT"]].sum(1), color = "orange")
+plt.ylim([0, 1])
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg38/ref/cytoBand_primary.txt")
+
+
+##
+X = pd.read_csv("gs://opriebe-tmp/RP-2550_GTEX-13OW5-0126_v1_WGS_GCP.covcollect.tsv", sep = "\t", names = ["chr", "start", "end", "covcorr", "x", "y", "z", "u", "v"])
+X = X.loc[X["chr"] != "chrM"]
+X["gpos"] = seq.chrpos2gpos(mut.convert_chr(X["chr"]), X["start"])
+
+plt.figure(40, figsize = (16, 4)); plt.clf()
+plots.pixplot(X["gpos"], X["covcorr"])
+plt.ylim([0, 3.3e6])
+hapaseg.utils.plot_chrbdy("/mnt/j/db/hg38/ref/cytoBand_primary.txt")
+plt.xlim([0, 3093173846])
+
+## plot all MADs
+methods = ['Downstream_ASCAT_Analysis', 'Downstream_Facets_Analysis', 'Downstream_GATK_Analysis', 'Downstream_HapASeg_Analysis']
+D = { samp : { method : F[samp][method] for method in methods } for samp in F.keys() }
+
+D = pd.DataFrame.from_dict(D, orient = "index")
+D = pd.concat([D.reset_index(drop = True), D.index.str.extract(r"(?P<entropy>\d+)_\d+_(?P<purity>[\d\.]+)")], axis = 1).astype({ "entropy" : int, "purity" : float })
+
+for method in methods:
+    D[method + "_MAD"] = np.nan
+
+for idx, row in D.iterrows():
+    for method in methods:
+        try:
+            score = pd.read_csv(row[method]["comparison_results"], sep = "\t")
+            D.loc[idx, method + "_MAD"] = score["mad_score"][0]
+        except:
+            pass
+
+colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+
+plt.figure(11); plt.clf()
+
+minent = D["entropy"].min()
+
+for ent, idx in D.groupby("entropy").groups.items():
+    jit = lambda x : np.random.rand(len(x))/20 - 0.025
+    sz = 5 + (ent - minent)/500
+    l1 = plt.scatter(D.loc[idx, "purity"] + jit(idx), D.loc[idx, "Downstream_HapASeg_Analysis_MAD"], s = sz, color = colors[0], alpha = 0.8)
+    l2 = plt.scatter(D.loc[idx, "purity"] + jit(idx), D.loc[idx, "Downstream_GATK_Analysis_MAD"], s = sz, color = colors[1], alpha = 0.8)
+    l3 = plt.scatter(D.loc[idx, "purity"] + jit(idx), D.loc[idx, "Downstream_ASCAT_Analysis_MAD"], s = sz, color = colors[2], alpha = 0.8)
+    l4 = plt.scatter(D.loc[idx, "purity"] + jit(idx), D.loc[idx, "Downstream_Facets_Analysis_MAD"], s = sz, color = colors[3], alpha = 0.8)
+
+plt.xticks(np.r_[0.1:1:0.1])
+
+plt.yscale("log")
+plt.xlabel("Purity")
+plt.ylabel("MAD")
+
+plt.legend([l1, l2, l3, l4], ["HapASeg", "GATK4 CNV", "ASCAT", "FACETS"], loc = "lower center", ncol = 4)
+plt.ylim([0.05, 100])
+
+
+## Run on FFPE
+
+ffpe_sim_profiles = pd.DataFrame(dict(
+pickle = ["gs://hapaseg-pub/cnv_sim/benchmarking/sim_samples/benchmarking_profiles/benchmarking_profile_32882_146.pickle",
+"gs://hapaseg-pub/cnv_sim/benchmarking/sim_samples/benchmarking_profiles/benchmarking_profile_33708_76.pickle",
+"gs://hapaseg-pub/cnv_sim/benchmarking/sim_samples/benchmarking_profiles/benchmarking_profile_39976_17.pickle",
+"gs://hapaseg-pub/cnv_sim/benchmarking/sim_samples/benchmarking_profiles/benchmarking_profile_46924_92.pickle"],
+desc = ["easiest", "easy", "med", "hard"]
+))
+
+purities = pd.Series([0.15, 0.30, 0.6, 0.9], name = "purities")
+
+ffpe_sim_profiles = ffpe_sim_profiles.merge(purities, how = "cross")
+
+with wolf.Workflow(workflow=Run_Sim_Workflows, namespace = "CNV_benchmark", scheduler_processes = 10, max_concurrent_flows = 200) as w:
+    for _, profile in ffpe_sim_profiles.iterrows():
+        purity = np.around(profile['purities'], 1)
+        name = f"FFPE_{profile['desc']}_{purity}"
+        w.run(run_name = name,
+              sim_profile = profile["pickle"],
+              purity = profile["purities"],
+              sample_label = name,
+              normal_vcf_path = 'gs://hapaseg-pub/cnv_sim/NA12878/NA12878.vcf',
+              ref_build = "hg38",
+              ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
+              cytoband_file = "gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt",
+
+              # UPDATE
+              hapaseg_hetsite_depth_path='gs://hapaseg-pub/cnv_sim/benchmarking/hapaseg/NA12878_hetsites_depth.tsv',
+              hapaseg_covcollect_path='../benchmarking_data/1022_cov.bed',
+              hapaseg_phased_vcf_path='gs://hapaseg-pub/cnv_sim/benchmarking/hapaseg/NA12878_eagle_phasing.vcf',
+              hapaseg_is_ffpe=True,
+
+              # UPDATE
+              gatk_variant_depth_path = 'gs://hapaseg-pub/cnv_sim/benchmarking/gatk/NA12878_gatk_var_depth.tsv',
+              gatk_coverage_tsv_path = '../benchmarking_data/1022_cov_totreads.bed',
+              gatk_sim_normal_allelecounts_path='gs://hapaseg-pub/cnv_sim/benchmarking/gatk/NA12878_gatk_cs_sim_normal.tsv',
+              gatk_raw_gatk_allelecounts_path='gs://hapaseg-pub/cnv_sim/benchmarking/gatk/NA12878_platinum_all_vars_no_sex.allelecounts.tsv',
+              gatk_raw_gatk_coverage_path='gs://hapaseg-pub/cnv_sim/benchmarking/gatk/NA12878_hg38_wgs_1kb_gatk_no_sex_frag.counts.hdf5',
+              gatk_sequence_dictionary='gs://hapaseg-pub/cnv_sim/benchmarking/gatk/1kG_PoN/Homo_sapiens_assembly38.dict',
+              gatk_count_panel='gs://hapaseg-pub/cnv_sim/benchmarking/gatk/1kG_PoN/GATK_PoN_50samples_1kG.hdf5',
+
+              # UPDATE
+              facets_variant_depth_path = 'gs://hapaseg-pub/cnv_sim/benchmarking/facets/facets_cs_variant_depths.tsv',
+              facets_filtered_variants_path = 'gs://hapaseg-pub/cnv_sim/benchmarking/facets/facets_cs_variant_filtered.tsv',
+
+              # UPDATE
+              ascat_variant_depth_path = 'gs://hapaseg-pub/cnv_sim/benchmarking/ascat/ascat_cs_variant_depths.tsv',
+              ascat_filtered_variants_path = 'gs://hapaseg-pub/cnv_sim/benchmarking/ascat/ascat_cs_variant_filtered.tsv',
+              ascat_GC_correction_file = 'gs://hapaseg-pub/cnv_sim/benchmarking/ascat/ascat_loci/GC_G1000_hg38.txt',
+              ascat_RT_correction_file='gs://hapaseg-pub/cnv_sim/benchmarking/ascat/ascat_loci/RT_G1000_hg38.txt'
+              )

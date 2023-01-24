@@ -358,12 +358,13 @@ def workflow(
           refFastaIdx = localization_task["ref_fasta_idx"],
           refFastaDict = localization_task["ref_fasta_dict"],
 
-          intervals = tumor_split_intervals_task["interval_files"],
-          #intervals = split_het_sites["snp_list_shards"],
+          # TODO: let user specify this?
+          #intervals = tumor_split_intervals_task["interval_files"],
+          intervals = split_het_sites["snp_list_shards"],
 
-          exclude_chimeric = True#,
+          exclude_chimeric = True,
 
-          #force_calling = True,
+          force_calling = True,
         ))
 
         hp_scatter = het_pulldown.get_het_coverage_from_callstats(
