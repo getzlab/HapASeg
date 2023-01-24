@@ -1105,7 +1105,7 @@ class DPinstance:
                 ax.scatter(
                   (selff.S.iloc[en - 1]["pos_gp"] + selff.S.iloc[st]["pos_gp"])/2,
                   med,
-                  color = colors[seg_cu[i] % len(colors)],
+                  color = 'k',
                   marker = '.', s = 1, alpha = 1 if show_snps else 1/n_samp
                 )
 
