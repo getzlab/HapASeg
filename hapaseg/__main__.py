@@ -233,6 +233,7 @@ def parse_args():
     fp.add_argument("--ref_fasta", required=True, help="path to matching reference fasta file")
     fp.add_argument("--cytoband_file", required=True, help="path to cytoband file")
     fp.add_argument("--hapaseg_segfile", required=True, help="path to hapaseg format segfile (can be clustered or unclustered)")
+    fp.add_argument("--outdir", required=False, default='./', help="path to save figure")
     args = parser.parse_args()
 
     # validate arguments
@@ -808,6 +809,12 @@ def main():
         for i in cov_df.segment_ID.unique():
             sub = cov_df.loc[cov_df.segment_ID == i]
             axs[1].scatter(sub.start_g, residuals[sub.index], color = colors[i % 3], s= 1, alpha=0.2)
+            # plot seg mu
+            start = sub.iloc[0].start_g
+            end = sub.iloc[-1].start_g
+            mu_exp = np.exp(sub.iloc[0].cov_DP_mu)
+            axs[1].plot((start, end), (mu_exp, mu_exp), linewidth=0.5, color='k')
+            axs[1].scatter((start + end)/2, mu_exp, marker='.',  s=1, color='k')
         plt.sca(axs[1])
         plt.yticks(fontsize=6)
         hs_utils.plot_chrbdy(args.cytoband_file)
@@ -841,7 +848,7 @@ def main():
         axs[2].set_ylabel('corrected coverage', size = 8)
         axs[2].set_xlabel('Chromosomes', size=8)
         plt.tight_layout()
-        plt.savefig('./hapaseg_summary_plot.png', dpi=200)
+        plt.savefig(os.path.join(args.outdir, 'hapaseg_summary_plot.png'), dpi=200)
 
 if __name__ == "__main__":
     main()
