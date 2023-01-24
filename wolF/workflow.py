@@ -30,12 +30,7 @@ phasing = wolf.ImportTask(
 )
 
 # for Hapaseg itself
-hapaseg = wolf.ImportTask(
-#  task_path = "git@github.com:getzlab/HapASeg.git", # TODO: make remote
-  task_path = "../",
-  task_name = "hapaseg"
-)
-
+from . import tasks as hapaseg
 
 # for coverage collection
 split_intervals = wolf.ImportTask(
