@@ -44,9 +44,9 @@ class Hapaseg_load_snps(wolf.Task):
 
 class Hapaseg_burnin(wolf.Task):
     inputs = {
-      "allele_counts",
-      "start",
-      "end",
+      "allele_counts" : None,
+      "start" : None,
+      "end" : None,
       "beta_divisor" : 4
     }
     script = """
@@ -59,7 +59,7 @@ class Hapaseg_burnin(wolf.Task):
     output_patterns = {
       "burnin_MCMC" : "amcmc_results.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:exome_snps_v1046"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:exome_snps_v1049"
 
 class Hapaseg_concat(wolf.Task):
     inputs = {
@@ -93,7 +93,7 @@ class Hapaseg_amcmc(wolf.Task):
       "arm_level_MCMC" : "amcmc_results.pickle",
       "segmentation_plot" : "figures/MLE_segmentation.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:exome_snps_v1046"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:exome_snps_v1049"
 
 class Hapaseg_concat_arms(wolf.Task):
     inputs = {
@@ -133,7 +133,7 @@ class Hapaseg_allelic_DP(wolf.Task):
       "SNP_plot" : "figures/SNPs.png",
       "seg_plot" : "figures/segs_only.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:exome_snps_v1048"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:exome_snps_v1049"
     resources = { "mem" : "12G" }
 
 class Hapaseg_prepare_coverage_mcmc(wolf.Task):
