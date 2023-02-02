@@ -132,7 +132,8 @@ def workflow(
   is_ffpe = False, # use FAIRE as covariate
   
   a_mcmc_beta_divisor = 4,
-  a_dp_beta_divisor = 2
+  a_dp_beta_divisor = 2,
+  add_unphased = False
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -311,6 +312,7 @@ def workflow(
 
     run_mutect = False
     # get het site coverage/genotypes from callstats
+    # for exomes, callstats file should ideally include all sites, not just target regions
     if callstats_file is not None:
         hp_task = het_pulldown.get_het_coverage_from_callstats(inputs=dict(
             callstats_file = callstats_file,
@@ -583,8 +585,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
 )
     
     ## add unphased SNPs if Exome
-    if wgs:
-        arm_concat_final = arm_concat
+    if wgs or not add_unphased:
+        arm_concat_final = arm_concat        
     else:
         if run_mutect:
             all_hets_scatter = het_pulldown.get_het_coverage_from_callstats(inputs=dict(
@@ -593,9 +595,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                 ref_fasta = localization_task["ref_fasta"],
                 ref_fasta_idx = localization_task["ref_fasta_idx"],
                 ref_fasta_dict = localization_task["ref_fasta_dict"],
-        #         log_pod_threshold = "2.5",
-        #         max_frac_mapq0 = "0.05",
-        #         max_frac_prefiltered = "0.1",
+                log_pod_threshold = "2",
+                pod_min_depth = 15,
                 use_pod_genotyper = True
             ))
 
@@ -617,9 +618,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                 ref_fasta = localization_task["ref_fasta"],
                 ref_fasta_idx = localization_task["ref_fasta_idx"],
                 ref_fasta_dict = localization_task["ref_fasta_dict"],
-        #         log_pod_threshold = "2.5",
-        #         max_frac_mapq0 = "0.05",
-        #         max_frac_prefiltered = "0.1",
+                log_pod_threshold = "2",
+                pod_min_depth = 15,
                 use_pod_genotyper = True
             ))
 
@@ -679,7 +679,6 @@ all_arms_df.to_pickle('./concat_arms_w_unphased_hets.pickle')
     hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
      inputs = {
        "seg_dataframe" : arm_concat_final["all_arms_obj"],
-       #"seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
        "cytoband_file" : localization_task["cytoband_file"],
        "ref_fasta" : localization_task["ref_fasta"],
        "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
