@@ -70,7 +70,8 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                                    "cytoband_file": localization_task["cytoband_file"]
                         })
     
-    hapaseg_downstream_unclustered = Downstream_HapASeg_Analysis(inputs = {
+    hapaseg_downstream_unclustered = Downstream_HapASeg_Analysis(name = "Downstream_HapASeg_Analysis_unclustered",
+                                   inputs = {
                                    "sim_profile" : sim_profile,
                                    "hapaseg_seg_file": hapaseg_outputs["hapaseg_skip_acdp_segfile"],
                                    "ground_truth_seg_file": ground_truth_seg_file,
