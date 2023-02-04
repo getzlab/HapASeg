@@ -600,7 +600,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":localization_task["repl_file"],
-        "faire_pickle":localization_task["faire_file"], # TODO: only use this for FFPE?
+        "faire_pickle":localization_task["faire_file"] if is_ffpe else "",
         "gc_pickle":localization_task["gc_file"] if ref_config["gc_file"] != "" else "",
         "normal_coverage_csv":normal_cov_gather_task["coverage"] if use_normal_coverage else "",
         "ref_fasta":localization_task["ref_fasta"],
