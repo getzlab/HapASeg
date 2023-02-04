@@ -21,7 +21,7 @@ class Generate_HapASeg_Sim_Data(wolf.Task):
     }
     
     resources = {"cpus-per-task":2, "mem":"6G"}
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
 
 # GATK
 class Generate_GATK_Sim_Data(wolf.Task):
@@ -52,7 +52,7 @@ class Generate_GATK_Sim_Data(wolf.Task):
     }
     
     resources = {"cpus-per-task":2, "mem":"6G"}
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
 
 # Facets
 
@@ -90,7 +90,7 @@ class Generate_Facets_Sim_Data(wolf.Task):
     }
     
     resources = {"cpus-per-task":2, "mem":"6G"}
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
 
 # ASCAT
 class Generate_ASCAT_Sim_Data(wolf.Task):
@@ -125,7 +125,7 @@ class Generate_ASCAT_Sim_Data(wolf.Task):
     }
     
     resources = {"cpus-per-task":2, "mem":"6G"}
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
 
 
 # HATCHet
@@ -160,4 +160,4 @@ class Generate_HATCHet_Sim_Data(wolf.Task):
                 }
     
     resources = {"cpus-per-task":2, "mem":"6G"}
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"

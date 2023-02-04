@@ -62,7 +62,7 @@ class HapASeg_Preprocess_Callstats(wolf.Task):
                        "hapaseg_genotype": "*_genotype.tsv"
                       }
     resources = {"mem": "12G"}
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
 
 class Facets_Preprocess_Callstats(wolf.Task):
     inputs = {
@@ -79,7 +79,7 @@ class Facets_Preprocess_Callstats(wolf.Task):
                         "facets_filtered_variants": "*filtered.tsv"
                       }
     resources = {"mem": "12G"}
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
 
 class ASCAT_Preprocess_Callstats(wolf.Task):
     inputs = {
@@ -96,7 +96,7 @@ class ASCAT_Preprocess_Callstats(wolf.Task):
                         "ascat_filtered_variants": "*filtered.tsv"
                       }
     resources = {"mem": "12G"}
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_lnp_jh_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
 
 ###########
 #

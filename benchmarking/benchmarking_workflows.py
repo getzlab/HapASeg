@@ -10,8 +10,7 @@ from ascat_wolf_task.ascat_wolf_task import ASCAT
 from facets_wolf_task.facets_wolf_task import Facets
 from hatchet_wolf_task.workflow import Hatchet_Generate_Raw, Hatchet_Main
 
-sys.path.append('../wolF/')
-from workflow import workflow as HapASeg_Workflow
+hapaseg = wolf.ImportTask('../')
 
 #HapASeg
 def HapASeg_Sim_Workflow(sim_profile=None,
@@ -29,7 +28,8 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                          ground_truth_seg_file=None,
                          target_list=2000,
                          run_cdp=False, # only applies to  WES, optionaly run CDP before ACDP
-                         cleanup_disks=False
+                         cleanup_disks=False,
+                         is_ffpe=False, # flag to use faire tracks
                 ):
     localization_task = LocalizeToDisk(files = {
                                     "normal_vcf":normal_vcf_path,
@@ -50,7 +50,7 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                                     "covcollect_path":localization_task["covcollect"]
                                     })
 
-    hapaseg_outputs = HapASeg_Workflow(hetsites_file = generate_hapaseg_files_task["hapaseg_hets"],
+    hapaseg_outputs = hapaseg.hapaseg_workflow(hetsites_file = generate_hapaseg_files_task["hapaseg_hets"],
                                    tumor_coverage_bed = generate_hapaseg_files_task["hapaseg_coverage_bed"],
                                    normal_coverage_bed = localization_task["normal_covcollect"] if normal_covcollect_path != "" else None,
                                    phased_vcf = localization_task["phased_vcf"],
@@ -58,6 +58,7 @@ def HapASeg_Sim_Workflow(sim_profile=None,
                                    run_cdp = run_cdp,
                                    target_list = target_list if isinstance(target_list, int) else localization_task["target_list"],
                                    cleanup_disks=cleanup_disks,
+                                   is_ffpe=is_ffpe
                                    )
     
     hapaseg_downstream = Downstream_HapASeg_Analysis(inputs = {
@@ -338,6 +339,7 @@ def Run_Sim_Workflows(sim_profile=None,
                       hapaseg_cleanup_disks=False,
                       hapaseg_normal_covcollect_path="", # optional, will be used as coviatiate if passed
                       hapaseg_run_cdp=False, # only applies to  WES, optionaly run CDP before ACDP
+                      is_ffpe=False, # whether to use faire tracks
                       # GATK
                       gatk_variant_depth_path = None,
                       gatk_coverage_tsv_path = None,
@@ -398,7 +400,8 @@ def Run_Sim_Workflows(sim_profile=None,
                         ground_truth_seg_file=seg_file_gen_task["ground_truth_seg_file"],
                         target_list = hapaseg_target_list,
                         run_cdp = hapaseg_run_cdp,
-                        cleanup_disks = hapaseg_cleanup_disks
+                        cleanup_disks = hapaseg_cleanup_disks,
+                        is_ffpe = is_ffpe
                         )
 
     GATK_Sim_Workflow(sim_profile=sim_profile,
