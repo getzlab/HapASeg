@@ -19,7 +19,8 @@ from scipy.signal import find_peaks
 
 from capy import seq, mut
 
-from.model_optimizers import CovLNP_NR_prior
+from .model_optimizers import CovLNP_NR_prior
+from .run_coverage_MCMC import poisson_outlier_filter
 
 from .utils import *
 
@@ -96,9 +97,9 @@ def generate_acdp_df(SNP_path, # path to SNP df
             cov_df_run['segment_ID'] = seg_samples[:, run].astype(int)
             dp_assignments = seg_samples[:,run]
             
-            # filter out small segments (<10)            
+            # filter out small segments (<5)            
             gb = cov_df_run.groupby('segment_ID').count().iloc[:,0]
-            small_segs = gb.loc[gb < 10].index
+            small_segs = gb.loc[gb < 5].index
             dp_assignments = dp_assignments[~cov_df_run.segment_ID.isin(small_segs)]
             cov_df_run = cov_df_run.loc[~cov_df_run.segment_ID.isin(small_segs)]
 
@@ -134,19 +135,36 @@ def generate_acdp_df(SNP_path, # path to SNP df
         a_cov_seg_df = a_cov_seg_df.loc[a_cov_seg_df['cov_DP_cluster'] != -1]
 
         # adding cluster mus and sigmas to df for each tuple
-        # falls back to CDP mu and sigma if the tuple is too small (less than 10 coverage bins)
+        # falls back to CDP mu and sigma if the tuple is too small (less than 5 coverage bins)
         a_cov_seg_df['cov_DP_mu'] = 0
         a_cov_seg_df['cov_DP_sigma'] = 0
 
         for adp, cdp in tqdm.tqdm(a_cov_seg_df.groupby(['allelic_cluster', 'cov_DP_cluster']).indices):
             acdp_clust = a_cov_seg_df.loc[
                 (a_cov_seg_df.cov_DP_cluster == cdp) & (a_cov_seg_df.allelic_cluster == adp)]
-            if len(acdp_clust) < 10:
+            if len(acdp_clust) < 5:
                 acdp_clust = a_cov_seg_df.loc[a_cov_seg_df.cov_DP_cluster == cdp]
             r = acdp_clust.fragcorr.values
             C = np.c_[acdp_clust[covar_cols]]
-            lnp = CovLNP_NR_prior(r[:,None], beta, C, exposure = np.log(bin_width), alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior= r.mean(), lamda=1e-10, init_prior = False)
-            res = lnp.fit(ret_hess=True)
+            lnp = CovLNP_NR_prior(r[:,None], beta, C, exposure = np.log(bin_width), alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior= np.log(r).mean(), lamda=1e-10, init_prior = False)
+            
+            try:
+                # there may still be convergence issues after beta refitting
+                res = lnp.fit(ret_hess=True)
+            except:
+                # in such case, we filter the problematic bins
+                filter_mask = poisson_outlier_filter(r, C, beta)
+                if filter_mask.sum() == 0:
+                    # this segment could not be recovered. throw it out and continue
+                    a_cov_seg_df = a_cov_seg_df.drop(acdp_clust.index)
+                    continue
+                else:
+                    r = r[filter_mask]
+                    C = C[filter_mask]
+                    a_cov_seg_df = a_cov_seg_df.drop(acdp_clust.index[~filter_mask])
+                    lnp = CovLNP_NR_prior(r[:,None], beta, C, exposure = np.log(bin_width), alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior= np.log(r).mean(), lamda=1e-10, init_prior = False)
+                    res = lnp.fit(ret_hess=True)
+
             mu = res[0]
             a_cov_seg_df.loc[
                 (a_cov_seg_df.cov_DP_cluster == cdp) & (a_cov_seg_df.allelic_cluster == adp), 'cov_DP_mu'] = mu
