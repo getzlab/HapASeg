@@ -1055,16 +1055,17 @@ class DPinstance:
 
             # plot ambiguous SNPs with opacity weighted by phase probability
             nuidx = (ph_prob != 0) & (ph_prob != 1)
-            ax.scatter(
-              selff.S.loc[nuidx, "pos_gp"],
-              self.S.loc[nuidx, "min"]/self.S.loc[nuidx, ["min", "maj"]].sum(1),
-              color = colors[cu[nuidx] % len(colors)], marker = '.', alpha = default_alpha*(1 - ph_prob[nuidx]), s = 1
-            )
-            ax.scatter(
-              selff.S.loc[nuidx, "pos_gp"],
-              self.S.loc[nuidx, "maj"]/self.S.loc[nuidx, ["min", "maj"]].sum(1),
-              color = colors[cu[nuidx] % len(colors)], marker = '.', alpha = default_alpha*ph_prob[nuidx], s = 1
-            )
+            if nuidx.sum() > 0: # protect against zero ambiguous segs
+                ax.scatter(
+                  selff.S.loc[nuidx, "pos_gp"],
+                  self.S.loc[nuidx, "min"]/self.S.loc[nuidx, ["min", "maj"]].sum(1),
+                  color = colors[cu[nuidx] % len(colors)], marker = '.', alpha = default_alpha*(1 - ph_prob[nuidx]), s = 1
+                )
+                ax.scatter(
+                  selff.S.loc[nuidx, "pos_gp"],
+                  self.S.loc[nuidx, "maj"]/self.S.loc[nuidx, ["min", "maj"]].sum(1),
+                  color = colors[cu[nuidx] % len(colors)], marker = '.', alpha = default_alpha*ph_prob[nuidx], s = 1
+                )
 
         for seg2c, s2ph in zip(self.segment_trace, self.phase_orientations):
             # only show maximum likelihood if we're overlaying SNPs
