@@ -794,7 +794,7 @@ def main():
         colors = mpl.cm.get_cmap("tab10").colors 
         # adp results window
         f, axs = plt.subplots(3,1, sharex=True)
-        adp_obj.visualize_segs(ax=axs[0], use_clust=True, show_snps=True)
+        adp_obj.visualize_segs(ax=axs[0], show_snps=True)
         plt.sca(axs[0])
         plt.yticks(fontsize=6)
         hs_utils.plot_chrbdy(args.cytoband_file)
