@@ -11,8 +11,7 @@ import tempfile
 
 from wolf.localization import LocalizeToDisk, DeleteDisk, UploadToBucket
 
-sys.path.append('../wolF/')
-from workflow import _hg38_config_gen, _hg19_config_gen
+hapaseg = wolf.ImportTask('../')
 
 # import external tasks
 
@@ -124,10 +123,10 @@ def Generate_Hapaseg_Raw_Data_Workflow(
     if ref_genome_build == "hg38":
         primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
         primary_contigs.extend(['chrX','chrY','chrM'])
-        ref_config = _hg38_config_gen(wgs)
+        ref_config = hapaseg.hg38_config_gen(wgs)
     elif ref_genome_build == "hg19":
         primary_contigs = [str(x) for x in range(1, 23)] + ["X", "Y", "M"]
-        ref_config = _hg19_config_gen(wgs)
+        ref_config = hapaseg.hg19_config_gen(wgs)
     else:
         raise ValueError(f"did not recognize ref build {ref_genome_build}. Expected hg38 or hg19")
     

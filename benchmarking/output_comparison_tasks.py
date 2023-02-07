@@ -18,7 +18,7 @@ class Generate_Groundtruth_Segfile(wolf.Task):
             """
     output_patterns = {"ground_truth_seg_file":"*_gt_seg_file.tsv"}
    
-    resources = {"mem":"2G"}
+    resources = {"mem":"3G"}
  
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
 
