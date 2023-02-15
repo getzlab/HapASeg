@@ -393,6 +393,9 @@ class CoverageMCMCRunner:
           Cov_overlap["allelic_cluster"] != -1, ["seg_idx", "allelic_cluster"]
         ].drop_duplicates().set_index("seg_idx")
 
+        ## some expanded bins may come from segments without any covered bins. drop these
+        Cov_overlap = Cov_overlap.loc[Cov_overlap["seg_idx"].isin(acmap.index)]
+
         with pd.option_context('mode.chained_assignment', None): # suppress erroneous SettingWithCopyWarning
             Cov_overlap.loc[:, "allelic_cluster"] = acmap.loc[Cov_overlap["seg_idx"]].values
 
