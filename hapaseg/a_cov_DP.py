@@ -566,8 +566,9 @@ class AllelicCoverage_DP:
                 self.cluster_assignments[i] = i
                 self.cluster_sums[i] = self.segment_sums[i]
                 self.cluster_ssd[i] = self.segment_ssd[i]
-            #next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
-            self.next_cluster_index = i+1
+            # next cluster index is the next unused cluster index (i.e. not used by prior cluster or current) 
+            # or zero if no clusters were formed 
+            self.next_cluster_index = i+1 if len(self.segments - self.greylist_segments) > 0 else 0
 
         # datapoint array generation methods
 
@@ -828,6 +829,10 @@ class AllelicCoverage_DP:
 
     def run(self, n_iter):
 
+        # protect against trying to run on zero segments
+        if len(self.segments) == 0:
+            print("No segments to cluster. Aborting...", flush = True)
+            return self.clusters_to_segs
         burned_in = False
         all_assigned = False
 
