@@ -52,7 +52,7 @@ class CoverageMCMCRunner:
         self.wgs = wgs
 
         # lnp hyperparameters - can make passable by arguments
-        self.alpha_prior = 1e-4
+        self.alpha_prior = 1e-5
         self.beta_prior = 4e-3
         self.lamda = 1e-10
 
