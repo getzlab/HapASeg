@@ -573,7 +573,7 @@ def main():
 
         seg_indices = seg_g_idx.loc[args.allelic_seg_idx]
         
-        mu = mu[seg_indices["allelic_cluster"]]
+        mu = mu[seg_g_idx.index.get_loc(args.allelic_seg_idx)]
         C = C[seg_indices["indices"], :]
         r = r[seg_indices["indices"], :]
         
