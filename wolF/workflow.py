@@ -800,7 +800,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             delete_tbams_task = DeleteDisk(
               inputs = {
                 "disk" : [tumor_bam_localization_task["t_bam"], tumor_bam_localization_task["t_bai"]],
-                "upstream" : m1_task["mutect1_cs"] if callstats_file is None else tumor_cov_gather_task["coverage"] 
+                "upstream" : [m1_task["mutect1_cs"]] if callstats_file is None else tumor_cov_gather_task["coverage"] 
               }
          )
          
@@ -808,7 +808,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             delete_nbams_task = DeleteDisk(
               inputs = {
                 "disk" : [normal_bam_localization_task["n_bam"], normal_bam_localization_task["n_bai"]],
-                "upstream" : m1_task["mutect1_cs"]
+                "upstream" : [m1_task["mutect1_cs"]]
               }
         )
     
