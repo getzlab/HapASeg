@@ -811,13 +811,6 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                 "upstream" : m1_task["mutect1_cs"]
               }
         )
-        
-        #also delete the cached files disk
-        delete_file_disk_task = DeleteDisk(
-            inputs = {"disk" : [localization_task["cytoband_file"]],
-                  "upstream" : acdp_task["acdp_model_pickle"] # to prevent execution until acdp has run
-                    }
-                )
     
     output_dict = {
                    "acdp_optimal_fit_params": acdp_task["acdp_optimal_fit_params"],
