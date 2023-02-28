@@ -114,7 +114,7 @@ class A_MCMC:
     # beta smoothing hyperparameter depends on modality
     # TODO: estimate this based on SNP density?
     def _set_betahyp(self):
-        betahyp_sf = 4.0 if self.wgs else 8.0
+        betahyp_sf = 4.0 if self.wgs else 16.0
         self.betahyp = (self.P["REF_COUNT"] + self.P["ALT_COUNT"]).mean()/betahyp_sf
 
     def _Piloc(self, st, en, col_idx, incl_idx = None):
