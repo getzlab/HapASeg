@@ -73,12 +73,14 @@ def _hg19_config_gen(wgs):
         cytoband_file = 'gs://getzlab-workflows-reference_files-oa/hg19/cytoBand.txt',
         repl_file = 'gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/RT/RT.raw.hg19.pickle',
         faire_file = 'gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/FAIRE/coverage.dedup.raw.10kb.pickle',
+        cfdna_wes_faire_file = 'gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/FAIRE/coverage.w_cfDNA.dedup.raw.10kb.pickle',
         ref_panel_1000g = hg19_ref_dict
     )
     #if we're using whole genome we can use the precomputed gc file for 200 bp bins
     #going to leave this for the method to compute until we settle on a bin width
     #hg19_ref_config['gc_file'] = 'gs://opriebe-tmp/GC_hg19_200bp.pickle' if wgs else ""
     hg19_ref_config['gc_file'] = ""
+    
     return hg19_ref_config
 
 #hg38
@@ -92,6 +94,7 @@ def _hg38_config_gen(wgs):
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
         faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle',
+        cfdna_wes_faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle', # TODO: cfDNA file needs to be generated for hg38
         cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt',
         repl_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/RT.raw.hg38.pickle',
         ref_panel_1000g = hg38_ref_dict
@@ -125,7 +128,8 @@ def workflow(
   phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
   persistent_dry_run = False,
   cleanup_disks=True,
-  is_ffpe = False # use FAIRE as covariate
+  is_ffpe = False, # use FAIRE as covariate
+  is_cfdna = False  # use FAIRE (w/ cfDNA samples) as covariate
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -159,6 +163,7 @@ def workflow(
 
         repl_file = ref_config["repl_file"],
         faire_file = ref_config["faire_file"],
+        cfdna_wes_faire_file = ref_config["cfdna_wes_faire_file"],
         gc_file = ref_config["gc_file"],
 
         genetic_map_file = ref_config["genetic_map_file"],
@@ -607,7 +612,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":localization_task["repl_file"],
-        "faire_pickle":localization_task["faire_file"] if is_ffpe else "",
+        "faire_pickle": "" if (not is_ffpe and not is_cfdna) else (localization_task["cfdna_wes_faire_file"] if (is_cfdna and not wgs) else localization_task["faire_file"]),
         "gc_pickle":localization_task["gc_file"] if ref_config["gc_file"] != "" else "",
         "normal_coverage_csv":normal_cov_gather_task["coverage"] if use_normal_coverage else "",
         "ref_fasta":localization_task["ref_fasta"],
