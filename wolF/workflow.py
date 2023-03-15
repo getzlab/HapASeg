@@ -21,13 +21,14 @@ het_pulldown = wolf.ImportTask(
 
 mutect1 = wolf.ImportTask(
   task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
-  task_name = "mutect1"
+  main_task = "mutect1",
+  commit = "74df599"
 )
 
 # for phasing
 phasing = wolf.ImportTask(
   task_path = "git@github.com:getzlab/phasing_TOOL.git",
-  task_name = "phasing"
+  commit = "9ae9bd0"
 )
 
 # for Hapaseg itself
@@ -341,7 +342,7 @@ def workflow(
           outputs = { "snp_list_shards" : "snp_list_chunk*" }
         )
 
-        m1_task = mutect1.mutect1(inputs=dict(
+        m1_task = mutect1(inputs=dict(
           pairName = "het_coverage",
           caseName = "tumor",
           ctrlName = "normal",
