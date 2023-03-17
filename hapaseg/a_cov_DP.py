@@ -200,7 +200,7 @@ def generate_acdp_df(SNP_path, # path to SNP df
     # return the acdp df, the hessians dictionary, and the index of the best DP run
     return pd.concat(draw_dfs), data,  best_run
 
-def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx):
+def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx, absolute_format = True):
     if opt_idx is None:
         opt_idx = acdp_df.dp_draw.unique()[0]
 
@@ -216,17 +216,35 @@ def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx):
                                                                 'segment_ID': x.segment_ID.values[0],
                                                                 'cov_DP_cluster':x.cov_DP_cluster.values[0], 
                                                                 'min_count':x.min_count.sum(),
-                                                                'maj_count':x.maj_count.sum()}).values)
+                                                                'maj_count':x.maj_count.sum(),
+                                                                'n':x.shape[0]}).values)
     
     segs_df.loc[:, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = np.nan
     for i, row in segs_df.iterrows():
         lnp_res = lnp_data[(row[3], row[5], opt_idx)]
         a,b = row[[6,7]]
-        norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000)
-        r_maj = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a + 1, b + 1, size = 10000)))
-        mu_maj, sigma_maj = r_maj.mean(), r_maj.std()
-        r_min = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(b + 1, a + 1, size = 10000)))
-        mu_min, sigma_min = r_min.mean(), r_min.std()
+        sz = int(row["n"])
+        norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = sz)
+        r_maj = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a + 1, b + 1, size = sz)))
+        r_min = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(b + 1, a + 1, size = sz)))
+
+        mu_maj = r_maj.mean()
+        mu_min = r_min.mean()
+        # output sigmas of data
+        if not absolute_format:
+            sigma_maj = r_maj.std()
+            sigma_min = r_min.std()
+        # output sigmas of mu posterior distribution
+        # \mu ~ T_(2\alpha_n)(\mu_n,\beta_n/(\alpha_n\kappa_n))
+        # Var(T_\nu(\mu,\sigma)) = \sigma^2*\nu/(\nu - 2)
+        #                        = (\beta_n/(\alpha_n\kappa_n))^2*\alpha_n/(\alpha_n - 1)
+        else:
+            mu_n, kappa_n, alpha_n, beta_n = self.ML_normalgamma_params(sz, mu_maj, ((r_maj - mu_maj)**2).sum())
+            sigma_maj = beta_n/(alpha_n*kappa_n)*np.sqrt(alpha_n/(alpha_n - 1))
+            mu_n, kappa_n, alpha_n, beta_n = self.ML_normalgamma_params(sz, mu_min, ((r_min - mu_min)**2).sum())
+            sigma_min = beta_n/(alpha_n*kappa_n)*np.sqrt(alpha_n/(alpha_n - 1))
+            
+
         segs_df.loc[i, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = mu_maj, mu_min, sigma_maj, sigma_min
     segs_df = segs_df.rename(columns={'chr':'Chromosome', 'start':'Start.bp', 'end':'End.bp'})     
     segs_df.to_csv(filename, sep='\t', index=False)
@@ -617,9 +635,9 @@ class AllelicCoverage_DP:
     def _ML_cluster_merge(self, clust_A, clust_B):
         mn, mu_mn, ssd = self._ssd_cluster_merge(clust_A, clust_B)
         return self.ML_normalgamma(mn, mu_mn, ssd)
-    
-    # worker function for normal-gamma distribution log Marginal Likelihood
-    def ML_normalgamma(self, n, x_mean, ssd):
+
+    # worker function for normal-gamma distribution parameters
+    def ML_normalgamma_params(self, n, x_mean, ssd):
         # for now x_mean is the same as mu0
         mu0 = x_mean
 
@@ -628,6 +646,11 @@ class AllelicCoverage_DP:
         alpha_n = self.alpha_0 + n/2
         beta_n = self.beta_0 + 0.5 * ssd + self.kappa_0 * n * (x_mean - mu0)**2 / 2*(self.kappa_0 + n)
 
+        return mu_n, kappa_n, alpha_n, beta_n
+    
+    # worker function for normal-gamma distribution log Marginal Likelihood
+    def ML_normalgamma(self, n, x_mean, ssd):
+        mu_n, kappa_n, alpha_n, beta_n = self.ML_normalgamma_params(n, x_mean, ssd)
         return ss.loggamma(alpha_n) - self.loggamma_alpha_0 + self.alpha_0 * self.log_beta_0 - alpha_n * np.log(beta_n) + np.log(self.kappa_0 / kappa_n) / 2 - n * self.half_log2pi
 
 
