@@ -43,7 +43,8 @@ split_intervals = wolf.ImportTask(
 
 cov_collect = wolf.ImportTask(
   task_path = "git@github.com:getzlab/covcollect.git",
-  task_name = "covcollect"
+  commit = "04d5422",
+  main_task = "Covcollect"
 )
 
 ####
@@ -117,6 +118,8 @@ def workflow(
   normal_bam = None,
   normal_bai = None,
   normal_coverage_bed = None,
+
+  single_ended = False, # coverage collection differs depending on whether BAM is paired end
 
   ref_genome_build=None, #must be hg19 or hg38
   
@@ -252,7 +255,7 @@ def workflow(
         )
 
         # dispatch coverage scatter
-        tumor_cov_collect_task = cov_collect.Covcollect(
+        tumor_cov_collect_task = cov_collect(
           inputs = dict(
             bam = tumor_bam_localization_task["t_bam"],
             bai = tumor_bam_localization_task["t_bai"],
@@ -260,6 +263,7 @@ def workflow(
             subset_chr = tumor_subset_intervals["chr"],
             subset_start = tumor_subset_intervals["start"],
             subset_end = tumor_subset_intervals["end"],
+            single_ended = single_ended
           )
         )
 
@@ -290,7 +294,7 @@ def workflow(
             )
 
             # dispatch coverage scatter
-            normal_cov_collect_task = cov_collect.Covcollect(
+            normal_cov_collect_task = cov_collect(
               inputs = dict(
                 bam = normal_bam_localization_task["n_bam"],
                 bai = normal_bam_localization_task["n_bai"],
@@ -298,6 +302,7 @@ def workflow(
                 subset_chr = normal_subset_intervals["chr"],
                 subset_start = normal_subset_intervals["start"],
                 subset_end = normal_subset_intervals["end"],
+                single_ended = single_ended
               )
             )
 
