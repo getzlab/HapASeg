@@ -54,7 +54,6 @@ def parse_args():
     gatk_gen.add_argument("--normal_vcf_path", required=True, help="path to normal sample vcf file")
     gatk_gen.add_argument("--variant_depth_path", required=True, help="path to variant depth file")
     gatk_gen.add_argument("--coverage_tsv_path", required=True, help="path to gatk coverage in covcorr format")
-    gatk_gen.add_argument("--sim_normal_allelecounts_path", required=True, help="path to simulated normal allelecounts in gatk format")
     gatk_gen.add_argument("--raw_gatk_allelecounts_path", required=True, 
                             help="path to original gatk output allelecounts file from raw normal")
     gatk_gen.add_argument("--raw_gatk_coverage_path", required=True,
@@ -126,7 +125,6 @@ def main():
                         normal_vcf_path=args.normal_vcf_path,
                         variant_depth_path=args.variant_depth_path,
                         raw_gatk_allelecounts_path=args.raw_gatk_allelecounts_path,
-                        sim_normal_allelecounts_path=args.sim_normal_allelecounts_path,
                         coverage_tsv_path=args.coverage_tsv_path,
                         raw_gatk_coverage_path=args.raw_gatk_coverage_path,
                         out_dir=output_dir,
@@ -382,14 +380,17 @@ def generate_gatk_files(sim_profile_pickle=None,
 
     add_header_to_allelecounts(raw_gatk_allelecounts_path, sim_tumor_allelecount_out_path)
 
-    # restrict normal counts to the tumor sites
-    df = pd.read_csv(sim_normal_allelecounts_path, comment="@", sep='\t')
+    # restrict raw normal counts to the tumor sites
+    # this is only necessary because we did not filter out indels from the vcf
+    # when originally computing GATK allelecounts, which resulted in allelecounts
+    # at each indel overlapping locus
+    df = pd.read_csv(raw_gatk_allelecounts_path, comment="@", sep='\t')
     df = df.merge(snv_df[['CONTIG', 'POSITION']], on = ['CONTIG', 'POSITION'], how='inner')
 
-    norm_sim_allelecounts_out_path = os.path.join(out_dir, '{}_{}_gatk_sim_normal_allele.counts.tsv'.format(out_label, purity))
-    df.to_csv(norm_sim_allelecounts_out_path, sep='\t', index=False)
+    normal_allelecounts_out_path = os.path.join(out_dir, '{}_{}_gatk_normal_allele.counts.tsv'.format(out_label, purity))
+    df.to_csv(normal_allelecounts_out_path, sep='\t', index=False)
  
-    add_header_to_allelecounts(raw_gatk_allelecounts_path, norm_sim_allelecounts_out_path)
+    add_header_to_allelecounts(raw_gatk_allelecounts_path, normal_allelecounts_out_path)
 
     # generate coverage
     sim_cov_out_path = os.path.join(out_dir, '{}_{}_gatk_sim_tumor_cov.tsv'.format(out_label, purity))
