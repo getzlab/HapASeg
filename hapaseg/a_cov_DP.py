@@ -200,37 +200,6 @@ def generate_acdp_df(SNP_path, # path to SNP df
     # return the acdp df, the hessians dictionary, and the index of the best DP run
     return pd.concat(draw_dfs), data,  best_run
 
-def generate_unclustered_segs(filename, acdp_df, lnp_data, opt_idx):
-    if opt_idx is None:
-        opt_idx = acdp_df.dp_draw.unique()[0]
-
-    acdp_single = acdp_df.loc[acdp_df.dp_draw == opt_idx]
-    num_bins = (acdp_single.allele==1).sum()
-    row_idxs = [acdp_single.columns.get_loc(i) for i in ['chr', 'start', 'end', 'allelic_cluster', 'segment_ID', 'cov_DP_cluster', 'min_count', 'maj_count']]
-    min_df = acdp_single.iloc[num_bins:, row_idxs]
-
-    segs_df = pd.DataFrame.from_records(min_df.groupby(['chr', 'segment_ID']).apply(lambda x: {'chr': x.chr.values[0],
-                                                               'start': x.start.min(), 
-                                                                'end': x.end.max(), 
-                                                                'allelic_cluster':x.allelic_cluster.values[0], 
-                                                                'segment_ID': x.segment_ID.values[0],
-                                                                'cov_DP_cluster':x.cov_DP_cluster.values[0], 
-                                                                'min_count':x.min_count.sum(),
-                                                                'maj_count':x.maj_count.sum()}).values)
-    
-    segs_df.loc[:, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = np.nan
-    for i, row in segs_df.iterrows():
-        lnp_res = lnp_data[(row[3], row[5], opt_idx)]
-        a,b = row[[6,7]]
-        norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = 10000)
-        r_maj = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a + 1, b + 1, size = 10000)))
-        mu_maj, sigma_maj = r_maj.mean(), r_maj.std()
-        r_min = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(b + 1, a + 1, size = 10000)))
-        mu_min, sigma_min = r_min.mean(), r_min.std()
-        segs_df.loc[i, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = mu_maj, mu_min, sigma_maj, sigma_min
-    segs_df = segs_df.rename(columns={'chr':'Chromosome', 'start':'Start.bp', 'end':'End.bp'})     
-    segs_df.to_csv(filename, sep='\t', index=False)
-
 class AllelicCoverage_DP_runner:
     def __init__(self, cov_df, beta, cytoband_file, lnp_data, wgs=False, draw_idx=None, seed_all_clusters=True):
         self.cov_df = cov_df.reset_index()
@@ -256,9 +225,16 @@ class AllelicCoverage_DP_runner:
         self.segment_ssd = np.zeros(self.num_segments)
         self.greylist_segments = sc.SortedSet({})
 
+        # normal inverse gamma hyperparameters
+        self.alpha_0 = 100
+        self.beta_0 = 30
+        self.kappa_0 = 1e-6
+        self.loggamma_alpha_0 = ss.loggamma(self.alpha_0)
+        self.log_beta_0 = np.log(self.beta_0)
+
         self._init_segments()
+        self.unclustered_seg_df = self.generate_unclustered_segs()
    
-        single_allele = self.cov_df 
         self.acdp = None
 
     # initialize each segment object with its data
@@ -314,12 +290,6 @@ class AllelicCoverage_DP_runner:
             self.segment_sums[ID] = r.sum()
             self.segment_ssd[ID] = ((r - r.mean())**2).sum()
 
-        self.alpha_0 = 1e-4
-        self.beta_0 = 1e-4
-
-        self.loggamma_alpha_0 = ss.loggamma(self.alpha_0)
-        self.log_beta_0 = np.log(self.beta_0)
-
         # new method for greylisting segments checks if mean varaince relation
         # holds for segments
         means = np.array([self.segment_r_list[s].mean() for s in range(self.num_segments)])
@@ -329,6 +299,79 @@ class AllelicCoverage_DP_runner:
         self.greylist_segments.update(np.r_[:self.num_segments][(means * slope + boundary_intercept < np.sqrt(self.segment_V_list))])
      
         #self.seg_count_norm = self.segment_counts.mean() / 25
+
+    def generate_unclustered_segs(self, opt_idx = None, absolute_format = True):
+        if opt_idx is None:
+            opt_idx = self.cov_df["dp_draw"].unique()[0]
+
+        acdp_single = self.cov_df.loc[self.cov_df["dp_draw"] == opt_idx].copy()
+        num_bins = (acdp_single.allele==1).sum()
+        row_idxs = [acdp_single.columns.get_loc(i) for i in ['chr', 'start', 'end', 'allelic_cluster', 'segment_ID', 'cov_DP_cluster', 'min_count', 'maj_count']]
+        min_df = acdp_single.iloc[num_bins:, row_idxs]
+
+        segs_df = pd.DataFrame.from_records(
+          min_df.groupby(['chr', 'segment_ID']).apply(
+            lambda x: {
+              'chr': x.chr.values[0],
+              'start': x.start.min(), 
+              'end': x.end.max(), 
+              'allelic_cluster':x.allelic_cluster.values[0], 
+              'segment_ID': x.segment_ID.values[0],
+              'cov_DP_cluster':x.cov_DP_cluster.values[0], 
+              'min_count':x.min_count.sum(),
+              'maj_count':x.maj_count.sum(),
+              'n_probes':x.shape[0],
+              'n_hets':(x.min_count > 0).sum()
+            }).values
+        )
+
+        segs_df.loc[:, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = np.nan
+        for i, row in segs_df.iterrows():
+            lnp_res = self.lnp_data[(row[3], row[5], opt_idx)]
+            a,b = row[[6,7]]
+            sz = int(row["n_hets"])
+            norm_samples = np.random.multivariate_normal(mean=(lnp_res[0], lnp_res[1]), cov = np.linalg.inv(-lnp_res[2]), size = sz)
+            r_maj = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(a + 1, b + 1, size = sz)))
+            r_min = np.array(s.poisson.rvs(np.exp(s.norm.rvs(norm_samples[:,0], np.exp(norm_samples[:,1]))) * s.beta.rvs(b + 1, a + 1, size = sz)))
+
+            mu_maj = r_maj.mean()
+            mu_min = r_min.mean()
+            # output sigmas of data
+            if not absolute_format:
+                sigma_maj = r_maj.std()
+                sigma_min = r_min.std()
+            # output sigmas of mu posterior distribution
+            # \mu ~ T_(2\alpha_n)(\mu_n,\beta_n/(\alpha_n\kappa_n))
+            # Var(T_\nu(\mu,\sigma)) = \sigma^2*\nu/(\nu - 2)
+            #                        = (\beta_n/(\alpha_n\kappa_n))^2*\alpha_n/(\alpha_n - 1)
+            else:
+                mu_n, kappa_n, alpha_n, beta_n = AllelicCoverage_DP.ML_normalgamma_params(self, sz, mu_maj, ((r_maj - mu_maj)**2).sum())
+                sigma_maj = beta_n/(alpha_n*kappa_n)*np.sqrt(alpha_n/(alpha_n - 1))
+                mu_n, kappa_n, alpha_n, beta_n = AllelicCoverage_DP.ML_normalgamma_params(self, sz, mu_min, ((r_min - mu_min)**2).sum())
+                sigma_min = beta_n/(alpha_n*kappa_n)*np.sqrt(alpha_n/(alpha_n - 1))
+                
+
+            segs_df.loc[i, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = mu_maj, mu_min, sigma_maj, sigma_min
+
+        segs_df = segs_df.dropna(subset = ["mu.major", "mu.minor", "sigma.major", "sigma.minor"])
+        segs_df = segs_df.rename(columns={'chr':'Chromosome', 'start':'Start.bp', 'end':'End.bp'})     
+        if absolute_format:
+            pd.options.mode.chained_assignment = None
+            segs_df["f"] = segs_df["min_count"]/(segs_df["min_count"] + segs_df["maj_count"])
+
+            segs_df["tau"] = segs_df["mu.major"] + segs_df["mu.minor"]
+            segs_df["sigma.tau"] = np.sqrt(segs_df["sigma.major"]**2 + segs_df["sigma.minor"]**2)
+
+            # rescale such that mean is 2
+            segs_df["length"] = segs_df["End.bp"] - segs_df["Start.bp"]
+            sf = segs_df["length"]@segs_df["tau"]/segs_df["length"].sum()/2
+            segs_df.loc[:, ["tau", "sigma.tau", "mu.minor", "sigma.minor", "mu.major", "sigma.major"]] /= sf
+
+            # add dummy column; reorder
+            segs_df["SegLabelCNLOH"] = 0
+            segs_df = segs_df.loc[:, ["Chromosome", "Start.bp", "End.bp", "n_probes", "length", "n_hets", "f", "tau", "sigma.tau", "mu.minor", "sigma.minor", "mu.major", "sigma.major", "SegLabelCNLOH"]]
+
+        return segs_df
 
     # fit comb to allelic imbalances followed by allelic coverage levels to
     # classify segments as confidently clonal/subclonal. Run acdp seperately
@@ -523,6 +566,16 @@ class AllelicCoverage_DP:
         self.greylist_segments = runner_obj.greylist_segments
         self.beta = runner_obj.beta
         self.to_assign_greylist = assign_greylist
+
+        # import hyperparameters from runner object
+        self.alpha_0 = runner_obj.alpha_0
+        self.beta_0 = runner_obj.beta_0
+        self.kappa_0 = runner_obj.kappa_0
+        self.loggamma_alpha_0 = runner_obj.loggamma_alpha_0
+        self.log_beta_0 = runner_obj.log_beta_0
+
+        self.half_log2pi = np.log(2*np.pi) / 2
+        self.seg_count_norm = 5.
         
         if segs_to_use is None:
             segs_to_use = sc.SortedSet(range(self.num_segments))
@@ -538,15 +591,6 @@ class AllelicCoverage_DP:
         self.ML_total_history = []
         self.DP_total_history = []
         self.MLDP_total_history = []
-
-        # inverse gamma hyper parameter default values -- will be set later based on tuples
-        self.alpha_0 = 100
-        self.beta_0 = 30
-        self.kappa_0 = 1e-6
-        self.loggamma_alpha_0 =0
-        self.log_beta_0 = 0
-        self.half_log2pi = np.log(2*np.pi) / 2
-        self.seg_count_norm = 5. 
 
         self._init_clusters(segs_to_use)
 
@@ -631,9 +675,9 @@ class AllelicCoverage_DP:
     def _ML_cluster_merge(self, clust_A, clust_B):
         mn, mu_mn, ssd = self._ssd_cluster_merge(clust_A, clust_B)
         return self.ML_normalgamma(mn, mu_mn, ssd)
-    
-    # worker function for normal-gamma distribution log Marginal Likelihood
-    def ML_normalgamma(self, n, x_mean, ssd):
+
+    # worker function for normal-gamma distribution parameters
+    def ML_normalgamma_params(self, n, x_mean, ssd):
         # for now x_mean is the same as mu0
         mu0 = x_mean
 
@@ -642,6 +686,11 @@ class AllelicCoverage_DP:
         alpha_n = self.alpha_0 + n/2
         beta_n = self.beta_0 + 0.5 * ssd + self.kappa_0 * n * (x_mean - mu0)**2 / 2*(self.kappa_0 + n)
 
+        return mu_n, kappa_n, alpha_n, beta_n
+    
+    # worker function for normal-gamma distribution log Marginal Likelihood
+    def ML_normalgamma(self, n, x_mean, ssd):
+        mu_n, kappa_n, alpha_n, beta_n = self.ML_normalgamma_params(n, x_mean, ssd)
         return ss.loggamma(alpha_n) - self.loggamma_alpha_0 + self.alpha_0 * self.log_beta_0 - alpha_n * np.log(beta_n) + np.log(self.kappa_0 / kappa_n) / 2 - n * self.half_log2pi
 
 
@@ -1672,7 +1721,7 @@ class AllelicCoverage_DP:
 
             seg_df.loc[:, 'length'] = seg_df['End.bp'] - seg_df['Start.bp']
             seg_df.loc[:, 'tau'] = seg_df['mu.major'] + seg_df['mu.minor']
-            seg_df.loc[:, 'sigma.tau'] = seg_df['sigma.major'] + seg_df['sigma.minor']
+            seg_df.loc[:, 'sigma.tau'] = np.sqrt(seg_df['sigma.major']**2 + seg_df['sigma.minor']**2)
             nan_mask = ~seg_df.isnull().any(1)
             sf = seg_df.loc[nan_mask]['length'].values @ seg_df.loc[nan_mask]['tau'].values / seg_df.loc[nan_mask]['length'].sum() / 2
             seg_df.loc[:, ["tau", "sigma.tau", "mu.minor", "sigma.minor", "mu.major", "sigma.major"]] /= sf

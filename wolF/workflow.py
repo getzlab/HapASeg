@@ -15,18 +15,20 @@ from wolf.localization import LocalizeToDisk, DeleteDisk
 # for genotyping het sites/getting het site coverage
 het_pulldown = wolf.ImportTask(
   task_path = 'git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git',
-  commit = "5c733d2" # TODO: use latest commit; will require slightly modifying syntax in workflow
+  commit = "ce23fe7",
+  main_task = "get_het_coverage_from_callstats"
 )
 
 mutect1 = wolf.ImportTask(
   task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
-  task_name = "mutect1"
+  main_task = "mutect1",
+  commit = "74df599"
 )
 
 # for phasing
 phasing = wolf.ImportTask(
   task_path = "git@github.com:getzlab/phasing_TOOL.git",
-  task_name = "phasing"
+  commit = "9ae9bd0"
 )
 
 # for Hapaseg itself
@@ -41,7 +43,8 @@ split_intervals = wolf.ImportTask(
 
 cov_collect = wolf.ImportTask(
   task_path = "git@github.com:getzlab/covcollect.git",
-  task_name = "covcollect"
+  commit = "04d5422",
+  main_task = "Covcollect"
 )
 
 ####
@@ -72,12 +75,14 @@ def _hg19_config_gen(wgs):
         cytoband_file = 'gs://getzlab-workflows-reference_files-oa/hg19/cytoBand.txt',
         repl_file = 'gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/RT/RT.raw.hg19.pickle',
         faire_file = 'gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/FAIRE/coverage.dedup.raw.10kb.pickle',
+        cfdna_wes_faire_file = 'gs://getzlab-workflows-reference_files-oa/hg19/hapaseg/FAIRE/coverage.w_cfDNA.dedup.raw.10kb.pickle',
         ref_panel_1000g = hg19_ref_dict
     )
     #if we're using whole genome we can use the precomputed gc file for 200 bp bins
     #going to leave this for the method to compute until we settle on a bin width
     #hg19_ref_config['gc_file'] = 'gs://opriebe-tmp/GC_hg19_200bp.pickle' if wgs else ""
     hg19_ref_config['gc_file'] = ""
+    
     return hg19_ref_config
 
 #hg38
@@ -91,6 +96,7 @@ def _hg38_config_gen(wgs):
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
         faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle',
+        cfdna_wes_faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle', # TODO: cfDNA file needs to be generated for hg38
         cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt',
         repl_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/RT.raw.hg38.pickle',
         ref_panel_1000g = hg38_ref_dict
@@ -113,6 +119,8 @@ def workflow(
   normal_bai = None,
   normal_coverage_bed = None,
 
+  single_ended = False, # coverage collection differs depending on whether BAM is paired end
+
   ref_genome_build=None, #must be hg19 or hg38
   
   target_list = None,
@@ -124,7 +132,8 @@ def workflow(
   phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
   persistent_dry_run = False,
   cleanup_disks=True,
-  is_ffpe = False # use FAIRE as covariate
+  is_ffpe = False, # use FAIRE as covariate
+  is_cfdna = False  # use FAIRE (w/ cfDNA samples) as covariate
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -158,6 +167,7 @@ def workflow(
 
         repl_file = ref_config["repl_file"],
         faire_file = ref_config["faire_file"],
+        cfdna_wes_faire_file = ref_config["cfdna_wes_faire_file"],
         gc_file = ref_config["gc_file"],
 
         genetic_map_file = ref_config["genetic_map_file"],
@@ -245,7 +255,7 @@ def workflow(
         )
 
         # dispatch coverage scatter
-        tumor_cov_collect_task = cov_collect.Covcollect(
+        tumor_cov_collect_task = cov_collect(
           inputs = dict(
             bam = tumor_bam_localization_task["t_bam"],
             bai = tumor_bam_localization_task["t_bai"],
@@ -253,6 +263,7 @@ def workflow(
             subset_chr = tumor_subset_intervals["chr"],
             subset_start = tumor_subset_intervals["start"],
             subset_end = tumor_subset_intervals["end"],
+            single_ended = single_ended
           )
         )
 
@@ -283,7 +294,7 @@ def workflow(
             )
 
             # dispatch coverage scatter
-            normal_cov_collect_task = cov_collect.Covcollect(
+            normal_cov_collect_task = cov_collect(
               inputs = dict(
                 bam = normal_bam_localization_task["n_bam"],
                 bai = normal_bam_localization_task["n_bai"],
@@ -291,6 +302,7 @@ def workflow(
                 subset_chr = normal_subset_intervals["chr"],
                 subset_start = normal_subset_intervals["start"],
                 subset_end = normal_subset_intervals["end"],
+                single_ended = single_ended
               )
             )
 
@@ -306,13 +318,16 @@ def workflow(
 
     # get het site coverage/genotypes from callstats
     if callstats_file is not None:
-        hp_task = het_pulldown.get_het_coverage_from_callstats(
-          callstats_file = callstats_file,
-          common_snp_list = localization_task["common_snp_list"],
-          ref_fasta = localization_task["ref_fasta"],
-          ref_fasta_idx = localization_task["ref_fasta_idx"],
-          ref_fasta_dict = localization_task["ref_fasta_dict"],
-          use_pod_genotyper = True
+        hp_task = het_pulldown(
+          inputs = dict(
+            callstats_file = callstats_file,
+            common_snp_list = localization_task["common_snp_list"],
+            ref_fasta = localization_task["ref_fasta"],
+            ref_fasta_idx = localization_task["ref_fasta_idx"],
+            ref_fasta_dict = localization_task["ref_fasta_dict"],
+            use_pod_genotyper = True,
+            pod_min_depth = 10 if wgs else 4
+          )
         )
     
     # for benchmarking we pass a hetsites file
@@ -337,7 +352,7 @@ def workflow(
           outputs = { "snp_list_shards" : "snp_list_chunk*" }
         )
 
-        m1_task = mutect1.mutect1(inputs=dict(
+        m1_task = mutect1(inputs=dict(
           pairName = "het_coverage",
           caseName = "tumor",
           ctrlName = "normal",
@@ -362,13 +377,16 @@ def workflow(
           force_calling = True,
         ))
 
-        hp_scatter = het_pulldown.get_het_coverage_from_callstats(
-          callstats_file = m1_task["mutect1_cs"],
-          common_snp_list = localization_task["common_snp_list"],
-          ref_fasta = localization_task["ref_fasta"],
-          ref_fasta_idx = localization_task["ref_fasta_idx"],
-          ref_fasta_dict = localization_task["ref_fasta_dict"],
-          use_pod_genotyper = True
+        hp_scatter = het_pulldown(
+          inputs = dict(
+            callstats_file = m1_task["mutect1_cs"],
+            common_snp_list = localization_task["common_snp_list"],
+            ref_fasta = localization_task["ref_fasta"],
+            ref_fasta_idx = localization_task["ref_fasta_idx"],
+            ref_fasta_dict = localization_task["ref_fasta_dict"],
+            use_pod_genotyper = True,
+            pod_min_depth = 10 if wgs else 4
+          )
         )
 
         # gather het pulldown
@@ -600,7 +618,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
         "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":localization_task["repl_file"],
-        "faire_pickle":localization_task["faire_file"] if is_ffpe else "",
+        "faire_pickle": "" if (not is_ffpe and not is_cfdna) else (localization_task["cfdna_wes_faire_file"] if (is_cfdna and not wgs) else localization_task["faire_file"]),
         "gc_pickle":localization_task["gc_file"] if ref_config["gc_file"] != "" else "",
         "normal_coverage_csv":normal_cov_gather_task["coverage"] if use_normal_coverage else "",
         "ref_fasta":localization_task["ref_fasta"],
@@ -800,7 +818,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             delete_tbams_task = DeleteDisk(
               inputs = {
                 "disk" : [tumor_bam_localization_task["t_bam"], tumor_bam_localization_task["t_bai"]],
-                "upstream" : m1_task["mutect1_cs"] if callstats_file is None else tumor_cov_gather_task["coverage"] 
+                "upstream" : [m1_task["mutect1_cs"]] if callstats_file is None else tumor_cov_gather_task["coverage"] 
               }
          )
          
@@ -808,16 +826,9 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             delete_nbams_task = DeleteDisk(
               inputs = {
                 "disk" : [normal_bam_localization_task["n_bam"], normal_bam_localization_task["n_bai"]],
-                "upstream" : m1_task["mutect1_cs"]
+                "upstream" : [m1_task["mutect1_cs"]]
               }
         )
-        
-        #also delete the cached files disk
-        delete_file_disk_task = DeleteDisk(
-            inputs = {"disk" : [localization_task["cytoband_file"]],
-                  "upstream" : acdp_task["acdp_model_pickle"] # to prevent execution until acdp has run
-                    }
-                )
     
     output_dict = {
                    "acdp_optimal_fit_params": acdp_task["acdp_optimal_fit_params"],

@@ -23,7 +23,7 @@ from . import utils as hs_utils
 from .coverage_MCMC import Coverage_MCMC_SingleCluster
 from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters, aggregate_burnin_files 
 from .coverage_DP import Coverage_DP
-from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP, AllelicCoverage_DP_runner, generate_unclustered_segs
+from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP, AllelicCoverage_DP_runner
 
 
 def parse_args():
@@ -767,7 +767,7 @@ def main():
         absolute_df.to_csv('./absolute_segfile.txt', sep='\t', index=False)
     
         # save the unclustered segs
-        generate_unclustered_segs('./hapaseg_skip_acdp_segfile.txt', acdp_df, lnp_data, args.opt_cdp_idx)
+        acdp.unclustered_seg_df.to_csv('./hapaseg_skip_acdp_segfile.txt', sep = "\t", index = False)
 
         # make visualizations
         acdp_combined.visualize_ACDP_clusters(output_dir)
