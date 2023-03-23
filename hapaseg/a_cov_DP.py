@@ -1317,11 +1317,12 @@ class AllelicCoverage_DP:
 
     # by default uses last sample
     def visualize_ACDP(self, 
-                   save_path, 
+                   save_path = None, 
                    use_cluster_stats = False, 
                    plot_hist=True, 
                    plot_real_cov=False, 
                    plot_SNP_imbalance=False,
+                   show_cdp=True, # option to show cdp clusters at bottom of plot
                    cdp_draw=None):
     
         if self.draw_idx is not None:
@@ -1425,8 +1426,9 @@ class AllelicCoverage_DP:
                         )
                     
                     #plot CDP cluster assignments
-                    lc = mpl.collections.LineCollection([[(l, 0), (l, 0.01)] for l in locs], color = cdp_colors[quad[1]], transform=cdp_trans)
-                    ax_g.add_collection(lc)
+                    if show_cdp:
+                        lc = mpl.collections.LineCollection([[(l, 0), (l, 0.01)] for l in locs], color = cdp_colors[quad[1]], transform=cdp_trans)
+                        ax_g.add_collection(lc)
                 
                 if not self.wgs:
                     #plot patches for each segment within the tuple
@@ -1458,7 +1460,7 @@ class AllelicCoverage_DP:
                         ))
                         
                         # show cdp cluster at bottom of plot
-                        if quad[3] == 0 or (cdp_draw is not None and quad[3]==cdp_draw):
+                        if show_cdp and (quad[3] == 0 or (cdp_draw is not None and quad[3]==cdp_draw)):
                             ax_g.add_patch(mpl.patches.Rectangle(
                               (x.iloc[intv[0]].start_g, 0),
                               tup_width,
@@ -1485,26 +1487,40 @@ class AllelicCoverage_DP:
                         
                         
                         # draw the acdp segment
+                        ## we need to do this twice,
+                        ## once with the edges and one with the faces, in order
+                        ## to set the zorder of the edges to the top
                         ax_g.add_patch(mpl.patches.Rectangle(
                           (bins.iloc[intv[0]].start_g, tup_mean - 1.95 * tup_std),
                           tup_width,
                           np.maximum(0, 2 * 1.95 * tup_std),
-                          facecolor = cluster_colors[i],
-                          fill = True, alpha=0.5 if cdp_draw is None else 0.8,
+                          facecolor = np.r_[cluster_colors[i], 0.5 if cdp_draw is None else 0.8],
+                          fill = True, alpha=1,
+                          edgecolor = 'none', #no edges
+                        ))
+                        # now draw edges
+                        ax_g.add_patch(mpl.patches.Rectangle(
+                          (bins.iloc[intv[0]].start_g, tup_mean - 1.95 * tup_std),
+                          tup_width,
+                          np.maximum(0, 2 * 1.95 * tup_std),
+                          facecolor = 'none',
+                          fill = True, alpha=1,
+                          zorder=1000000,
                           edgecolor = 'b' if tup_allele > 0 else 'r', # color edges according to allele
-                          linewidth = 1 if tup_width > 1000000 else 0.5,
+                          linewidth = 2.5 if tup_width > 1000000 else 1.5,
                           ls = (0, (0,5,5,0)) if tup_allele > 0 else (0, (5,0,0,5)) # color edges with alternating pattern according to allele
                         ))
                         
                         # show adp cluster at bottom of plot
-                        ax_g.add_patch(mpl.patches.Rectangle(
-                          (bins.iloc[intv[0]].start_g, 0),
-                          tup_width,
-                          0.01,
-                          transform=cdp_trans,
-                          facecolor = adp_colors[label[0]],
-                          fill = True, alpha=1,
-                        ))
+                        if show_cdp:
+                            ax_g.add_patch(mpl.patches.Rectangle(
+                              (bins.iloc[intv[0]].start_g, 0),
+                              tup_width,
+                              0.01,
+                              transform=cdp_trans,
+                              facecolor = adp_colors[label[0]],
+                              fill = True, alpha=1,
+                            ))
          
             #save real data for histogram if there were any in the draw(s) of interest
             cluster_stats[c]['real_data'] = np.concatenate(cluster_real_data) if len(cluster_real_data) > 0 else []
@@ -1544,7 +1560,8 @@ class AllelicCoverage_DP:
         if plot_hist:
             ax_hist.set_ylim([0, round_max_acov])
         
-        plt.savefig(save_path, bbox_inches='tight', dpi=500)
+        if save_path is not None:
+            plt.savefig(save_path, bbox_inches='tight', dpi=500)
  
     def visualize_ACDP_clusters(self, save_path):
         #plot individual tuples within clusters
