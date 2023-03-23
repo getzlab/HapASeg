@@ -343,6 +343,14 @@ class AllelicCoverage_DP_runner:
                                                      'min_count':x['min_count'].sum(),
                                                      'maj_count':x['maj_count'].sum(),
                                                      'f':x['min_count'].sum() / (x['min_count'].sum() + x['maj_count'].sum())}))
+        if len(snp_segments_df) == 1:
+            # we cant fit a comb on a single segment. return run from single segment
+            ## purity and k are returned as NaNs
+            print("Found only one segment. Skipping comb fitting")
+            acdp_single = self.run(1)
+            acdp_single.prepare_df()
+            return acdp_single, np.nan, np.nan
+
         ## instantiate beta distribution at each segment imbalance level
         beta_dict = {c: s.beta(r.min_count + 1, r.maj_count + 1) for c, r in snp_segments_df.iterrows()}
 
@@ -380,8 +388,14 @@ class AllelicCoverage_DP_runner:
         total_weight = snp_segments_df.weight.sum()
         sorted_liks = np.array(sorted(zip(opt_max, snp_segments_df.weight)))
         sorted_cum_weights = np.cumsum(sorted_liks[:,1]) / total_weight
-        kneedle = KneeLocator(sorted_cum_weights, sorted_liks[:,0], S=2.0, online=True)
-        clonal_lik_threshold = sorted_liks[np.where(sorted_cum_weights == kneedle.elbow)[0][0]][0]
+        try:
+            kneedle = KneeLocator(sorted_cum_weights, sorted_liks[:,0], S=2.0, online=True)
+            clonal_lik_threshold = sorted_liks[np.where(sorted_cum_weights == kneedle.elbow)[0][0]][0]
+        except:
+            print("Failed elbow fitting, falling back on using half of the segments as clonal")
+            n_segs = len(sorted_liks)
+            # set threshold to the median lik, using the left median in the case of ties
+            clonal_lik_threshold = sorted_liks[int(n_segs / 2) if n_segs % 2 else int(n_segs / 2 - 1)][0]
 
         clonal_segIDs = np.array(list(beta_dict.keys()))[purity_res.max(1)[opt_purity_idx] > clonal_lik_threshold]
         clonal_segs = self.cov_df.loc[self.cov_df.segment_ID.isin(clonal_segIDs)].acdp_segID.unique()
