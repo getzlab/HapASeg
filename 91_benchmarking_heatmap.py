@@ -90,7 +90,10 @@ def main():
     except:
         print("could not load results pickle")
         return 
-    
+   
+    ## filtering out simulated tumor that is too simple for proper comparison
+    res = {key : val for key, val in res.items() if 'benchmarking_profile_37856' not in key}
+ 
     seg_results_df = load_seg_results_df(res)
 
     # we set unclustered theshold to 0.3 in wgs and 0.2 in WES
@@ -148,11 +151,11 @@ def main():
     grid[13].set_xticks([0,1,2,3,4,5,6,7,8], [0.1, 0.2, 0.3,0.4,0.5,0.6,0.7,0.8,0.9], fontsize=4, rotation=90, fontfamily='sans-serif')
     grid[14].set_xticks([0,1,2,3,4,5,6,7,8], [0.1, 0.2, 0.3,0.4,0.5,0.6,0.7,0.8,0.9], fontsize=4, rotation=90, fontfamily='sans-serif')
     grid.cbar_axes[0].yaxis.set_ticks_position('right')
-    grid.cbar_axes[0].colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.LogNorm(vmin=vmin, vmax=vmax)), label='MAD score')
-    grid[0].set_title('Fresh Frozen', rotation=30, fontsize=8, ha='left')
-    grid[1].set_title('FFPE Degraded', rotation=30, fontsize=8, ha='left')
-    grid[2].set_title('Fresh Quality', rotation=30, fontsize=8, ha='left')
-    grid[-2].set_title('purity', y=-0.4, fontsize=8)
+    grid.cbar_axes[0].colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.LogNorm(vmin=vmin, vmax=vmax)), label='MAD Score')
+    grid[0].set_title('Fresh Frozen', rotation=30, fontsize=10, ha='left')
+    grid[1].set_title('FFPE Degraded', rotation=30, fontsize=10, ha='left')
+    grid[2].set_title('FFPE Quality', rotation=30, fontsize=10, ha='left')
+    grid[-2].set_title('purity', y=-0.2, fontsize=10)
     plt.savefig('./final_figures/4_WGS_heatmap_results_plot.pdf')
 
     ## for a seperate WES heatmap
@@ -161,13 +164,14 @@ def main():
 
     plt.set_cmap('turbo')
     fig = plt.figure(figsize=(10,18))
-    grid = AxesGrid(fig, (0.05, 0.05, 0.85, 0.9),
+    grid = AxesGrid(fig, (0.05, 0.06, 0.85, 0.85),
                     nrows_ncols=(len(methods),len(samples)),
                     axes_pad=0.01,
                     share_all=False,
                     label_mode="L",
                     cbar_location="right",
                     cbar_mode="single",
+                    cbar_pad=0.6
                     )
     vmin = 0.1
     vmax = 100
@@ -179,13 +183,18 @@ def main():
             im = ax.imshow(results_arr[col, row].reshape(9,15).T,  norm=mpl.colors.LogNorm(vmin=vmin, vmax=vmax))
             ax.plot([-0.5,8.5],[nlb - 0.5, nlb - 0.5],linewidth=1.2,color='k')
             ax.plot([-0.5,8.5],[2*nlb - 0.5, 2 * nlb - 0.5],linewidth=1.2,color='k')
-            if col == 0:
-                ax.set_ylabel(methods[row])
-                ax.set_yticks([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14], ['50kb', '500kb', '5Mb', '50Mb', '500Mb', '50kb', '500kb', '5Mb', '50Mb', '500Mb', '50kb', '500kb', '5Mb', '50Mb', '500Mb'], rotation=25, fontsize=4, fontfamily='sans-serif')
+            
+            ax.set_ylabel(methods[row])
+            ax.set_yticks([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14], ['50kb', '500kb', '5Mb', '50Mb', '500Mb', '50kb', '500kb', '5Mb', '50Mb', '500Mb', '50kb', '500kb', '5Mb', '50Mb', '500Mb'], rotation=25, fontsize=4, fontfamily='sans-serif')
+            ax2 = ax.secondary_yaxis('right')
+            ax2.set_yticks([2,7,12], ['low ccf', 'high ccf', 'clonal'], fontsize=7)
+            ax2.yaxis.set_ticks_position('none')    
 
     grid[4].set_xticks([0,1,2,3,4,5,6,7,8], [0.1, 0.2, 0.3,0.4,0.5,0.6,0.7,0.8,0.9], fontsize=4, rotation=90, fontfamily='sans-serif')
+    grid[4].set_title('purity', y=-0.2, fontsize=10)
+    grid[0].set_title("FF WES", rotation=30, fontsize=8)
     grid.cbar_axes[0].yaxis.set_ticks_position('right')
-    grid.cbar_axes[0].colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.LogNorm(vmin=vmin, vmax=vmax)))
+    grid.cbar_axes[0].colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.LogNorm(vmin=vmin, vmax=vmax)), label='MAD Score')
     plt.savefig('./final_figures/4_WES_heatmap_results_plot.pdf')
 
 if __name__ == "__main__":

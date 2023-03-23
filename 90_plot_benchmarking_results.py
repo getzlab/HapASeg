@@ -42,6 +42,9 @@ def load_mad_results_df(res):
 #results_df = pd.DataFrame(results_tups, columns = ['path', 'sample', 'complexity', 'purity', 'method']) 
 
 res = pd.read_pickle('./benchmarking/final_benchmakring_results.pickle')
+
+## filtering out the simulated profile that is too easy for benchmarking
+res = {key : val for key, val in res.items() if 'benchmarking_profile_37856' not in key}
 results_df = load_mad_results_df(res)
 
 
@@ -113,7 +116,7 @@ opt_methods = ['Facets', 'GATK', 'Hatchet', 'ASCAT', 'HapASeg_optimal']
 optimal_df = optimal_df.loc[optimal_df['method'].isin(opt_methods)]
 optimal_df.loc[optimal_df['method'] == 'HapASeg_optimal', 'method'] = 'HapASeg'
 
-methods = ['HapASeg', 'Facets', 'GATK', 'Hatchet', 'ASCAT']
+methods = ['ASCAT', 'Facets', 'GATK', 'Hatchet', 'HapASeg']
 colors = plt.get_cmap("tab10")
 color_dict = dict(zip(methods, range(len(methods))))
 
