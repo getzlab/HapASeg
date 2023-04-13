@@ -833,7 +833,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
     output_dict = {
                    "tumor_hets":  hp_task["tumor_hets"],
                    "normal_hets": hp_task["normal_hets"],
-                   "ref_bias": Hapaseg_concat["ref_bias"],
+                   "ref_bias": hapaseg_concat_task["ref_bias"],
                    "coverage_mcmc_segplot": Hapaseg_collect_coverage_mcmc["seg_plot"],
                    "acdp_optimal_fit_params": acdp_task["acdp_optimal_fit_params"],
                    "acdp_clusters_plot": acdp_task["acdp_clusters_plot"],
