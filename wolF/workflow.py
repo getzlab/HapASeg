@@ -835,6 +835,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                    "normal_hets": hp_task["normal_hets"],
                    "ref_bias": hapaseg_concat_task["ref_bias"],
                    "coverage_mcmc_segplot": cov_mcmc_gather_task["seg_plot"],
+                   "ADP_plot": hapaseg_allelic_DP_task["SNP_plot"],
                    "acdp_optimal_fit_params": acdp_task["acdp_optimal_fit_params"],
                    "acdp_clusters_plot": acdp_task["acdp_clusters_plot"],
                    "acdp_tuples_plot": acdp_task["acdp_tuples_plot"],
