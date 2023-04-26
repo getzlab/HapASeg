@@ -133,7 +133,11 @@ def workflow(
   persistent_dry_run = False,
   cleanup_disks=True,
   is_ffpe = False, # use FAIRE as covariate
-  is_cfdna = False  # use FAIRE (w/ cfDNA samples) as covariate
+  is_cfdna = False,  # use FAIRE (w/ cfDNA samples) as covariate
+  sync_workspace = True,
+  workspace = None,
+  entity_type = 'pair', # terra entity type (sample, pair)
+  entity_name = None,
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -141,6 +145,7 @@ def workflow(
         print("WARNING: Skipping file localization in dry run!")
     
     ###
+
      # integer target list implies wgs
     bin_width = target_list if isinstance(target_list, int) else 1
     wgs = True if bin_width > 1 else False
@@ -845,5 +850,13 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                    "hapaseg_skip_acdp_segfile": acdp_task["hapaseg_skip_acdp_segfile"],
                    "hapaseg_summary_plot": summary_plot_task["hapaseg_summary_plot"] 
                  }
-
-    return output_dict
+    
+    if sync_workspace:
+       sync_task = wolf.fc.SyncToWorkspace(
+          nameworkspace = workspace,
+          entity_type = entity_type,
+          entity_name = entity_name,
+          attr_map = output_dict
+        ) 
+    else:
+       return output_dict
