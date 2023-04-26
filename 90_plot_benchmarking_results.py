@@ -35,13 +35,18 @@ def load_mad_results_df(res):
     results_df['complexity_size'] = interval_remap(results_df['complexity'], results_df['complexity'].min(), results_df['complexity'].max(), 16,128)
     return results_df
 
+def increase_lum(color, delta):
+    hsv = mpl.colors.rgb_to_hsv(color[:3])
+    hsv[2] = max(0, min(1., hsv[2] + delta))
+    return mpl.colors.hsv_to_rgb(hsv)
+
 # old way of gathering results
 #results_files = glob.glob('/mnt/nfs/benchmarking_dir/*_benchmarking_profile*/Downstream*/jobs/0/workspace/*comparison_results.txt')
 #results_tups = [(f, *re.search(r".*(FF.*)_benchmarking_profile_(\d+)_\d+_(.*).Downstream_(.*)_Analysis.*", f).groups()) for f in results_files]
 #mad_results = [float(open(tups[0], 'r').read().split()[5]) for tups in results_tups]
 #results_df = pd.DataFrame(results_tups, columns = ['path', 'sample', 'complexity', 'purity', 'method']) 
 
-res = pd.read_pickle('./benchmarking/final_benchmakring_results.pickle')
+res = pd.read_pickle('./final_benchmarking_results.pickle')
 
 ## filtering out the simulated profile that is too easy for benchmarking
 res = {key : val for key, val in res.items() if 'benchmarking_profile_37856' not in key}
@@ -60,7 +65,7 @@ marker_dict = dict(zip(methods, ['o', 'x']))
 for i, sample in enumerate(samples):
     ax = ax_lst[i]
     ax.set_yscale('log')
-    ax.set_ylabel('MAD')
+    ax.set_ylabel('AAD')
     ax.set_xticks([0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9])
     for method in methods:
         res = results_df.loc[(results_df['method'] == method) & (results_df['sample']==sample), ['purity', 'mad_score', 'complexity_size']].sort_values(by='purity').values
@@ -118,21 +123,42 @@ optimal_df.loc[optimal_df['method'] == 'HapASeg_optimal', 'method'] = 'HapASeg'
 
 methods = ['ASCAT', 'Facets', 'GATK', 'Hatchet', 'HapASeg']
 colors = plt.get_cmap("tab10")
-color_dict = dict(zip(methods, range(len(methods))))
+color_dict = {'ASCAT': 0, 'Facets': 1, 'GATK': 2, 'Hatchet': 4, 'HapASeg': 3}
+#color_dict = dict(zip(methods, range(len(methods))))
 
 for sample in samples:
     fig = plt.figure()
     ax = plt.gca()
     ax.set_yscale('log')
-    ax.set_ylabel('MAD')
+    ax.set_ylabel('AAD')
     ax.set_xlabel('purity')
     ax.set_xticks([0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9], [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9])
 
-    for method in methods:
+    for i, method in enumerate(methods):
         res = optimal_df.loc[(optimal_df['method'] == method) & (optimal_df['sample']==sample), ['purity', 'mad_score', 'complexity_size']].sort_values(by='purity').values
-        jit = np.random.rand(len(res[:,0]))/ 20 - 0.025 
-        ax.scatter(res[:,0] + jit, res[:,1], color = colors(color_dict[method]), label=method, alpha = 0.3, marker = "o", s = res[:,2])
+        shift = 0.0125 * (i - 2)
+        jit = np.random.rand(len(res[:,0]))/ 120 - 0.5/120
+        alpha_remap = interval_remap(res[:,2], res[:,2].min(), res[:,2].max(), 0.1, 0.5)
+        #sqrtC = res[:,2]**0.5
+        #size_transform = interval_remap(sqrtC, sqrtC.min(), sqrtC.max(), 4, 32)
+        sortedC = np.argsort(res[:,2])
+        size_transform = interval_remap(sortedC, sortedC.min(), sortedC.max(), 4, 32)
+        ax.scatter(res[:,0] + shift + jit, res[:,1], color = colors(color_dict[method]), label=method, alpha = alpha_remap, marker = "o", s = size_transform)
+
+        for p in [0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9]:
+            v = ax.violinplot(res[res[:,0]  == p, 1], vert=True, positions= [p + shift],  widths = [0.02], showmedians=True)
+            higher_lum = increase_lum(colors(color_dict[method]), 0.1)
+            v['cbars'].set_color(higher_lum)
+            v['cbars'].set_alpha(0.3)
+            v['cmins'].set_color(higher_lum)
+            v['cmaxes'].set_color(higher_lum)
+            v['bodies'][0].set_color(higher_lum)
+            v['bodies'][0].set_alpha(0.3)
+            v['cmedians'].set_color('k')
+            v['cmedians'].set_alpha(0.3)
+            
     plt.title(f'{sample_dict[sample]}')
-    plt.legend()
+    if sample == 'FFPE_CH1032':
+        plt.legend()
     plt.savefig(f'./final_figures/3_{sample}_benchmarking_bubble_plot.pdf')
 

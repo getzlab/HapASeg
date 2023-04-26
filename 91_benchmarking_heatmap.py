@@ -117,6 +117,12 @@ def main():
  
     results_arr, counts_arr = create_results_array(optimal_df, samples, methods, purities, length_bins, ccf_bins)
     #np.savez('heatmap_array_results.npz', results_arr=results_arr, counts_arr=counts_arr)
+    
+    # reorder axis so high quality comes before degraded
+    tmp = results_arr[1].copy()
+    results_arr[1] = results_arr[2]
+    results_arr[2] = tmp
+    
 
     plt.set_cmap('turbo')
     fig = plt.figure(figsize=(10,18))
@@ -151,10 +157,10 @@ def main():
     grid[13].set_xticks([0,1,2,3,4,5,6,7,8], [0.1, 0.2, 0.3,0.4,0.5,0.6,0.7,0.8,0.9], fontsize=4, rotation=90, fontfamily='sans-serif')
     grid[14].set_xticks([0,1,2,3,4,5,6,7,8], [0.1, 0.2, 0.3,0.4,0.5,0.6,0.7,0.8,0.9], fontsize=4, rotation=90, fontfamily='sans-serif')
     grid.cbar_axes[0].yaxis.set_ticks_position('right')
-    grid.cbar_axes[0].colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.LogNorm(vmin=vmin, vmax=vmax)), label='MAD Score')
+    grid.cbar_axes[0].colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.LogNorm(vmin=vmin, vmax=vmax)), label='AAD Score')
     grid[0].set_title('Fresh Frozen', rotation=30, fontsize=10, ha='left')
-    grid[1].set_title('FFPE Degraded', rotation=30, fontsize=10, ha='left')
-    grid[2].set_title('FFPE Quality', rotation=30, fontsize=10, ha='left')
+    grid[1].set_title('FFPE Quality', rotation=30, fontsize=10, ha='left')
+    grid[2].set_title('FFPE Degraded', rotation=30, fontsize=10, ha='left')
     grid[-2].set_title('purity', y=-0.2, fontsize=10)
     plt.savefig('./final_figures/4_WGS_heatmap_results_plot.pdf')
 
@@ -194,7 +200,7 @@ def main():
     grid[4].set_title('purity', y=-0.2, fontsize=10)
     grid[0].set_title("FF WES", rotation=30, fontsize=8)
     grid.cbar_axes[0].yaxis.set_ticks_position('right')
-    grid.cbar_axes[0].colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.LogNorm(vmin=vmin, vmax=vmax)), label='MAD Score')
+    grid.cbar_axes[0].colorbar(mpl.cm.ScalarMappable(norm=mpl.colors.LogNorm(vmin=vmin, vmax=vmax)), label='AAD Score')
     plt.savefig('./final_figures/4_WES_heatmap_results_plot.pdf')
 
 if __name__ == "__main__":

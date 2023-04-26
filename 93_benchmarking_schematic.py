@@ -79,6 +79,6 @@ plt.savefig('./final_figures/figure_3_benchmarking_schematic/FF_tumor_allelic_co
 fig = plt.figure(figsize=(14,8))
 ax = plt.gca()
 sim_profile = pd.read_pickle('/home/opriebe/data/cnv_sim/benchmarking/sim_samples/benchmarking_profiles/benchmarking_profile_42368_14.pickle')
-plot_acr_static(sim_profile.cnv_profile_df, ax = ax, csize=sim_profile.csize, min_seg_lw=5, y_upper_lim = 8)
+plot_acr_static(sim_profile.cnv_profile_df, ax = ax, csize=sim_profile.csize, min_seg_lw=5, y_upper_lim = 8, segment_colors='')
 plt.savefig('./final_figures/figure_3_benchmarking_schematic/sim_tumor_karyotype_42368.pdf')
 plt.savefig('./final_figures/figure_3_benchmarking_schematic/sim_tumor_karyotype_42368.png', bbox_inches='tight')
