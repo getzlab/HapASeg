@@ -982,10 +982,8 @@ class DPinstance:
         T["clust"] = self.S.loc[T["snp_st"], "clust"].values
 
         clust_terr = T.groupby("clust")["terr"].sum()
-        # we only need distinct colors for those larger than 10Mb (~0.003 of total genomic territory)
-        sig_clusts = (clust_terr/clust_terr.sum() >= 0.003)
-        sig_clust_terr = clust_terr.loc[sig_clusts].sort_values(ascending = False)
-        si = sig_clust_terr.index.argsort()
+        si = clust_terr.sort_values(ascending = False).index.argsort()
+        
         base_colors = np.array([
           [0.368417, 0.506779, 0.709798],
           [0.880722, 0.611041, 0.142051],
@@ -1003,24 +1001,29 @@ class DPinstance:
           [0.736783, 0.358, 0.503027],
           [0.280264, 0.715, 0.429209]
         ])
+ 
         extra_colors = np.array(
           distinctipy.distinctipy.get_colors(
-            sig_clusts.sum() - base_colors.shape[0],
+            (clust_terr/clust_terr.sum() >= 0.003).sum() - base_colors.shape[0],
             exclude_colors = [list(x) for x in np.r_[np.c_[0, 0, 0], np.c_[1, 1, 1], np.c_[0.5, 0.5, 0.5], np.c_[1, 0, 1], base_colors]],
             rng = 1234
           )
         )
+
+
         return np.r_[base_colors, extra_colors if extra_colors.size > 0 else np.empty([0, 3])][si]
     
-    def visualize_segs(self, f = None, ax = None, use_clust = False, show_snps = False, chrom = None):
+    def visualize_segs(self, f = None, ax = None, use_clust = False, show_snps = False, chroms = None):
         if ax is None:
             f = plt.figure(figsize = [16, 4]) if f is None else f
             ax = plt.gca()
 
-        if chrom is None:
+        if chroms is None:
             ax.set_xlim([0, self.S["pos_gp"].max()])
         else:
-            ax.set_xlim([*self.S.loc[self.S["chr"] == chrom, "pos_gp"].iloc[[0, -1]]])
+            if not all(type(item) is int and item > 0 and item < 25 for item in chroms):
+                raise ValueError("chromosomes must be an integer chromosome")
+            ax.set_xlim([*self.S.loc[self.S["chr"].isin(chroms), "pos_gp"].iloc[[0, -1]]])
         ax.set_ylim([0, 1])
 
         colors = self.get_colors()
@@ -1033,7 +1036,7 @@ class DPinstance:
         if show_snps:
             # set SNP alpha based on number of SNPs
             logistic = lambda A, K, B, M, x : A + (K - A)/(1 + np.exp(-B*(x - M)))
-            default_alpha = logistic(A = 0.4, K = 0.025, B = 0.00001, M = 120000, x = len(self.S) if chrom is None else (self.S["chr"] == chrom).sum())
+            default_alpha = logistic(A = 0.4, K = 0.025, B = 0.00001, M = 120000, x = len(self.S) if chroms is None else (self.S["chr"].isin(chroms)).sum())
 
             ph_prob = np.r_[self.phase_orientations].mean(0)
 

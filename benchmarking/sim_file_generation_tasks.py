@@ -31,7 +31,6 @@ class Generate_GATK_Sim_Data(wolf.Task):
               "normal_vcf_path": None,
               "variant_depth_path": None,
               "coverage_tsv_path": None,
-              "sim_normal_allelecounts_path": None,
               "raw_gatk_allelecounts_path":None,
               "raw_gatk_coverage_path":None}
     
@@ -39,7 +38,6 @@ class Generate_GATK_Sim_Data(wolf.Task):
     generate_sim_data.py --sim_profile ${sim_profile} --purity ${purity} \
     --output_dir . --out_label ${sample_label} gatk --normal_vcf_path ${normal_vcf_path}\
     --variant_depth_path ${variant_depth_path} --coverage_tsv_path ${coverage_tsv_path}\
-    --sim_normal_allelecounts_path ${sim_normal_allelecounts_path}\
     --raw_gatk_allelecounts_path ${raw_gatk_allelecounts_path}\
     --raw_gatk_coverage_path ${raw_gatk_coverage_path}
     """
@@ -47,7 +45,7 @@ class Generate_GATK_Sim_Data(wolf.Task):
     output_patterns = {
     "tumor_coverage_tsv": "*_gatk_sim_tumor_cov.tsv",
     "tumor_allele_counts": "*_gatk_allele.counts.tsv",
-    "normal_allele_counts": "*_gatk_sim_normal_allele.counts.tsv",
+    "normal_allele_counts": "*_gatk_normal_allele.counts.tsv",
     "tumor_frag_counts": "*_gatk_sim_tumor.frag.counts.hdf5"
     }
     

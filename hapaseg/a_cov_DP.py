@@ -299,8 +299,8 @@ class AllelicCoverage_DP_runner:
         self.greylist_segments.update(np.r_[:self.num_segments][(means * slope + boundary_intercept < np.sqrt(self.segment_V_list))])
      
         #self.seg_count_norm = self.segment_counts.mean() / 25
-
-    def generate_unclustered_segs(self, opt_idx = None, absolute_format = True):
+    
+    def _generate_base_unclustered_segs(self, opt_idx=None):
         if opt_idx is None:
             opt_idx = self.cov_df["dp_draw"].unique()[0]
 
@@ -325,7 +325,7 @@ class AllelicCoverage_DP_runner:
             }).values
         )
 
-        segs_df.loc[:, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = np.nan
+        segs_df.loc[:, ['mu.major', 'mu.minor', 'emp.sigma.major', 'emp.sigma.minor', 'post.sigma.major', 'post.sigma.minor']] = np.nan
         for i, row in segs_df.iterrows():
             lnp_res = self.lnp_data[(row[3], row[5], opt_idx)]
             a,b = row[[6,7]]
@@ -336,26 +336,37 @@ class AllelicCoverage_DP_runner:
 
             mu_maj = r_maj.mean()
             mu_min = r_min.mean()
-            # output sigmas of data
-            if not absolute_format:
-                sigma_maj = r_maj.std()
-                sigma_min = r_min.std()
+            # output empirical sigmas of data
+            emp_sigma_maj = r_maj.std()
+            emp_sigma_min = r_min.std()
+            
             # output sigmas of mu posterior distribution
             # \mu ~ T_(2\alpha_n)(\mu_n,\beta_n/(\alpha_n\kappa_n))
             # Var(T_\nu(\mu,\sigma)) = \sigma^2*\nu/(\nu - 2)
             #                        = (\beta_n/(\alpha_n\kappa_n))^2*\alpha_n/(\alpha_n - 1)
-            else:
-                mu_n, kappa_n, alpha_n, beta_n = AllelicCoverage_DP.ML_normalgamma_params(self, sz, mu_maj, ((r_maj - mu_maj)**2).sum())
-                sigma_maj = beta_n/(alpha_n*kappa_n)*np.sqrt(alpha_n/(alpha_n - 1))
-                mu_n, kappa_n, alpha_n, beta_n = AllelicCoverage_DP.ML_normalgamma_params(self, sz, mu_min, ((r_min - mu_min)**2).sum())
-                sigma_min = beta_n/(alpha_n*kappa_n)*np.sqrt(alpha_n/(alpha_n - 1))
+            
+            mu_n, kappa_n, alpha_n, beta_n = AllelicCoverage_DP.ML_normalgamma_params(self, sz, mu_maj, ((r_maj - mu_maj)**2).sum())
+            post_sigma_maj = beta_n/(alpha_n*kappa_n)*np.sqrt(alpha_n/(alpha_n - 1))
+            mu_n, kappa_n, alpha_n, beta_n = AllelicCoverage_DP.ML_normalgamma_params(self, sz, mu_min, ((r_min - mu_min)**2).sum())
+            post_sigma_min = beta_n/(alpha_n*kappa_n)*np.sqrt(alpha_n/(alpha_n - 1))
                 
 
-            segs_df.loc[i, ['mu.major', 'mu.minor', 'sigma.major', 'sigma.minor']] = mu_maj, mu_min, sigma_maj, sigma_min
+            segs_df.loc[i, ['mu.major', 'mu.minor', 'emp.sigma.major', 'emp.sigma.minor', 'post.sigma.major', 'post.sigma.minor']] = mu_maj, mu_min, emp_sigma_maj, emp_sigma_min, post_sigma_maj, post_sigma_min
 
-        segs_df = segs_df.dropna(subset = ["mu.major", "mu.minor", "sigma.major", "sigma.minor"])
-        segs_df = segs_df.rename(columns={'chr':'Chromosome', 'start':'Start.bp', 'end':'End.bp'})     
+        segs_df = segs_df.dropna(subset = ["mu.major", "mu.minor", "emp.sigma.major", "emp.sigma.minor", "post.sigma.major", "post.sigma.minor"])
+        segs_df = segs_df.rename(columns={'chr':'Chromosome', 'start':'Start.bp', 'end':'End.bp'})
+        
+        return segs_df
+
+    def generate_unclustered_segs(self, opt_idx = None, absolute_format = True):
+
+        segs_df = self._generate_base_unclustered_segs(opt_idx = opt_idx)
+
         if absolute_format:
+            # drop the empirical sigmas
+            segs_df = segs_df.drop(["emp.sigma.major", "emp.sigma.minor"], axis=1)
+            segs_df = segs_df.rename({"post.sigma.major": "sigma.major", "post.sigma.minor": "sigma.minor"}, axis=1)
+
             pd.options.mode.chained_assignment = None
             segs_df["f"] = segs_df["min_count"]/(segs_df["min_count"] + segs_df["maj_count"])
 
@@ -370,8 +381,33 @@ class AllelicCoverage_DP_runner:
             # add dummy column; reorder
             segs_df["SegLabelCNLOH"] = 0
             segs_df = segs_df.loc[:, ["Chromosome", "Start.bp", "End.bp", "n_probes", "length", "n_hets", "f", "tau", "sigma.tau", "mu.minor", "sigma.minor", "mu.major", "sigma.major", "SegLabelCNLOH"]]
-
+        
+        else:
+            # drop the posterior sigmas
+            segs_df = segs_df.drop(["post.sigma.major", "post.sigma.minor"], axis=1)
+            segs_df = segs_df.rename({"emp.sigma.major": "sigma.major", "emp.sigma.minor": "sigma.minor"}, axis=1)
+        
         return segs_df
+    
+    def generate_unclustered_plot(self, savepath, ref_idx, cytoband_file, opt_idx=None):
+        segs_df = self._generate_base_unclustered_segs(opt_idx=opt_idx)
+        segs_df['start_g'] = seq.chrpos2gpos(segs_df["Chromosome"], segs_df["Start.bp"], ref = ref_idx)
+        segs_df['end_g'] = seq.chrpos2gpos(segs_df["Chromosome"], segs_df["End.bp"], ref = ref_idx)
+        fig=plt.figure(figsize=(14,8))
+        ax = plt.gca()
+        for _, row in segs_df.iterrows():
+            ax.add_patch(mpl.patches.Rectangle((row.start_g, row['mu.major'] - 1.95 * row['emp.sigma.major']), row.end_g - row.start_g, 2 * 1.95 * row['emp.sigma.major'], fill=True, facecolor = 'r', alpha=0.1, edgecolor='none'))
+            ax.add_patch(mpl.patches.Rectangle((row.start_g, row['mu.minor'] - 1.95 * row['emp.sigma.minor']), row.end_g - row.start_g, 2 * 1.95 * row['emp.sigma.minor'], fill=True, facecolor = 'b', alpha=0.1, edgecolor='none'))
+            ax.add_patch(mpl.patches.Rectangle((row.start_g, row['mu.major'] - 1.95 * row['post.sigma.major']), row.end_g - row.start_g, 2 * 1.95 * row['post.sigma.major'], fill=True, facecolor = 'r', alpha=0.2, edgecolor='none'))
+            ax.add_patch(mpl.patches.Rectangle((row.start_g, row['mu.major'] - 1.95 * row['post.sigma.minor']), row.end_g - row.start_g, 2 * 1.95 * row['post.sigma.minor'], fill=True, facecolor = 'r', alpha=0.2, edgecolor='none'))
+            ax.plot([row.start_g, row.end_g], [row['mu.major'], row['mu.major']], alpha=1, color='r', linewidth=0.4)
+            ax.plot([row.start_g, row.end_g], [row['mu.minor'], row['mu.minor']], alpha=1, color='b', linewidth=0.4)
+        plt.ylim([min(segs_df['mu.minor'] - 10 - 1.95 * segs_df['emp.sigma.minor']), max(segs_df['mu.major'] + 10 + 1.95 * segs_df['emp.sigma.major'])])
+        plot_chrbdy(cytoband_file)
+        plt.title('Unclustered Allelic Coverage Segments')
+        plt.xlabel('Chromosome')
+        plt.ylabel('Allelic Coverage')
+        plt.savefig(savepath, bbox_inches='tight')
 
     # fit comb to allelic imbalances followed by allelic coverage levels to
     # classify segments as confidently clonal/subclonal. Run acdp seperately
@@ -386,6 +422,14 @@ class AllelicCoverage_DP_runner:
                                                      'min_count':x['min_count'].sum(),
                                                      'maj_count':x['maj_count'].sum(),
                                                      'f':x['min_count'].sum() / (x['min_count'].sum() + x['maj_count'].sum())}))
+        if len(snp_segments_df) == 1:
+            # we cant fit a comb on a single segment. return run from single segment
+            ## purity and k are returned as NaNs
+            print("Found only one segment. Skipping comb fitting")
+            acdp_single = self.run(1)
+            acdp_single.prepare_df()
+            return acdp_single, np.nan, np.nan
+
         ## instantiate beta distribution at each segment imbalance level
         beta_dict = {c: s.beta(r.min_count + 1, r.maj_count + 1) for c, r in snp_segments_df.iterrows()}
 
@@ -423,8 +467,14 @@ class AllelicCoverage_DP_runner:
         total_weight = snp_segments_df.weight.sum()
         sorted_liks = np.array(sorted(zip(opt_max, snp_segments_df.weight)))
         sorted_cum_weights = np.cumsum(sorted_liks[:,1]) / total_weight
-        kneedle = KneeLocator(sorted_cum_weights, sorted_liks[:,0], S=2.0, online=True)
-        clonal_lik_threshold = sorted_liks[np.where(sorted_cum_weights == kneedle.elbow)[0][0]][0]
+        try:
+            kneedle = KneeLocator(sorted_cum_weights, sorted_liks[:,0], S=2.0, online=True)
+            clonal_lik_threshold = sorted_liks[np.where(sorted_cum_weights == kneedle.elbow)[0][0]][0]
+        except:
+            print("Failed elbow fitting, falling back on using half of the segments as clonal")
+            n_segs = len(sorted_liks)
+            # set threshold to the median lik, using the left median in the case of ties
+            clonal_lik_threshold = sorted_liks[int(n_segs / 2) if n_segs % 2 else int(n_segs / 2 - 1)][0]
 
         clonal_segIDs = np.array(list(beta_dict.keys()))[purity_res.max(1)[opt_purity_idx] > clonal_lik_threshold]
         clonal_segs = self.cov_df.loc[self.cov_df.segment_ID.isin(clonal_segIDs)].acdp_segID.unique()
@@ -1366,11 +1416,12 @@ class AllelicCoverage_DP:
 
     # by default uses last sample
     def visualize_ACDP(self, 
-                   save_path, 
+                   save_path = None, 
                    use_cluster_stats = False, 
                    plot_hist=True, 
                    plot_real_cov=False, 
                    plot_SNP_imbalance=False,
+                   show_cdp=True, # option to show cdp clusters at bottom of plot
                    cdp_draw=None):
     
         if self.draw_idx is not None:
@@ -1474,8 +1525,9 @@ class AllelicCoverage_DP:
                         )
                     
                     #plot CDP cluster assignments
-                    lc = mpl.collections.LineCollection([[(l, 0), (l, 0.01)] for l in locs], color = cdp_colors[quad[1]], transform=cdp_trans)
-                    ax_g.add_collection(lc)
+                    if show_cdp:
+                        lc = mpl.collections.LineCollection([[(l, 0), (l, 0.01)] for l in locs], color = cdp_colors[quad[1]], transform=cdp_trans)
+                        ax_g.add_collection(lc)
                 
                 if not self.wgs:
                     #plot patches for each segment within the tuple
@@ -1507,7 +1559,7 @@ class AllelicCoverage_DP:
                         ))
                         
                         # show cdp cluster at bottom of plot
-                        if quad[3] == 0 or (cdp_draw is not None and quad[3]==cdp_draw):
+                        if show_cdp and (quad[3] == 0 or (cdp_draw is not None and quad[3]==cdp_draw)):
                             ax_g.add_patch(mpl.patches.Rectangle(
                               (x.iloc[intv[0]].start_g, 0),
                               tup_width,
@@ -1534,26 +1586,40 @@ class AllelicCoverage_DP:
                         
                         
                         # draw the acdp segment
+                        ## we need to do this twice,
+                        ## once with the edges and one with the faces, in order
+                        ## to set the zorder of the edges to the top
                         ax_g.add_patch(mpl.patches.Rectangle(
                           (bins.iloc[intv[0]].start_g, tup_mean - 1.95 * tup_std),
                           tup_width,
                           np.maximum(0, 2 * 1.95 * tup_std),
-                          facecolor = cluster_colors[i],
-                          fill = True, alpha=0.5 if cdp_draw is None else 0.8,
+                          facecolor = np.r_[cluster_colors[i], 0.5 if cdp_draw is None else 0.8],
+                          fill = True, alpha=1,
+                          edgecolor = 'none', #no edges
+                        ))
+                        # now draw edges
+                        ax_g.add_patch(mpl.patches.Rectangle(
+                          (bins.iloc[intv[0]].start_g, tup_mean - 1.95 * tup_std),
+                          tup_width,
+                          np.maximum(0, 2 * 1.95 * tup_std),
+                          facecolor = 'none',
+                          fill = True, alpha=1,
+                          zorder=1000000,
                           edgecolor = 'b' if tup_allele > 0 else 'r', # color edges according to allele
-                          linewidth = 1 if tup_width > 1000000 else 0.5,
+                          linewidth = 2.5 if tup_width > 1000000 else 1.5,
                           ls = (0, (0,5,5,0)) if tup_allele > 0 else (0, (5,0,0,5)) # color edges with alternating pattern according to allele
                         ))
                         
                         # show adp cluster at bottom of plot
-                        ax_g.add_patch(mpl.patches.Rectangle(
-                          (bins.iloc[intv[0]].start_g, 0),
-                          tup_width,
-                          0.01,
-                          transform=cdp_trans,
-                          facecolor = adp_colors[label[0]],
-                          fill = True, alpha=1,
-                        ))
+                        if show_cdp:
+                            ax_g.add_patch(mpl.patches.Rectangle(
+                              (bins.iloc[intv[0]].start_g, 0),
+                              tup_width,
+                              0.01,
+                              transform=cdp_trans,
+                              facecolor = adp_colors[label[0]],
+                              fill = True, alpha=1,
+                            ))
          
             #save real data for histogram if there were any in the draw(s) of interest
             cluster_stats[c]['real_data'] = np.concatenate(cluster_real_data) if len(cluster_real_data) > 0 else []
@@ -1593,7 +1659,8 @@ class AllelicCoverage_DP:
         if plot_hist:
             ax_hist.set_ylim([0, round_max_acov])
         
-        plt.savefig(save_path, bbox_inches='tight', dpi=500)
+        if save_path is not None:
+            plt.savefig(save_path, bbox_inches='tight', dpi=500)
  
     def visualize_ACDP_clusters(self, save_path):
         #plot individual tuples within clusters

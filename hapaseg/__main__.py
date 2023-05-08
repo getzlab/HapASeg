@@ -573,7 +573,7 @@ def main():
 
         seg_indices = seg_g_idx.loc[args.allelic_seg_idx]
         
-        mu = mu[seg_indices["allelic_cluster"]]
+        mu = mu[seg_g_idx.index.get_loc(args.allelic_seg_idx)]
         C = C[seg_indices["indices"], :]
         r = r[seg_indices["indices"], :]
         
@@ -664,11 +664,12 @@ def main():
         seg_idx = full_segmentation[:, ll_samples.argmax()].astype(int)
 
         f = plt.figure(figsize = [17.56, 5.67])
-        plt.scatter(cov_df["start_g"], cov_df["fragcorr"]/np.exp(C@beta).ravel(), marker = ".", s = 1, c = np.array(["dodgerblue", "orangered"])[seg_idx % 2], alpha = 0.5)
+        residuals = cov_df["fragcorr"]/np.exp(C@beta).ravel()
+        plt.scatter(cov_df["start_g"], residuals, marker = ".", s = 1, c = np.array(["dodgerblue", "orangered"])[seg_idx % 2], alpha = 0.5)
         plt.scatter(cov_df["start_g"], emu[seg_idx].ravel(), marker = ".", s = 1, c = 'k')
         
         plt.xlim([0, cov_df["end_g"].max()])
-        plt.ylim([emu.min() - emu.std(), emu.max() + emu.std()])
+        plt.ylim([residuals.min(), residuals.max()])
         hs_utils.plot_chrbdy(args.cytoband_file)
 
         plt.ylabel("Corrected fragment coverage")

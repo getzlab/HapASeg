@@ -95,7 +95,7 @@ class CoverageMCMCRunner:
         all_mu, global_beta = pois_regr.fit()
         
         # filter bins from each segment based on lnp convergence
-        full_mask = filter_segments(Pi, r, C, global_beta, exposure=np.log(self.bin_width), alpha_prior = self.alpha_prior, beta_prior = self.beta_prior, lamda=self.lamda)
+        full_mask = filter_segments(Pi, r, C, global_beta, all_mu, exposure=np.log(self.bin_width), alpha_prior = self.alpha_prior, beta_prior = self.beta_prior, lamda=self.lamda)
         
         # save these results to a numpy object
         return Pi[full_mask], r[full_mask], C[full_mask], all_mu, global_beta, filtered_cov_df.loc[full_mask], self.allelic_sample
@@ -432,7 +432,7 @@ class CoverageMCMCRunner:
 # function tries to optimize the lnp, iteratively removing the most unlikely
 # bins until convergence or 5% of bins are thrown out. returns a boolean mask 
 # of length n, masking thrown out bins.
-def poisson_outlier_filter(r, C, beta, exposure=0., alpha_prior=1e-5, beta_prior=4e-3, lamda=1e-10):
+def poisson_outlier_filter(r, C, beta, mu_prior=None, exposure=0., alpha_prior=1e-5, beta_prior=4e-3, lamda=1e-10):
     r = r.flatten()
     # set max removals to 5%, if exceeded the segment is thrown out
     max_idxs_to_remove = max(2, int(len(r) / 20))
@@ -441,9 +441,10 @@ def poisson_outlier_filter(r, C, beta, exposure=0., alpha_prior=1e-5, beta_prior
     pois_log_liks = stats.poisson(mu = residuals.mean()).logpmf(residuals.astype(int))
     idxs_to_remove = np.argsort(pois_log_liks)
     mask = np.ones(len(r), dtype=bool)
+    mu_prior=mu_prior if mu_prior is not None else np.log(r[mask]).mean()
     # first try to see if we can converge without removing anything
     try:
-        lnp = CovLNP_NR_prior(r[mask,None], beta, C[mask], exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior = np.log(r[mask]).mean(), lamda=lamda, init_prior = False)
+        lnp = CovLNP_NR_prior(r[mask,None], beta, C[mask], exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior = mu_prior, lamda=lamda, init_prior = False)
         lnp.fit()
         return mask
     except:
@@ -452,7 +453,7 @@ def poisson_outlier_filter(r, C, beta, exposure=0., alpha_prior=1e-5, beta_prior
     # if not we try removing one bin at a time util convergence or the threshold
     for idx_del in idxs_to_remove[:max_idxs_to_remove]:
         mask[idx_del] = False
-        lnp = CovLNP_NR_prior(r[mask,None], beta, C[mask], exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior = np.log(r[mask]).mean(), lamda=lamda, init_prior = False)
+        lnp = CovLNP_NR_prior(r[mask,None], beta, C[mask], exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, mu_prior = mu_prior, lamda=lamda, init_prior = False)
         try:
             lnp.fit()
             #if we fit properly, then return mask
@@ -462,13 +463,14 @@ def poisson_outlier_filter(r, C, beta, exposure=0., alpha_prior=1e-5, beta_prior
     return np.zeros(len(r), dtype=bool)
 
 # runs poisson filtering on each segment, returning a final mask over all bins
-def filter_segments(Pi, r, C, beta, exposure=0., alpha_prior = 1e-5, beta_prior=4e-3, lamda=1e-10):
+def filter_segments(Pi, r, C, beta, mus, exposure=0., alpha_prior = 1e-5, beta_prior=4e-3, lamda=1e-10):
     mask_lst = []
     seg_labels = np.argmax(Pi, 1)
+    mu_arr = mus.flatten()
     print("filtering outlier bins from segments...")
-    for seg_idx in tqdm.tqdm(sorted(np.unique(seg_labels))):
+    for i, seg_idx in tqdm.tqdm(enumerate(sorted(np.unique(seg_labels)))):
         seg_mask = seg_labels==seg_idx
-        mask = poisson_outlier_filter(r[seg_mask, :], C[seg_mask], beta, exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, lamda=lamda)
+        mask = poisson_outlier_filter(r[seg_mask, :], C[seg_mask], beta, mu_prior=mu_arr[i], exposure = exposure, alpha_prior = alpha_prior, beta_prior=beta_prior, lamda=lamda)
         mask_lst.append(mask)
     final_mask = np.concatenate(mask_lst)
     print(f"filtered {(~final_mask).sum()} bins")

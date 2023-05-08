@@ -31,14 +31,22 @@ class GATK_CNV_model_segments(wolf.Task):
 
     inputs = {"denoised_copy_ratios": None,
               "tumor_allele_counts": None,
+              "normal_allele_counts": "",
               "sample_name":None
              }
     
-    script = """
-    gatk --java-options "-Xmx4g" ModelSegments --denoised-copy-ratios ${denoised_copy_ratios}\
-    --allelic-counts ${tumor_allele_counts}\
-    --output . --output-prefix ${sample_name}
-    """
+    def script(self):
+
+        script = """
+        gatk --java-options "-Xmx4g" ModelSegments --denoised-copy-ratios ${denoised_copy_ratios}\
+        --allelic-counts ${tumor_allele_counts}\
+        --output . --output-prefix ${sample_name}"""
+        
+        if self.conf['inputs']['normal_allele_counts'] != "":
+            script += " --normal-allelic-counts ${normal_allele_counts}"
+        
+        return script
+
     output_patterns = {
     'model_segments_pre_smoothing':'*.modelBegin.seg',
     'model_segments_post_smoothing': '*.modelFinal.seg',
@@ -50,7 +58,7 @@ class GATK_CNV_model_segments(wolf.Task):
     'igv_copy_ratio_segs' : '*.cr.igv.seg',
     'igv_af_segs': '*.af.igv.seg',
     'called_hets': '*.hets.tsv'
-    }
+        }
 
     resources = {"cpus-per-task": 4, "mem" : "10G"}
     docker = "broadinstitute/gatk:4.0.1.1"
@@ -92,6 +100,7 @@ def GATK_CNV_Workflow(sample_name = None,
                       annotated_intervals = "",
                       count_panel = "",
                       tumor_allele_counts = None,
+                      normal_allele_counts = "",
                       sequence_dictionary = None
                       ):
     
@@ -103,10 +112,13 @@ def GATK_CNV_Workflow(sample_name = None,
                                "sample_name": sample_name}
                     )
 
-    gatk_model_segments_task = GATK_CNV_model_segments(inputs = {"denoised_copy_ratios":gatk_denoise_task["denoised_copy_ratios"],
+    gatk_model_segments_task = GATK_CNV_model_segments(inputs = {
+                                      "denoised_copy_ratios":gatk_denoise_task["denoised_copy_ratios"],
                                       "tumor_allele_counts":tumor_allele_counts,
+                                      "normal_allele_counts": normal_allele_counts,
                                       "sample_name": sample_name}
                            )
+
     gatk_call_cr_task = GATK_CNV_call_cr_segs(inputs={"sample_name" : sample_name,
                                               "input_cr_seg" : gatk_model_segments_task["copy_ratio_segments"]})
     

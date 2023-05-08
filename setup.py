@@ -38,7 +38,7 @@ setup(
     #long_description = long_description,
     #long_description_content_type = 'text/markdown',
     install_requires = [
-        'pandas>=1.4.1',
+        'pandas>=1.4.1<2.0',
         'numpy>=1.18.0, <1.23.0', # <1.23.0 to satisfy weird scipy incompatability
         'more-itertools>=8.10.0',
         'numpy_groupies>=0.9.14',
