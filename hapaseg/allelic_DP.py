@@ -1011,7 +1011,7 @@ class DPinstance:
         )
 
 
-        return np.r_[base_colors, extra_colors if extra_colors.size > 0 else np.empty([0, 3])][si]
+        return np.r_[base_colors, extra_colors if extra_colors.size > 0 else np.empty([0, 3])][si % (len(base_colors) + len(extra_colors))]
     
     def visualize_segs(self, f = None, ax = None, use_clust = False, show_snps = False, chroms = None):
         if ax is None:
