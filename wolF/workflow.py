@@ -96,7 +96,7 @@ def _hg38_config_gen(wgs):
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
         common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
         faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle',
-        cfdna_wes_faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle', # TODO: cfDNA file needs to be generated for hg38
+        cfdna_wes_faire_file = '', # TODO: cfDNA file needs to be generated for hg38
         cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt',
         repl_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/RT.raw.hg38.pickle',
         ref_panel_1000g = hg38_ref_dict
@@ -134,7 +134,6 @@ def workflow(
   cleanup_disks=True,
   is_ffpe = False, # use FAIRE as covariate
   is_cfdna = False,  # use FAIRE (w/ cfDNA samples) as covariate
-  sync_workspace = True,
   workspace = None,
   entity_type = 'pair', # terra entity type (sample, pair)
   entity_name = None,
@@ -851,12 +850,13 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                    "hapaseg_summary_plot": summary_plot_task["hapaseg_summary_plot"] 
                  }
     
-    if sync_workspace:
+    # sync workspace if passed
+    if workspace is not None:
        sync_task = wolf.fc.SyncToWorkspace(
           nameworkspace = workspace,
           entity_type = entity_type,
           entity_name = entity_name,
           attr_map = output_dict
         ) 
-    else:
-       return output_dict
+    
+    return output_dict
