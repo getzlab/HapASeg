@@ -95,6 +95,24 @@ def ASCAT_Generate_Raw(normal_bam = None,
                                               prepare_raw_task["normal_BAF"],
                                               prepare_raw_task["normal_LogR"]],
                                      bucket = upload_bucket.rstrip("/") + '/ascat/') 
+
+class ASCAT_convert_mutect_callstats(wolf.Task):
+    inputs={'callstats_file':None,
+            'sample_name': None}
+
+    script = """
+    preprocess_raw_data.py --sample_name ${sample_name} ascat-standard --callstats ${callstats_file}
+    """
+    output_patterns = {
+        'tumor_LogR': "*_ascat_tumor_LogR.txt",
+        'normal_LogR': "*_ascat_normal_LogR.txt",
+        'tumor_BAF': "*_ascat_tumor_BAF.txt",
+        'normal_BAF': "*_ascat_normal_BAF.txt",
+        }
+
+    resources = {"cpus-per-task": 4, "mem" : "12G"}
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
+
 class ASCAT(wolf.Task):
     inputs = {'tumor_LogR': None,
               'tumor_BAF':None,

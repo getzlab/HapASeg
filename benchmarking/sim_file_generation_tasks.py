@@ -32,15 +32,21 @@ class Generate_GATK_Sim_Data(wolf.Task):
               "variant_depth_path": None,
               "coverage_tsv_path": None,
               "raw_gatk_allelecounts_path":None,
-              "raw_gatk_coverage_path":None}
+              "raw_gatk_coverage_path":None,
+              "raw_normal_allelecounts_path":""}
     
-    script = """
-    generate_sim_data.py --sim_profile ${sim_profile} --purity ${purity} \
-    --output_dir . --out_label ${sample_label} gatk --normal_vcf_path ${normal_vcf_path}\
-    --variant_depth_path ${variant_depth_path} --coverage_tsv_path ${coverage_tsv_path}\
-    --raw_gatk_allelecounts_path ${raw_gatk_allelecounts_path}\
-    --raw_gatk_coverage_path ${raw_gatk_coverage_path}
-    """
+    def script(self):
+        script = """
+        generate_sim_data.py --sim_profile ${sim_profile} --purity ${purity} \
+        --output_dir . --out_label ${sample_label} gatk --normal_vcf_path ${normal_vcf_path}\
+        --variant_depth_path ${variant_depth_path} --coverage_tsv_path ${coverage_tsv_path}\
+        --raw_gatk_allelecounts_path ${raw_gatk_allelecounts_path}\
+        --raw_gatk_coverage_path ${raw_gatk_coverage_path}"""
+        
+        if self.conf['inputs']['raw_normal_allelecounts_path'] != "":
+            script += " --raw_normal_allelecounts_path ${raw_normal_allelecounts_path}"
+
+        return script
 
     output_patterns = {
     "tumor_coverage_tsv": "*_gatk_sim_tumor_cov.tsv",

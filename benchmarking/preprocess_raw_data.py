@@ -6,6 +6,7 @@ import numpy as np
 import scipy.stats as s
 import h5py
 import subprocess
+from capy import mut
 
 ###################
 # these functions take the raw coverage and callstats files and filter them according
@@ -245,7 +246,82 @@ def hatchet_preprocessing(totals_file_paths_txt = None,
     snp_counts_1bed['depth'] = snp_counts_1bed['ref_count'] + snp_counts_1bed['alt_count']
     snp_counts_1bed.to_csv(snp_counts_sim_fn, sep='\t', index=False, columns=['contig', 'pos', 'depth'])
 
+## standard preprocessing (i.e. from real tumor/normal to method inputs    
+# Facets
+
+def facets_standard_filtering(callstats_file = None,
+                        sample_name = None,
+                        outdir='./'):
     
+    CS = load_callstats(callstats_file)
+    
+    # be nice and filter based on frac mapq0 reads and mutect filtered reads
+    frac_mapq0 = CS["mapq0_reads"]/CS["total_reads"] 
+    mapq_pass_idx = frac_mapq0 <= 0.05
+    tumor_total_reads = CS["total_reads"] - CS.loc[:, ["t_refcount", "t_altcount"]].sum(1)
+    frac_prefiltered = 1 - CS.loc[:, ["t_refcount", "t_altcount"]].sum(1)/tumor_total_reads
+    prefilter_pass_idx = frac_prefiltered <= 0.1
+    CS = CS.loc[mapq_pass_idx & prefilter_pass_idx]
+
+    # format to match input
+    CS = CS.rename({'chr':'Chromosome', 'pos': 'Position', 'ref':'Ref', 'alt':'Alt', 'n_refcount': 'File1R', 'n_altcount': 'File1A', 't_refcount': 'File2R', 't_altcount': 'File2A'}, axis=1)
+    CS.loc[:, 'Chromosome'] = mut.convert_chr(CS['Chromosome']) 
+    CS.loc[:, ['File1E', 'File1D', 'File2E', 'File2D']] = 0
+    CS = CS[['Chromosome', 'Position', 'Ref','Alt', 'File1R', 'File1A', 'File1E','File1D', 'File2R', 'File2A', 'File2E', 'File2D']]
+    CS.to_csv(f'{sample_name}_facets_input_counts.csv', index=False)
+
+# ASCAT
+
+def ascat_standard_filtering(callstats_file=None,
+                             sample_name=None,
+                             outdir='./'):
+        
+    CS = load_callstats(callstats_file)
+    
+    # be nice and filter based on frac mapq0 reads and mutect filtered reads
+    frac_mapq0 = CS["mapq0_reads"]/CS["total_reads"] 
+    mapq_pass_idx = frac_mapq0 <= 0.05
+    tumor_total_reads = CS["total_reads"] - CS.loc[:, ["t_refcount", "t_altcount"]].sum(1)
+    frac_prefiltered = 1 - CS.loc[:, ["t_refcount", "t_altcount"]].sum(1)/tumor_total_reads
+    prefilter_pass_idx = frac_prefiltered <= 0.1
+    CS = CS.loc[mapq_pass_idx & prefilter_pass_idx]
+
+    CS['tumor_depth'] = CS['t_refcount'] + CS['t_altcount']
+    CS['normal_depth'] = CS['n_refcount'] + CS['n_altcount']
+    
+    # use conservative ascat filter for sites covered by normal > 20 counts
+    CS = CS.loc[CS.normal_depth > 20]
+
+    # calculate ascat input logR and BAF
+    CS['tumorLogR'] = CS['tumor_depth'] / CS['normal_depth']
+    CS['tumorLogR'] = np.log2(CS['tumorLogR'] / CS['tumorLogR'].mean())
+    # ascat passes around a normalLogR file but never actually defines these values (nor are they ever used)
+    # we will make a dummy file 
+    CS['normalLogR'] = 0
+
+    CS['normalBAF'] = np.nan
+    CS['tumorBAF'] = np.nan
+    # for unexplained reasons ascat also randomizes A and B alleles
+    mask = np.random.rand(len(CS)) > 0.5
+    CS.loc[mask, 'normalBAF'] = CS.loc[mask, 'n_refcount'] / CS.loc[mask, 'normal_depth']
+    CS.loc[~mask, 'normalBAF'] = CS.loc[~mask, 'n_altcount'] / CS.loc[~mask, 'normal_depth']
+    CS.loc[mask, 'tumorBAF'] = CS.loc[mask, 't_refcount'] / CS.loc[mask, 'tumor_depth']
+    CS.loc[~mask, 'tumorBAF'] = CS.loc[~mask, 't_altcount'] / CS.loc[~mask, 'tumor_depth']
+
+    # switch back to string chrom names 
+    if 'chr' in CS.iloc[0,0]:
+        CS.loc[:, 'chr'] = CS['chr'].apply(lambda x: x.lstrip('chr'))
+    CS = CS.rename({'chr':'chrs'}, axis=1)
+    # ascat expects the index to be in chr_pos form
+    CS = CS.set_index(CS.apply(lambda x: x.chrs + '_' + str(x.pos), axis = 1))
+    
+    file_sample_name = '{}_ascat'.format(sample_name)
+    # ascat returns 4 seperate files each with one column of data
+    CS.rename({'tumorLogR':file_sample_name}, axis=1)[['chrs', 'pos', file_sample_name]].to_csv(os.path.join(outdir, f'{sample_name}_ascat_tumor_LogR.txt'), sep='\t')
+    CS.rename({'normalLogR':file_sample_name}, axis=1)[['chrs', 'pos', file_sample_name]].to_csv(os.path.join(outdir, f'{sample_name}_ascat_normal_LogR.txt'), sep='\t')
+    CS.rename({'tumorBAF':file_sample_name}, axis=1)[['chrs', 'pos', file_sample_name]].to_csv(os.path.join(outdir, f'{sample_name}_ascat_tumor_BAF.txt'), sep='\t')
+    CS.rename({'normalBAF':file_sample_name}, axis=1)[['chrs', 'pos', file_sample_name]].to_csv(os.path.join(outdir, f'{sample_name}_ascat_normal_BAF.txt'), sep='\t')
+
 def parse_args():
     parser = argparse.ArgumentParser(description = "preprocess callstats file for benchmarking methods use")
     parser.add_argument("--sample_name", required = True, help="name of sample for file naming")
@@ -279,6 +355,15 @@ def parse_args():
     hatchet.add_argument("--thresholds_file_paths", required=True, help = "path to txt file containing locations of chr{}.thresholds files")
     hatchet.add_argument("--tumor_baf_path", required=True, help= "path to hatchet allelecounts results")
     hatchet.add_argument("--dummy_normal", required=False, default=False, action='store_true', help="flag to ignore normal counts and use first two tumors instead")
+    
+    ## standard processing
+    # facets
+    facets_cs = subparsers.add_parser("facets-standard", help = "preprocess standard callstats file for facets (non-simulation)")
+    facets_cs.add_argument("--callstats", required = True, help="path to mutect call stats file")
+
+    # ascat
+    ascat_cs = subparsers.add_parser("ascat-standard", help = "preprocess standard callstats file for ascat (non-simultation")
+    ascat_cs.add_argument("--callstats", required = True, help="path to mutect call stats file")
     args = parser.parse_args()
     
     return args
@@ -325,6 +410,18 @@ def main():
                               sample_name = args.sample_name,
                               outdir = output_dir,
                               dummy_normal=args.dummy_normal)
+    
+    elif args.command == "ascat-standard":
+        print("filtering callstats for ascat...", flush=True)
+        ascat_standard_filtering(callstats_file = args.callstats,
+                           sample_name = args.sample_name, 
+                           outdir = output_dir)
+
+    elif args.command == "facets-standard":
+        print("filtering callstats for facets...", flush=True)
+        facets_standard_filtering(callstats_file = args.callstats,
+                            sample_name = args.sample_name,
+                            outdir = output_dir)
     else:
         raise ValueError(f"could not recognize command {args.command}")
 if __name__ == "__main__":

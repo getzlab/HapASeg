@@ -144,3 +144,99 @@ class Downstream_Hatchet_Analysis(wolf.Task):
     resources = {"mem":"2G"}
 
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
+
+## standard segfile plotting tasks
+
+# HapASeg
+class Standard_HapASeg_Plotting(wolf.Task):
+    inputs = {"hapaseg_seg_file": None,
+              "sample_name":None,
+              "ref_fasta":None,
+              "cytoband_file":None,
+             }
+    
+    script = """
+    compare_outputs.py --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --outdir . hapaseg-standard --hapaseg_seg_file ${hapaseg_seg_file}
+    """
+
+    output_patterns = {"seg_plot": "*_hapaseg_seg_plot.png",
+                      }
+
+    resources = {"mem":"2G"}
+
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
+
+# GATK
+class Standard_GATK_Plotting(wolf.Task):
+    inputs = {"gatk_seg_file": None,
+              "sample_name": None,
+              "ref_fasta": None,
+              "cytoband_file": None,
+             }
+    
+    script = """
+    compare_outputs.py --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --outdir . gatk-standard --gatk_seg_file ${gatk_seg_file}
+    """
+
+    output_patterns = {"seg_plot": "*_gatk_seg_plot.png",
+                      }
+
+    resources = {"mem":"2G"}
+
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
+
+# ASCAT
+class Standard_ASCAT_Plotting(wolf.Task):
+    inputs = {"ascat_seg_file": None,
+              "sample_name": None,
+              "ref_fasta": None,
+              "cytoband_file": None,
+             }
+    
+    script = """
+    compare_outputs.py --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --outdir . ascat-standard --ascat_seg_file ${ascat_seg_file}
+    """
+
+    output_patterns = {"seg_plot": "*_ascat_seg_plot.png",
+                      }
+
+    resources = {"mem":"2G"}
+
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
+
+# Facets
+class Standard_Facets_Plotting(wolf.Task):
+    inputs = {"facets_seg_file": None,
+              "sample_name": None,
+              "ref_fasta": None,
+              "cytoband_file": None,
+             }
+    
+    script = """
+    compare_outputs.py --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --outdir . facets-standard --facets_seg_file ${facets_seg_file} 
+    """
+
+    output_patterns = {"seg_plot": "*_facets_seg_plot.png",
+                      }
+
+    resources = {"cpus-per-task": 4, "mem":"14G"}
+
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
+
+class Standard_Hatchet_Plotting(wolf.Task):
+    inputs = {"hatchet_seg_file": None,
+              "hatchet_bin_file": None,
+              "sample_name": None,
+              "ref_fasta": None,
+              "cytoband_file": None,
+             }
+              
+    script = """
+    compare_outputs.py --ref_fasta ${ref_fasta} --cytoband_file ${cytoband_file} --sample_name ${sample_name} --outdir . hatchet-standard --hatchet_seg_file ${hatchet_seg_file} --hatchet_bin_file ${hatchet_bin_file} 
+    """
+
+    output_patterns = {"seg_plot": "*_hatchet_seg_plot.png",
+                      }
+
+    resources = {"mem":"2G"}
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"

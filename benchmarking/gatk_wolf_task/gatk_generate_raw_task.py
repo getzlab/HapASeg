@@ -53,6 +53,11 @@ class GATK_CollectAlleleCounts(wolf.Task):
 
     def script(self):
         script = """
+        if [ "${vcf_file: -4}" == ".txt" ]
+        then 
+            mv ${vcf_file} ${vcf_file: 0:-4}.list;
+            vcf_file=${vcf_file: 0:-4}.list 
+        fi
         gatk CollectAllelicCounts -L ${vcf_file} -I ${input_bam} -R ${ref_fasta} \
         -O ${sample_name}_gatk.allelecounts.tsv"""
  
@@ -63,7 +68,7 @@ class GATK_CollectAlleleCounts(wolf.Task):
 
     output_patterns = {"allele_counts_tsv" : "*_gatk.allelecounts.tsv"}
     
-    resources = {"cpus-per-task":4, "mem":"6G"}
+    resources = {"cpus-per-task":4, "mem":"14G"}
 
     docker = "broadinstitute/gatk:4.0.1.1"
 
@@ -115,6 +120,7 @@ class GATK_AnnotateIntervals(wolf.Task):
 
     output_patterns = {"gatk_annotated_intervals":"*_gatk.annotated_intervals.tsv"}
     
+    resources = {"cpus-per-task":2, "mem":"4G"}
     docker = "broadinstitute/gatk:4.0.1.1"
 
 
@@ -347,4 +353,13 @@ def GATK_Generate_Raw_Data(input_bam=None,
         else:
             #upload normal pon
             pon_upload_task = UploadToBucket(files = [normal_pon_task["PoN_hdf"]],
-                                             bucket = upload_bucket)
+                                             bucket = upload_bucket
+                                )
+
+    output_dict = {
+        "gatk_allele_counts": collect_acounts_task["allele_counts_tsv"],
+        "gatk_frag_counts": collect_fragcounts_task["frag_counts_hdf"],
+        "gatk_single_sample_pon": normal_pon_task["PoN_hdf"] if not preprocess_tumor_bam else None,
+        }
+
+    return output_dict

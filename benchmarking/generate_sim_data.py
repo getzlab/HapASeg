@@ -56,6 +56,8 @@ def parse_args():
     gatk_gen.add_argument("--coverage_tsv_path", required=True, help="path to gatk coverage in covcorr format")
     gatk_gen.add_argument("--raw_gatk_allelecounts_path", required=True, 
                             help="path to original gatk output allelecounts file from raw normal")
+    gatk_gen.add_argument("--raw_normal_allelecounts_path", required=False, 
+                            help="path to gatk output allelecounts file from sample to be used as normal counts if different from tumor data. This will be used for het site calling")
     gatk_gen.add_argument("--raw_gatk_coverage_path", required=True,
                             help="path to original gatk output coverage hdf5 from raw normal")
     
@@ -125,6 +127,7 @@ def main():
                         normal_vcf_path=args.normal_vcf_path,
                         variant_depth_path=args.variant_depth_path,
                         raw_gatk_allelecounts_path=args.raw_gatk_allelecounts_path,
+                        raw_normal_allelecounts_path=args.raw_normal_allelecounts_path,
                         coverage_tsv_path=args.coverage_tsv_path,
                         raw_gatk_coverage_path=args.raw_gatk_coverage_path,
                         out_dir=output_dir,
@@ -261,7 +264,7 @@ def generate_facets_files(sim_profile_pickle=None,
         cov_df['end'] = cov_df['Position'] + 1
         cov_df = cov_df.rename({'Chromosome':'chrom', 'Position':'start', 'depth':'covcorr'}, axis = 1)
 
-        out_df = default_profile.compute_coverage(cov_df, 0.7, do_parallel = parallel)
+        out_df = default_profile.compute_coverage(cov_df, purity, do_parallel = parallel)
         out_df['chrom'] = mut.convert_chr_back(out_df['chrom'].astype(int))
         out_df = out_df.drop(['end', 'ploidy', 'covcorr_original'], axis=1)
         out_df = out_df.rename({'chrom':'Chromosome', 'start':'Position'}, axis=1)
@@ -353,7 +356,7 @@ def generate_gatk_files(sim_profile_pickle=None,
                         normal_vcf_path=None, # path to raw data vcf
                         variant_depth_path=None, # path to variant depths in og vcf
                         raw_gatk_allelecounts_path=None, # need original gatk allele counts output to copy its header
-                        sim_normal_allelecounts_path=None, # path to simulated normal allelecounts file
+                        raw_normal_allelecounts_path=None, # path to raw normal allelecounts file. this could be a different sample from the tumor counts
                         coverage_tsv_path=None, # path to gatk coverage counts converted to hapaseg format
                         raw_gatk_coverage_path=None, # need original hdf5 file to copy metadata
                         out_dir=None,
@@ -380,11 +383,15 @@ def generate_gatk_files(sim_profile_pickle=None,
 
     add_header_to_allelecounts(raw_gatk_allelecounts_path, sim_tumor_allelecount_out_path)
 
+    if raw_normal_allelecounts_path is None:
+        print("using raw counts from tumor generation as normal counts")
+        raw_normal_allelecounts_path = raw_gatk_allelecounts_path
+
     # restrict raw normal counts to the tumor sites
     # this is only necessary because we did not filter out indels from the vcf
     # when originally computing GATK allelecounts, which resulted in allelecounts
     # at each indel overlapping locus
-    df = pd.read_csv(raw_gatk_allelecounts_path, comment="@", sep='\t')
+    df = pd.read_csv(raw_normal_allelecounts_path, comment="@", sep='\t')
     df = df.merge(snv_df[['CONTIG', 'POSITION']], on = ['CONTIG', 'POSITION'], how='inner')
 
     normal_allelecounts_out_path = os.path.join(out_dir, '{}_{}_gatk_normal_allele.counts.tsv'.format(out_label, purity))

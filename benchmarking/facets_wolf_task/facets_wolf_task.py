@@ -49,6 +49,20 @@ def Facets_Generate_Raw(vcf = None,
         upload_task = UploadToBucket(files = pileups_task["facets_allelecounts"],
                                      bucket = upload_bucket.rstrip("/") + '/facets/')
 
+class Facets_convert_mutect_callstats(wolf.Task):
+    inputs={'callstats_file':None,
+            'sample_name': None}
+
+    script = """
+    preprocess_raw_data.py --sample_name ${sample_name} facets-standard --callstats ${callstats_file}
+    """
+    output_patterns = {
+        'facets_input_file': "*_facets_input_counts.csv"
+        }
+
+    resources = {"cpus-per-task": 4, "mem" : "12G"}
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1138"
+    
 class Facets(wolf.Task):
     inputs = {'snp_counts': None}
     

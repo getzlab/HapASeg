@@ -38,7 +38,7 @@ class GATK_CNV_model_segments(wolf.Task):
     def script(self):
 
         script = """
-        gatk --java-options "-Xmx4g" ModelSegments --denoised-copy-ratios ${denoised_copy_ratios}\
+        gatk --java-options "-Xmx10g" ModelSegments --denoised-copy-ratios ${denoised_copy_ratios}\
         --allelic-counts ${tumor_allele_counts}\
         --output . --output-prefix ${sample_name}"""
         
@@ -60,7 +60,7 @@ class GATK_CNV_model_segments(wolf.Task):
     'called_hets': '*.hets.tsv'
         }
 
-    resources = {"cpus-per-task": 4, "mem" : "10G"}
+    resources = {"cpus-per-task": 4, "mem" : "13G"}
     docker = "broadinstitute/gatk:4.0.1.1"
 
 class GATK_CNV_call_cr_segs(wolf.Task):

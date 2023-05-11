@@ -9,7 +9,6 @@ import pickle
 # 50 profiles
 profile_paths = glob.glob('/home/opriebe/data/cnv_sim/benchmarking/sim_samples/benchmarking_profiles/benchmarking_profile_*.pickle')
 purity_range = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9] # using arange leads to floating point weirdness when printing
-
 with wolf.Workflow(workflow=Run_Sim_Workflows, 
                    namespace="benchmarking_dir",
                    scheduler_processes=32,
@@ -70,6 +69,7 @@ with wolf.Workflow(workflow=Run_Sim_Workflows,
               gatk_variant_depth_path = 'gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1022LN/GATK/CH1022LN_gatk_var_depth.tsv',
               gatk_coverage_tsv_path = 'gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1022LN/GATK/CH1022LN_gatk_cov_counts.tsv',
               gatk_raw_gatk_allelecounts_path='gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1022LN/GATK/CH1022LN_gatk.allelecounts.tsv',
+              gatk_raw_normal_allelecounts_path='gs://opriebe-tmp/HapASeg/benchmarking/NA12878_wgs/GATK/NA12878_platnium_realigned_gatk.allelecounts.tsv',
               gatk_raw_gatk_coverage_path='gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1022LN/GATK/CH1022LN_gatk.frag.counts.hdf5',
               gatk_sequence_dictionary = 'gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1022LN/GATK/hg38_1kG_wgs_gatk.annotated_intervals_no_sex.tsv',
               gatk_count_panel = 'gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1022GL/CH1022GL_normal_sample_PoN.hdf5',
@@ -104,6 +104,7 @@ with wolf.Workflow(workflow=Run_Sim_Workflows,
               gatk_variant_depth_path = 'gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1032LN/GATK/CH1032LN_gatk_var_depth.tsv',
               gatk_coverage_tsv_path = 'gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1032LN/GATK/CH1032LN_gatk_cov_counts.tsv',
               gatk_raw_gatk_allelecounts_path='gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1032LN/GATK/CH1032LN_gatk.allelecounts.tsv',
+              gatk_raw_normal_allelecounts_path='gs://opriebe-tmp/HapASeg/benchmarking/NA12878_wgs/GATK/NA12878_platnium_realigned_gatk.allelecounts.tsv',
               gatk_raw_gatk_coverage_path='gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1032LN/GATK/CH1032LN_gatk.frag.counts.hdf5',
               gatk_sequence_dictionary = 'gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1032LN/GATK/hg38_1kG_wgs_gatk.annotated_intervals_no_sex.tsv',
               gatk_count_panel = 'gs://opriebe-tmp/HapASeg/benchmarking/FFPE/CH1032GL/CH1032GL_normal_sample_PoN.hdf5',
@@ -157,8 +158,8 @@ with wolf.Workflow(workflow=Run_Sim_Workflows,
                   hatchet_phased_vcf = 'gs://opriebe-tmp/HapASeg/benchmarking/NA12878_exome/hatchet/phased.vcf.gz'      
             )
 
-    with open('./final_benchmakring_results.pickle', 'wb') as f:
-        pickle.dump(w.flow_results, f)
+with open('./final_benchmarking_results.pickle', 'wb') as f:
+    pickle.dump(w.flow_results, f)
 
 ### Run on large range of simulated profiles
 #import numpy as np

@@ -207,6 +207,59 @@ def plot_output_comp(overlap_seg_file, # seg file output from acr_compare
     if savepath is not None:
         plt.savefig(savepath)
 
+def plot_only_method_segs(seg_df_path, 
+                          ref_fasta = None, 
+                          cytoband_file = None,
+                          title=None,
+                          ylabel=None,
+                          savepath = None,
+                          autosomes=True, # plot only autosomes
+                          ax = None,
+                          highvis=False # option for making segments more visible for manuscript plotting
+                        ):
+    
+    seg_df = pd.read_csv(seg_df_path, sep='\t')
+    seg_df['start_gpos'] = seq.chrpos2gpos(seg_df['Chromosome'], seg_df['Start.bp'], ref = ref_fasta)
+    seg_df['length'] = seg_df['End.bp'] - seg_df['Start.bp']
+
+    if ax is None:
+        fig = plt.figure(figsize=(14,8))
+        ax = plt.gca()
+    
+    if highvis:
+        major_line_segs = [((x['start_gpos'] - 5e5, x['mu.major']), (x['start_gpos'] + x['length'] + 1e6, x['mu.major'])) for i, x in seg_df.iterrows()]
+    else:
+        major_line_segs = [((x['start_gpos'], x['mu.major']), (x['start_gpos'] + x['length'], x['mu.major'])) for i, x in seg_df.iterrows()]
+    lc = LineCollection(major_line_segs, colors='r', alpha=0.7, linewidths=6 if highvis else 3)
+    ax.add_collection(lc)
+
+    if highvis:
+        minor_line_segs = [((x['start_gpos'] - 5e5, x['mu.minor']), (x['start_gpos'] + x['length'] + 1e6, x['mu.minor'])) for i, x in seg_df.iterrows()]
+    else:
+        minor_line_segs = [((x['start_gpos'], x['mu.minor']), (x['start_gpos'] + x['length'], x['mu.minor'])) for i, x in seg_df.iterrows()]
+    lc = LineCollection(minor_line_segs, colors='b', alpha=0.7, linewidths=6 if highvis else 3)
+    ax.add_collection(lc)
+
+    diff = 2 * seg_df['mu.major'].std()
+    ax.set_ylim([seg_df['mu.minor'].min() - diff, seg_df['mu.major'].max() + diff])
+
+    plot_chrbdy(cytoband_file) 
+
+    if autosomes:
+        # plot only autosomes
+        xmax = seg_df.loc[seg_df['Chromosome'] == 22, ['start_gpos', 'length']].sort_values(by='start_gpos').iloc[-1].values.sum()
+        ax.set_xlim([0, xmax])
+
+    if title is not None:
+        plt.title(title)
+
+    ax.set_xlabel('Genomic position')
+    
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
+
+    if savepath is not None:
+        plt.savefig(savepath, bbox_inches='tight')
 
 #### method input plotting ####
 # as a sanity check, plot the allelic coverage / alt snp counts across the genome
@@ -526,15 +579,111 @@ def hapaseg_downstream_analysis(hapaseg_seg_file, # hapaseg output seg file
     
     # no need to plot sanity checks since hapaseg intermediate files should suffice
 
+## functions for plotting method results without ground truth
+
+def plot_hapaseg_standard(hapaseg_df,
+                        sample_name,
+                        ref_fasta,
+                        cytoband_file,
+                        outdir='./'
+                        ):
+
+    plot_only_method_segs(hapaseg_df,
+                          ref_fasta=ref_fasta,
+                          cytoband_file=cytoband_file,
+                          title=f'{sample_name} HapASeg Segmentation',
+                          ylabel='Corrected Coverage',
+                          savepath=f'{sample_name}_hapaseg_seg_plot.png')
+
+def plot_ascat_standard(ascat_df,
+                        sample_name,
+                        ref_fasta,
+                        cytoband_file,
+                        outdir='./'
+                        ):
+    
+    # convert method output to seg format
+    converted_seg_outpath = os.path.join(outdir, f'{sample_name}_ascat_converted_seg_file.tsv')
+    convert_ascat_output(ascat_df, converted_seg_outpath)
+    
+    # plot method results
+    plot_only_method_segs(converted_seg_outpath, 
+                          ref_fasta=ref_fasta,
+                          cytoband_file=cytoband_file,
+                          title=f'{sample_name} ASCAT Segmentation',
+                          ylabel='Coverage ratio',
+                          savepath= f'{sample_name}_ascat_seg_plot.png')
+
+def plot_facets_standard(facets_df,
+                        sample_name,
+                        ref_fasta,
+                        cytoband_file,
+                        outdir='./'
+                        ):
+    
+    # convert method output to seg format
+    converted_seg_outpath = os.path.join(outdir, f'{sample_name}_facets_converted_seg_file.tsv')
+    convert_facets_output(facets_df, converted_seg_outpath)
+    
+    # plot method results
+    plot_only_method_segs(converted_seg_outpath,
+                          ref_fasta=ref_fasta,
+                          cytoband_file=cytoband_file,
+                          title=f'{sample_name} Facets Segmentation',
+                          ylabel='Copy number',
+                          savepath= f'{sample_name}_facets_seg_plot.png')
+
+
+def plot_hatchet_standard(hatchet_seg_file,
+                          hatchet_bin_file,
+                          sample_name,
+                          ref_fasta,
+                          cytoband_file,
+                          outdir='./'
+                        ):
+    
+    # convert method output to seg format
+    converted_seg_outpath = os.path.join(outdir, f'{sample_name}_hatchet_converted_seg_file.tsv')
+    convert_hatchet_output(hatchet_seg_file, hatchet_bin_file, converted_seg_outpath)
+    
+    # plot method results
+    plot_only_method_segs(converted_seg_outpath,
+                          ref_fasta=ref_fasta,
+                          cytoband_file=cytoband_file,
+                          title=f'{sample_name} Hatchet Segmentation',
+                          ylabel='Copy ratio',
+                          savepath= f'{sample_name}_hatchet_seg_plot.png')
+
+
+def plot_gatk_standard(gatk_df,
+                          sample_name,
+                          ref_fasta,
+                          cytoband_file,
+                          outdir='./'
+                        ):
+    
+    # convert method output to seg format
+    converted_seg_outpath = os.path.join(outdir, f'{sample_name}_gatk_converted_seg_file.tsv')
+    convert_gatk_output(gatk_df, converted_seg_outpath)
+    
+    # plot method results
+    plot_only_method_segs(converted_seg_outpath,
+                          ref_fasta=ref_fasta,
+                          cytoband_file=cytoband_file,
+                          title=f'{sample_name} GATK Segmentation',
+                          ylabel='Copy ratio',
+                          savepath= f'{sample_name}_gatk_seg_plot.png')
+
+
 # CLI interface
 def parse_args():
     
-    parser = argparse.ArgumentParser(description = "post-process cnv method outputs and compare to ground truth")
-    parser.add_argument("--sim_profile", required=True, help="path to sim profile pickle file")
+    parser = argparse.ArgumentParser(description = "post-process cnv method outputs to plot and compare to ground truth")
+    parser.add_argument("--sim_profile", required=False, help="path to sim profile pickle file")
     parser.add_argument("--ref_fasta", required=True, help="path to reference fasta")
     parser.add_argument("--cytoband_file", required=True, help="path to reference cytoband file")
     parser.add_argument("--sample_name", required=True, help="sample name in sampleLabel_purity format")
-    parser.add_argument("--ground_truth_segfile", required=True, help="path to ground truth segfile")
+    parser.add_argument("--ground_truth_segfile", required=False, help="path to ground truth segfile")
     parser.add_argument("--outdir", default='./', help="directory to save outputs to")
     subparsers = parser.add_subparsers(dest="command")    
 
@@ -558,6 +707,23 @@ def parse_args():
     hatchet_post = subparsers.add_parser("hatchet", help="run hatchet post-processing")
     hatchet_post.add_argument("--hatchet_seg_file", help="hatchet seg tsv file from cluster bins outputs")
     hatchet_post.add_argument("--hatchet_bin_file", help="hatchet bbc tsv bin file from cluster bins outputs")
+    
+    ## standard plotting of method output segfiles
+    hapaseg_standard = subparsers.add_parser("hapaseg-standard", help="run hapaseg standard segfile plotting")
+    hapaseg_standard.add_argument("--hapaseg_seg_file", help="hapaseg seg file output")
+
+    facets_standard = subparsers.add_parser("facets-standard", help="run facets standard segfile plotting")
+    facets_standard.add_argument("--facets_seg_file", help="facets output seg file")
+
+    ascat_standard = subparsers.add_parser("ascat-standard", help="run ascat standard segfile plotting")
+    ascat_standard.add_argument("--ascat_seg_file", help="ascat raw_segments output file")
+
+    gatk_standard = subparsers.add_parser("gatk-standard", help="run gatk standard segfile plotting")
+    gatk_standard.add_argument("--gatk_seg_file", help="gatk modelFinal seg file")
+    
+    hatchet_standard = subparsers.add_parser("hatchet-standard", help="run hatchet standard segfile plotting")
+    hatchet_standard.add_argument("--hatchet_seg_file", help="hatchet seg tsv file from cluster bins outputs")
+    hatchet_standard.add_argument("--hatchet_bin_file", help="hatchet bbc tsv bin file from cluster bins outputs")
     
     args = parser.parse_args()
     
@@ -617,6 +783,47 @@ def main():
                                     args.hatchet_bin_file,
                                     args.sim_profile,
                                     args.ground_truth_segfile,
+                                    args.sample_name,
+                                    args.ref_fasta,
+                                    args.cytoband_file,
+                                    args.outdir)
+    
+    elif args.command == "hapaseg-standard":
+        print("plotting standard hapaseg segfile", flush=True)
+        plot_hapaseg_standard(args.hapaseg_seg_file,
+                                    args.sample_name,
+                                    args.ref_fasta,
+                                    args.cytoband_file,
+                                    args.outdir)
+    
+    elif args.command == "facets-standard":
+        print("plotting standard facets segfile", flush=True)
+        plot_facets_standard(args.facets_seg_file,
+                                   args.sample_name,
+                                   args.ref_fasta,
+                                   args.cytoband_file,
+                                   args.outdir)
+        
+    elif args.command == "ascat-standard":
+        print("plotting standard ascat segfile", flush=True)        
+        plot_ascat_standard(args.ascat_seg_file,
+                                  args.sample_name,
+                                  args.ref_fasta,
+                                  args.cytoband_file,
+                                  args.outdir)
+
+    elif args.command == "gatk-standard":
+        print("plotting standard gatk segfile", flush=True)
+        plot_gatk_standard(args.gatk_seg_file,
+                                 args.sample_name,
+                                 args.ref_fasta,
+                                 args.cytoband_file,
+                                 args.outdir)
+    
+    elif args.command == "hatchet-standard":
+        print("running downstream analyses on hatchet", flush=True)
+        plot_hatchet_standard(args.hatchet_seg_file,
+                                    args.hatchet_bin_file,
                                     args.sample_name,
                                     args.ref_fasta,
                                     args.cytoband_file,

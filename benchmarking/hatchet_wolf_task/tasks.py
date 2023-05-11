@@ -146,7 +146,7 @@ class HATCHET_count_reads(wolf.Task):
     "sample_names_file": "samples.txt"
     }
     
-    resources = {"cpus-per-task": 8, "mem": "48G"}
+    resources = {"cpus-per-task": 10, "mem": "90G"}
     docker = "gcr.io/broad-getzlab-workflows/hatchet:v2"
     
 class HATCHET_download_phasing_panel(wolf.Task):
@@ -261,7 +261,8 @@ class HATCHET_preprocess(wolf.Task):
 
 class HATCHET_combine_counts(wolf.Task):
     inputs = {"tumor_baf": None,  # typically produced by count-alleles
-              "count_reads_dir": None,  # typically populated by count-reads
+              "count_reads_dir": "",  # typically populated by count-reads,
+              "count_reads_array": "", # txt file with gathered count reads threholds outputs, should be used with additional totals_files
               "total_counts_file": None,  # typically populated by count-reads
               "reference_genome_version": "hg38",
               "min_snp_covering_reads": 5000,  # per bin
@@ -286,9 +287,18 @@ class HATCHET_combine_counts(wolf.Task):
             sample_copy_script = ""
             if self.conf["inputs"]["samples_file"] != "":
                 sample_copy_script = "cp ${samples_file} ./tmp_reads_dir && "
-         
-            script = "set -eo pipefail && mkdir ./tmp_reads_dir && cp ${count_reads_dir}/* ./tmp_reads_dir && for f in $(cat ${additional_totals_files}); do ln -s $f ./tmp_reads_dir/; done && " + sample_copy_script + script
+            
+            thresh_transfer_script = ""
+            if self.conf["inputs"]["count_reads_dir"] != "":
+                thresh_transfer_script = " cp ${count_reads_dir}/* ./tmp_reads_dir "
+            elif self.conf["inputs"]["count_reads_array"] != "":
+                thresh_transfer_script = " for f in $(cat ${count_reads_array}); do ln -s $f ./tmp_reads_dir/; done "
+            else:
+                raise ValueError("need to pass count_reads_dir or count_reads_array")
+
+            script = "set -eo pipefail && mkdir ./tmp_reads_dir &&" + thresh_transfer_script + "&& for f in $(cat ${additional_totals_files}); do ln -s $f ./tmp_reads_dir/; done && " + sample_copy_script + script
             script += " --array ./tmp_reads_dir"
+
         else:
             script += " --array ${count_reads_dir}"
         if self.conf["inputs"]["phased_vcf_file"] is not None:
@@ -357,24 +367,33 @@ class HATCHET_cluster_bins(wolf.Task):
     docker = "gcr.io/broad-getzlab-workflows/hatchet:v2"
     
 class HATCHET_compute_cn(wolf.Task):
-    inputs = {"cluster_bins_prefix": None,  # typically produced by cluster-bins
-              # many other specifications
-    }
+    inputs = {"cluster_bins_bbc": None,
+              "cluster_bins_seg": None
+             }
     
-    def script(self):
-        script = """
-        hatchet compute-cn --input ${cluster_bins_prefix}"""
-        return script
+    script = """hatchet compute-cn -j 4 -i ${cluster_bins_bbc: 0:-4}"""
     
     output_patterns = {
-    "best_bins_file": "./results/best.bbc.ucn",
-    "best_segments_file": "./results/best.seg.ucn",
+    "best_bins_file": "best.bbc.ucn",
+    "best_segments_file": "best.seg.ucn",
     }
     
-    resources = {"cpus-per-task": 4, "mem": "10G"}
+    resources = {"cpus-per-task": 8, "mem": "20G"}
     docker = "gcr.io/broad-getzlab-workflows/hatchet:v2"
     
     
+class HATCHET_plot_cn(wolf.Task):
+    inputs = {"opt_bbc": None}
+
+    script = """hatchet plot-cn ${opt_bbc}"""
+
+    output_patterns = {
+        "output_plots" : "*.pdf"
+    }
+    resources = {"cpus-per-task": 2, "mem": "7G"}
+    docker = "gcr.io/broad-getzlab-workflows/hatchet:v2"
+
+
 class HATCHET_plot_bins(wolf.Task):
     inputs = {"clustered_bins" : None,
               "clustered_segs" : None
