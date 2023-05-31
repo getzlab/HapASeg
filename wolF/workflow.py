@@ -15,7 +15,7 @@ from wolf.localization import LocalizeToDisk, DeleteDisk
 # for genotyping het sites/getting het site coverage
 het_pulldown = wolf.ImportTask(
   task_path = 'git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git',
-  commit = "ce23fe7",
+  commit = "38fe173",
   main_task = "get_het_coverage_from_callstats"
 )
 
@@ -118,6 +118,8 @@ def workflow(
   normal_bam = None,
   normal_bai = None,
   normal_coverage_bed = None,
+
+  tumor_only_genotyping = False,
 
   single_ended = False, # coverage collection differs depending on whether BAM is paired end
 
@@ -330,6 +332,7 @@ def workflow(
             ref_fasta_idx = localization_task["ref_fasta_idx"],
             ref_fasta_dict = localization_task["ref_fasta_dict"],
             use_pod_genotyper = True,
+            tumor_only = tumor_only_genotyping,
             pod_min_depth = 10 if wgs else 4
           )
         )
