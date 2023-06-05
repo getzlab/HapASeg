@@ -1511,7 +1511,9 @@ class AllelicCoverage_DP:
                             color='gray',
                         marker='.',
                         alpha=0.1,
-                        s=4
+                        s=4,
+                        zorder=0,
+                        rasterized=True
                         )
                     # plot the allelic imbalance of each coverage bin
                     if plot_SNP_imbalance:
@@ -1521,7 +1523,9 @@ class AllelicCoverage_DP:
                             color=adp_colors[quad[0]],
                             marker='.',
                             alpha=0.1,
-                            s=8
+                            s=8,
+                            zorder=0,
+                            rasterized=True
                         )
                     
                     #plot CDP cluster assignments
@@ -1634,12 +1638,12 @@ class AllelicCoverage_DP:
         #now that we know the maximum allelic coverage value we can set our bins and plot the histogram
         if plot_hist:
             real = []
-            hist_bin_width = 1
+            hist_bin_width = max(1, int(round_max_acov / 250))
             for i, c in enumerate(cluster_stats.keys()):
-                ax_hist.hist(cluster_stats[c]['datapoints'], bins = np.r_[:round_max_acov:hist_bin_width], alpha = 0.5, orientation='horizontal', color= cluster_colors[i])
+                ax_hist.hist(cluster_stats[c]['datapoints'], bins = np.r_[:round_max_acov:hist_bin_width], alpha = 0.5, orientation='horizontal', color= cluster_colors[i], rasterized=True)
                 real.append(cluster_stats[c]['real_data'])
             ax_hist2=ax_hist.twiny()
-            ax_hist2.hist(np.concatenate(real), bins = np.r_[:round_max_acov:hist_bin_width], alpha = 0.1, orientation='horizontal', color= 'k')
+            ax_hist2.hist(np.concatenate(real), bins = np.r_[:round_max_acov:hist_bin_width], alpha = 0.1, orientation='horizontal', color= 'k', rasterized=True)
         
         plt.sca(ax_g)
         plot_chrbdy(self.cytoband_file)
