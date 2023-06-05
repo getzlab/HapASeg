@@ -50,14 +50,14 @@ def plot_chrbdy(cytoband_file):
     yl_1 = plt.ylim()[1]
     chr_ends = chrbdy.loc[1::2, "end"].cumsum()
     for end in chr_ends[:-1]:
-        plt.axvline(end, color = 'k')
+        plt.axvline(end, color = 'k', zorder=100)
     for st, en in np.c_[chr_ends[:-1:2], chr_ends[1::2]]:
         plt.fill_between([st, en], yl_0, yl_1, color = [0.9, 0.9, 0.9], zorder = 0)
     plt.ylim([yl_0, yl_1])
 
     # plot centromere locations
     for cent in (np.c_[chrbdy.loc[1::2, "start"], chrbdy.loc[::2, "end"]] + np.c_[np.r_[0, chr_ends[:-1]]]).ravel():
-        plt.axvline(cent, color = 'k', linestyle = ":", linewidth = 0.5)
+        plt.axvline(cent, color = 'k', linestyle = ":", linewidth = 0.5, zorder=100)
 
     # add xticks
     xt = (np.r_[0, chr_ends[:-1]] + chr_ends)/2

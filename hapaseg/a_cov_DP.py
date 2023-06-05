@@ -1422,7 +1422,11 @@ class AllelicCoverage_DP:
                    plot_real_cov=False, 
                    plot_SNP_imbalance=False,
                    show_cdp=True, # option to show cdp clusters at bottom of plot
-                   cdp_draw=None):
+                   cdp_draw=None,
+                   figsize=None,
+                   plot_shrinkage=True,
+                   lw_wgs_small=1.5,
+                   lw_wgs_large=2.5):
     
         if self.draw_idx is not None:
             # override to use the only draw used
@@ -1433,6 +1437,7 @@ class AllelicCoverage_DP:
             ADP_dict[ADP] = (group['maj_count'].sum(), group['min_count'].sum())
         
         # set up canvas according to options
+        figsize=[22,7] if figsize is None else figsize
         if plot_hist:
             fig = plt.figure(6, figsize=[22, 7])
             plt.clf()
@@ -1485,15 +1490,17 @@ class AllelicCoverage_DP:
                 y = np.exp(x.cov_DP_mu)
                 acov_levels = f*y
                 
-                 #plot shrinkage estimates in order to see small segments
-                ax_g.scatter(
-                    locs,
-                    acov_levels,
-                    color=np.array(cluster_colors)[i],
-                    marker='.',
-                    alpha=0.15,
-                    s=8
-                )
+                if plot_shrinkage:
+                    #plot shrinkage estimates in order to see small segments
+                    ax_g.scatter(
+                        locs,
+                        acov_levels,
+                        color=np.array(cluster_colors)[i],
+                        marker='.',
+                        alpha=0.15,
+                        s=8,
+                        zorder=0
+                    )
                 
                 #keep track of the largest allelic coverage level seen so far
                 max_acov = max(max_acov, max(acov_levels))
@@ -1600,6 +1607,7 @@ class AllelicCoverage_DP:
                           facecolor = np.r_[cluster_colors[i], 0.5 if cdp_draw is None else 0.8],
                           fill = True, alpha=1,
                           edgecolor = 'none', #no edges
+                          zorder=3
                         ))
                         # now draw edges
                         ax_g.add_patch(mpl.patches.Rectangle(
@@ -1608,9 +1616,9 @@ class AllelicCoverage_DP:
                           np.maximum(0, 2 * 1.95 * tup_std),
                           facecolor = 'none',
                           fill = True, alpha=1,
-                          zorder=1000000,
+                          zorder=4,
                           edgecolor = 'b' if tup_allele > 0 else 'r', # color edges according to allele
-                          linewidth = 2.5 if tup_width > 1000000 else 1.5,
+                          linewidth = lw_wgs_large if tup_width > 1000000 else lw_wgs_small,
                           ls = (0, (0,5,5,0)) if tup_allele > 0 else (0, (5,0,0,5)) # color edges with alternating pattern according to allele
                         ))
                         
