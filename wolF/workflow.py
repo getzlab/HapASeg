@@ -607,6 +607,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
        "seg_dataframe" : arm_concat["all_arms_obj"],
        #"seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
        "cytoband_file" : localization_task["cytoband_file"],
+       "wgs" : wgs,
        "ref_fasta" : localization_task["ref_fasta"],
        "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
        "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink

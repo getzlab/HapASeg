@@ -124,15 +124,19 @@ class Hapaseg_concat_arms(wolf.Task):
 class Hapaseg_allelic_DP(wolf.Task):
     inputs = {
       "seg_dataframe" : None,
+      "wgs" : None,
       "ref_fasta" : None,
       "cytoband_file" : None
     }
-    script = """
-    export CAPY_REF_FA=${ref_fasta}
-    hapaseg dp --seg_dataframe ${seg_dataframe} \
-            --ref_fasta ${ref_fasta} \
-            --cytoband_file ${cytoband_file}
-    """
+    def script(self):
+        script = """
+        export CAPY_REF_FA=${ref_fasta}
+        hapaseg dp --seg_dataframe ${seg_dataframe} \
+                --ref_fasta ${ref_fasta} \
+                --cytoband_file ${cytoband_file}"""
+        if self.conf["inputs"]["wgs"] == True:
+            script += " --wgs"
+        return script
     output_patterns = {
       "cluster_and_phase_assignments" : "allelic_DP_SNP_clusts_and_phase_assignments.npz",
       "all_SNPs" : "all_SNPs.pickle",
