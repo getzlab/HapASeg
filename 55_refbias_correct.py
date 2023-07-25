@@ -214,3 +214,118 @@ plt.xlabel("Tumor")
 plt.ylabel("Normal")
 plt.xlim([0.5, 1.5])
 plt.ylim([0.5, 1.5])
+
+#######
+
+# new method of ref bias correction; 1. compute scale factor empirically
+# 2. also exclude segments where we're not powered to compute it
+
+# for 1., use a heavily biased exome
+# for 2., use a cell line
+
+import pickle
+import pandas as pd
+import numpy as np
+import scipy.stats as ss
+import wolf
+
+hapaseg_workflow = wolf.ImportTask(".", main_task = "hapaseg_workflow")
+
+! gsutil cat gs://getzlab-workflows-reference_files-oa/hg19/twist/broad_custom_exome_v1.Homo_sapiens_assembly19.targets.interval_list | sed '/^@/d' | cut -f1-3 > hg19_twist.bed
+
+## 1. 
+
+with wolf.Workflow(workflow = hapaseg_workflow, namespace = "refbias_fix") as w:
+    w.run(
+      RUN_NAME = "asgari_exome",
+      tumor_bam="gs://fc-8cc4e03b-d91c-4abb-a63b-c79dc0251f60/Getz_Asgari_Cutaneous_Squamous_Cell_Carcinoma_2015P000925_Exomes_91samples_PDO-27396_27397_May2022/RP-2457/Exome/AG17RT/v1/AG17RT.bam",
+      tumor_bai="gs://fc-8cc4e03b-d91c-4abb-a63b-c79dc0251f60/Getz_Asgari_Cutaneous_Squamous_Cell_Carcinoma_2015P000925_Exomes_91samples_PDO-27396_27397_May2022/RP-2457/Exome/AG17RT/v1/AG17RT.bai",
+      normal_bam="gs://fc-8cc4e03b-d91c-4abb-a63b-c79dc0251f60/Getz_Asgari_PQ3_55samples_WES_May2022/RP-2457/Exome/AG17RN/v1/AG17RN.bam",
+      normal_bai="gs://fc-8cc4e03b-d91c-4abb-a63b-c79dc0251f60/Getz_Asgari_PQ3_55samples_WES_May2022/RP-2457/Exome/AG17RN/v1/AG17RN.bai",
+      normal_coverage_bed=None,
+      ref_genome_build="hg19",
+      target_list="./hg19_twist.bed",
+      is_ffpe=True,
+    )
+
+# load in results
+w = wolf.Workflow(workflow = lambda:None, namespace = "refbias_fix")
+w.load_results("asgari_exome")
+
+args = lambda:None
+args.chunks = list(pd.read_csv("/mnt/nfs/refbias_fix/asgari_exome/Hapaseg_concat__2023-07-25--15-44-10_epc5bvq_npn15qq_zep0omnayyems/jobs/0/chunks_array.txt", header = None).iloc[:, 0])
+args.scatter_intervals = "/mnt/nfs/refbias_fix/asgari_exome/Hapaseg_concat__2023-07-25--15-44-10_epc5bvq_npn15qq_zep0omnayyems/jobs/0/inputs/scatter_chunks.tsv"
+
+## excised from __main__.py
+
+#
+# load scatter intervals
+intervals = pd.read_csv(args.scatter_intervals, sep="\t")
+
+if len(intervals) != len(args.chunks):
+    raise ValueError("Length mismatch in supplied chunks and interval file!")
+
+# load results
+R = []
+for chunk_path in args.chunks:
+    with open(chunk_path, "rb") as f:
+        chunk = pickle.load(f)
+    R.append(chunk)
+R = pd.DataFrame({"results": R})
+
+# ensure results are in the correct order
+R["first"] = R["results"].apply(lambda x: x.P.loc[0, "index"])
+R = R.sort_values("first", ignore_index=True)
+
+# concat with intervals
+R = pd.concat([R, intervals], axis=1).drop(columns=["first"])
+
+X = []
+j = 0
+for chunk in R["results"]:
+    bpl = np.array(chunk.breakpoints);
+    bpl = np.c_[bpl[0:-1], bpl[1:]]
+
+    for i, (st, en) in enumerate(bpl):
+        g = chunk.P.iloc[st:en].groupby("allele_A")
+        x = g[["REF_COUNT", "ALT_COUNT"]].sum()
+        x["idx"] = i + j
+        x["n_SNP"] = g.size()
+        X.append(x)
+
+    j += len(chunk.P)
+
+X = pd.concat(X)
+g = X.groupby("idx").size() == 2
+
+## new code to compute reference bias
+X = X.loc[X["idx"].isin(g[g].index)]
+X = X.set_index([X["idx"], X.index]).drop(columns = "idx")
+
+# TODO: remove segments with too few reference SNPs (due to purity ~100%)
+#       for now, only use segments with at least 20 SNPs assigned to each haplotype
+
+tot_SNPs = X.groupby(level = 0)["n_SNP"].sum()
+use_idx = X.groupby(level = 0)["n_SNP"].apply(lambda x : (x > 20).all())
+
+refbias_dom = np.linspace(0.8, 1.1, 90)
+refbias_dif = np.full(len(refbias_dom), np.nan)
+for j, rb in enumerate(refbias_dom):
+    absdif = np.full(use_idx.sum(), np.nan)
+    for i, seg in enumerate(tot_SNPs.index[use_idx]):
+        f_A = ss.beta.rvs(
+          X.loc[(seg, 0), "ALT_COUNT"] + 1,
+          X.loc[(seg, 0), "REF_COUNT"]*rb + 1,
+          size = 100
+        )
+        f_B = ss.beta.rvs(
+          X.loc[(seg, 0), "REF_COUNT"]*rb + 1,
+          X.loc[(seg, 0), "ALT_COUNT"] + 1,
+          size = 100
+        )
+
+        absdif[i] = np.abs(f_A - f_B).mean()
+
+    refbias_dif[j] = absdif@tot_SNPs[use_idx]/tot_SNPs[use_idx].sum()
+
+ref_bias = refbias_dom[np.argmin(refbias_dif)]
