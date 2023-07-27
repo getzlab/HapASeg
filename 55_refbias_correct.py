@@ -308,24 +308,33 @@ X = X.set_index([X["idx"], X.index]).drop(columns = "idx")
 tot_SNPs = X.groupby(level = 0)["n_SNP"].sum()
 use_idx = X.groupby(level = 0)["n_SNP"].apply(lambda x : (x > 20).all())
 
-refbias_dom = np.linspace(0.8, 1.1, 90)
-refbias_dif = np.full(len(refbias_dom), np.nan)
-for j, rb in enumerate(refbias_dom):
-    absdif = np.full(use_idx.sum(), np.nan)
-    for i, seg in enumerate(tot_SNPs.index[use_idx]):
-        f_A = ss.beta.rvs(
-          X.loc[(seg, 0), "ALT_COUNT"] + 1,
-          X.loc[(seg, 0), "REF_COUNT"]*rb + 1,
-          size = 100
+refbias_dom = np.linspace(0.8, 1, 10)
+plt.figure(3); plt.clf()
+for opt_iter in range(3):
+    n_beta_samp = np.r_[10, 100, 10000][opt_iter]
+    if opt_iter > 0:
+        refbias_dom = np.linspace(
+          *refbias_dom[np.argmin(refbias_dif) + np.r_[-2, 2]],
+          np.r_[10, 20, 30][opt_iter]
         )
-        f_B = ss.beta.rvs(
-          X.loc[(seg, 1), "REF_COUNT"]*rb + 1,
-          X.loc[(seg, 1), "ALT_COUNT"] + 1,
-          size = 100
-        )
+    refbias_dif = np.full(len(refbias_dom), np.nan)
+    for j, rb in enumerate(refbias_dom):
+        absdif = np.full(use_idx.sum(), np.nan)
+        for i, seg in enumerate(tot_SNPs.index[use_idx]):
+            f_A = ss.beta.rvs(
+              X.loc[(seg, 0), "ALT_COUNT"] + 1,
+              X.loc[(seg, 0), "REF_COUNT"]*rb + 1,
+              size = n_beta_samp
+            )
+            f_B = ss.beta.rvs(
+              X.loc[(seg, 1), "REF_COUNT"]*rb + 1,
+              X.loc[(seg, 1), "ALT_COUNT"] + 1,
+              size = n_beta_samp
+            )
 
-        absdif[i] = np.abs(f_A - f_B).mean()
+            absdif[i] = np.abs(f_A - f_B).mean()
 
-    refbias_dif[j] = absdif@tot_SNPs[use_idx]/tot_SNPs[use_idx].sum()
+        refbias_dif[j] = absdif@tot_SNPs[use_idx]/tot_SNPs[use_idx].sum()
 
-ref_bias = refbias_dom[np.argmin(refbias_dif)]
+    ref_bias = refbias_dom[np.argmin(refbias_dif)]
+    plt.scatter(refbias_dom, refbias_dif, marker = "x")
