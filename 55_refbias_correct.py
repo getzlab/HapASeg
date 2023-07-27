@@ -227,6 +227,7 @@ import pickle
 import pandas as pd
 import numpy as np
 import scipy.stats as ss
+import sys
 import wolf
 
 hapaseg_workflow = wolf.ImportTask(".", main_task = "hapaseg_workflow")
@@ -310,15 +311,21 @@ use_idx = X.groupby(level = 0)["n_SNP"].apply(lambda x : (x > 20).all())
 
 refbias_dom = np.linspace(0.8, 1, 10)
 plt.figure(3); plt.clf()
+print("Computing reference bias ...", file = sys.stderr)
 for opt_iter in range(3):
-    n_beta_samp = np.r_[10, 100, 10000][opt_iter]
+    # number of Monte Carlo samples to draw from beta distribution
+    # we need fewer samples for more total SNPs
+    n_beta_samp = np.r_[10, 100, np.maximum(100, int(1e8/tot_SNPs.sum()))][opt_iter]
+    # perform increasingly fine grid searches around neighborhood of previous optimum
     if opt_iter > 0:
         refbias_dom = np.linspace(
-          *refbias_dom[np.argmin(refbias_dif) + np.r_[-2, 2]],
-          np.r_[10, 20, 30][opt_iter]
+          *refbias_dom[np.argmin(refbias_dif) + np.r_[-2, 2]], # search +- 2 grid points of previous optimum
+          np.r_[10, 20, 30][opt_iter] # fineness of grid search
         )
-    refbias_dif = np.full(len(refbias_dom), np.nan)
-    for j, rb in enumerate(refbias_dom):
+    refbias_dif = np.full(len(refbias_dom), np.inf)
+    pbar = tqdm.tqdm(enumerate(refbias_dom), total = len(refbias_dom))
+    for j, rb in pbar:
+        pbar.set_description(f"[{refbias_dom.min():0.2f}:{refbias_dom.max():0.2f}:{len(refbias_dom)}] {refbias_dom[refbias_dif.argmin()]:0.4f} ({n_beta_samp} MC samples)")
         absdif = np.full(use_idx.sum(), np.nan)
         for i, seg in enumerate(tot_SNPs.index[use_idx]):
             f_A = ss.beta.rvs(
