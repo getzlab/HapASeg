@@ -293,7 +293,7 @@ for chunk in R["results"]:
         x["n_SNP"] = g.size()
         X.append(x)
 
-    j += len(chunk.P)
+    j += i + 1
 
 X = pd.concat(X)
 g = X.groupby("idx").size() == 2
@@ -319,8 +319,8 @@ for j, rb in enumerate(refbias_dom):
           size = 100
         )
         f_B = ss.beta.rvs(
-          X.loc[(seg, 0), "REF_COUNT"]*rb + 1,
-          X.loc[(seg, 0), "ALT_COUNT"] + 1,
+          X.loc[(seg, 1), "REF_COUNT"]*rb + 1,
+          X.loc[(seg, 1), "ALT_COUNT"] + 1,
           size = 100
         )
 
