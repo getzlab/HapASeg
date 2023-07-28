@@ -413,7 +413,7 @@ for opt_iter in range(3):
     # perform increasingly fine grid searches around neighborhood of previous optimum
     if opt_iter > 0:
         refbias_dom = np.linspace(
-          *refbias_dom[np.minimum(np.argmin(refbias_dif) + np.r_[-2, 2], len(refbias_dom) - 1)], # search +- 2 grid points of previous optimum
+          *refbias_dom[np.minimum(np.argmin(refbias_dif) + np.r_[-2, 2], len(refbias_dom) - 1)], # search +- 2 grid points of previous optimum; clip to rb = 1
           np.r_[10, 20, 30][opt_iter] # fineness of grid search
         )
     refbias_dif = np.full(len(refbias_dom), np.inf)
