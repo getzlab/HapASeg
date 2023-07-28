@@ -225,9 +225,11 @@ plt.ylim([0.5, 1.5])
 
 import pickle
 import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
 import scipy.stats as ss
 import sys
+import tqdm
 import wolf
 
 hapaseg_workflow = wolf.ImportTask(".", main_task = "hapaseg_workflow")
@@ -325,15 +327,81 @@ for chunk in R["results"]:
 X = pd.concat(X)
 g = X.groupby("idx").size() == 2
 
+# {{{
+Y = X.set_index([X["idx"], X.index]).drop(columns = "idx")
+
+plt.figure(1); plt.clf()
+aidx = Y.index.get_level_values(1) == 0
+bidx = Y.index.get_level_values(1) == 1
+plt.scatter(Y.index[aidx].get_level_values(0), Y.loc[aidx, "ALT_COUNT"]/Y.loc[aidx, ["ALT_COUNT", "REF_COUNT"]].sum(1), color = 'r', marker = ".")
+plt.scatter(Y.index[bidx].get_level_values(0), Y.loc[bidx, "REF_COUNT"]/Y.loc[bidx, ["ALT_COUNT", "REF_COUNT"]].sum(1), color = 'b', marker = ".")
+
+f_a = np.full(Y.index.get_level_values(0).max() + 1, np.nan)
+f_b = np.full(Y.index.get_level_values(0).max() + 1, np.nan)
+
+f_a[Y.index[aidx].get_level_values(0)] = Y.loc[aidx, "ALT_COUNT"]/Y.loc[aidx, ["ALT_COUNT", "REF_COUNT"]].sum(1)
+f_b[Y.index[bidx].get_level_values(0)] = Y.loc[bidx, "REF_COUNT"]/Y.loc[bidx, ["ALT_COUNT", "REF_COUNT"]].sum(1)
+
+plt.figure(2); plt.clf()
+plt.scatter(f_a, f_b, marker = ".", alpha = 0.1)
+plt.plot([0, 1], [0, 1], color = 'r')
+plt.xlabel("f\_alt")
+plt.ylabel("f\_ref")
+
+Z = X.loc[X["idx"].isin(g[g].index)]
+Z = Z.set_index([Z["idx"], Z.index]).drop(columns = "idx")
+
+Z.index.get_level_values(1)
+# }}}
+
+
+
 ## new code to compute reference bias
 X = X.loc[X["idx"].isin(g[g].index)]
 X = X.set_index([X["idx"], X.index]).drop(columns = "idx")
 
-# TODO: remove segments with too few reference SNPs (due to purity ~100%)
-#       for now, only use segments with at least 20 SNPs assigned to each haplotype
+# don't use LoH segments at ~100% purity in reference bias calculations, since
+# these consistently have f_alt ~ 1, f_ref ~ 0, yielding optimal reference bias of 1
+# segments with very little allelic imbalance density between 0.1 and 0.9 are considered LoH
+a = X.loc[(slice(None), 0), "ALT_COUNT"].droplevel(1) + X.loc[(slice(None), 1), "REF_COUNT"].droplevel(1) + 1
+b = X.loc[(slice(None), 0), "REF_COUNT"].droplevel(1) + X.loc[(slice(None), 1), "ALT_COUNT"].droplevel(1) + 1
+rbdens = ss.beta.cdf(0.9, a, b) - ss.beta.cdf(0.1, a, b)
+
+# plot beta densitites of all segments
+plt.figure(6); plt.clf()
+r = np.r_[np.linspace(0, 0.05, 200), np.linspace(0.05, 0.95, 200), np.linspace(0.95, 1, 200)]
+for _, A, B in pd.concat([a, b], axis = 1).itertuples():
+    plt.plot(r, ss.beta.pdf(r, A, B), alpha = 0.1, color = 'k')
+
+# X = X.loc[X.index.get_level_values(0) < 5400]
+# X = X.loc[(X.index.get_level_values(0) > 5500) & (X.index.get_level_values(0) < 6000)]
 
 tot_SNPs = X.groupby(level = 0)["n_SNP"].sum()
-use_idx = X.groupby(level = 0)["n_SNP"].apply(lambda x : (x > 20).all())
+# we also don't want to use segments with too few supporting SNPs (20) in reference
+# bias calculations
+use_idx = X.groupby(level = 0)["n_SNP"].apply(lambda x : (x > 20).all()) & (rbdens > 0.01)
+
+# visualizations {{{
+
+# show all SNPs
+plt.figure(1); plt.clf()
+aidx = X.index.get_level_values(1) == 0
+bidx = X.index.get_level_values(1) == 1
+plt.scatter(X.index[aidx].get_level_values(0), X.loc[aidx, "ALT_COUNT"]/X.loc[aidx, ["ALT_COUNT", "REF_COUNT"]].sum(1), color = 'r', marker = ".", alpha = np.minimum(1, 10*tot_SNPs/tot_SNPs.max()))
+plt.scatter(X.index[bidx].get_level_values(0), X.loc[bidx, "REF_COUNT"]/X.loc[bidx, ["ALT_COUNT", "REF_COUNT"]].sum(1), color = 'b', marker = ".", alpha = np.minimum(1, 10*tot_SNPs/tot_SNPs.max()))
+plt.ylim([-0.05, 1.05])
+
+# show just SNPs being used in refbias calculation
+plt.figure(10); plt.clf()
+cidx = use_idx & (rbdens > 0.01)
+X2 = X.loc[cidx[cidx].index]
+aidx = X2.index.get_level_values(1) == 0
+bidx = X2.index.get_level_values(1) == 1
+plt.scatter(X2.index[aidx].get_level_values(0), X2.loc[aidx, "ALT_COUNT"]/X2.loc[aidx, ["ALT_COUNT", "REF_COUNT"]].sum(1), color = 'r', marker = ".", alpha = np.minimum(1, 10*tot_SNPs[cidx]/tot_SNPs.max()))
+plt.scatter(X2.index[bidx].get_level_values(0), X2.loc[bidx, "REF_COUNT"]/X2.loc[bidx, ["ALT_COUNT", "REF_COUNT"]].sum(1), color = 'b', marker = ".", alpha = np.minimum(1, 10*tot_SNPs[cidx]/tot_SNPs.max()))
+plt.ylim([-0.05, 1.05])
+
+# }}}
 
 refbias_dom = np.linspace(0.8, 1, 10)
 plt.figure(3); plt.clf()
@@ -371,3 +439,35 @@ for opt_iter in range(3):
 
     ref_bias = refbias_dom[np.argmin(refbias_dif)]
     plt.scatter(refbias_dom, refbias_dif, marker = "x")
+
+# more visualizations {{{
+
+## show all SNPs after correction
+plt.figure(2); plt.clf()
+aidx = X.index.get_level_values(1) == 0
+bidx = X.index.get_level_values(1) == 1
+plt.scatter(X.index[aidx].get_level_values(0), X.loc[aidx, "ALT_COUNT"]/(X.loc[aidx, ["ALT_COUNT", "REF_COUNT"]]*np.r_[1, ref_bias]).sum(1), color = 'r', marker = ".", alpha = np.minimum(1, 10*tot_SNPs/tot_SNPs.max()))
+plt.scatter(X.index[bidx].get_level_values(0), X.loc[bidx, "REF_COUNT"]*ref_bias/(X.loc[bidx, ["ALT_COUNT", "REF_COUNT"]]*np.r_[1, ref_bias]).sum(1), color = 'b', marker = ".", alpha = np.minimum(1, 10*tot_SNPs/tot_SNPs.max()))
+
+## scatterplot of A allele fraction vs. B allele fraction before/after correction
+f_a = np.full(X.index.get_level_values(0).max() + 1, np.nan)
+f_b = np.full(X.index.get_level_values(0).max() + 1, np.nan)
+
+f_a[X.index[aidx].get_level_values(0)] = X.loc[aidx, "ALT_COUNT"]/X.loc[aidx, ["ALT_COUNT", "REF_COUNT"]].sum(1)
+f_b[X.index[bidx].get_level_values(0)] = X.loc[bidx, "REF_COUNT"]/X.loc[bidx, ["ALT_COUNT", "REF_COUNT"]].sum(1)
+
+f_acorr = np.full(X.index.get_level_values(0).max() + 1, np.nan)
+f_bcorr = np.full(X.index.get_level_values(0).max() + 1, np.nan)
+
+f_acorr[X.index[aidx].get_level_values(0)] = X.loc[aidx, "ALT_COUNT"]/(X.loc[aidx, ["ALT_COUNT", "REF_COUNT"]]*np.r_[1, ref_bias]).sum(1)
+f_bcorr[X.index[bidx].get_level_values(0)] = X.loc[bidx, "REF_COUNT"]*ref_bias/(X.loc[bidx, ["ALT_COUNT", "REF_COUNT"]]*np.r_[1, ref_bias]).sum(1)
+
+plt.figure(4); plt.clf()
+plt.scatter(f_a, f_b, marker = ".", alpha = 0.5)
+plt.plot([0, 1], [0, 1], color = 'r')
+plt.xlabel("f\_alt")
+plt.ylabel("f\_ref")
+
+plt.scatter(f_acorr, f_bcorr, marker = "+", alpha = 0.5)
+
+# }}}
