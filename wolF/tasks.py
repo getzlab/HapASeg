@@ -80,7 +80,7 @@ class Hapaseg_concat(wolf.Task):
       "arms" : "AMCMC-arm*.pickle",
       "ref_bias" : ("ref_bias.txt", wolf.read_file)
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1158"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1213"
 
 class Hapaseg_amcmc(wolf.Task):
     inputs = {
