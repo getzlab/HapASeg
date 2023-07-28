@@ -257,6 +257,32 @@ args = lambda:None
 args.chunks = list(pd.read_csv("/mnt/nfs/refbias_fix/asgari_exome/Hapaseg_concat__2023-07-25--15-44-10_epc5bvq_npn15qq_zep0omnayyems/jobs/0/chunks_array.txt", header = None).iloc[:, 0])
 args.scatter_intervals = "/mnt/nfs/refbias_fix/asgari_exome/Hapaseg_concat__2023-07-25--15-44-10_epc5bvq_npn15qq_zep0omnayyems/jobs/0/inputs/scatter_chunks.tsv"
 
+## 2.
+
+args = lambda:None
+args.chunks = list(pd.read_csv("./Hapaseg_concat__2023-06-09--05-41-56_epc5bvq_npn15qq_34ceqoi0eehzw/jobs/0/chunks_array.txt", header = None).iloc[:, 0].str.replace("/mnt/nfs/workspace/hg38_wgs_HCM-BROD-0214-C71_TNGCM-NB/", "./"))
+args.scatter_intervals = "./Hapaseg_concat__2023-06-09--05-41-56_epc5bvq_npn15qq_34ceqoi0eehzw/jobs/0/inputs/scatter_chunks.tsv"
+
+# re-run
+with wolf.Workflow(workflow = hapaseg_workflow, namespace = "refbias_fix") as w:
+    w.run(
+      RUN_NAME = "HCMI_genome",
+      tumor_bam="https://api.awg.gdc.cancer.gov/data/298e0d6a-8876-4038-8625-b0d518aabbba",
+      tumor_bai="https://api.awg.gdc.cancer.gov/data/069ac47e-8bd2-4123-815e-23938dcc83d3",
+      normal_bam="https://api.awg.gdc.cancer.gov/data/e3461169-fc11-41a3-b858-6f939421d644",
+      normal_bai="https://api.awg.gdc.cancer.gov/data/e8c838a8-655c-42cf-82c1-6961858b2d57",
+      localization_token="eyJ0eXAiOiJKV1QiLCJhbGciOiJFUzI1NiJ9.eyJzdWIiOiI4N2YwNTQ4ZGEyYzE0YzI0YWNhMTMzODk3YjQwMGY0YSIsImlhdCI6MTY5MDI5NjQ5NiwiZXhwIjoxNjkyODg4NDk2LCJvcGVuc3RhY2tfbWV0aG9kcyI6WyJzYW1sMiJdLCJvcGVuc3RhY2tfYXVkaXRfaWRzIjpbIlQxdlBlWU15UlppdE1KSHBDdXc3UEEiXSwib3BlbnN0YWNrX2dyb3VwX2lkcyI6W3siaWQiOiIwNjNlYWEyN2NjMTY0MzhlODJkYjVlYzA2ZDkzYTUzYyJ9XSwib3BlbnN0YWNrX2lkcF9pZCI6ImVyYV9jb21tb24iLCJvcGVuc3RhY2tfcHJvdG9jb2xfaWQiOiJzYW1sMiJ9.LS_om2S9y_OON11RRaUMxVm8KAcK8Po19kPpu1mk0KUCvP4CJAadDPfLl-ik4Rwe50eAnl6ZlYtSB4hpIQfQAQapi_key:eyJ0eXAiOiJKV1QiLCJraWQiOiJrZXktMDEiLCJhbGciOiJSUzI1NiJ9.eyJpc3MiOiJodHRwczovL2xvZ2luLmF3Zy5nZGMuY2FuY2VyLmdvdiIsImF1ZCI6WyJmZW5jZSIsIm9wZW5pZCJdLCJwdXIiOiJhcGlfa2V5IiwianRpIjoiOTg4MDQwYjctZmJiNy00ZGJjLWEyYWQtODUxOTI3M2RiYTZlIiwic3ViIjoiNzAiLCJleHAiOjE2OTI4ODg0OTYsImlhdCI6MTY5MDI5NjQ5NiwiYXpwIjoiIn0.OAWektpb884Ox1vZNFmJnwqHhautmWZTsIdh49NJutAOiLMgU9uwPrGOqlMjiRLCYkDJ0x1OsTAnzo9gzkW1ZA-_43-k471iI26HVn87h9J6EBI9Mh2a3G5CWu4dg1q8xhanjU3DtMJNnGJLq_2hnEt9b8SW8NL6BFHn_nAIrPFW_RwhqPPdIBtxPcf4kTDo4DJOHMSfbh4rVpOvF9UemeolkfwqHJoVwqEmE8gHJw2xIT-Nfokq0GsDrPU9RtXxvu_4peo_b3HW53_bzAorSG0T9Etr1Q_wmpbbITRM2eIDW2xsjBsRlQ2ruXTcsFF-i2hUS8AwwSwsZi80A369dA",
+      ref_genome_build="hg38",
+      target_list=2000,
+    )
+
+w = wolf.Workflow(workflow = lambda:None, namespace = "refbias_fix")
+w.load_results("HCMI_genome")
+
+args = lambda:None
+args.chunks = list(pd.read_csv("/mnt/nfs/refbias_fix/HCMI_genome/Hapaseg_concat__2023-07-28--16-48-45_epc5bvq_npn15qq_0azrc5r3ufiry/jobs/0/chunks_array.txt", header = None).iloc[:, 0])
+args.scatter_intervals = "/mnt/nfs/refbias_fix/HCMI_genome/Hapaseg_concat__2023-07-28--16-48-45_epc5bvq_npn15qq_0azrc5r3ufiry/jobs/0/inputs/scatter_chunks.tsv"
+
 ## excised from __main__.py
 
 #
