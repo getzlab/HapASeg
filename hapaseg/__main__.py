@@ -9,7 +9,9 @@ import pickle
 import scipy.stats as s
 import scipy.special as ss
 import sortedcontainers as sc
+import sys
 import traceback
+import tqdm
 
 from capy import mut, seq
 
@@ -368,31 +370,75 @@ def main():
             bpl = np.c_[bpl[0:-1], bpl[1:]]
 
             for i, (st, en) in enumerate(bpl):
-                x = chunk.P.iloc[st:en].groupby("allele_A")[["MIN_COUNT", "MAJ_COUNT"]].sum()
+                g = chunk.P.iloc[st:en].groupby("allele_A")
+                x = g[["REF_COUNT", "ALT_COUNT"]].sum()
                 x["idx"] = i + j
+                x["n_SNP"] = g.size()
                 X.append(x)
 
-            j += len(chunk.P)
+            j += i + 1
 
         X = pd.concat(X)
+
+        ## filter segments used to compute reference bias
+
+        # 1. restrict to just segments with both alleles represented;
+        # segments with only one allele are not informative when computing ref bias
         g = X.groupby("idx").size() == 2
-        Y = X.loc[X["idx"].isin(g[g].index)]
+        X = X.loc[X["idx"].isin(g[g].index)]
 
-        f = np.zeros([len(Y) // 2, 100])
-        l = np.zeros([len(Y) // 2, 2])
-        for i, (_, g) in enumerate(Y.groupby("idx")):
-            f[i, :] = s.beta.rvs(g.loc[0, "MIN_COUNT"] + 1, g.loc[0, "MAJ_COUNT"] + 1, size=100) / s.beta.rvs(
-                g.loc[1, "MIN_COUNT"] + 1, g.loc[1, "MAJ_COUNT"] + 1, size=100)
-            l[i, :] = np.r_[
-                ss.betaln(g.loc[0, "MIN_COUNT"] + 1, g.loc[0, "MAJ_COUNT"] + 1),
-                ss.betaln(g.loc[1, "MIN_COUNT"] + 1, g.loc[1, "MAJ_COUNT"] + 1),
-            ]
+        # index by segment and allele
+        X = X.set_index([X["idx"], X.index]).drop(columns = "idx")
 
-        # weight mean by negative log marginal likelihoods
-        # take smaller of the two likelihoods to account for power imbalance
-        w = np.min(-l, 1, keepdims=True)
+        # 2. we don't want to use segments with too few supporting SNPs (20)
+        tot_SNPs = X.groupby(level = 0)["n_SNP"].sum()
+        count_idx = X.groupby(level = 0)["n_SNP"].apply(lambda x : (x > 20).all())
 
-        ref_bias = (f * w).sum() / (100 * w.sum())
+        # 3. don't use LoH segments at ~100% purity in reference bias calculations, since
+        # these consistently have f_alt ~ 1, f_ref ~ 0, yielding optimal reference bias of 1
+        # segments with very little allelic imbalance density between 0.1 and 0.9 are considered LoH
+        a = X.loc[(slice(None), 0), "ALT_COUNT"].droplevel(1) + X.loc[(slice(None), 1), "REF_COUNT"].droplevel(1) + 1
+        b = X.loc[(slice(None), 0), "REF_COUNT"].droplevel(1) + X.loc[(slice(None), 1), "ALT_COUNT"].droplevel(1) + 1
+        rbdens = s.beta.cdf(0.9, a, b) - s.beta.cdf(0.1, a, b)
+
+        # final index of segments to use
+        use_idx = count_idx & (rbdens > 0.01)
+
+        ## perform iterative grid search over range of reference bias values
+        refbias_dom = np.linspace(0.8, 1, 10)
+        print("Computing reference bias ...", file = sys.stderr)
+        for opt_iter in range(3):
+            # number of Monte Carlo samples to draw from beta distribution
+            # we need fewer samples for more total SNPs
+            n_beta_samp = np.r_[10, 100, np.maximum(100, int(1e8/tot_SNPs.sum()))][opt_iter]
+            # perform increasingly fine grid searches around neighborhood of previous optimum
+            if opt_iter > 0:
+                refbias_dom = np.linspace(
+                  *refbias_dom[np.minimum(np.argmin(refbias_dif) + np.r_[-2, 2], len(refbias_dom) - 1)], # search +- 2 grid points of previous optimum; clip to rb = 1
+                  np.r_[10, 20, 30][opt_iter] # fineness of grid search
+                )
+            refbias_dif = np.full(len(refbias_dom), np.inf)
+            pbar = tqdm.tqdm(enumerate(refbias_dom), total = len(refbias_dom))
+            for j, rb in pbar:
+                pbar.set_description(f"[{refbias_dom.min():0.2f}:{refbias_dom.max():0.2f}:{len(refbias_dom)}] {refbias_dom[refbias_dif.argmin()]:0.4f} ({n_beta_samp} MC samples)")
+                absdif = np.full(use_idx.sum(), np.nan)
+                for i, seg in enumerate(tot_SNPs.index[use_idx]):
+                    f_A = s.beta.rvs(
+                      X.loc[(seg, 0), "ALT_COUNT"] + 1,
+                      X.loc[(seg, 0), "REF_COUNT"]*rb + 1,
+                      size = n_beta_samp
+                    )
+                    f_B = s.beta.rvs(
+                      X.loc[(seg, 1), "REF_COUNT"]*rb + 1,
+                      X.loc[(seg, 1), "ALT_COUNT"] + 1,
+                      size = n_beta_samp
+                    )
+
+                    absdif[i] = np.abs(f_A - f_B).mean()
+
+                refbias_dif[j] = absdif@tot_SNPs[use_idx]/tot_SNPs[use_idx].sum()
+
+            ref_bias = refbias_dom[np.argmin(refbias_dif)]
 
         with open(output_dir + "/ref_bias.txt", "w") as f:
             f.write(str(ref_bias))
