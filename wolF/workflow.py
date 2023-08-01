@@ -22,7 +22,7 @@ het_pulldown = wolf.ImportTask(
 mutect1 = wolf.ImportTask(
   task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
   main_task = "mutect1",
-  commit = "74df599"
+  commit = "d98b8f2"
 )
 
 # for phasing
@@ -380,7 +380,7 @@ def workflow(
           intervals = split_het_sites["snp_list_shards"],
 
           exclude_chimeric = True,
-
+          max_mismatch_baseq_sum = 1000, # set high to prevent physically phased SNPs from being removed
           force_calling = True,
         ))
 
