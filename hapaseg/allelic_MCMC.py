@@ -468,8 +468,8 @@ class A_MCMC:
         self.P["MIN_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "REF_COUNT"], self.P.loc[~self.P["aidx"], "ALT_COUNT"]])
 
         # update CI's 
-        CI = s.beta.ppf([0.05, 0.5, 0.95], P["MAJ_COUNT"][:, None] + 1, P["MIN_COUNT"][:, None] + 1)
-        P[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
+        CI = s.beta.ppf([0.05, 0.5, 0.95], self.P["MAJ_COUNT"][:, None] + 1, self.P["MIN_COUNT"][:, None] + 1)
+        self.P[["CI_lo_hap", "median_hap", "CI_hi_hap"]] = CI
 
     def incr_bp_counter(self, st, en, mid = None):
         if mid is None:
