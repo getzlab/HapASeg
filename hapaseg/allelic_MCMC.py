@@ -464,6 +464,10 @@ class A_MCMC:
         # correct for bias against the alternate allele due to capture or alignment
         self.ref_bias = ref_bias
         self.P["REF_COUNT"] *= self.ref_bias
+
+        # for sites with 0 reference alleles, upscale alt allele instead
+        self.P.loc[self.P["REF_COUNT"] == 0, "ALT_COUNT"] /= self.ref_bias
+
         self.P["MAJ_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "ALT_COUNT"], self.P.loc[~self.P["aidx"], "REF_COUNT"]])
         self.P["MIN_COUNT"] = pd.concat([self.P.loc[self.P["aidx"], "REF_COUNT"], self.P.loc[~self.P["aidx"], "ALT_COUNT"]])
 
