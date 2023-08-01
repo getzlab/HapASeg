@@ -133,7 +133,7 @@ def workflow(
 
   phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
   persistent_dry_run = False,
-  cleanup_disks=True,
+  cleanup_disks=False,
   is_ffpe = False, # use FAIRE as covariate
   is_cfdna = False,  # use FAIRE (w/ cfDNA samples) as covariate
   workspace = None,
