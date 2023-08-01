@@ -39,7 +39,7 @@ class Hapaseg_load_snps(wolf.Task):
       "allele_counts" : "allele_counts.pickle",
       "scatter_chunks" : "scatter_chunks.tsv"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1158"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1216"
     resources = { "cpus-per-task" : 2, "mem":"4G"}
 
 class Hapaseg_burnin(wolf.Task):
@@ -65,7 +65,7 @@ class Hapaseg_burnin(wolf.Task):
       "burnin_MCMC" : "amcmc_results.pickle"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1158"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1217"
 
 class Hapaseg_concat(wolf.Task):
     inputs = {
@@ -103,7 +103,7 @@ class Hapaseg_amcmc(wolf.Task):
       "arm_level_MCMC" : "amcmc_results.pickle",
       "segmentation_plot" : "figures/MLE_segmentation.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1158"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1218"
 
 class Hapaseg_concat_arms(wolf.Task):
     inputs = {
