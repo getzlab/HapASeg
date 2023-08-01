@@ -332,7 +332,7 @@ def main():
             pickle.dump(H.run(), f)
 
         try:
-            H.visualize()
+            H.visualize(show_CIs = not args.wgs) # only plot SNP CI's if there are few SNPs (not WGS)
             plt.savefig(output_dir + "/figures/MLE_segmentation.png", dpi = 300)
         except Exception:
             print("Error plotting segments; see stack trace for details:")
