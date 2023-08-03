@@ -46,7 +46,7 @@ class A_DP:
             bpl = np.array(H["results"].breakpoints_MLE); bpl = np.c_[bpl[0:-1], bpl[1:]]
             for i, (st, en) in enumerate(bpl):
                 S.iloc[st:en, S.columns.get_loc("clust")] = i + clust_offset
-            clust_offset += i
+            clust_offset += i + 1
 
             # bug in segmentation omits final SNP?
             #S = S.iloc[:-1]
