@@ -249,6 +249,7 @@ def workflow(
     if collect_tumor_coverage:
         # create scatter intervals
         tumor_split_intervals_task = split_intervals.split_intervals(
+          jobname_suffix = "hapaseg_tumor_cov",
           bam = tumor_bam_localization_task["t_bam"],
           bai = tumor_bam_localization_task["t_bai"],
           interval_type = "bed",
@@ -288,6 +289,7 @@ def workflow(
         if collect_normal_coverage:
             # create scatter intervals
             normal_split_intervals_task = split_intervals.split_intervals(
+              jobname_suffix = "hapaseg_normal_cov",
               bam = normal_bam_localization_task["n_bam"],
               bai = normal_bam_localization_task["n_bai"],
               interval_type = "bed",
