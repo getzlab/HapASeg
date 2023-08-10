@@ -394,7 +394,8 @@ def workflow(
             ref_fasta_idx = localization_task["ref_fasta_idx"],
             ref_fasta_dict = localization_task["ref_fasta_dict"],
             use_pod_genotyper = True,
-            pod_min_depth = 10 if wgs else 4
+            pod_min_depth = 10 if wgs else 4,
+            tumor_only = tumor_only_genotyping,
           )
         )
 
