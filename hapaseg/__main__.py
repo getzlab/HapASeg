@@ -103,7 +103,7 @@ def parse_args():
     amcmc.add_argument("--stop_after_burnin", action="store_true")
     amcmc.add_argument("--ref_bias", default=1.0)
     amcmc.add_argument("--n_iter", default=20000)
-    amcmc.add_argument("--wgs", action="store_true", default=False)
+    amcmc.add_argument("--betahyp", default=-1)
 
     ## concat
     concat = subparsers.add_parser("concat", help="Concatenate burned-in chunks")
