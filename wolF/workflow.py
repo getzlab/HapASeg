@@ -126,16 +126,21 @@ def workflow(
   ref_genome_build=None, #must be hg19 or hg38
   
   target_list = None,
+  betahyp = 4, # hyperparameter for smoothing initial allelic segmentation. only applicable for whole exomes.
+
   localization_token=None,
 
   num_cov_seg_samples=5,
   run_cdp=False, # option to run coverage DP on WES data
 
   phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
+
   persistent_dry_run = False,
   cleanup_disks=False,
+
   is_ffpe = False, # use FAIRE as covariate
   is_cfdna = False,  # use FAIRE (w/ cfDNA samples) as covariate
+
   workspace = None,
   entity_type = 'pair', # terra entity type (sample, pair)
   entity_name = None,
@@ -541,8 +546,8 @@ def workflow(
        "allele_counts" : hapaseg_load_snps_task["allele_counts"],
        "start" : chunks["start"],
        "end" : chunks["end"],
-       "wgs": wgs
-        }
+       "betahyp" : None if wgs else 0
+      }
     )
 
     # concat burned in chunks, infer reference bias
@@ -558,8 +563,8 @@ def workflow(
      inputs = {
        "amcmc_object" : hapaseg_concat_task["arms"],
        "ref_bias" : hapaseg_concat_task["ref_bias"],
-       "wgs": wgs
-        }
+       "betahyp" : None if wgs else betahyp
+      }
     )
     
 #    hapaseg_arm_concat_task = hapaseg.Hapaseg_concat_arms(
