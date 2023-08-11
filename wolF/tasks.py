@@ -47,19 +47,15 @@ class Hapaseg_burnin(wolf.Task):
       "allele_counts" : None,
       "start" : None,
       "end" : None,
-      "wgs" : True
+      "betahyp" : -1
     }
     
-    def script(self):
-        script = """
-        hapaseg amcmc --snp_dataframe ${allele_counts} \
-                --start ${start} \
-                --end ${end} \
-                --stop_after_burnin"""
-
-        if self.conf["inputs"]["wgs"] == True:
-            script += " --wgs"
-        return script
+    script = """
+    hapaseg amcmc --snp_dataframe ${allele_counts} \
+            --start ${start} \
+            --end ${end} \
+            --stop_after_burnin \
+            --betahyp ${betahyp}"""
 
     output_patterns = {
       "burnin_MCMC" : "amcmc_results.pickle"
@@ -87,17 +83,14 @@ class Hapaseg_amcmc(wolf.Task):
       "amcmc_object" : None,
       "ref_bias" : None,
       "n_iter" : 20000,
-      "wgs" : True
+      "betahyp" : -1
     }
 
-    def script(self):
-        script = """
-        hapaseg amcmc --amcmc_object ${amcmc_object} \
-                --ref_bias ${ref_bias} \
-                --n_iter ${n_iter}"""
-        if self.conf["inputs"]["wgs"] == True:
-            script += " --wgs"
-        return script
+    script = """
+    hapaseg amcmc --amcmc_object ${amcmc_object} \
+            --ref_bias ${ref_bias} \
+            --n_iter ${n_iter} \
+            --betahyp ${betahyp}"""
         
     output_patterns = {
       "arm_level_MCMC" : "amcmc_results.pickle",

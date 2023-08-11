@@ -24,7 +24,7 @@ class A_MCMC:
       quit_after_burnin = False,
       n_iter = 100000,
       ref_bias = 1.0,
-      betahyp = None
+      betahyp = -1
     ):
         #
         # dataframe stuff
@@ -93,7 +93,7 @@ class A_MCMC:
         self.cs_MIN = sc.SortedDict()
 
         # set beta smoothing hyperparameter
-        if betahyp is None: # set dynamically
+        if betahyp == -1: # set dynamically
             self.betahyp = (self.P["REF_COUNT"] + self.P["ALT_COUNT"]).mean()/4.0
         else:
             self.betahyp = betahyp

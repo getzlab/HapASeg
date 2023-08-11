@@ -546,7 +546,7 @@ def workflow(
        "allele_counts" : hapaseg_load_snps_task["allele_counts"],
        "start" : chunks["start"],
        "end" : chunks["end"],
-       "betahyp" : None if wgs else 0
+       "betahyp" : -1 if wgs else 0
       }
     )
 
@@ -563,7 +563,7 @@ def workflow(
      inputs = {
        "amcmc_object" : hapaseg_concat_task["arms"],
        "ref_bias" : hapaseg_concat_task["ref_bias"],
-       "betahyp" : None if wgs else betahyp
+       "betahyp" : -1 if wgs else betahyp
       }
     )
     
