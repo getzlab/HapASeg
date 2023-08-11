@@ -311,7 +311,7 @@ def main():
                 quit_after_burnin=args.stop_after_burnin,
                 ref_bias=float(args.ref_bias),
                 n_iter=int(args.n_iter),
-                wgs=args.wgs
+                betahyp=args.betahyp
             )
 
         # loading from allelic MCMC results object produced by `hapaseg amcmc`
@@ -323,8 +323,7 @@ def main():
             H._set_ref_bias(float(args.ref_bias))
             H.n_iter = int(args.n_iter)
             H.quit_after_burnin = args.stop_after_burnin
-            H.wgs = args.wgs
-            H._set_betahyp()
+            H._set_betahyp(args.betahyp)
             if len(H.marg_lik) > H.n_iter:
                 H.marg_lik = H.marg_lik[:H.n_iter]
 
@@ -332,7 +331,7 @@ def main():
             pickle.dump(H.run(), f)
 
         try:
-            H.visualize(show_CIs = not args.wgs) # only plot SNP CI's if there are few SNPs (not WGS)
+            H.visualize(show_CIs = args.betahyp != -1) # only plot SNP CI's if there are few SNPs (not WGS)
             plt.savefig(output_dir + "/figures/MLE_segmentation.png", dpi = 300)
         except Exception:
             print("Error plotting segments; see stack trace for details:")

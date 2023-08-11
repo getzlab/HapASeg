@@ -93,10 +93,7 @@ class A_MCMC:
         self.cs_MIN = sc.SortedDict()
 
         # set beta smoothing hyperparameter
-        if betahyp == -1: # set dynamically
-            self.betahyp = (self.P["REF_COUNT"] + self.P["ALT_COUNT"]).mean()/4.0
-        else:
-            self.betahyp = betahyp
+        self._set_betahyp(betahyp)
         
         # marginal likelihoods
 
@@ -113,6 +110,12 @@ class A_MCMC:
         # total log marginal likelihood of all segments
         self.marg_lik = np.full(self.n_iter, np.nan)
         self.marg_lik[0] = np.array(self.seg_marg_liks.values()).sum()
+
+    def _set_betahyp(self, betahyp):
+        if betahyp == -1: # set dynamically
+            self.betahyp = (self.P["REF_COUNT"] + self.P["ALT_COUNT"]).mean()/4.0
+        else:
+            self.betahyp = betahyp
 
     def _Piloc(self, st, en, col_idx, incl_idx = None):
         """
