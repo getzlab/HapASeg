@@ -61,7 +61,7 @@ class Hapaseg_burnin(wolf.Task):
       "burnin_MCMC" : "amcmc_results.pickle"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1226"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1230"
 
 class Hapaseg_concat(wolf.Task):
     inputs = {
@@ -96,7 +96,7 @@ class Hapaseg_amcmc(wolf.Task):
       "arm_level_MCMC" : "amcmc_results.pickle",
       "segmentation_plot" : "figures/MLE_segmentation.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1226"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1230"
 
 class Hapaseg_concat_arms(wolf.Task):
     inputs = {
