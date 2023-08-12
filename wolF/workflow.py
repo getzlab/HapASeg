@@ -15,7 +15,7 @@ from wolf.localization import LocalizeToDisk, DeleteDisk
 # for genotyping het sites/getting het site coverage
 het_pulldown = wolf.ImportTask(
   task_path = 'git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git',
-  commit = "38fe173",
+  commit = "6c17fcb",
   main_task = "get_het_coverage_from_callstats"
 )
 
@@ -340,7 +340,8 @@ def workflow(
             ref_fasta_dict = localization_task["ref_fasta_dict"],
             use_pod_genotyper = True,
             tumor_only = tumor_only_genotyping,
-            pod_min_depth = 10 if wgs else 4
+            pod_min_depth = 10 if wgs else 4, # normal min genotyping depth; set lower for exomes due to bait falloff (normal coverage in flanking regions will be proportionally much lower than tumor coverage)
+            min_tumor_depth = 1 if wgs else 10 # tumor min coverage; set higher for exomes due to off-target signal being noisier
           )
         )
     
@@ -382,8 +383,6 @@ def workflow(
           refFastaIdx = localization_task["ref_fasta_idx"],
           refFastaDict = localization_task["ref_fasta_dict"],
 
-          # TODO: let user specify this?
-          #intervals = tumor_split_intervals_task["interval_files"],
           intervals = split_het_sites["snp_list_shards"],
 
           exclude_chimeric = True,
@@ -399,8 +398,9 @@ def workflow(
             ref_fasta_idx = localization_task["ref_fasta_idx"],
             ref_fasta_dict = localization_task["ref_fasta_dict"],
             use_pod_genotyper = True,
-            pod_min_depth = 10 if wgs else 4,
             tumor_only = tumor_only_genotyping,
+            pod_min_depth = 10 if wgs else 4, # normal min genotyping depth; set lower for exomes due to bait falloff (normal coverage in flanking regions will be proportionally much lower than tumor coverage)
+            min_tumor_depth = 1 if wgs else 10 # tumor min coverage; set higher for exomes due to off-target signal being noisier
           )
         )
 
