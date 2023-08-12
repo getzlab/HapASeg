@@ -115,7 +115,7 @@ class A_MCMC:
         if betahyp == -1: # set dynamically
             self.betahyp = (self.P["REF_COUNT"] + self.P["ALT_COUNT"]).mean()/4.0
         else:
-            self.betahyp = betahyp
+            self.betahyp = float(betahyp)
 
     def _Piloc(self, st, en, col_idx, incl_idx = None):
         """
