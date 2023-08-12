@@ -359,10 +359,13 @@ def workflow(
         # split het sites file uniformly
         split_het_sites = wolf.Task(
           name = "split_het_sites",
-          inputs = { "snp_list" : localization_task["common_snp_list"] },
+          inputs = {
+            "snp_list" : localization_task["common_snp_list"],
+            "chunk_size" : 10000 if wgs else 50000
+          },
           script = """
           grep '^@' ${snp_list} > header
-          sed '/^@/d' ${snp_list} | split -l 10000 -d -a 4 --filter 'cat header /dev/stdin > $FILE' --additional-suffix '.picard' - snp_list_chunk
+          sed '/^@/d' ${snp_list} | split -l ${chunk_size} -d -a 4 --filter 'cat header /dev/stdin > $FILE' --additional-suffix '.picard' - snp_list_chunk
           """,
           outputs = { "snp_list_shards" : "snp_list_chunk*" }
         )
