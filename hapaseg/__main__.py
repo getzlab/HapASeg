@@ -103,7 +103,7 @@ def parse_args():
     amcmc.add_argument("--stop_after_burnin", action="store_true")
     amcmc.add_argument("--ref_bias", default=1.0)
     amcmc.add_argument("--n_iter", default=20000)
-    amcmc.add_argument("--betahyp", default=-1)
+    amcmc.add_argument("--betahyp", default=-1, type = float)
 
     ## concat
     concat = subparsers.add_parser("concat", help="Concatenate burned-in chunks")
@@ -311,7 +311,7 @@ def main():
                 quit_after_burnin=args.stop_after_burnin,
                 ref_bias=float(args.ref_bias),
                 n_iter=int(args.n_iter),
-                betahyp=args.betahyp
+                betahyp=float(args.betahyp)
             )
 
         # loading from allelic MCMC results object produced by `hapaseg amcmc`
@@ -323,7 +323,7 @@ def main():
             H._set_ref_bias(float(args.ref_bias))
             H.n_iter = int(args.n_iter)
             H.quit_after_burnin = args.stop_after_burnin
-            H._set_betahyp(args.betahyp)
+            H._set_betahyp(float(args.betahyp))
             if len(H.marg_lik) > H.n_iter:
                 H.marg_lik = H.marg_lik[:H.n_iter]
 
