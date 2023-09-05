@@ -377,8 +377,8 @@ def workflow(
 
           t_bam = tumor_bam_localization_task["t_bam"],
           t_bai = tumor_bam_localization_task["t_bai"],
-          n_bam = normal_bam_localization_task["n_bam"],
-          n_bai = normal_bam_localization_task["n_bai"],
+          n_bam = normal_bam_localization_task["n_bam"] if not tumor_only_genotyping else "",
+          n_bai = normal_bam_localization_task["n_bai"] if not tumor_only_genotyping else "",
 
           fracContam = 0,
 
