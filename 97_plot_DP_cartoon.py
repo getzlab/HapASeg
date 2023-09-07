@@ -73,28 +73,28 @@ SNPs_2["pos_gp"] -= SNPs_2["pos_gp"].min() - SNPs_1["pos_gp"].max()
 
 SNPs_rng = pd.concat([SNPs_1, SNPs_2])
 
-plt.figure(2); plt.clf()
-ax = plt.gca()
+plt.figure(2, figsize = [14, 12]); plt.clf()
+_, axs = plt.subplots(2, 1, num = 2, sharex = True, sharey = True)
 minct = SNPs_rng["min"]
 cov = SNPs_rng[["min", "maj"]].sum(1)
-plt.scatter(SNPs_rng["pos_gp"], minct/cov, marker = ".", s = 1, c = SNPs_rng["aidx"], cmap = "bwr", alpha = np.minimum(1, cov/cov.median()), zorder = 3)
+axs[0].scatter(SNPs_rng["pos_gp"], minct/cov, marker = ".", s = 1, c = SNPs_rng["aidx"], cmap = "bwr", alpha = np.minimum(1, cov/cov.median()), zorder = 3)
 segs = SNPs_rng.groupby("clust").apply(lambda x : pd.Series({ "f" : x["min"].sum(0)/x[["min", "maj"]].sum(1).sum(0), "st" : x.iloc[0]["pos_gp"], "en" : x.iloc[-1]["pos_gp"]}))
 for _, f, st, en in segs.itertuples():
-    ax.add_patch(plt.matplotlib.patches.Rectangle(
+    axs[0].add_patch(plt.matplotlib.patches.Rectangle(
       (st, f - 0.01),
       np.maximum(en - st, 500000),
       0.02,
-      facecolor = "cyan",
+      facecolor = "lime",
       edgecolor = 'k', linewidth = 0.5,
       fill = True, alpha = 1, zorder = 1000
     ))
 #plt.scatter((segs["en"] + segs["st"])/2, segs["f"], color = "cyan", marker = "s", s = 4)
-plt.axhline(0.5, color = "k", linestyle = ":", zorder = 0)
-plt.xlim([0, SNPs_rng["pos_gp"].max()])
-plt.ylim([-0.05, 1.05])
-plt.xticks([])
-plt.yticks(np.r_[0:1.25:0.25])
-plt.ylabel("Haplotypic imbalance")
+axs[0].axhline(0.5, color = "k", linestyle = ":", zorder = 0)
+axs[0].set_xlim([0, SNPs_rng["pos_gp"].max()])
+axs[0].set_ylim([-0.05, 1.05])
+axs[0].set_xticks([])
+axs[0].set_yticks(np.r_[0:1.25:0.25])
+axs[0].set_ylabel("Haplotypic imbalance")
 
 # TODO: dress up the axis to emulate chrbdy
 # utils.plot_chrbdy("/mnt/j/db/hg38/ref/cytoBand_primary.txt")
@@ -127,8 +127,6 @@ DPrunner_ph.S["flipped"] = s2ph
 mlidx = np.r_[DPrunner.likelihood_trace].argmax()
 seg2c, s2ph = DPrunner.segment_trace[mlidx], DPrunner.phase_orientations[mlidx]
 
-plt.figure(3); plt.clf()
-ax = plt.gca()
 #uidx = ph_prob == 0
 #ax.scatter(
 #  DPrunner.S.loc[uidx, "pos_gp"],
@@ -143,13 +141,13 @@ ax = plt.gca()
 #)
 
 plt_idx = DPrunner_ph.S["flipped"]
-ax.scatter(
+axs[1].scatter(
   DPrunner_ph.S.loc[plt_idx, "pos_gp"],
   DPrunner_ph.S.loc[plt_idx, "maj"]/DPrunner_ph.S.loc[plt_idx, ["min", "maj"]].sum(1),
   color = colors[cu[plt_idx] % len(colors)], marker = '.', s = 1, zorder = 3
 )
 plt_idx = ~DPrunner_ph.S["flipped"]
-ax.scatter(
+axs[1].scatter(
   DPrunner_ph.S.loc[plt_idx, "pos_gp"],
   DPrunner_ph.S.loc[plt_idx, "min"]/DPrunner_ph.S.loc[plt_idx, ["min", "maj"]].sum(1),
   color = colors[cu[plt_idx] % len(colors)], marker = '.', s = 1, zorder = 3
@@ -162,7 +160,7 @@ seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
 
 # overlay original segments
 for _, f, st, en in segs.itertuples():
-    ax.add_patch(plt.matplotlib.patches.Rectangle(
+    axs[1].add_patch(plt.matplotlib.patches.Rectangle(
       (st, f - 0.01),
       np.maximum(en - st, 500000),
       0.02,
@@ -174,19 +172,7 @@ for i, (st, en) in enumerate(seg_bdy):
     mn = DPrunner_ph._Ssum_ph(np.r_[st:en], min = True)
     mx = DPrunner_ph._Ssum_ph(np.r_[st:en], min = False)
     f = mn/(mn + mx)
-    ax.plot([DPrunner_ph.S.iloc[st]["pos_gp"], DPrunner_ph.S.iloc[en - 1]["pos_gp"]], [f, f], color = "k", linewidth = 1, zorder = 1001)
-#    ax.add_patch(plt.matplotlib.patches.Rectangle(
-#      (DPrunner_ph.S.iloc[st]["pos_gp"], f - 0.01),
-#      DPrunner_ph.S.iloc[en - 1]["pos_gp"] - DPrunner_ph.S.iloc[st]["pos_gp"],
-#      0.02,
-#      facecolor = colors[seg_cu[i] % len(colors)],
-#      edgecolor = 'k', linewidth = 0.5,
-#      fill = True, alpha = 1, zorder = 1000
-#    ))
+    axs[1].plot([DPrunner_ph.S.iloc[st]["pos_gp"], DPrunner_ph.S.iloc[en - 1]["pos_gp"]], [f, f], color = "k", linewidth = 1, zorder = 1001)
 
-plt.axhline(0.5, color = "k", linestyle = ":", zorder = 0)
-plt.xlim([0, SNPs_rng["pos_gp"].max()])
-plt.ylim([-0.05, 1.05])
-plt.xticks([])
-plt.yticks(np.r_[0:1.25:0.25])
-plt.ylabel("Haplotypic imbalance (refined)")
+axs[1].axhline(0.5, color = "k", linestyle = ":", zorder = 0)
+axs[1].set_ylabel("Haplotypic imbalance (refined)")
