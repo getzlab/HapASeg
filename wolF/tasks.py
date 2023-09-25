@@ -177,7 +177,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
             script += " --normal_coverage_csv ${normal_coverage_csv}"
         if self.conf["inputs"]["allelic_sample"] != "":
             script += " --allelic_sample ${allelic_sample}"
-        if self.conf["inputs"]["extra_covariates_bed_paths"] != "":
+        if self.conf["inputs"]["extra_covariates"] != "":
             script += " --extra_covariates_bed_paths ${extra_covariates}"
 
         return script
