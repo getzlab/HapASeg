@@ -141,6 +141,8 @@ def workflow(
   is_ffpe = False, # use FAIRE as covariate
   is_cfdna = False,  # use FAIRE (w/ cfDNA samples) as covariate
 
+  extra_covariate_beds = None,
+
   workspace = None,
   entity_type = 'pair', # terra entity type (sample, pair)
   entity_name = None,
@@ -188,7 +190,8 @@ def workflow(
         
         # reference panel
         **ref_config["ref_panel_1000g"]
-      )
+      ),
+      protect_disk = True
     )
 
     #
@@ -200,6 +203,7 @@ def workflow(
             "t_bai" : tumor_bai,
           },
         token=localization_token,
+        check_md5=True,
         persistent_disk_dry_run = persistent_dry_run
         )
         collect_tumor_coverage = True
@@ -217,6 +221,7 @@ def workflow(
             "n_bai" : normal_bai
           },
         token=localization_token,
+        check_md5=True,
         persistent_disk_dry_run = persistent_dry_run
         )
         collect_normal_coverage = True
@@ -254,7 +259,6 @@ def workflow(
     if collect_tumor_coverage:
         # create scatter intervals
         tumor_split_intervals_task = split_intervals.split_intervals(
-          jobname_suffix = "hapaseg_tumor_cov",
           bam = tumor_bam_localization_task["t_bam"],
           bai = tumor_bam_localization_task["t_bai"],
           interval_type = "bed",
@@ -294,7 +298,6 @@ def workflow(
         if collect_normal_coverage:
             # create scatter intervals
             normal_split_intervals_task = split_intervals.split_intervals(
-              jobname_suffix = "hapaseg_normal_cov",
               bam = normal_bam_localization_task["n_bam"],
               bai = normal_bam_localization_task["n_bai"],
               interval_type = "bed",
@@ -640,6 +643,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
         "faire_pickle": "" if (not is_ffpe and not is_cfdna) else (localization_task["cfdna_wes_faire_file"] if (is_cfdna and not wgs) else localization_task["faire_file"]),
         "gc_pickle":localization_task["gc_file"] if ref_config["gc_file"] != "" else "",
         "normal_coverage_csv":normal_cov_gather_task["coverage"] if use_normal_coverage else "",
+        "extra_covariates":[extra_covariate_beds] if extra_covariate_beds is not None else "",
         "ref_fasta":localization_task["ref_fasta"],
         "bin_width":bin_width,
         "wgs":wgs
