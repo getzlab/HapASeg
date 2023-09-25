@@ -203,7 +203,6 @@ def workflow(
             "t_bai" : tumor_bai,
           },
         token=localization_token,
-        check_md5=True,
         persistent_disk_dry_run = persistent_dry_run
         )
         collect_tumor_coverage = True
@@ -221,7 +220,6 @@ def workflow(
             "n_bai" : normal_bai
           },
         token=localization_token,
-        check_md5=True,
         persistent_disk_dry_run = persistent_dry_run
         )
         collect_normal_coverage = True
