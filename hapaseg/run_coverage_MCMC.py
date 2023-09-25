@@ -258,9 +258,11 @@ class CoverageMCMCRunner:
 
         ## extra covariates
         if self.f_extracov_bed_list is not None:
+            print("Loading additional covariates ...", file = sys.stderr)
             with open(self.f_extracov_bed_list, "r") as f:
-                for i, bed_file in enumerate(f.readlines()):
-                    extracov_df = pd.read_csv(bed_file, sep = "\t", header = None)
+                for i, bed_file in tqdm.tqdm(enumerate(f.readlines())):
+                    extracov_df = pd.read_csv(bed_file.rstrip(), sep = "\t", header = None).rename(columns = { 0 : "chr", 1 : "start", 2 : "end" })
+                    extracov_df["chr"] = mut.convert_chr(extracov_df["chr"])
 
                     tidx = mut.map_mutations_to_targets(cov_df, extracov_df, inplace=False, poscol = "midpoint")
                     extracov_df = extracov_df.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : f"C_extracov-{i},{x - 3}")
