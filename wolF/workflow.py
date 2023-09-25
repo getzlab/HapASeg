@@ -141,6 +141,8 @@ def workflow(
   is_ffpe = False, # use FAIRE as covariate
   is_cfdna = False,  # use FAIRE (w/ cfDNA samples) as covariate
 
+  extra_covariate_beds = None,
+
   workspace = None,
   entity_type = 'pair', # terra entity type (sample, pair)
   entity_name = None,
@@ -188,7 +190,8 @@ def workflow(
         
         # reference panel
         **ref_config["ref_panel_1000g"]
-      )
+      ),
+      protect_disk = True
     )
 
     #
@@ -640,6 +643,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
         "faire_pickle": "" if (not is_ffpe and not is_cfdna) else (localization_task["cfdna_wes_faire_file"] if (is_cfdna and not wgs) else localization_task["faire_file"]),
         "gc_pickle":localization_task["gc_file"] if ref_config["gc_file"] != "" else "",
         "normal_coverage_csv":normal_cov_gather_task["coverage"] if use_normal_coverage else "",
+        "extra_covariates":[extra_covariate_beds] if extra_covariate_beds is not None else "",
         "ref_fasta":localization_task["ref_fasta"],
         "bin_width":bin_width,
         "wgs":wgs

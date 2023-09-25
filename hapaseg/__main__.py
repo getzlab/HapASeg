@@ -154,7 +154,7 @@ def parse_args():
     preprocess_coverage_mcmc.add_argument("--repl_pickle", help="pickled dataframe containing replication timing data", required=True)
     preprocess_coverage_mcmc.add_argument("--faire_pickle", help="pickled dataframe containing FAIRE data", required=False)
     preprocess_coverage_mcmc.add_argument("--normal_coverage_csv", help="csv file in the format of the tumor coverage file, but for the normal", required=False)
-    preprocess_coverage_mcmc.add_argument("--panel_of_normals", help="path to newline delimited file listing multiple normal coverage CSVs", required=False)
+    preprocess_coverage_mcmc.add_argument("--extra_covariates_bed_paths", help="path to newline delimited file listing multiple BED files to use as additional covariates", required=False)
     preprocess_coverage_mcmc.add_argument("--gc_pickle", help="pickled dataframe containing precomputed gc content. This is not required but will speed up runtime if passed", default=None)
     preprocess_coverage_mcmc.add_argument("--allelic_sample", type=int,
                                           help="index of sample clustering from allelic DP to use as seed for segmentation. Will use most likely clustering by default",
@@ -569,7 +569,7 @@ def main():
                                              args.faire_pickle,
                                              f_GC=args.gc_pickle,
                                              f_Ncov=args.normal_coverage_csv,
-                                             f_PoN=args.panel_of_normals,
+                                             f_extracov_bed_list=args.extra_covariates_bed_paths,
                                              allelic_sample=args.allelic_sample,
                                              bin_width=args.bin_width,
                                              wgs=args.wgs)

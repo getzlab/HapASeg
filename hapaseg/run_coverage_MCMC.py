@@ -31,7 +31,7 @@ class CoverageMCMCRunner:
                  f_faire,
                  f_GC=None,
                  f_Ncov=None,
-                 f_PoN=None,
+                 f_extracov_bed_list=None,
 
                  num_draws=50,
                  cluster_num=None,
@@ -46,7 +46,7 @@ class CoverageMCMCRunner:
         self.f_faire = f_faire
         self.f_GC = f_GC
         self.f_Ncov = f_Ncov
-        self.f_PoN = f_PoN
+        self.f_extracov_bed_list = f_extracov_bed_list
         self.ref_fasta = ref_fasta
         self.bin_width = bin_width
         self.wgs = wgs
@@ -256,8 +256,17 @@ class CoverageMCMCRunner:
             )
             cov_df = cov_df.rename(columns = { "covcorr_N" : "C_normcov0" })
 
-        if self.f_PoN is not None:
-            raise NotImplementedError("PoNs are not yet supported")
+        ## extra covariates
+        if self.f_extracov_bed_list is not None:
+            print("Loading additional covariates ...", file = sys.stderr)
+            with open(self.f_extracov_bed_list, "r") as f:
+                for i, bed_file in tqdm.tqdm(enumerate(f.readlines())):
+                    extracov_df = pd.read_csv(bed_file.rstrip(), sep = "\t", header = None).rename(columns = { 0 : "chr", 1 : "start", 2 : "end" })
+                    extracov_df["chr"] = mut.convert_chr(extracov_df["chr"])
+
+                    tidx = mut.map_mutations_to_targets(cov_df, extracov_df, inplace=False, poscol = "midpoint")
+                    extracov_df = extracov_df.loc[tidx].set_index(tidx.index).iloc[:, 3:].rename(columns = lambda x : f"C_extracov-{i},{x - 3}")
+                    cov_df = pd.concat([cov_df, extracov_df], axis = 1)
 
         return cov_df
 
@@ -266,8 +275,8 @@ class CoverageMCMCRunner:
 
         ## scale covariates
 
-        # FAIRE, fragment length, and normal coverage get log z-transformed
-        lztcols = Cslice.columns.str.contains("FAIRE|frag_len|normcov")
+        # FAIRE, fragment length, normal coverage, and any extra covariates get log z-transformed
+        lztcols = Cslice.columns.str.contains("FAIRE|frag_len|normcov|extracov")
         cov_df = pd.concat([
           cov_df,
           Cslice.loc[:, lztcols].apply(lambda x : zt(np.log(x + 1))).rename(columns = lambda x : x + "_lz")
