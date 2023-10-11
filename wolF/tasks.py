@@ -381,7 +381,7 @@ class Hapaseg_run_acdp(wolf.Task):
         "acdp_optimal_fit_params": "acdp_optimal_fit_params.txt"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1158"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1246"
     resources = { "cpus-per-task":4, "mem" : "6G"}
 
 class Hapaseg_summary_plot(wolf.Task):
