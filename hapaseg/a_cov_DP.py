@@ -369,6 +369,7 @@ class AllelicCoverage_DP_runner:
 
             pd.options.mode.chained_assignment = None
             segs_df["f"] = segs_df["min_count"]/(segs_df["min_count"] + segs_df["maj_count"])
+            segs_df["f"] = np.minimum(1 - segs_df["f"], segs_df["f"])
 
             segs_df["tau"] = segs_df["mu.major"] + segs_df["mu.minor"]
             segs_df["sigma.tau"] = np.sqrt(segs_df["sigma.major"]**2 + segs_df["sigma.minor"]**2)
