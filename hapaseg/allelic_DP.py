@@ -16,7 +16,7 @@ import sortedcontainers as sc
 from capy import seq
 
 class A_DP:
-    def __init__(self, allelic_segs_pickle, wgs, ref_fasta = None):
+    def __init__(self, allelic_segs_pickle, wgs, ref_fasta = None, min_seg_len = 0, min_seg_snps = 0):
         # dataframe of allelic imbalance segmentation samples for each chromosome arm
         self.allelic_segs = pd.read_pickle(allelic_segs_pickle).dropna(axis = 0)
         # if some chromsome arms couldn't find the MLE, just use current state of chain
@@ -45,6 +45,11 @@ class A_DP:
             S["clust"] = -1
             bpl = np.array(H["results"].breakpoints_MLE); bpl = np.c_[bpl[0:-1], bpl[1:]]
             for i, (st, en) in enumerate(bpl):
+                # remove segments that are too short/have too few SNPs
+                if (min_seg_len > 0 and S.iloc[en - 1]["pos"] - S.iloc[st]["pos"] < min_seg_len) \
+                or (min_seg_snps > 0 and en - st < min_seg_snps):
+                    clust_offset -= 1
+                    continue
                 S.iloc[st:en, S.columns.get_loc("clust")] = i + clust_offset
             clust_offset += i + 1
 
@@ -55,6 +60,7 @@ class A_DP:
             self.SNPs.append(S)
 
         self.SNPs = pd.concat(self.SNPs, ignore_index = True)
+        self.SNPs = self.SNPs.loc[self.SNPs["clust"] != -1].reset_index(drop = True)
 
         # convert chr-relative positions to absolute genomic coordinates
         self.ref_fasta = ref_fasta
