@@ -19,12 +19,12 @@ class A_DP:
     def __init__(self, allelic_segs_pickle, wgs, ref_fasta = None, min_seg_len = 0, min_seg_snps = 0):
         if min_seg_len != 0:
             try:
-                min_seg_len=int(min_seg_len)
+                min_seg_len=int(float(min_seg_len))
             except ValueError as ex:
                 print('"%s" cannot be converted to an integer: %s' % (min_seg_len, ex))
         if min_seg_snps != 0:
             try:
-                min_seg_snps=int(min_seg_snps)
+                min_seg_snps=int(float(min_seg_snps))
             except ValueError as ex:
                 print('"%s" cannot be converted to an integer: %s' % (min_seg_snps, ex))
 
