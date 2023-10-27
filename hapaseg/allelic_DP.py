@@ -17,6 +17,17 @@ from capy import seq
 
 class A_DP:
     def __init__(self, allelic_segs_pickle, wgs, ref_fasta = None, min_seg_len = 0, min_seg_snps = 0):
+        if min_seg_len != 0:
+            try:
+                min_seg_len=int(min_seg_len)
+            except ValueError as ex:
+                print('"%s" cannot be converted to an integer: %s' % (min_seg_len, ex))
+        if min_seg_snps != 0:
+            try:
+                min_seg_snps=int(min_seg_snps)
+            except ValueError as ex:
+                print('"%s" cannot be converted to an integer: %s' % (min_seg_snps, ex))
+
         # dataframe of allelic imbalance segmentation samples for each chromosome arm
         self.allelic_segs = pd.read_pickle(allelic_segs_pickle).dropna(axis = 0)
         # if some chromsome arms couldn't find the MLE, just use current state of chain
