@@ -15,14 +15,21 @@ from wolf.localization import LocalizeToDisk, DeleteDisk
 # for genotyping het sites/getting het site coverage
 het_pulldown = wolf.ImportTask(
   task_path = 'git@github.com:getzlab/het_pulldown_from_callstats_TOOL.git',
-  commit = "6c17fcb",
+  commit = "f1d2f0e",
   main_task = "get_het_coverage_from_callstats"
 )
+
 
 mutect1 = wolf.ImportTask(
   task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
   main_task = "mutect1",
   commit = "d98b8f2"
+)
+
+# for mutect gather
+deTiN_tasks = wolf.ImportTask(
+    task_path = "git@github.com:getzlab/DeTiN_postprocess_TOOL.git",
+    commit = "708e9a7"
 )
 
 # for phasing
@@ -119,7 +126,8 @@ def workflow(
   normal_bai = None,
   normal_coverage_bed = None,
 
-  tumor_only_genotyping = False,
+  tumor_only_genotyping = False, # backend way of changing to tumor only genotyping; if pipeline is run in tumor_only mode, should automatically set to True
+  tumor_only = False,
 
   single_ended = False, # coverage collection differs depending on whether BAM is paired end
 
@@ -171,7 +179,7 @@ def workflow(
         ref_config = _hg38_config_gen(wgs)
     else:
         raise ValueError("Reference genome options are 'hg19' or hg38', got {}".format(ref_genome_build))
-        
+
     localization_task = LocalizeToDisk(
       files = dict(
         ref_fasta = ref_config["ref_fasta"],
@@ -341,7 +349,7 @@ def workflow(
             ref_fasta = localization_task["ref_fasta"],
             ref_fasta_idx = localization_task["ref_fasta_idx"],
             ref_fasta_dict = localization_task["ref_fasta_dict"],
-            use_pod_genotyper = True,
+            method = "mixture_model",
             tumor_only = tumor_only_genotyping,
             pod_min_depth = 10 if wgs else 4, # normal min genotyping depth; set lower for exomes due to bait falloff (normal coverage in flanking regions will be proportionally much lower than tumor coverage)
             min_tumor_depth = 1 if wgs else 10 # tumor min coverage; set higher for exomes due to off-target signal being noisier
@@ -380,8 +388,8 @@ def workflow(
 
           t_bam = tumor_bam_localization_task["t_bam"],
           t_bai = tumor_bam_localization_task["t_bai"],
-          n_bam = normal_bam_localization_task["n_bam"] if not tumor_only_genotyping else "",
-          n_bai = normal_bam_localization_task["n_bai"] if not tumor_only_genotyping else "",
+          n_bam = normal_bam_localization_task["n_bam"] if not tumor_only else "",
+          n_bai = normal_bam_localization_task["n_bai"] if not tumor_only else "",
 
           fracContam = 0,
 
@@ -396,42 +404,40 @@ def workflow(
           force_calling = True,
         ))
 
-        hp_scatter = het_pulldown(
+        #running gather on mutect intervals
+        gatherMutect1 = deTiN_tasks.gatherMuTect1(
+          inputs={
+            'pairName' : "het_coverage",
+            'ctrlName' : "normal",
+            'caseName' : "tumor",
+            'mutect1_cs' : [m1_task["mutect1_cs"]],
+            'mutect1_vcf': [m1_task["mutect1_vcf"]]
+          }
+        )
+        
+        hp_coverage = het_pulldown.get_het_coverage_from_callstats(
           inputs = dict(
-            callstats_file = m1_task["mutect1_cs"],
+            callstats_file = gatherMutect1["mutect1_cs"],
             common_snp_list = localization_task["common_snp_list"],
             ref_fasta = localization_task["ref_fasta"],
             ref_fasta_idx = localization_task["ref_fasta_idx"],
             ref_fasta_dict = localization_task["ref_fasta_dict"],
-            use_pod_genotyper = True,
+            method = "mixture_model",
             tumor_only = tumor_only_genotyping,
             pod_min_depth = 10 if wgs else 4, # normal min genotyping depth; set lower for exomes due to bait falloff (normal coverage in flanking regions will be proportionally much lower than tumor coverage)
             min_tumor_depth = 1 if wgs else 10 # tumor min coverage; set higher for exomes due to off-target signal being noisier
           )
         )
 
-        # gather het pulldown
-        hp_task = wolf.Task(
-          name = "hp_gather",
-          inputs = {
-            "tumor_hets" : [hp_scatter["tumor_hets"]],
-            "normal_hets" : [hp_scatter["normal_hets"]],
-            "normal_genotype" : [hp_scatter["normal_genotype"]],
-          },
-          script = """
-          cat <(cat $(head -n1 ${normal_genotype}) | head -n1) \
-            <(for f in $(cat ${normal_genotype}); do sed 1d $f; done | sort -k1,1V -k2,2n) > normal_genotype.txt
-          cat <(cat $(head -n1 ${normal_hets}) | head -n1) \
-            <(for f in $(cat ${normal_hets}); do sed 1d $f; done | sort -k1,1V -k2,2n) > normal_hets.txt
-          cat <(cat $(head -n1 ${tumor_hets}) | head -n1) \
-            <(for f in $(cat ${tumor_hets}); do sed 1d $f; done | sort -k1,1V -k2,2n) > tumor_hets.txt
-          """,
-          outputs = {
-            "tumor_hets" : "tumor_hets.txt",
-            "normal_hets" : "normal_hets.txt",
-            "normal_genotype" : "normal_genotype.txt",
-          }
-        )
+        # hp_gather = het_pulldown.gather_het_coverage(
+        #     inputs = {
+        #         "tumor_hets" : hp_coverage["tumor_hets"],
+        #         "normal_hets" : hp_coverage["normal_hets"],
+        #         "normal_genotype" : hp_coverage["normal_genotype"]
+        #     }
+        # )
+
+
 
     else:
         raise ValueError("You must either provide a callstats file or tumor+normal BAMs to collect SNP coverage")
@@ -443,7 +449,7 @@ def workflow(
         convert_task = wolf.Task(
           name = "convert_het_pulldown",
           inputs = {
-            "genotype_file" : hp_task["normal_genotype"],
+            "genotype_file" : hp_coverage["normal_genotype"],
             "sample_name" : "test", # TODO: allow to be specified
             "ref_fasta" : localization_task["ref_fasta"],
             "ref_fasta_idx" : localization_task["ref_fasta_idx"],
@@ -532,8 +538,8 @@ def workflow(
     hapaseg_load_snps_task = hapaseg.Hapaseg_load_snps(
       inputs = {
         "phased_VCF" : combine_task["combined_vcf"],
-        "tumor_allele_counts" : hp_task["tumor_hets"],
-        "normal_allele_counts" : hp_task["normal_hets"],
+        "tumor_allele_counts" : hp_coverage["tumor_hets"],
+        "normal_allele_counts" : hp_coverage["normal_hets"],
         "cytoband_file" : localization_task["cytoband_file"],
         "ref_file_path": localization_task["ref_fasta"]
       }
@@ -854,8 +860,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
         )
     
     output_dict = {
-                   "tumor_hets":  hp_task["tumor_hets"],
-                   "normal_hets": hp_task["normal_hets"],
+                   "tumor_hets":  hp_coverage["tumor_hets"],
+                   "normal_hets": hp_coverage["normal_hets"],
                    "ref_bias": hapaseg_concat_task["ref_bias"],
                    "coverage_mcmc_segplot": cov_mcmc_gather_task["seg_plot"],
                    "ADP_plot": hapaseg_allelic_DP_task["SNP_plot"],
