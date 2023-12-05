@@ -417,7 +417,7 @@ def workflow(
           }
         )
         
-        hp_coverage = het_pulldown.get_het_coverage_from_callstats(
+        hp_coverage = het_pulldown(
           inputs = dict(
             callstats_file = gatherMutect1["mutect1_cs"],
             common_snp_list = localization_task["common_snp_list"],
