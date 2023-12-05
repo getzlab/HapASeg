@@ -374,7 +374,7 @@ def workflow(
           name = "split_het_sites",
           inputs = {
             "snp_list" : localization_task["common_snp_list"],
-            "chunk_size" : 10000 if wgs else 50000
+            "chunk_size" : 10000 if wgs else 150000
           },
           script = """
           grep '^@' ${snp_list} > header
