@@ -269,7 +269,8 @@ def workflow(
           bam = tumor_bam_localization_task["t_bam"],
           bai = tumor_bam_localization_task["t_bai"],
           interval_type = "bed",
-          selected_chrs = primary_contigs
+          selected_chrs = primary_contigs,
+          N = 100 if wgs else 20
         )
 
         tumor_subset_intervals = interval_gather(
@@ -309,7 +310,8 @@ def workflow(
               bam = normal_bam_localization_task["n_bam"],
               bai = normal_bam_localization_task["n_bai"],
               interval_type = "bed",
-              selected_chrs = primary_contigs
+              selected_chrs = primary_contigs,
+              N = 100 if wgs else 20
             )
 
             normal_subset_intervals = interval_gather(
