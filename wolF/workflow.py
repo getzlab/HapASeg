@@ -128,6 +128,7 @@ def workflow(
 
   tumor_only_genotyping = False, # backend way of changing to tumor only genotyping; if pipeline is run in tumor_only mode, should automatically set to True
   tumor_only = False,
+  genotyping_method = "mixture_model",
 
   single_ended = False, # coverage collection differs depending on whether BAM is paired end
 
@@ -351,7 +352,7 @@ def workflow(
             ref_fasta = localization_task["ref_fasta"],
             ref_fasta_idx = localization_task["ref_fasta_idx"],
             ref_fasta_dict = localization_task["ref_fasta_dict"],
-            method = "mixture_model",
+            method = genotyping_method,
             tumor_only = tumor_only_genotyping,
             pod_min_depth = 10 if wgs else 4, # normal min genotyping depth; set lower for exomes due to bait falloff (normal coverage in flanking regions will be proportionally much lower than tumor coverage)
             min_tumor_depth = 1 if wgs else 10 # tumor min coverage; set higher for exomes due to off-target signal being noisier
@@ -424,7 +425,7 @@ def workflow(
             ref_fasta = localization_task["ref_fasta"],
             ref_fasta_idx = localization_task["ref_fasta_idx"],
             ref_fasta_dict = localization_task["ref_fasta_dict"],
-            method = "mixture_model",
+            method = genotyping_method,
             tumor_only = tumor_only_genotyping,
             pod_min_depth = 10 if wgs else 4, # normal min genotyping depth; set lower for exomes due to bait falloff (normal coverage in flanking regions will be proportionally much lower than tumor coverage)
             min_tumor_depth = 1 if wgs else 10 # tumor min coverage; set higher for exomes due to off-target signal being noisier
