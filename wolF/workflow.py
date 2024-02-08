@@ -378,6 +378,7 @@ def workflow(
             "chunk_size" : 10000 if wgs else 150000
           },
           script = """
+          set -eux
           grep '^@' ${snp_list} > header
           sed '/^@/d' ${snp_list} | split -l ${chunk_size} -d -a 4 --filter 'cat header /dev/stdin > $FILE' --additional-suffix '.picard' - snp_list_chunk
           """,
@@ -459,7 +460,7 @@ def workflow(
             "ref_fasta_dict" : localization_task["ref_fasta_dict"],
           }, 
           script = r"""
-        set -x
+        set -eux
         bcftools convert --tsv2vcf ${genotype_file} -c CHROM,POS,AA -s ${sample_name} \
           -f ${ref_fasta} -Ou -o all_chrs.bcf && bcftools index all_chrs.bcf
         for chr in $(bcftools view -h all_chrs.bcf | ssed -nR '/^##contig/s/.*ID=(.*),.*/\1/p' | head -n24); do
