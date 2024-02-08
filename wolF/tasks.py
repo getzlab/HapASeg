@@ -53,7 +53,7 @@ class Hapaseg_burnin(wolf.Task):
     output_patterns = {
       "burnin_MCMC" : "amcmc_results.pickle"
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v617"
 
 class Hapaseg_concat(wolf.Task):
     inputs = {
@@ -68,7 +68,7 @@ class Hapaseg_concat(wolf.Task):
       "arms" : "AMCMC-arm*.pickle",
       "ref_bias" : ("ref_bias.txt", wolf.read_file)
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v617"
 
 class Hapaseg_amcmc(wolf.Task):
     inputs = {
@@ -82,10 +82,10 @@ class Hapaseg_amcmc(wolf.Task):
             --n_iter ${n_iter}
     """
     output_patterns = {
-      "arm_level_MCMC" : "amcmc_results.pickle"
+      "arm_level_MCMC" : "amcmc_results.pickle",
+      "segmentation_plot" : "figures/MLE_segmentation.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
-
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_SNPs_v617"
 
 class Hapaseg_concat_arms(wolf.Task):
     inputs = {
@@ -103,76 +103,68 @@ class Hapaseg_concat_arms(wolf.Task):
     }
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
 
-
 class Hapaseg_allelic_DP(wolf.Task):
     inputs = {
       "seg_dataframe" : None,
-      "n_dp_iter" : 10,
-      "seg_samp_idx" : 0,
       "ref_fasta" : None,
       "cytoband_file" : None
     }
     script = """
     export CAPY_REF_FA=${ref_fasta}
     hapaseg dp --seg_dataframe ${seg_dataframe} \
-            --n_dp_iter ${n_dp_iter} \
-            --seg_samp_idx ${seg_samp_idx} \
             --ref_fasta ${ref_fasta} \
             --cytoband_file ${cytoband_file}
     """
     output_patterns = {
       "cluster_and_phase_assignments" : "allelic_DP_SNP_clusts_and_phase_assignments.npz",
       "all_SNPs" : "all_SNPs.pickle",
+      "segmentation_breakpoints" : "segmentations.pickle",
+      "likelihood_trace_plot" : "figures/likelihood_trace.png",
       "SNP_plot" : "figures/SNPs.png",
-      "seg_plot" : "figures/allelic_imbalance_preDP.png",
-      "clust_plot" : "figures/allelic_imbalance_postDP.png",
+      "seg_plot" : "figures/segs_only.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
-    resources = { "mem" : "5G" }
-class Hapaseg_collect_adp(wolf.Task):
-    inputs = {
-        "dp_results":None
-    }
-    
-    script = """
-    hapaseg collect_adp --dp_results ${dp_results}
-    """
-    output_patterns = {
-        "full_dp_results":"full_dp_results.npz"
-    }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
-    resources = { "mem" : "5G" }
-
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v813"
+    resources = { "mem" : "8G" }
 
 class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     inputs = {
         "coverage_csv": None,
         "allelic_clusters_object": None,
         "SNPs_pickle": None,
+        "segmentations_pickle": None,
         "repl_pickle": None,
+        "faire_pickle": "/mnt/j/proj/cnv/20201018_hapseg2/covars/FAIRE_GM12878.hg19.pickle", # TODO: make remote
         "gc_pickle":"",
         "allelic_sample":"",
-        "ref_file_path": None
+        "ref_fasta": None,
+        "bin_width" : 1 # only for whole genomes; for exomes, target lengths are passed as a covariate via the coverage CSV
     }
-    script = """
-    export CAPY_REF_FA=${ref_file_path}
-    hapaseg coverage_mcmc_preprocess --coverage_csv ${coverage_csv} \
-    --allelic_clusters_object ${allelic_clusters_object} \
-    --SNPs_pickle ${SNPs_pickle} \
-    --repl_pickle ${repl_pickle}"""
+    def script(self):
+        script = """
+        hapaseg coverage_mcmc_preprocess --coverage_csv ${coverage_csv} \
+        --ref_fasta ${ref_fasta} \
+        --allelic_clusters_object ${allelic_clusters_object} \
+        --SNPs_pickle ${SNPs_pickle} \
+        --segmentations_pickle ${segmentations_pickle} \
+        --repl_pickle ${repl_pickle} \
+        --faire_pickle ${faire_pickle} \
+        --bin_width ${bin_width}
+        """
     
-    def prolog(self):
         if self.conf["inputs"]["gc_pickle"] != "":
-            self.conf["script"][-1] += " --gc_pickle ${gc_pickle}"
+            script += " --gc_pickle ${gc_pickle} "
         if self.conf["inputs"]["allelic_sample"] != "":
-            self.conf["script"][-1] += " --allelic_sample ${allelic_sample}"
+            script += " --allelic_sample ${allelic_sample}"
+
+        return script
 
     output_patterns = {
         "preprocess_data": "preprocess_data.npz",
-        "cov_df_pickle": "cov_df.pickle"
+        "cov_df_pickle": "cov_df.pickle",
+        "allelic_seg_groups": "allelic_seg_groups.pickle"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v858"
     resources = { "mem" : "15G" }
 
 
@@ -205,16 +197,18 @@ class Hapaseg_coverage_mcmc_burnin(wolf.Task):
 
 class Hapaseg_coverage_mcmc(wolf.Task):
     inputs = {
-        "preprocess_data": None,
+        "preprocess_data": None,      # npz of covariate matrix (C), global beta, ADP cluster mu's, covbin ADP cluster assignments (all_mu), covbin raw coverage values (r)
+        "allelic_seg_indices": None,  # dataframe containing indicies into C/r/all_mu for each allelic segment
+        "allelic_seg_scatter_idx": None,      # allelic segment to operate on (for scatter)
         "num_draws": 50,
-        "cluster_num": None,
         "bin_width":None,
         "burnin_files":""
     }
     script = """
     hapaseg coverage_mcmc_shard --preprocess_data ${preprocess_data} \
+    --allelic_seg_indices ${allelic_seg_indices} \
+    --allelic_seg_idx ${allelic_seg_scatter_idx} \
     --num_draws ${num_draws} \
-    --cluster_num ${cluster_num} \
     --bin_width ${bin_width}"""
      
     def prolog(self):
@@ -222,13 +216,13 @@ class Hapaseg_coverage_mcmc(wolf.Task):
             self.conf["script"][-1] += " --burnin_files ${burnin_files}"
     
     output_patterns = {
-        "cov_segmentation_model": 'cov_mcmc_model_cluster_*.pickle',
-        "cov_segmentation_data": 'cov_mcmc_data_cluster_*.npz',
-        "cov_seg_figure": 'cov_mcmc_cluster_*_visual.png'
+        "cov_segmentation_model": 'cov_mcmc_model_*.pickle',
+        "cov_segmentation_data": 'cov_mcmc_data_*.npz',
+        "cov_seg_figure": 'cov_mcmc_*_visual.png'
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_v623"
-    resources = {"mem" : "5G"}
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:coverage_mcmc_integration_v856"
+    resources = {"mem" : "10G"}
 
 class Hapaseg_collect_coverage_mcmc(wolf.Task):
     inputs = {

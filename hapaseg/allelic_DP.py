@@ -1,5 +1,6 @@
 import colorama
 import copy
+import distinctipy
 import itertools
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -17,320 +18,82 @@ from capy import seq
 class A_DP:
     def __init__(self, allelic_segs_pickle, ref_fasta = None):
         # dataframe of allelic imbalance segmentation samples for each chromosome arm
-        self.allelic_segs = pd.read_pickle(allelic_segs_pickle).dropna(0)
-        self.allelic_segs = self.allelic_segs.loc[self.allelic_segs["results"].apply(lambda x : len(x.breakpoint_list)) > 0]
+        self.allelic_segs = pd.read_pickle(allelic_segs_pickle).dropna(axis = 0)
+        # if some chromsome arms couldn't find the MLE, just use current state of chain
+        none_idx = self.allelic_segs["results"].apply(lambda x : x.breakpoints_MLE is None)
+        for i in none_idx[none_idx].index:
+            self.allelic_segs.iloc[i]["results"].breakpoints_MLE = self.allelic_segs.iloc[i]["results"].breakpoints
 
-        # number of total segmentation samples
-        self.n_samp = self.allelic_segs["results"].apply(lambda x : len(x.breakpoint_list)).min()
+        # load SNPs
+        self.SNPs = []
+        clust_offset = 0
+        for _, H in self.allelic_segs.iterrows():
+            S = copy.deepcopy(H["results"].P)
+            S["A_alt"] = 0
+            S.loc[S["aidx"], "A_alt"] = S.loc[S["aidx"], "ALT_COUNT"]
+            S["A_ref"] = 0
+            S.loc[S["aidx"], "A_ref"] = S.loc[S["aidx"], "REF_COUNT"]
+            S["B_alt"] = 0
+            S.loc[~S["aidx"], "B_alt"] = S.loc[~S["aidx"], "ALT_COUNT"]
+            S["B_ref"] = 0
+            S.loc[~S["aidx"], "B_ref"] = S.loc[~S["aidx"], "REF_COUNT"]
+
+            S = S.rename(columns = { "MIN_COUNT" : "min", "MAJ_COUNT" : "maj" })
+            S = S.loc[:, ["chr", "pos", "min", "maj", "A_alt", "A_ref", "B_alt", "B_ref"]]
+
+            # set initial cluster assignments based on segmentation
+            S["clust"] = -1
+            bpl = np.array(H["results"].breakpoints_MLE); bpl = np.c_[bpl[0:-1], bpl[1:]]
+            for i, (st, en) in enumerate(bpl):
+                S.iloc[st:en, S.columns.get_loc("clust")] = i + clust_offset
+            clust_offset += i
+
+            # bug in segmentation omits final SNP?
+            S = S.iloc[:-1]
+            assert (S["clust"] != -1).all()
+
+            self.SNPs.append(S)
+
+        self.SNPs = pd.concat(self.SNPs, ignore_index = True)
+
+        # convert chr-relative positions to absolute genomic coordinates
         self.ref_fasta = ref_fasta
+        self.SNPs["pos_gp"] = seq.chrpos2gpos(self.SNPs["chr"], self.SNPs["pos"], ref = self.ref_fasta)
 
-        # DP run objects for each segmentation sample
-        self.DP_runs = None
+        # initial phasing orientation
+        self.SNPs["flipped"] = False
 
-        # dataframe of SNPs
-        self.SNPs = None
-
-        # number of segmentation samples used for DP run
-        self.N_seg_samps = None
-        # number of DP samples per segmentation sample
-        self.N_clust_samps = None
+        self.N_clust_samps = 100
 
         # assignment of SNPs to DP clusters for each MCMC sample
         self.snps_to_clusters = None
         # phase correction of SNPs for each MCMC sample
         self.snps_to_phases = None
+        # likelihoods of each clustering
+        self.likelihoods = None
 
-    def load_seg_samp(self, samp_idx):
-        if samp_idx > self.n_samp:
-            raise ValueError(f"Only {self.n_samp} MCMC samples were taken!")
+    def run(self):
+        self.DP_run = DPinstance(
+          self.SNPs,
+          dp_count_scale_factor = self.SNPs["clust"].value_counts().mean()
+        )
+        self.snps_to_clusters, self.snps_to_phases, self.likelihoods = self.DP_run.run(n_samps = self.N_clust_samps)
 
-        all_segs = []
-        all_SNPs = []
-
-        maj_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("MAJ_COUNT")
-        min_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("MIN_COUNT")
-
-        alt_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("ALT_COUNT")
-        ref_idx = self.allelic_segs["results"].iloc[0].P.columns.get_loc("REF_COUNT")
-
-        chunk_offset = 0
-        for _, H in self.allelic_segs.dropna(subset = ["results"]).iterrows():
-            r = copy.deepcopy(H["results"])
-
-            # set phasing orientation back to original
-            for st, en in r.F.intervals():
-                # code excised from flip_hap
-                x = r.P.iloc[st:en, maj_idx].copy()
-                r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
-                r.P.iloc[st:en, min_idx] = x
-
-            # save SNPs for this chunk
-            if self.SNPs is None:
-                all_SNPs.append(pd.DataFrame({
-                  "maj" : r.P["MAJ_COUNT"],
-                  "min" : r.P["MIN_COUNT"],
-                  # TODO: gpos should be computed earlier, so that that we don't need to pass ref_fasta here
-                  "gpos" : seq.chrpos2gpos(r.P.loc[0, "chr"], r.P["pos"], ref = self.ref_fasta),
-                  "allele" : r.P["allele_A"]
-                }))
-
-            # draw breakpoint, phasing, and SNP inclusion sample from segmentation MCMC trace
-            bp_samp, pi_samp, inc_samp = (r.breakpoint_list[samp_idx], r.phase_interval_list[samp_idx] if r.phase_correct else None, r.include[samp_idx])
-            # flip everything according to sample
-            if r.phase_correct:
-                for st, en in pi_samp.intervals():
-                    x = r.P.iloc[st:en, maj_idx].copy()
-                    r.P.iloc[st:en, maj_idx] = r.P.iloc[st:en, min_idx]
-                    r.P.iloc[st:en, min_idx] = x
-
-            bpl = np.array(bp_samp); bpl = np.c_[bpl[0:-1], bpl[1:]]
-
-            # get major/minor sums for each segment
-            # also get {alt, ref} x {aidx, bidx}
-            for st, en in bpl:
-                all_segs.append([
-                  st + chunk_offset, en + chunk_offset,                        # SNP index for seg
-                  r.P.loc[st, "chr"], r.P.loc[st, "pos"], r.P.loc[en, "pos"],  # chromosomal position of seg
-                  r._Piloc(st, en, min_idx, inc_samp).sum(),                   # min/maj counts
-                  r._Piloc(st, en, maj_idx, inc_samp).sum(),
-
-                  r._Piloc(st, en, alt_idx, inc_samp & r.P["aidx"]).sum(),     # allele A alt/ref
-                  r._Piloc(st, en, ref_idx, inc_samp & r.P["aidx"]).sum(),
-                  r._Piloc(st, en, alt_idx, inc_samp & ~r.P["aidx"]).sum(),    # allele B alt/ref
-                  r._Piloc(st, en, ref_idx, inc_samp & ~r.P["aidx"]).sum()
-                ])
-
-            chunk_offset += len(r.P)
-
-        # convert samples into dataframe
-        S = pd.DataFrame(all_segs, columns = ["SNP_st", "SNP_en", "chr", "start", "end", "min", "maj", "A_alt", "A_ref", "B_alt", "B_ref"])
-
-        # convert chr-relative positions to absolute genomic coordinates
-        S["start_gp"] = seq.chrpos2gpos(S["chr"], S["start"], ref = self.ref_fasta)
-        S["end_gp"] = seq.chrpos2gpos(S["chr"], S["end"], ref = self.ref_fasta)
-
-        # initial cluster assignments
-        S["clust"] = -1 # initially, all segments are unassigned
-        S.iloc[0, S.columns.get_loc("clust")] = 1 # first segment is assigned to cluster 1
-
-        # initial phasing orientation
-        S["flipped"] = False
-
-        if self.SNPs is None:
-            self.SNPs = pd.concat(all_SNPs, ignore_index = True)
-            CI = s.beta.ppf([0.05, 0.5, 0.95], self.SNPs["min"].values[:, None] + 1, self.SNPs["maj"].values[:, None] + 1)
-            self.SNPs[["f_CI_lo", "f", "f_CI_hi"]] = CI
-
-        return S, self.SNPs
-
-    # map trace of segment cluster assignments to the SNPs within
-    @staticmethod
-    def map_seg_clust_assignments_to_SNPs(segs_to_clusters, S):
-        st_col = S.columns.get_loc("SNP_st")
-        en_col = S.columns.get_loc("SNP_en")
-        snps_to_clusters = np.zeros((segs_to_clusters.shape[0], S.iloc[-1, en_col] + 1), dtype = int)
-        for i, seg_assign in enumerate(segs_to_clusters):
-            for j, seg in enumerate(seg_assign):
-                snps_to_clusters[i, S.iloc[j, st_col]:S.iloc[j, en_col]] = seg
-
-        return snps_to_clusters
-
-    @staticmethod
-    def map_seg_phases_to_SNPs(phase, S):
-        st_col = S.columns.get_loc("SNP_st")
-        en_col = S.columns.get_loc("SNP_en")
-        snps_to_phase = np.zeros((phase.shape[0], S.iloc[-1, en_col] + 1), dtype = int)
-        for i, phase_orient in enumerate(phase):
-            for j, ph in enumerate(phase_orient):
-                snps_to_phase[i, S.iloc[j, st_col]:S.iloc[j, en_col]] = ph
-
-        return snps_to_phase
-
-    def run(self, N_seg_samps = 50, N_clust_samps = 5, seg_sample_idx = None):
-        self.N_seg_samps = N_seg_samps if seg_sample_idx is None else 1
-        self.N_clust_samps = N_clust_samps
-
-        seg_sample_idx = np.random.choice(self.n_samp - 1, self.N_seg_samps, replace = False) if seg_sample_idx is None else [seg_sample_idx]
-        S, SNPs = self.load_seg_samp(seg_sample_idx[0])
-        N_SNPs = len(SNPs)
-        
-        self.snps_to_clusters = -1*np.ones((self.N_clust_samps*self.N_seg_samps, N_SNPs), dtype = np.int16)
-        self.snps_to_phases = np.zeros((self.N_clust_samps*self.N_seg_samps, N_SNPs), dtype = bool)
-        self.DP_likelihoods = np.zeros((self.N_clust_samps*self.N_seg_samps, 2))
-
-        self.DP_runs = [None]*self.N_seg_samps
-
-        clust_prior = sc.SortedDict()
-        clust_count_prior = sc.SortedDict()
-        n_iter_clust_exist = sc.SortedDict()
-        cur_samp_iter = 0
-
-        for n_it in range(self.N_seg_samps):
-            if n_it > 0:
-                S, SNPs = self.load_seg_samp(seg_sample_idx[n_it])
-
-            # run clustering
-            self.DP_runs[n_it] = DPinstance(S, clust_prior = clust_prior, clust_count_prior = clust_count_prior)
-            segs_to_clusters, segs_to_phases = self.DP_runs[n_it].run(n_iter = self.N_clust_samps)
-
-            # compute likelihoods for each clustering
-            self.DP_likelihoods[self.N_clust_samps*n_it:self.N_clust_samps*(n_it + 1), :] = self.DP_runs[n_it].compute_overall_lik()
-
-            # assign clusters to individual SNPs, to use as segment assignment prior for next DP iteration
-            self.snps_to_clusters[self.N_clust_samps*n_it:self.N_clust_samps*(n_it + 1), :] = self.map_seg_clust_assignments_to_SNPs(segs_to_clusters, S)
-
-            # assign phase orientations to individual SNPs
-            self.snps_to_phases[self.N_clust_samps*n_it:self.N_clust_samps*(n_it + 1), :] = self.map_seg_phases_to_SNPs(segs_to_phases, S)
-
-            # compute prior on cluster locations/counts
-            max_clust_idx = segs_to_clusters.max()
-            for seg_assignments, seg_phases in zip(segs_to_clusters, segs_to_phases):
-                # reset phases
-                S2 = S.copy()
-                S2.loc[S2["flipped"], ["min", "maj"]] = S2.loc[S2["flipped"], ["min", "maj"]].values[:, ::-1]
-
-                # match phases to current sample
-                S2.loc[seg_phases, ["min", "maj"]] = S2.loc[seg_phases, ["min", "maj"]].values[:, ::-1]
-
-                # minor/major counts for each cluster in this iteration
-                S_a = npg.aggregate(seg_assignments, S2["min"], size = max_clust_idx + 1)
-                S_b = npg.aggregate(seg_assignments, S2["maj"], size = max_clust_idx + 1)
-                c = np.c_[S_a, S_b]
-
-                # total numer of SNPs for each cluster in this iteration
-                #N_c = npg.aggregate(seg_assignments, S2["SNP_en"] - S2["SNP_st"], size = max_clust_idx + 1)
-                N_c = npg.aggregate(seg_assignments, 1, size = max_clust_idx + 1)
-
-                # iteratively update priors
-                next_clust_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), c[c.sum(1) > 0]))
-                next_clust_count_prior = sc.SortedDict(zip(np.flatnonzero(c.sum(1) > 0), N_c[N_c > 0]))
-
-                for cl in np.unique(seg_assignments):
-                    if cl in n_iter_clust_exist:
-                        n_iter_clust_exist[cl] += 1
-                    else:
-                        n_iter_clust_exist[cl] = 1
-                cur_samp_iter += 1
-
-                for k, v in next_clust_prior.items():
-                    nccp = next_clust_count_prior[k]
-                    if k in clust_prior:
-                        clust_prior[k] += (v - clust_prior[k])/n_iter_clust_exist[k]
-                        clust_count_prior[k] += (nccp - clust_count_prior[k])/cur_samp_iter
-                    else:
-                        clust_prior[k] = v
-                        clust_count_prior[k] = nccp/cur_samp_iter
-                # for clusters that don't exist in this iteration, average counts with zero
-                for k, v in clust_prior.items():
-                    if k != -1 and k not in next_clust_prior:
-                        clust_count_prior[k] -= clust_count_prior[k]/cur_samp_iter
-
-
-            # remove improbable clusters from prior
-            for kk in [k for k, v in clust_count_prior.items() if v < 1]:
-                del clust_prior[kk]
-                del clust_count_prior[kk]
-
-            # remove garbage cluster from priors
-            #del clust_prior[0]
-            #del clust_count_prior[0]
-
-        return self.snps_to_clusters, self.snps_to_phases, self.DP_likelihoods
-
-    def visualize_segs(self, snps_to_clusters = None, f = None, n_vis_samp = None):
-        f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
-
-        snps_to_clusters = snps_to_clusters if snps_to_clusters is not None else self.snps_to_clusters
-
-        # plot all samples from DP
-        if n_vis_samp is None:
-            run_idx = np.r_[0:self.N_seg_samps]
-            N_seg_samps = self.N_seg_samps
-
-        # only plot up to n_vis_samp _segmentation samples_ from DP
-        # (all DP samples for a given segmentation sample will be plotted)
-        else:
-            run_idx = np.random.choice(self.N_seg_samps, n_vis_samp, replace = False)
-            N_seg_samps = n_vis_samp
-
-        for d in [self.DP_runs[x] for x in run_idx]:
-            d.visualize_adjacent_segs(f = f.number, n_samp = N_seg_samps*self.N_clust_samps)
-
-    def visualize_clusts(self, snps_to_clusters = None, f = None, thick = False, nocolor = False, n_vis_samp = None):
-        f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
-
-        snps_to_clusters = snps_to_clusters if snps_to_clusters is not None else self.snps_to_clusters
-
-        # plot all samples from DP
-        if n_vis_samp is None:
-            run_idx = np.r_[0:self.N_seg_samps]
-            N_seg_samps = self.N_seg_samps
-
-        # only plot up to n_vis_samp _segmentation samples_ from DP
-        # (all DP samples for a given segmentation sample will be plotted)
-        else:
-            run_idx = np.random.choice(self.N_seg_samps, n_vis_samp, replace = False)
-            N_seg_samps = n_vis_samp
-
-        for d in [self.DP_runs[x] for x in run_idx]:
-            d.visualize_clusts(f = f.number, n_samp = N_seg_samps*self.N_clust_samps, thick = thick, nocolor = nocolor)
-
-    def visualize_SNPs(self, snps_to_phases = None, color = True, f = None):
-        snps_to_phases = snps_to_phases if snps_to_phases is not None else self.snps_to_phases
-        ph_prob = snps_to_phases.mean(0)
-
-        if color:
-            rb = np.r_[np.c_[1, 0, 0], np.c_[0, 0, 1]]
-        else:
-            rb = np.full([2, 3], 0)
-
-        logistic = lambda A, K, B, M, x : A + (K - A)/(1 + np.exp(-B*(x - M)))
-
-        def scerrorbar(idx, rev = False, alpha = 1, show_CI = True):
-            if rev:
-                f = 1 - self.SNPs.loc[idx, "f"]
-                eb_bot = self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_hi"]
-                eb_top = self.SNPs.loc[idx, "f_CI_lo"] - self.SNPs.loc[idx, "f"]
-            else:
-                f = self.SNPs.loc[idx, "f"]
-                eb_bot = self.SNPs.loc[idx, "f"] - self.SNPs.loc[idx, "f_CI_lo"]
-                eb_top = self.SNPs.loc[idx, "f_CI_hi"] - self.SNPs.loc[idx, "f"]
-
-            if show_CI:
-                plt.errorbar(
-                  x = self.SNPs.loc[idx, "gpos"],
-                  y = f,
-                  yerr = np.c_[
-                    eb_bot,
-                    eb_top
-                  ].T,
-                  fmt = 'none', ecolor = np.c_[rb[self.SNPs.loc[idx, "allele"]], (alpha if isinstance(alpha, np.ndarray) else alpha*np.ones(idx.sum()))**2]
-                )
-
-            plt.scatter(
-              self.SNPs.loc[idx, "gpos"],
-              f,
-              color = rb[self.SNPs.loc[idx, "allele"]],
-              marker = '.',
-              s = 1,
-              alpha = alpha if show_CI else alpha
-            )
-
-        default_alpha = logistic(A = 0.4, K = 0.01, B = 0.00001, M = 120000, x = len(self.SNPs))
-
-        f = plt.figure(figsize = [17.56, 5.67]) if f is None else f
-        scerrorbar(ph_prob == 0, alpha = default_alpha, show_CI = color)
-        scerrorbar(ph_prob == 1, rev = True, alpha = default_alpha, show_CI = color)
-        idx = (ph_prob > 0) & (ph_prob < 1)
-        scerrorbar(idx, alpha = (1 - ph_prob[idx])*default_alpha, show_CI = color)
-        scerrorbar(idx, rev = True, alpha = ph_prob[idx]*default_alpha, show_CI = color)
+        return self.snps_to_clusters, self.snps_to_phases, self.likelihoods
 
 class DPinstance:
-    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), n_iter = 50, alpha = 0.1):
+    def __init__(self, S, clust_prior = sc.SortedDict(), clust_count_prior = sc.SortedDict(), alpha = 1, dp_count_scale_factor = 1):
         self.S = S
         self.clust_prior = clust_prior.copy()
         self.clust_count_prior = clust_count_prior.copy()
         self.alpha = alpha
+        self.dp_count_scale_factor = dp_count_scale_factor
+
+        self.mm_mat = self.S.loc[:, ["min", "maj"]].values.reshape(-1, order = "F") # numpy for speed
+        self.ref_mat = self.S.loc[:, ["A_ref", "B_ref"]].values.reshape(-1, order = "F")
+        self.alt_mat = self.S.loc[:, ["A_alt", "B_alt"]].values.reshape(-1, order = "F")
+
+        self.betahyp = self.S.loc[:, ["min", "maj"]].sum(1).mean()/2
 
         #
         # define column indices
@@ -348,41 +111,63 @@ class DPinstance:
 
         # store likelihoods for each cluster in the prior (from previous iterations)
         self.clust_prior[-1] = np.r_[0, 0]
-        self.clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1, v[1] + 1) for k, v in self.clust_prior.items()})
+        self.clust_prior_liks = sc.SortedDict({ k : ss.betaln(v[0] + 1 + self.betahyp, v[1] + 1 + self.betahyp) for k, v in self.clust_prior.items()})
         self.clust_prior_mat = np.r_[self.clust_prior.values()]
 
         self.clust_count_prior[-1] = self.alpha # DP alpha factor, i.e. relative probability of opening new cluster
-        self.clust_count_prior[0] = self.alpha # relative probability of sending a cluster to the garbage
 
+    def _Siat_ph(self, ridx, min = True):
+        # min, flip => maj
+        # ~min, ~flip => maj
+        # min, ~flip => min
+        # ~min, flip => min
+        col = self.min_col if self.S.iat[ridx, self.flip_col] ^ min else self.maj_col
+        return self.S.iat[ridx, col]
 
-    def rephase(self, seg_idx, force = False):
-        if not force:
-            A_a = self.S.iloc[seg_idx, self.aalt_col].sum() + 1
-            A_b = self.S.iloc[seg_idx, self.aref_col].sum() + 1
-            B_a = self.S.iloc[seg_idx, self.balt_col].sum() + 1
-            B_b = self.S.iloc[seg_idx, self.bref_col].sum() + 1
+    def _Ssum_ph(self, seg_idx, min = True):
+        #flip = self.flip_mat[seg_idx]
+        flip = self.S.iloc[seg_idx, self.flip_col]
+        flip_n = ~flip
+        if min:
+            return self.mm_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum()
+        else:
+            return self.mm_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum()
 
-            # use normal approximation to beta if conditions are right
-            if A_a > 20 and A_b > 20 and B_a > 20 and B_b > 20:
-                m_x = A_a/(A_a + A_b)
-                s_x = A_a*A_b/((A_a + A_b)**2*(A_a + A_b + 1))
-                m_y = B_a/(B_a + B_b)
-                s_y = B_a*B_b/((B_a + B_b)**2*(B_a + B_b + 1))
+    def _Scumsum_ph(self, seg_idx, min = True):
+        flip = self.S.iloc[seg_idx, self.flip_col]
+        flip_n = ~flip
+        if min:
+            si = np.argsort(np.r_[seg_idx[flip_n], seg_idx[flip]])
+            return self.mm_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]][si].cumsum()
+        else:
+            si = np.argsort(np.r_[seg_idx[flip], seg_idx[flip_n]])
+            return self.mm_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]][si].cumsum()
 
-                do_rephase = np.random.rand() < s.norm.cdf(0, m_y - m_x, np.sqrt(s_x + s_y))
+    def compute_rephase_prob(self, seg_idx):
+        # TODO: compute logcdf/logsf directly
+        flip = self.S.iloc[seg_idx, self.flip_col]
+        flip_n = ~flip
 
-            # Monte Carlo simulate difference of betas
-            else:
-                x = s.beta.rvs(A_a, A_b, size = 1000)
-                y = s.beta.rvs(B_a, B_b, size = 1000)
+        A_a = self.alt_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum() + 1 + self.betahyp
+        A_b = self.ref_mat[np.r_[seg_idx[flip_n], seg_idx[flip] + len(self.S)]].sum() + 1 + self.betahyp
+        B_a = self.alt_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum() + 1 + self.betahyp
+        B_b = self.ref_mat[np.r_[seg_idx[flip], seg_idx[flip_n] + len(self.S)]].sum() + 1 + self.betahyp
 
-                do_rephase = np.random.rand() < (x > y).mean()
+        # use normal approximation to beta if conditions are right
+        if A_a > 20 and A_b > 20 and B_a > 20 and B_b > 20:
+            m_x = A_a/(A_a + A_b)
+            s_x = A_a*A_b/((A_a + A_b)**2*(A_a + A_b + 1))
+            m_y = B_a/(B_a + B_b)
+            s_y = B_a*B_b/((B_a + B_b)**2*(B_a + B_b + 1))
 
-        if force or do_rephase:
-            self.S.iloc[seg_idx, [self.min_col, self.maj_col]] = self.S.iloc[seg_idx, [self.min_col, self.maj_col]].values[:, ::-1]
-            self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]] = self.S.iloc[seg_idx, [self.aalt_col, self.balt_col]].values[:, ::-1]
-            self.S.iloc[seg_idx, [self.aref_col, self.bref_col]] = self.S.iloc[seg_idx, [self.aref_col, self.bref_col]].values[:, ::-1]
-            self.S.iloc[seg_idx, self.flip_col] = ~self.S.iloc[seg_idx, self.flip_col]
+            return s.norm.cdf(0, m_y - m_x, np.sqrt(s_x + s_y))
+
+        # Monte Carlo simulate difference of betas
+        else:
+            x = s.beta.rvs(A_a, A_b, size = 1000)
+            y = s.beta.rvs(B_a, B_b, size = 1000)
+
+            return (x > y).mean()
 
     def SJliks(self, targ_clust, upstream_clust, downstream_clust, J_a, J_b, U_a, U_b, D_a, D_b):
 #            if st == en:
@@ -392,33 +177,84 @@ class DPinstance:
 #                J_a = S.iloc[st:(en + 1), min_col].sum()
 #                J_b = S.iloc[st:(en + 1), maj_col].sum()
         SU_a = SU_b = SD_a = SD_b = 0
-        # if target segments are being moved to the garbage, it is equivalent to making them their own segment, and joining the upstream and downstream segments
-        if targ_clust == 0:
-            SU_a = J_a
-            SU_b = J_b
-            J_a = 0
-            J_b = 0
 
-        if targ_clust != - 1 and (targ_clust == upstream_clust or targ_clust == 0):
+        if targ_clust != -1 and targ_clust == upstream_clust:
             J_a += U_a
             J_b += U_b
         else:
             SU_a += U_a
             SU_b += U_b
-        if targ_clust != - 1 and (targ_clust == downstream_clust or targ_clust == 0):
+        if targ_clust != -1 and targ_clust == downstream_clust:
             J_a += D_a
             J_b += D_b
         else:
             SD_a += D_a
             SD_b += D_b
 
-        return ss.betaln(SU_a + 1, SU_b + 1) + ss.betaln(J_a + 1, J_b + 1) + ss.betaln(SD_a + 1, SD_b + 1)
+        return (ss.betaln(SU_a + 1 + self.betahyp, SU_b + 1 + self.betahyp) if SU_a > 0 or SU_b > 0 else 0) + \
+          ss.betaln(J_a + 1 + self.betahyp, J_b + 1 + self.betahyp) + \
+          (ss.betaln(SD_a + 1 + self.betahyp, SD_b + 1 + self.betahyp) if SD_a > 0 or SD_b > 0 else 0)
+
+    def compute_adj_prob(self, break_idx):
+        if break_idx > 1:
+            U_A, U_B = self.seg_sums[self.breakpoints[break_idx - 1]]
+            U_cl = self.clusts[self.breakpoints[break_idx - 1]]
+        else:
+            U_A = U_B = 0
+            U_cl = -1
+        if break_idx + 2 < len(self.breakpoints):
+            D_A, D_B = self.seg_sums[self.breakpoints[break_idx + 1]]
+            D_cl = self.clusts[self.breakpoints[break_idx + 1]]
+        else:
+            D_A = D_B = 0
+            D_cl = -1
+
+        S_A, S_B = self.seg_sums[self.breakpoints[break_idx]]
+
+        ## compute all four possible segmentations relative to neighbor, in
+        ## both phasing orientations
+        MLs = np.c_[
+          # UTD             T  U  D
+          # -^_ or -_- (U != T & T != D) (00)
+          np.r_[self.SJliks(1, 0, 0, S_A, S_B, U_A, U_B, D_A, D_B),
+                self.SJliks(1, 0, 0, S_B, S_A, U_A, U_B, D_A, D_B)],
+          # -__ (U != T & T == D) (01)
+          np.r_[self.SJliks(0, 1, 0, S_A, S_B, U_A, U_B, D_A, D_B),
+                self.SJliks(0, 1, 0, S_B, S_A, U_A, U_B, D_A, D_B)],
+          # --_ (U == T & T != D) (10)
+          np.r_[self.SJliks(1, 1, 0, S_A, S_B, U_A, U_B, D_A, D_B),
+                self.SJliks(1, 1, 0, S_B, S_A, U_A, U_B, D_A, D_B)],
+          # --- (U == T & T == D) (11)
+          np.r_[self.SJliks(0, 0, 0, S_A, S_B, U_A, U_B, D_A, D_B),
+                self.SJliks(0, 0, 0, S_B, S_A, U_A, U_B, D_A, D_B)],
+        ]
+
+        ## match probs to cluster choices (will match MLs matrix in main calculation)
+        probs = np.full([len(self.clust_sums), 2], MLs[0, 0])
+        if U_cl == D_cl and U_cl != -1 and D_cl != -1:
+            probs[self.clust_sums.index(U_cl), :] = MLs[:, 3]
+            probs[self.clust_sums.index(D_cl), :] = MLs[:, 3]
+        else:
+            if U_cl != -1:
+                probs[self.clust_sums.index(U_cl), :] = MLs[:, 2]
+            if D_cl != -1:
+                probs[self.clust_sums.index(D_cl), :] = MLs[:, 1]
+
+        return probs
 
     def compute_adj_liks(self, seg_idx, cur_clust):
+        # idea to simplify this code:
+        # - strip out logic for working with noncontiguous seg_idx's
+        # - compute all four possibile segmentations:
+        #   ABC, AAB, ABB, AAA
+        # - associate those segmentations with each cluster choice, in order
+        #   to return `adj_BC` with same size as `MLs`
+
         adj_AB = 0
-        adj_BC = np.zeros(len(self.clust_sums))
+        adj_BC = np.zeros([len(self.clust_sums), 2])
 
         # start/end coordinates of consecutive runs of segments being moved
+        # NOTE: ordpairs represents closed intervals!
         ordpairs = np.c_[
           [np.r_[list(x)][[0, -1]] for x in more_itertools.consecutive_groups(
             np.sort(seg_idx))
@@ -431,47 +267,31 @@ class DPinstance:
         for o, (st, en) in enumerate(ordpairs):
             # maj/min counts of contiguous upstream segments belonging to the same cluster
             if st - 1 > 0:
-                # skip over adjacent segments that are in the garbage;
-                # we only care about adjacent segments actually assigned to clusters
                 j = 1
-                while st - j > 0 and self.clusts[st - j] == 0:
-                    j += 1
 
                 U_cl = self.clusts[st - j]
                 adj_clusters[o, 0] = U_cl
 
                 while st - j > 0 and self.clusts[st - j] != -1 and \
-                  (self.clusts[st - j] == U_cl or self.clusts[st - j] == 0):
-                    # again, skip over segments in the garbage
-                    if self.clusts[st - j] != 0:
-                        UD_counts[o, 0] += self.S.iloc[st - j, self.min_col]
-                        UD_counts[o, 1] += self.S.iloc[st - j, self.maj_col]
+                  self.clusts[st - j] == U_cl:
+                    UD_counts[o, 0] += self._Siat_ph(st - j, min = True)
+                    UD_counts[o, 1] += self._Siat_ph(st - j, min = False)
 
                     j += 1
 
             # maj/min counts of contiguous downstream segments belonging to the same cluster
             if en + 1 < len(self.S):
                 j = 1
-                while en + j < len(self.S) - 1 and self.clusts[en + j] == 0:
-                    j += 1
 
                 D_cl = self.clusts[en + j]
                 adj_clusters[o, 1] = D_cl
 
                 while en + j < len(self.S) - 1 and self.clusts[en + j] != -1 and \
-                  (self.clusts[en + j] == D_cl or self.clusts[en + j] == 0):
-                    if self.clusts[en + j] != 0:
-                        UD_counts[o, 2] += self.S.iloc[en + j, self.min_col]
-                        UD_counts[o, 3] += self.S.iloc[en + j, self.maj_col]
+                  self.clusts[en + j] == D_cl:
+                    UD_counts[o, 2] += self._Siat_ph(en + j, min = True)
+                    UD_counts[o, 3] += self._Siat_ph(en + j, min = False)
 
                     j += 1
-
-        # if we are looking at the segments at the very start or very end, set
-        # upstream/downstream cluster indices to garbage
-        if ordpairs[0, 0] == 0:
-            adj_clusters[0, 0] = 0
-        if ordpairs[-1, 1] == len(self.S) - 1:
-            adj_clusters[-1, 1] = 0
 
         # if there are any segments being moved adjacent to already existing clusters, get local split/join likelihoods
         adj_idx = ~(adj_clusters == -1).all(1)
@@ -494,8 +314,8 @@ class DPinstance:
                 # min/maj counts of the segment(s) being moved
                 st = ordpairs[j, 0]
                 en = ordpairs[j, 1]
-                S_a = self.S.iloc[:, self.min_col].values[st:(en + 1)].sum()
-                S_b = self.S.iloc[:, self.maj_col].values[st:(en + 1)].sum()
+                S_a = self._Ssum_ph(np.r_[st:(en + 1)], min = True) # en + 1 because ordpairs is a closed interval
+                S_b = self._Ssum_ph(np.r_[st:(en + 1)], min = False) 
 
                 # adjacency likelihood of this segment remaining where it is
 #                adj_AB += self.SJliks(
@@ -511,10 +331,10 @@ class DPinstance:
 #                )
 
                 # adjacency likelihood of this segment joining each possible cluster:
-                # 1. those it is actually adjacent to (+ new cluster, garbage)
-                for cl in {-1, 0, cl_u, cl_d}:
+                # 1. those it is actually adjacent to (+ new cluster)
+                for cl in {-1, cl_u, cl_d}:
                     idx = self.clust_sums.index(cl)
-                    adj_BC[idx] += self.SJliks(
+                    adj_BC[idx, 0] += self.SJliks(
                       targ_clust = cl, 
                       upstream_clust = cl_u, 
                       downstream_clust = cl_d, 
@@ -525,14 +345,22 @@ class DPinstance:
                       D_a = D_a,
                       D_b = D_b
                     )
-                    # we cannot send a segment to the garbage adjacent to any unassigned segment
-                    if cl == 0 and (cl_u == -1 or cl_d == -1):
-                        adj_BC[idx] = -np.inf
+                    adj_BC[idx, 1] += self.SJliks(
+                      targ_clust = cl, 
+                      upstream_clust = cl_u, 
+                      downstream_clust = cl_d, 
+                      J_a = S_b, 
+                      J_b = S_a,
+                      U_a = U_a,
+                      U_b = U_b,
+                      D_a = D_a,
+                      D_b = D_b
+                    )
 
                 # 2. clusters it is not adjacent to (use default split value)
-                for cl in self.clust_sums.keys() - ({-1, 0} | set(adj_clusters[adj_idx].ravel())):
+                for cl in self.clust_sums.keys() - ({-1} | set(adj_clusters[adj_idx].ravel())):
                     idx = self.clust_sums.index(cl)
-                    adj_BC[idx] += self.SJliks(
+                    adj_BC[idx, 0] += self.SJliks(
                       targ_clust = -1, 
                       upstream_clust = -1, 
                       downstream_clust = -1, 
@@ -543,253 +371,372 @@ class DPinstance:
                       D_a = D_a,
                       D_b = D_b
                     )
-        else:
-            # we cannot send a segment to the garbage adjacent to any unassigned segment
-            adj_BC[self.clust_sums.index(0)] = -np.inf
+                    adj_BC[idx, 1] += self.SJliks(
+                      targ_clust = -1, 
+                      upstream_clust = -1, 
+                      downstream_clust = -1, 
+                      J_a = S_b, 
+                      J_b = S_a,
+                      U_a = U_a,
+                      U_b = U_b,
+                      D_a = D_a,
+                      D_b = D_b
+                    )
 
         return adj_AB, adj_BC
 
-    def compute_overall_lik(self, segs_to_clusters = None, phase_orientations = None):
-        if segs_to_clusters is None:
-            _, segs_to_clusters = self.get_unique_clust_idxs()
-        else:
-            _, segs_to_clusters = self.get_unique_clust_idxs(segs_to_clusters)
-        if phase_orientations is None:
-            phase_orientations = np.r_[self.phase_orientations]
+    def compute_cluster_splitpoints(self, seg_idx):
+        spl = []
 
-        max_clust_idx = segs_to_clusters.max() + 1
+        # left bias
+        end = len(seg_idx)
+        i = 0
+        while True:
+            seg_idx_sp = seg_idx[0:end]
+            if len(seg_idx_sp) < 2:
+                break
 
-        liks = np.full([segs_to_clusters.shape[0], 2], np.nan)
+            min_cs = self._Scumsum_ph(seg_idx_sp, min = True)
+            min_csr = self._Ssum_ph(seg_idx_sp, min = True) - min_cs
+            maj_cs = self._Scumsum_ph(seg_idx_sp, min = False)
+            maj_csr = self._Ssum_ph(seg_idx_sp, min = False) - maj_cs
 
-        for i, (cl_samp, ph_samp) in enumerate(zip(segs_to_clusters, phase_orientations)):
-            # reset phases
-            # TODO: when we switch to faster phasing correction model that doesn't involve modifying self.S, this won't be necessary
-            S_ph = self.S.copy()
-            flip_idx = np.flatnonzero(ph_samp != S_ph["flipped"])
-            S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
+            split_lik = ss.betaln(min_cs + 1 + self.betahyp, maj_cs + 1 + self.betahyp) + ss.betaln(min_csr + 1 + self.betahyp, maj_csr + 1 + self.betahyp)
+            # split_lprob = split_lik - split_lik.max() - np.log(np.exp(split_lik - split_lik.max()).sum())
+            # NOTE: instead of argmax, probabilistically choose? will this make a difference?
 
-            ## overall clustering likelihood
-            A = npg.aggregate(cl_samp, S_ph["min"], size = max_clust_idx)
-            B = npg.aggregate(cl_samp, S_ph["maj"], size = max_clust_idx)
+            end = split_lik.argmax()
+            spl.append(end)
 
-# for when self.S is not modified
-#            A = npg.aggregate(cl_samp[ph_samp], self.S.loc[ph_samp, "maj"], size = max_clust_idx) + \
-#              npg.aggregate(cl_samp[~ph_samp], self.S.loc[~ph_samp, "min"], size = max_clust_idx)
-#
-#            B = npg.aggregate(cl_samp[ph_samp], self.S.loc[ph_samp, "min"], size = max_clust_idx) + \
-#              npg.aggregate(cl_samp[~ph_samp], self.S.loc[~ph_samp, "maj"], size = max_clust_idx)
+            if end <= 1 or end == len(split_lik) - 1:
+                break
 
-            clust_lik = ss.betaln(A + 1, B + 1).sum()
+            i += 1
 
-            ## segmentation likelihood
+        # right bias
+        start = 0
+        i = 0
+        while True:
+            seg_idx_sp = seg_idx[start:]
+            if len(seg_idx_sp) < 2:
+                break
 
-            # get segment boundaries
-            bdy = np.flatnonzero(np.r_[1, np.diff(cl_samp) != 0, 1])
-            bdy = np.c_[bdy[:-1], bdy[1:]]
+            min_cs = self._Scumsum_ph(seg_idx_sp, min = True)
+            min_csr = self._Ssum_ph(seg_idx_sp, min = True) - min_cs
+            maj_cs = self._Scumsum_ph(seg_idx_sp, min = False)
+            maj_csr = self._Ssum_ph(seg_idx_sp, min = False) - maj_cs
 
-            # sum log-likelihoods of each segment
-            seg_lik = 0
-            for st, en in bdy:
-                A, B = S_ph.iloc[st:en, [self.min_col, self.maj_col]].sum()
+            split_lik = ss.betaln(min_cs[:-1] + 1 + self.betahyp, maj_cs[:-1] + 1 + self.betahyp) + ss.betaln(min_csr[1:] + 1 + self.betahyp, maj_csr[1:] + 1 + self.betahyp)
+            # split_lprob = split_lik - split_lik.max() - np.log(np.exp(split_lik - split_lik.max()).sum())
 
-# for when self.S is not modified
-#               A = self.S["min"].iloc[st:en].loc[~ph_samp[st:en]].sum() + \
-#                   self.S["maj"].iloc[st:en].loc[ph_samp[st:en]].sum()
-#               B = self.S["maj"].iloc[st:en].loc[~ph_samp[st:en]].sum() + \
-#                   self.S["min"].iloc[st:en].loc[ph_samp[st:en]].sum()
+            start += split_lik.argmax() + 1
+            spl.append(start - 1)
 
-                seg_lik += ss.betaln(A + 1, B + 1)
+            if start > len(seg_idx) - 1 or split_lik.argmax() == 0:
+                break
 
-            liks[i, :] = np.r_[clust_lik, seg_lik]
+            i += 1
 
-        return liks
+        bdy = np.unique(np.r_[0, spl, len(seg_idx)])
+        bdy = np.c_[bdy[:-1], bdy[1:]]
 
-    def run(self, n_iter = 50):
-        #
-        # assign segments to likeliest prior component {{{
+        return bdy
 
-        if len(self.clust_prior) > 1:
-            for seg_idx in range(len(self.S)):
-                seg_idx = np.r_[seg_idx] 
+    def add_breakpoint(self, start, mid, end, clust_idx):
+        """
+        Add breakpoint at mid belonging to clust_idx, between start and end
+        """
+        self.breakpoints.add(mid)
+        self.clust_members_bps[clust_idx].add(mid)
+        
+        A = self._Ssum_ph(np.r_[mid:end], min = True)
+        B = self._Ssum_ph(np.r_[mid:end], min = False)
 
-                # compute probability that segment belongs to each cluster prior element
-                S_a = self.S.iloc[seg_idx[0], self.min_col]
-                S_b = self.S.iloc[seg_idx[0], self.maj_col]
-                P_a = self.clust_prior_mat[1:, 0]
-                P_b = self.clust_prior_mat[1:, 1]
+        self.seg_sums[mid] = np.r_[A, B]
+        self.seg_sums[start] -= self.seg_sums[mid]
 
-                # prior likelihood ratios for both phase orientations
-                P_l = np.c_[
-                  ss.betaln(S_a + P_a + 1, S_b + P_b + 1) - (ss.betaln(S_a + 1, S_b + 1) + ss.betaln(P_a + 1, P_b + 1)),
-                  ss.betaln(S_b + P_a + 1, S_a + P_b + 1) - (ss.betaln(S_b + 1, S_a + 1) + ss.betaln(P_a + 1, P_b + 1)),
-                ]
+        self.seg_liks[mid] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
+        A = self._Ssum_ph(np.r_[start:mid], min = True)
+        B = self._Ssum_ph(np.r_[start:mid], min = False)
+        self.seg_liks[start] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
 
-                # get count prior
-                ccp = np.c_[[v for k, v in self.clust_count_prior.items() if k != -1 and k != 0]]
+        self.seg_phase_probs[start] = self.compute_rephase_prob(np.r_[start:mid])
+        self.seg_phase_probs[mid] = self.compute_rephase_prob(np.r_[mid:end])
 
-                # posterior numerator
-                num = P_l + np.log(ccp)
-                num -= num.max()
+    def compute_overall_lik_simple(self):
+        ## overall clustering likelihood
+        # p({a_i, b_i} | {c_k}, {phase_i})
+        clust_lik = np.r_[[ss.betaln(v[0] + 1 + self.betahyp, v[1] + 1 + self.betahyp) for k, v in self.clust_sums.items() if k >= 0]].sum()
 
-                # probabilistically choose a cluster
-                probs = np.exp(num)/np.exp(num).sum()
-                idx = np.tile(np.r_[self.clust_prior.keys()][1:], [2, 1]).T*[1, -1]
-                choice = np.random.choice(
-                  idx.ravel(),
-                  p = probs.ravel()
-                )
+        ## overall phasing likelihood
+        # p({phase_i} | {a_i, b_i})
+        phase_probs = np.r_[self.seg_phase_probs.values()]
+        phase_lik = np.log1p(phase_probs).sum() if not np.isnan(phase_probs).any() else np.nan
 
-                # rephase
-                if choice < 0:
-                    self.rephase(seg_idx, force = True)
-                    choice = -choice
+        ## Dirichlet count prior (Dirichlet-categorical marginal likelihood)
+        # p({c_k})
+        dirvec = np.r_[self.clust_counts.values()].astype(float)/self.dp_count_scale_factor
+        k = len(dirvec)
+        count_prior = k*np.log(self.alpha) + ss.gammaln(dirvec).sum() + ss.gammaln(self.alpha) - ss.gammaln(dirvec.sum() + self.alpha)
 
-                self.S.iloc[seg_idx, self.clust_col] = choice
+        ## segmentation likelihood
+        # p({a_i, b_i} | {s}, {phase_i})
+        # TODO: memoize
+        seg_lik = np.r_[self.seg_liks.values()].sum()
 
-        # }}}
+        # p({c_k}, {s}, {phase_i} | {a_i, b_i})
+        return np.r_[clust_lik, phase_lik, count_prior, seg_lik]
 
+    def run(self, n_iter = 0, n_samps = 0):
         #
         # initialize cluster tracking hash tables
-        self.clust_counts = sc.SortedDict(self.S["clust"].value_counts().drop([-1, 0], errors = "ignore"))
-        # for the first round of clustering, this is { 1 : 1 }
+        self.clust_counts = sc.SortedDict(self.S["clust"].value_counts().drop(-1, errors = "ignore"))
+        # for the first round of clustering, this is { 0 : 1, 1 : 1, ..., N - 1 : 1 }
+
+        Sgc = self.S.groupby(["clust", "flipped"])[["min", "maj"]].sum()
+        if (Sgc.droplevel(0).index == True).any():
+            Sgc.loc[(slice(None), True), ["min", "maj"]] = Sgc.loc[(slice(None), True), ["maj", "min"]].values
         self.clust_sums = sc.SortedDict({
-          **{ k : np.r_[v["min"], v["maj"]] for k, v in self.S.groupby("clust")[["min", "maj"]].sum().to_dict(orient = "index").items() },
-          **{-1 : np.r_[0, 0], 0 : np.r_[0, 0]}
+          **{ k : np.r_[v["min"], v["maj"]] for k, v in Sgc.groupby(level = "clust").sum().to_dict(orient = "index").items() },
+          **{-1 : np.r_[0, 0]}
         })
-        # for the first round, this is { -1/0 : np.r_[0, 0], 1 : np.r_[S[0, "min"], S[0, "maj"]] }
-        self.clust_members = sc.SortedDict({ k : set(v) for k, v in self.S.groupby("clust").groups.items() if k != -1 and k != 0 })
-        # for the first round, this is { 1 : {0} }
-        unassigned_segs = sc.SortedList(self.S.index[self.S["clust"] == -1])
+        # for the first round, this is { -1 : np.r_[0, 0], 0 : np.r_[S[0, "min"], S[0, "maj"]], 1 : S[1, "min"], S[1, "maj"], ..., N : S[N - 1, "min"], S[N - 1, "maj"] }
+
+        self.clust_members = sc.SortedDict({ k : set(v) for k, v in self.S.groupby("clust").groups.items() if k != -1 })
+        # for the first round, this is { 0 : {0}, 1 : {1}, ..., N - 1 : {N - 1} }
 
         # store this as numpy for speed
         self.clusts = self.S["clust"].values
 
         max_clust_idx = np.max(self.clust_members.keys() | self.clust_prior.keys() if self.clust_prior is not None else {})
 
+        #
+        # breakpoint tracking
+
+        # segmentation breakpoints
+        self.breakpoints = sc.SortedSet(np.flatnonzero(np.diff(self.S["clust"]) != 0) + 1) | {0, len(self.S)}
+
+        # min/maj counts in each segment
+        self.seg_sums = sc.SortedDict()
+        bpl = np.r_[self.breakpoints]
+        for st, en in np.c_[bpl[:-1], bpl[1:]]:
+            mn = self._Ssum_ph(np.r_[st:en], min = True)
+            mj = self._Ssum_ph(np.r_[st:en], min = False)
+            self.seg_sums[st] = np.r_[mn, mj]
+
+        # likelihoods for each segment
+        self.seg_liks = sc.SortedDict()
+        for k, (a, b) in self.seg_sums.items():
+            self.seg_liks[k] = ss.betaln(a + 1 + self.betahyp, b + 1 + self.betahyp)
+
+        # breakpoints for each cluster
+        self.clust_members_bps = sc.SortedDict({
+          k : sc.SortedSet(v) for k, v in \
+            self.S.loc[self.breakpoints[:-1], ["clust"]].groupby("clust").groups.items()
+        })
+
+        # misphase probabilities for each segment
+        self.seg_phase_probs = sc.SortedDict({ k : np.nan for k in self.breakpoints[:-1] })
+
         # containers for saving the MCMC trace
-        self.segs_to_clusters = []
+        self.snps_to_clusters = []
         self.phase_orientations = []
+        self.segment_trace = []
+        self.likelihood_trace = []
 
+        # likelihood trace for checking burnin status
+        self.lik_trace = []
         burned_in = False
-        all_assigned = False
-        seg_touch_idx = np.zeros(len(self.S), dtype = np.uint16)
-
-#        # containers for saving debugging information (overall likelihoods/cluster assignments pre-burnin)
-#        self.lik_tmp = []
-#        self.vc_tmp = []
+        self.burnin_iteration = -1
+        touch90 = False
+        likelihood_ready = False
 
         n_it = 0
         n_it_last = 0
-        while len(self.segs_to_clusters) < n_iter:
-            if not n_it % 1000:
-                print(self.S["clust"].value_counts().drop([-1, 0], errors = "ignore").value_counts().sort_index())
-                print("n unassigned: {}".format((self.S["clust"] == -1).sum()))
-                print("n garbage: {}".format((self.S["clust"] == 0).sum()))
 
-            # we are burned in (n_seg/n_clust) iterations after all segments have been touched
+        brk = 0
+
+        while True:
+            if not n_it % 1000:
+                if len(self.clust_counts) > 20:
+                    print(pd.Series(self.clust_counts.values()).value_counts().sort_index())
+                else:
+                    print("\n".join([str(self.clust_counts[k]) + ": " + str(x/(x + y)) for k, (x, y) in self.clust_sums.items() if k != -1]))
+                if likelihood_ready:
+                    print("[{}] Likelihood: {}".format("*" if burned_in else " ", self.lik_trace[-1].sum()))
+                if burned_in:
+                    print("{}/{} MCMC samples collected".format(len(self.snps_to_clusters), n_samps))
+
+            # stop after a raw number of iterations
+            if n_iter > 0 and n_it > n_iter:
+                return
+
+            # stop after a number of samples have been taken
+            if n_samps > 0 and len(self.snps_to_clusters) > n_samps:
+                break
+
+            # poll every 100 iterations for various statuses
             if not n_it % 100:
-                if not all_assigned and (((seg_touch_idx > 0) | (self.clusts == 0)).all() or \
-                  # if there is only one cluster, then consider every segment to have been touched
-                  # otherwise, waiting for every segment to actually be touched will take forever
-                  len(unassigned_segs) == 0 and len(self.clust_counts) == 1):
-                    all_assigned = True
-                    n_it_last = n_it
-                if not burned_in and all_assigned and \
-                  n_it - n_it_last > len(self.S)/len(self.clust_counts):
-                    burned_in = True
-            
-#                self.lik_tmp.append(self.compute_overall_lik())
-#                self.vc_tmp.append(self.S["clust"].value_counts())
+                # have >95% of segments been touched?
+                if (1 - (1 - 1/len(self.breakpoints))**n_it) > 0.95:
+                    touch90 = True
+
+                # start computing likelihoods
+                if touch90:
+                    lik = self.compute_overall_lik_simple()
+                    # phasing likelihood will be NaN until we've touched every singlesegment
+                    if not np.isnan(lik).any():
+                        self.lik_trace.append(lik)
+                        likelihood_ready = True
+
+                # check if likelihood has stabilized enough to consider us "burned in"
+                if likelihood_ready and not burned_in and len(self.lik_trace) > 500:
+                    lt = np.vstack(self.lik_trace).sum(1)
+                    if (np.convolve(np.diff(lt), np.ones(500)/500, mode = "same") < 0).sum() > 2:
+                        print("BURNED IN")
+                        burned_in = True
+                        self.burnin_iteration = len(self.lik_trace)
+                        n_it_last = n_it
 
             #
-            # pick either a segment or a cluster at random (50:50 prob.)
-            move_clust = False
+            # pick  a segment to move
 
-            # pick a segment at random
-            if np.random.rand() < 0.5:
-            #if np.random.rand() < 1:
-                # bias picking unassigned segments if >90% of segments have been assigned
-                if len(unassigned_segs) > 0 and len(unassigned_segs)/len(self.S) < 0.1 and np.random.rand() < 0.5:
-                    seg_idx = sc.SortedSet({np.random.choice(unassigned_segs)})
-                else:
-                    seg_idx = sc.SortedSet({np.random.choice(len(self.S))})
+# diagnostic code to compute overall likelihood before move
+#            compute_lik = False
+#            lik_before = np.nan
+#            if touch90 and np.random.rand() < 0.1:
+#                compute_lik = True
+#                lik_before = self.compute_overall_lik_simple()
 
-                cur_clust = int(self.clusts[seg_idx])
-
-                # expand segment to include all adjacent segments in the same cluster,
-                # if it has already been assigned to a cluster
-                if cur_clust > 0 and np.random.rand() < 0.5:
-                    si = seg_idx[0]
-
-                    j = 1
-                    while si - j > 0 and \
-                      (self.clusts[si - j] == cur_clust or self.clusts[si - j] == 0):
-                        if self.clusts[si - j] != 0:
-                            seg_idx.add(si - j)
-                        j += 1
-                    j = 1
-                    while si + j < len(self.S) and \
-                      (self.clusts[si + j] == cur_clust or self.clusts[si + j] == 0):
-                        if self.clusts[si + j] != 0:
-                            seg_idx.add(si + j)
-                        j += 1
-
-                    # if we've expanded to include a large fraction (>10%) of segments 
-                    # in this cluster, cluster indexing might become inconsistent.
-                    # skip this iteration
-                    if len(seg_idx) >= 0.1*self.clust_counts[cur_clust]:
-                        n_it += 1
-                        continue
-
-                seg_idx = np.r_[list(seg_idx)]
-
-                n_move = len(seg_idx)
-
-                # if segment was already assigned to a cluster, unassign it
-                if cur_clust > 0:
-                    self.clust_counts[cur_clust] -= n_move
-                    if self.clust_counts[cur_clust] == 0:
-                        del self.clust_counts[cur_clust]
-                        del self.clust_sums[cur_clust]
-                        del self.clust_members[cur_clust]
-                    else:
-                        self.clust_sums[cur_clust] -= np.r_[self.S.iloc[seg_idx, self.min_col].sum(), self.S.iloc[seg_idx, self.maj_col].sum()]
-                        self.clust_members[cur_clust] -= set(seg_idx)
-
-                    unassigned_segs.update(seg_idx)
-                    self.clusts[seg_idx] = -1
-
-            # pick a cluster at random
+            # >90% of segments have been moved; we are iterating over segments sequentially
+            if touch90:
+                break_idx = sc.SortedSet({brk % (len(self.breakpoints) - 1)})
+                brk += 1
+            # we are picking segments at random
             else:
-                # it only makes sense to try joining two clusters if there are at least two of them!
-                if len(self.clust_counts) < 2:
+                break_idx = sc.SortedSet({np.random.choice(len(self.breakpoints) - 1)})
+
+            # get all SNPs within this segment
+            seg_st = self.breakpoints[break_idx[0]]
+            seg_en = self.breakpoints[break_idx[0] + 1]
+            seg_idx = np.r_[seg_st:seg_en]
+
+            cur_clust = int(self.clusts[seg_idx[0]])
+
+            # propose breaking this segment
+            if np.random.rand() < 0.1:
+                # can't split segments of length 1
+                if len(seg_idx) == 1:
                     n_it += 1
                     continue
 
-                cl_idx = np.random.choice(self.clust_counts.keys())
-                seg_idx = np.r_[list(self.clust_members[cl_idx])]
-                n_move = len(seg_idx)
-                cur_clust = -1 # only applicable for individual segments, so we set to -1 here
-                               # (this is so that subsequent references to clust_sums[cur_clust]
-                               # will return (0, 0))
+                # TODO: memoize cumsums?
+                min_cs = self._Scumsum_ph(seg_idx, min = True)
+                min_csr = self.seg_sums[seg_idx[0]][0] - min_cs
+                maj_cs = self._Scumsum_ph(seg_idx, min = False)
+                maj_csr = self.seg_sums[seg_idx[0]][1] - maj_cs
 
-                # unassign all segments within this cluster
-                # (it will either be joined with a new cluster, or remade again into its own cluster)
-                del self.clust_counts[cl_idx]
-                del self.clust_sums[cl_idx]
-                del self.clust_members[cl_idx]
-                unassigned_segs.update(seg_idx)
+                split_lik = ss.betaln(min_cs + 1 + self.betahyp, maj_cs + 1 + self.betahyp) + ss.betaln(min_csr + 1 + self.betahyp, maj_csr + 1 + self.betahyp)
+                split_lik[-1] = ss.betaln(min_cs[-1] + 1 + self.betahyp, maj_cs[-1] + 1 + self.betahyp)
+                split_lik -= split_lik.max()
+                split_point = np.random.choice(np.r_[0:len(seg_idx)], p = np.exp(split_lik)/np.exp(split_lik).sum())
+                seg_idx = seg_idx[:(split_point + 1)]
+
+                # add breakpoint (can be erased subsequently if segment rejoins original cluster)
+                new_bp = seg_idx[-1] + 1
+                if len(seg_idx) < seg_en - seg_st: # don't add breakpoint if we're not splitting segment
+                    self.add_breakpoint(start = seg_idx[0], mid = new_bp, end = seg_en, clust_idx = cur_clust)
+
+            # propose splitting out a contiguous interval of segments within the current cluster {{{
+            split_clust = False
+            if False and touch90 and np.random.rand() < 0.1:
+                # TODO: if we use cur_clust, this will be biased towards larger clusters. is this desireable?
+                clust_snps = np.sort(np.r_[list(self.clust_members[cur_clust])])
+
+                # can't split clusters of length 1
+                if len(clust_snps) == 1:
+                    n_it += 1
+                    continue
+
+                split_bdy = self.compute_cluster_splitpoints(clust_snps)
+
+                A_tot, B_tot = self.clust_sums[cur_clust]
+
+                lik0 = ss.betaln(A_tot + 1 + self.betahyp, B_tot + 1 + self.betahyp)
+
+                liks = np.zeros(len(split_bdy) + 1)
+                liks[-1] = lik0 # don't split at all
+
+                # likelihood ratios for splitting each region into a new cluster
+                for i, (st, en) in enumerate(split_bdy):
+                    A = self._Ssum_ph(clust_snps[st:en], min = True)
+                    B = self._Ssum_ph(clust_snps[st:en], min = False)
+
+                    liks[i] = ss.betaln(A_tot - A + 1 + self.betahyp, B_tot - B + 1 + self.betahyp) + ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
+
+                # pick a region to split
+                split_idx = np.random.choice(
+                  len(split_bdy) + 1,
+                  p = np.exp(liks - liks.max())/np.exp(liks - liks.max()).sum()
+                )
+
+                # don't split at all
+                if split_idx == len(split_bdy):
+                    n_it += 1
+                    continue
+
+                # seg_idx == SNPs to propose to split off
+                seg_idx = clust_snps[slice(*split_bdy[split_idx])]
+
+                split_clust = True
+
+                # add breakpoints
+                for si in [seg_idx[0], seg_idx[-1]]:
+                    if si not in self.breakpoints:
+                        seg_st_idx = self.breakpoints.bisect_left(si) - 1
+                        seg_st = self.breakpoints[seg_st_idx]
+                        seg_en_idx = self.breakpoints.bisect_left(si)
+                        seg_en = self.breakpoints[seg_en_idx]
+
+                        self.add_breakpoint(start = seg_st, mid = si, end = seg_en, clust_idx = cur_clust)
+
+                # get all breakpoints within this cluster/interval
+                left_idx = self.clust_members_bps[cur_clust].bisect_left(seg_idx[0])
+                right_idx = self.clust_members_bps[cur_clust].bisect_right(seg_idx[-1])
+                break_idx = sc.SortedSet([self.breakpoints.index(x) for x in self.clust_members_bps[cur_clust][left_idx:right_idx]])
+
+            # }}}
+
+            n_move = len(seg_idx)
+
+            # if segment was already assigned to a cluster, unassign it
+            if cur_clust >= 0:
+                self.clust_counts[cur_clust] -= n_move
+                if self.clust_counts[cur_clust] == 0:
+                    del self.clust_counts[cur_clust]
+                    del self.clust_sums[cur_clust]
+                    del self.clust_members[cur_clust]
+                    del self.clust_members_bps[cur_clust]
+                else:
+                    self.clust_sums[cur_clust] -= np.r_[self._Ssum_ph(seg_idx, min = True), self._Ssum_ph(seg_idx, min = False)]
+                    self.clust_members[cur_clust] -= set(seg_idx)
+                    for b in break_idx:
+                        self.clust_members_bps[cur_clust].remove(self.breakpoints[b])
+
                 self.clusts[seg_idx] = -1
-
-                move_clust = True
-
-            if not all_assigned:
-                seg_touch_idx[seg_idx] += 1
 
             #
             # perform phase correction on segment/cluster
             # flip min/maj with probability that alleles are oriented the "wrong" way
-            self.rephase(seg_idx)
+#            if not np.isnan(self.seg_phase_probs[seg_idx[0]]):
+#                rfp = self.compute_rephase_prob(seg_idx)
+#                rfp_mem = self.seg_phase_probs[seg_idx[0]]
+#                if np.abs(rfp - rfp_mem) > 0.05:
+#                    print(rfp_mem, rfp)
+#                    breakpoint()
+            if np.isnan(self.seg_phase_probs[seg_idx[0]]):
+                self.seg_phase_probs[seg_idx[0]] = self.compute_rephase_prob(seg_idx)
+            rephase_prob = self.seg_phase_probs[seg_idx[0]]
 
             #
             # choose to join a cluster or make a new one
@@ -800,49 +747,29 @@ class DPinstance:
             # C is all possible clusters to move to
             A_a = self.clust_sums[cur_clust][0] if cur_clust in self.clust_sums else 0
             A_b = self.clust_sums[cur_clust][1] if cur_clust in self.clust_sums else 0
-            B_a = self.S.iloc[seg_idx, self.min_col].sum() # TODO: slow if seg_idx contains many SNPs
-            B_b = self.S.iloc[seg_idx, self.maj_col].sum()
-            C_ab = np.r_[self.clust_sums.values()] # first terms: (-1) = make new cluster, (0) = garbage cluster
+            B_a = self._Ssum_ph(seg_idx, min = True)
+            B_b = self._Ssum_ph(seg_idx, min = False)
+            C_ab = np.r_[self.clust_sums.values()] # first terms: -1 = make new cluster
             #C_ab = np.r_[[v for k, v in clust_sums.items() if k != cur_clust or cur_clust == -1]] # if we don't want to explicitly propose letting B rejoin cur_clust
-
-            #
-            # adjacent segment likelihoods
-
-            adj_AB = 0
-            adj_BC = np.zeros(len(self.clust_sums))
-
-            if not move_clust or (all_assigned and move_clust and np.random.rand() < 0.01):
-                adj_AB, adj_BC = self.compute_adj_liks(seg_idx, cur_clust)
-            else:
-                adj_BC[self.clust_sums.index(0)] = -np.inf
 
             # A+B,C -> A,B+C
 
             # A+B is likelihood of current cluster B is part of
             #AB = ss.betaln(A_a + B_a + 1, A_b + B_b + 1)
             # C is likelihood of target cluster pre-join
-            C = ss.betaln(C_ab[:, 0] + 1, C_ab[:, 1] + 1)
+            C = ss.betaln(C_ab[:, 0] + 1 + self.betahyp, C_ab[:, 1] + 1 + self.betahyp)
+            C[0] = 0 # don't count prior twice when opening a new cluster
             # A is likelihood cluster B is part of, minus B
             #A = ss.betaln(A_a + 1, A_b + 1)
-            # B+C is likelihood of target cluster post-join
-            BC = ss.betaln(C_ab[:, 0] + B_a + 1, C_ab[:, 1] + B_b + 1)
+            # B+C is likelihood of target cluster post-join, with both phase orientations
+            BC = ss.betaln(C_ab[:, [0]] + np.c_[B_a, B_b] + 1 + self.betahyp, C_ab[:, [1]] + np.c_[B_b, B_a] + 1 + self.betahyp)
 
-            #     L(join)           L(split)
-            #MLs = A + BC + adj_BC - (AB + C + adj_AB)
-            # TODO: remove extraneous calculations (e.g. adj_AB, AB, A);
-            #       likelihood simplifies to this in the prior:
-            MLs = adj_BC + BC - C
-
-            # if we are moving multiple contiguous segments assigned to the same
-            # cluster, do not allow them to create a new cluster. this helps keep
-            # cluster indices consistent
-            if n_move > 1 and not move_clust:
-                MLs[self.clust_sums.index(-1)] = -np.inf
+            MLs = BC - C[:, None]
 
             #
             # priors
 
-            # prior on previous cluster fractions
+            ## prior on previous cluster fractions {{{
 
             prior_diff = []
             prior_com = []
@@ -867,234 +794,334 @@ class DPinstance:
                 # [-1 (totally new cluster), <prior_diff>, <prior_com + prior_null>]
                 prior_idx = np.r_[
                   np.r_[[self.clust_prior.index(x) for x in prior_diff]],
-                  np.r_[[self.clust_prior.index(x) if x in self.clust_prior else 0 for x in (prior_com | prior_null | {0})]]
+                  np.r_[[self.clust_prior.index(x) if x in self.clust_prior else 0 for x in (prior_com | prior_null)]]
                 ]
 
+                # prior marginal likelihoods for both phase orientations
                 prior_MLs = ss.betaln( # prior clusters + segment
-                  np.r_[self.clust_prior_mat[prior_idx, 0]] + B_a + 1,
-                  np.r_[self.clust_prior_mat[prior_idx, 1]] + B_b + 1
+                  np.c_[self.clust_prior_mat[prior_idx, 0]] + np.c_[B_a, B_b] + 1,
+                  np.c_[self.clust_prior_mat[prior_idx, 1]] + np.c_[B_b, B_a] + 1
                 ) \
-                - (ss.betaln(B_a + 1, B_b + 1) + np.r_[np.r_[self.clust_prior_liks.values()][prior_idx]]) # prior clusters, segment
+                - np.c_[ss.betaln(B_a + 1, B_b + 1) + np.r_[np.r_[self.clust_prior_liks.values()][prior_idx]]] # prior clusters, segment
 
                 clust_prior_p = np.maximum(np.exp(prior_MLs - prior_MLs.max())/np.exp(prior_MLs - prior_MLs.max()).sum(), 1e-300)
 
                 # expand MLs to account for multiple new clusters
-                MLs = np.r_[np.full(len(prior_diff), MLs[0]), MLs[1:]]
-                
-            # DP prior based on clusters sizes
-            # DP alpha factor is split proportionally between prior_diff and -1 (brand new cluster)
-            ccp = np.r_[[self.clust_count_prior[x] for x in prior_diff]]
-            count_prior = np.r_[self.clust_count_prior[-1]*ccp/ccp.sum(), self.clust_count_prior[0], self.clust_counts.values()]
-            count_prior /= count_prior.sum()
+                MLs = np.r_[np.full([len(prior_diff), 2], MLs[0]), MLs[1:, :]]
 
-            # choose to join a cluster or make a new one (choice_idx = 0)
-            num = MLs + np.log(count_prior) + np.log(clust_prior_p)
-            choice_p = np.exp(num - num.max())/np.exp(num - num.max()).sum()
+            # }}}
+                
+            ## DP prior based on clusters sizes
+            n_c = np.c_[self.clust_counts.values()]/self.dp_count_scale_factor
+            M = n_move/self.dp_count_scale_factor
+            N = n_c.sum() + M
+            log_count_prior = np.full([len(self.clust_sums), 1], np.nan)
+            log_count_prior[1:] = ss.gammaln(M + n_c) + ss.gammaln(N + self.alpha - M) \
+              - (ss.gammaln(n_c) + ss.gammaln(N + self.alpha))
+            # probability of opening a new cluster
+            log_count_prior[0] = ss.gammaln(M) + np.log(self.alpha) + ss.gammaln(N + self.alpha - M) - ss.gammaln(N + self.alpha)
+
+            # p(phase|X)
+            log_phase_prob = np.log(np.maximum(1e-300, np.r_[1 - rephase_prob, rephase_prob]))
+
+            #
+            # adjacent segment likelihood
+
+            log_adj_lik = self.compute_adj_prob(break_idx[0])
+ 
+            # p(X|clust,phase)p(X|seg,phase)p(clust)p(phase)
+            num = (MLs               # p({a_i, b_i}_{i\in B} | {a_i, b_i}_{i\in clust}, phase_{i\in B})
+                  + log_adj_lik      # p({a_i, b_i}_{i\in B} | U, D, phase_{i\in B})
+                  + log_count_prior  # p(clust) (DP prior on clust counts)
+                  + log_phase_prob)  # p(phase)
+
+            num -= num.max() # avoid underflow in sum-exp
+
+            # p(clust,phase|X)
+            choice_p = np.exp(num - np.log(np.exp(num).sum()))
+
+            # row major indexing: choice_idx//2 = cluster index, choice_idx & 1 = rephase true
             choice_idx = np.random.choice(
-              np.r_[0:len(MLs)],
-              p = choice_p
+              np.r_[0:np.prod(choice_p.shape)],
+              p = choice_p.ravel()
             )
             # -1 = brand new, -2, -3, ... = -(prior clust index) - 2
-            # 0 = garbage
-            choice = np.r_[-np.r_[prior_diff] - 2, 0, self.clust_counts.keys()][choice_idx]
+            choice = np.r_[-np.r_[prior_diff] - 2, self.clust_counts.keys()][choice_idx//2]
+
+            # save rephasing status
+            if choice_idx & 1:
+                self.S.iloc[seg_idx, self.flip_col] = ~self.S.iloc[seg_idx, self.flip_col]
+                for b in break_idx:
+                    st = self.breakpoints[b]
+                    en = self.breakpoints[b + 1]
+                    self.seg_sums[st] = self.seg_sums[st][::-1]
 
             # create new cluster
             if choice < 0:
                 # if we are moving an entire cluster, give it the same index it used to have
                 # otherwise, cluster indices will be inconsistent
-                if move_clust:
-                    new_clust_idx = cl_idx
-                elif choice == -1: # totally new cluster
+                if cur_clust not in self.clust_counts:
+                    new_clust_idx = cur_clust
+                else: # totally new cluster
                     max_clust_idx += 1
                     new_clust_idx = max_clust_idx
-                else: # match index of cluster in prior
-                    new_clust_idx = -choice - 2
 
                 self.clust_counts[new_clust_idx] = n_move
                 self.S.iloc[seg_idx, self.clust_col] = new_clust_idx
                 self.clusts[seg_idx] = new_clust_idx
 
-                self.clust_sums[new_clust_idx] = np.r_[B_a, B_b]
+                self.clust_sums[new_clust_idx] = np.r_[B_a, B_b] if not choice_idx & 1 else np.r_[B_b, B_a]
                 self.clust_members[new_clust_idx] = set(seg_idx)
-
-            # send to garbage
-            elif choice == 0:
-                self.S.iloc[seg_idx, self.clust_col] = 0
-                self.clusts[seg_idx] = 0
 
             # join existing cluster
             else:
-                # if we are combining two clusters, take the index of the bigger one
-                # this helps to keep cluster indices consistent
-                if move_clust and self.clust_counts[choice] < n_move:
-                    self.clust_counts[cl_idx] = self.clust_counts[choice]
-                    self.clust_sums[cl_idx] = self.clust_sums[choice]
-                    self.clust_members[cl_idx] = self.clust_members[choice]
-                    self.S.iloc[np.flatnonzero(self.S["clust"] == choice), self.clust_col] = cl_idx
-                    del self.clust_counts[choice]
-                    del self.clust_sums[choice]
-                    del self.clust_members[choice]
-                    choice = cl_idx
-
                 self.clust_counts[choice] += n_move 
-                self.clust_sums[choice] += np.r_[B_a, B_b]
+                self.clust_sums[choice] += np.r_[B_a, B_b] if not choice_idx & 1 else np.r_[B_b, B_a]
                 self.S.iloc[seg_idx, self.clust_col] = choice
                 self.clusts[seg_idx] = choice
 
                 self.clust_members[choice].update(set(seg_idx))
 
-            for si in seg_idx:
-                unassigned_segs.discard(si)
+            # if segment was rephased, update saved phasing probabilities
+            if choice_idx & 1:
+                for bp_idx in break_idx:
+                    st = self.breakpoints[bp_idx]
+                    en = self.breakpoints[bp_idx + 1]
+                    self.seg_phase_probs[st] = self.compute_rephase_prob(np.r_[st:en])
 
-            # track global state of cluster assignments
-            # on average, each segment will have been reassigned every n_seg/(n_clust/2) iterations
-            if burned_in and n_it - n_it_last > len(self.S)/(len(self.clust_counts)*2):
-                self.segs_to_clusters.append(self.S["clust"].copy())
+            # update breakpoints
+
+            # B->A
+            #    .   .     .   break_idx + 1
+            # A B A B A C B A
+            #  +   +     +     break_idx
+            #*           *     update_idx
+
+            break_idx_bi = break_idx | { x + 1 for x in break_idx }
+            snp_idx_bi = sc.SortedSet([self.breakpoints[b] for b in break_idx_bi])
+            snp_idx = sc.SortedSet([self.breakpoints[b] for b in break_idx])
+            update_idx = sc.SortedSet()
+            for snp in snp_idx_bi:
+                if snp < len(self.S) and self.clusts[snp - 1] == self.clusts[snp]:
+                    snp_idx.discard(snp) # discard rather than remvoe because this could be in snp_idx + 1
+                    self.breakpoints.remove(snp)
+                    self.seg_sums.pop(snp)
+                    self.seg_liks.pop(snp)
+                    self.seg_phase_probs.pop(snp)
+                    self.clust_members_bps[self.clusts[snp]].discard(snp) # discard rather than remove since this breakpoint could be in break_idx + 1, which would belong to another cluster
+                    update_idx.add(self.breakpoints.bisect_left(snp) - 1)
+                    snp_idx.add(self.breakpoints[self.breakpoints.bisect_left(snp) - 1])
+#            if len(update_idx):
+#                usnp = self.breakpoints[self.breakpoints.bisect_left(seg_idx[0]) - 1]
+#                print(f"{usnp}: {self.clusts[usnp]}")
+#                print(f"{snp_idx[0]}: {self.clusts[snp_idx[0]]} <")
+#                print(f"{snp_idx[1]}: {self.clusts[snp_idx[1]]} <")
+#                dsnp = self.breakpoints[self.breakpoints.bisect_right(seg_idx[0])]
+#                print(f"{dsnp}: {self.clusts[dsnp]}")
+#                print(f"Update: {self.breakpoints[update_idx[0]]}")
+            for bp_idx in update_idx:
+                st = self.breakpoints[bp_idx]
+                en = self.breakpoints[bp_idx + 1]
+                A = self._Ssum_ph(np.r_[st:en], min = True)
+                B = self._Ssum_ph(np.r_[st:en], min = False)
+                self.seg_sums[st] = np.r_[A, B]
+                self.seg_liks[st] = ss.betaln(A + 1 + self.betahyp, B + 1 + self.betahyp)
+                self.seg_phase_probs[st] = self.compute_rephase_prob(np.r_[st:en])
+
+            if choice < 0:
+                self.clust_members_bps[new_clust_idx] = snp_idx
+            else:
+                self.clust_members_bps[choice] |= snp_idx
+
+# diagnostic code to check if breakpoint list is properly updated
+#            if touch90:
+#                x = sc.SortedSet()
+#                for y in self.clust_members_bps.values():
+#                    x |= y
+#                if len(x) != len(self.breakpoints) - 1:
+#                    breakpoint()
+
+# diagnostic code to compute overall likelihood delta for iteration
+#            if compute_lik:
+#                lik_after = self.compute_overall_lik_simple()
+#                lik_delta = lik_after.sum() - lik_before.sum()
+#                ML_choice = num.ravel()[choice_idx]
+#                if not np.isnan(lik_delta) and (lik_delta != 0 or ML_choice != 0):
+#                    print("lik: {}; MLs: {}".format(lik_delta, ML_choice))
+##                if lik_delta < 0 and ML_choice == 0:
+##                    breakpoint()
+
+            # save a sample from the MCMC when >95% of segments have been touched since the last iteration
+            if burned_in and (1 - (1 - 1/len(self.breakpoints))**(n_it - n_it_last)) > 0.95:
+                self.snps_to_clusters.append(self.S["clust"].copy())
                 self.phase_orientations.append(self.S["flipped"].copy())
+                self.segment_trace.append({ snp : self.S.iloc[snp, self.clust_col] for snp in self.breakpoints[:-1]})
+                self.likelihood_trace.append(self.compute_overall_lik_simple().sum())
                 n_it_last = n_it
 
             n_it += 1
 
-        return np.r_[self.segs_to_clusters], np.r_[self.phase_orientations]
+        return np.r_[self.snps_to_clusters], np.r_[self.phase_orientations], np.r_[self.likelihood_trace]
 
-    #_colors = mpl.cm.get_cmap("tab10").colors
-    _colors = ((np.c_[1:7] & np.r_[4, 2, 1]) > 0).astype(int)
-#   _colors = np.r_[np.c_[87, 182, 55],
-#   np.c_[253, 245, 81],
-#   np.c_[238, 109, 45],
-#   np.c_[204, 43, 30],
-#   np.c_[221, 50, 132],
-#   np.c_[0, 23, 204],
-#   np.c_[75, 172, 227]]/255
-
-    def get_unique_clust_idxs(self, segs_to_clusters = None):
-        if segs_to_clusters is None:
-            segs_to_clusters = np.r_[self.segs_to_clusters]
-        s2cu, s2cu_j = np.unique(segs_to_clusters, return_inverse = True)
-        return s2cu, s2cu_j.reshape(segs_to_clusters.shape)
+    def get_unique_clust_idxs(self, snps_to_clusters = None):
+        if snps_to_clusters is None:
+            snps_to_clusters = np.r_[self.snps_to_clusters]
+        s2cu, s2cu_j = np.unique(snps_to_clusters, return_inverse = True)
+        return s2cu, s2cu_j.reshape(snps_to_clusters.shape)
 
     def get_colors(self):
         s2cu, s2cu_j = self.get_unique_clust_idxs()
 
-        seg_terr = self.S["end_gp"] - self.S["start_gp"]
-        tot_terr = np.zeros(len(s2cu))
-        for r in s2cu_j:
-           tot_terr += npg.aggregate(r, seg_terr, size = len(tot_terr))
+        T = pd.DataFrame(np.c_[np.r_[self.breakpoints[:-2]], np.r_[self.breakpoints[1:-1]]], columns = ["snp_st", "snp_end"])
+        T["gp_st"] = self.S.loc[T["snp_st"], "pos_gp"].values
+        T["gp_end"] = self.S.loc[T["snp_end"], "pos_gp"].values
+        T["terr"] = T["gp_end"] - T["gp_st"]
+        T["clust"] = self.S.loc[T["snp_st"], "clust"].values
 
-        si = np.argsort(tot_terr)[::-1]
-        terr_cs = np.cumsum(tot_terr[si])/tot_terr.sum()
+        clust_terr = T.groupby("clust")["terr"].sum().sort_values(ascending = False)
+        si = clust_terr.index.argsort()
 
-        return [mpl.cm.get_cmap("gist_rainbow")(x) for x in np.linspace(0, 1, (terr_cs < 0.99).sum())]
+        # color any cluster larger than 10Mb (~0.003 of total genomic territory)
+        base_colors = np.array([
+          [0.368417, 0.506779, 0.709798],
+          [0.880722, 0.611041, 0.142051],
+          [0.560181, 0.691569, 0.194885],
+          [0.922526, 0.385626, 0.209179],
+          [0.528488, 0.470624, 0.701351],
+          [0.772079, 0.431554, 0.102387],
+          [0.363898, 0.618501, 0.782349],
+          [1, 0.75, 0],
+          [0.647624, 0.37816, 0.614037],
+          [0.571589, 0.586483, 0.],
+          [0.915, 0.3325, 0.2125],
+          [0.400822, 0.522007, 0.85],
+          [0.972829, 0.621644, 0.073362],
+          [0.736783, 0.358, 0.503027],
+          [0.280264, 0.715, 0.429209]
+        ])
+        extra_colors = np.array(
+          distinctipy.distinctipy.get_colors(
+            (clust_terr/clust_terr.sum() >= 0.003).sum() - base_colors.shape[0],
+            exclude_colors = [list(x) for x in np.r_[np.c_[0, 0, 0], np.c_[1, 1, 1], np.c_[0.5, 0.5, 0.5], np.c_[1, 0, 1], base_colors]],
+            rng = 1234
+          )
+        )
 
-    def visualize_segs(self):
-        plt.figure()
+        return np.r_[base_colors, extra_colors if extra_colors.size > 0 else np.empty([0, 3])][si]
+
+    def visualize_segs(self, f = None, use_clust = False, show_snps = False, chrom = None):
+        f = plt.figure(figsize = [16, 4]) if f is None else f
         ax = plt.gca()
-        ax.set_xlim([0, self.S["end_gp"].max()])
+        if chrom is None:
+            ax.set_xlim([0, self.S["pos_gp"].max()])
+        else:
+            ax.set_xlim([*self.S.loc[self.S["chr"] == chrom, "pos_gp"].iloc[[0, -1]]])
         ax.set_ylim([0, 1])
 
         colors = self.get_colors()
         s2cu, s2cu_j = self.get_unique_clust_idxs()
 
-        n_samp = len(self.segs_to_clusters)
+        n_samp = len(self.snps_to_clusters)
 
-        for s2c, s2ph in zip(s2cu_j, self.phase_orientations):
+        selff = copy.deepcopy(self)
+
+        if show_snps:
+            # set SNP alpha based on number of SNPs
+            logistic = lambda A, K, B, M, x : A + (K - A)/(1 + np.exp(-B*(x - M)))
+            default_alpha = logistic(A = 0.4, K = 0.025, B = 0.00001, M = 120000, x = len(self.S) if chrom is None else (self.S["chr"] == chrom).sum())
+
+            ph_prob = np.r_[self.phase_orientations].mean(0)
+
+            cu = np.searchsorted(s2cu, self.S["clust"])
+
+            # only plot unambiguous SNPs once
+            uidx = ph_prob == 0
+            ax.scatter(
+              self.S.loc[uidx, "pos_gp"],
+              self.S.loc[uidx, "min"]/self.S.loc[uidx, ["min", "maj"]].sum(1),
+              color = colors[cu[uidx] % len(colors)], marker = '.', alpha = default_alpha, s = 1
+            )
+            uidx = ph_prob == 1
+            ax.scatter(
+              self.S.loc[uidx, "pos_gp"],
+              self.S.loc[uidx, "maj"]/self.S.loc[uidx, ["min", "maj"]].sum(1),
+              color = colors[cu[uidx] % len(colors)], marker = '.', alpha = default_alpha, s = 1
+            )
+
+            # plot ambiguous SNPs with opacity weighted by phase probability
+            nuidx = (ph_prob != 0) & (ph_prob != 1)
+            ax.scatter(
+              selff.S.loc[nuidx, "pos_gp"],
+              self.S.loc[nuidx, "min"]/self.S.loc[nuidx, ["min", "maj"]].sum(1),
+              color = colors[cu[nuidx] % len(colors)], marker = '.', alpha = default_alpha*(1 - ph_prob[nuidx]), s = 1
+            )
+            ax.scatter(
+              selff.S.loc[nuidx, "pos_gp"],
+              self.S.loc[nuidx, "maj"]/self.S.loc[nuidx, ["min", "maj"]].sum(1),
+              color = colors[cu[nuidx] % len(colors)], marker = '.', alpha = default_alpha*ph_prob[nuidx], s = 1
+            )
+
+        for seg2c, s2ph in zip(self.segment_trace, self.phase_orientations):
+            # only show maximum likelihood if we're overlaying SNPs
+            if show_snps:
+                mlidx = np.r_[self.likelihood_trace].argmax()
+                seg2c, s2ph = self.segment_trace[mlidx], self.phase_orientations[mlidx]
+
+            # get uniqued clust indices for each segment start
+            seg_cu = np.searchsorted(s2cu, np.r_[list(seg2c.values())])
+
             # rephase segments according to phase orientation sample
-            S_ph = self.S.copy()
-            flip_idx = np.flatnonzero(s2ph != S_ph["flipped"])
-            S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
+            selff.S["flipped"] = s2ph
 
-            for i, r in enumerate(S_ph.itertuples()):
-                ## don't show garbage clusters
-                #if s2cu[s2c[i]] == 0:
-                #    continue
+            seg_bdy = np.r_[list(seg2c.keys()), len(selff.S)]
+            seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
 
-                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], r.min + 1, r.maj + 1)
-                ax.add_patch(mpl.patches.Rectangle((r.start_gp, ci_lo), r.end_gp - r.start_gp, ci_hi - ci_lo, facecolor = colors[s2c[i] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
-
-    def visualize_adjacent_segs(self, f = None, n_samp = None):
-        plt.figure(num = f, figsize = [17.56, 5.67])
-        ax = plt.gca()
-        ax.set_xlim([0, self.S["end_gp"].max()])
-        ax.set_ylim([0, 1])
-
-        colors = self.get_colors()
-        s2cu, s2cu_j = self.get_unique_clust_idxs()
-
-        n_samp = len(self.segs_to_clusters) if n_samp is None else n_samp
-
-        for s2c, s2ph in zip(s2cu_j, self.phase_orientations):
-            # rephase segments according to phase orientation sample
-            S_ph = self.S.copy()
-            flip_idx = np.flatnonzero(s2ph != S_ph["flipped"])
-            S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
-
-            bdy = np.flatnonzero(np.r_[1, np.diff(s2c) != 0, 1])
-            bdy = np.c_[bdy[:-1], bdy[1:]]
-
-#            s2c_nz = s2c.copy()
-#            zidx = np.flatnonzero(s2c[bdy[:, 0]] == 0)
-#            for z in zidx:
-#                s2c_nz[bdy[z, 0]:bdy[z, 1]] = s2c_nz[bdy[z - 1, 0]]
-#            bdy_nz = np.flatnonzero(np.r_[1, np.diff(s2c_nz) != 0, 1])
-#            bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
-
-            for st, en in bdy:
-                ci_lo, med, ci_hi = s.beta.ppf([0.05, 0.5, 0.95], S_ph.iloc[st:en, self.min_col].sum() + 1, S_ph.iloc[st:en, self.maj_col].sum() + 1)
-                ax.add_patch(mpl.patches.Rectangle((S_ph.iloc[st]["start_gp"], ci_lo), S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"], np.maximum(0, ci_hi - ci_lo), facecolor = colors[s2c[st] % len(colors)], fill = True, alpha = 1/n_samp, zorder = 1000))
-
-    def visualize_clusts(self, f = None, n_samp = None, thick = False, nocolor = False):
-        plt.figure(num = f, figsize = [17.56, 5.67])
-        ax = plt.gca()
-        ax.set_xlim([0, self.S["end_gp"].max()])
-        ax.set_ylim([0, 1])
-
-        colors = self.get_colors()
-        s2cu, s2cu_j = self.get_unique_clust_idxs()
-
-        n_samp = len(self.segs_to_clusters) if n_samp is None else n_samp
-
-        for s2c, s2ph in zip(s2cu_j, self.phase_orientations):
-            # rephase segments according to phase orientation sample
-            S_ph = self.S.copy()
-            flip_idx = np.flatnonzero(s2ph != S_ph["flipped"])
-            S_ph.iloc[flip_idx, [self.min_col, self.maj_col]] = S_ph.iloc[flip_idx, [self.maj_col, self.min_col]]
-
-            # get overall cluster sums
-            clust_min = npg.aggregate(s2c, S_ph["min"])
-            clust_maj = npg.aggregate(s2c, S_ph["maj"])
-            CIs = s.beta.ppf([0.05, 0.5, 0.95], clust_min[:, None] + 1, clust_maj[:, None] + 1)
-
-            # get boundaries of contiguous segments
-            bdy = np.flatnonzero(np.r_[1, np.diff(s2c) != 0, 1])
-            bdy = np.c_[bdy[:-1], bdy[1:]]
-
-#            s2c_nz = s2c.copy()
-#            zidx = np.flatnonzero(s2c[bdy[:, 0]] == 0)
-#            for z in zidx:
-#                s2c_nz[bdy[z, 0]:bdy[z, 1]] = s2c_nz[bdy[z - 1, 0]]
-#            bdy_nz = np.flatnonzero(np.r_[1, np.diff(s2c_nz) != 0, 1])
-#            bdy_nz = np.c_[bdy_nz[:-1], bdy_nz[1:]]
-
-            for st, en in bdy:
-                if thick:
-                    b = CIs[s2c[st], 1] - 0.01
-                    t = CIs[s2c[st], 1] + 0.01
+            for i, (st, en) in enumerate(seg_bdy):
+                if use_clust:
+                    ci_lo, med, ci_hi = s.beta.ppf(
+                      [0.05, 0.5, 0.95],
+                      selff.clust_sums[seg2c[st]][0] + 1 + self.betahyp,
+                      selff.clust_sums[seg2c[st]][1] + 1 + self.betahyp,
+                    )
                 else:
-                    color = colors[s2c[st] % len(colors)]
-                    b = CIs[s2c[st], 0]
-                    t = CIs[s2c[st], 2]
-
-                if nocolor:
-                    color = [0, 1, 0]
-                else:
-                    color = colors[s2c[st] % len(colors)]
-
+                    ci_lo, med, ci_hi = s.beta.ppf(
+                      [0.05, 0.5, 0.95],
+                      selff._Ssum_ph(np.r_[st:en], min = True) + 1 + self.betahyp,
+                      selff._Ssum_ph(np.r_[st:en], min = False) + 1 + self.betahyp,
+                    )
                 ax.add_patch(mpl.patches.Rectangle(
-                  xy = (S_ph.iloc[st]["start_gp"], b),
-                  width = S_ph.iloc[en - 1]["end_gp"] - S_ph.iloc[st]["start_gp"],
-                  height = t - b,
-                  facecolor = color,
-                  fill = True,
-                  alpha = 1/n_samp,
-                  zorder = 1000)
+                  (selff.S.iloc[st]["pos_gp"], ci_lo),
+                  selff.S.iloc[en - 1]["pos_gp"] - selff.S.iloc[st]["pos_gp"],
+                  np.maximum(0, ci_hi - ci_lo),
+                  facecolor = colors[seg_cu[i] % len(colors)],
+                  edgecolor = 'k' if show_snps else None, linewidth = 0.5 if show_snps else None,
+                  fill = True, alpha = 1 if show_snps else 1/n_samp, zorder = 1000
+                ))
+                ax.scatter(
+                  (selff.S.iloc[en - 1]["pos_gp"] + selff.S.iloc[st]["pos_gp"])/2,
+                  med,
+                  color = colors[seg_cu[i] % len(colors)],
+                  marker = '.', s = 1, alpha = 1 if show_snps else 1/n_samp
                 )
+
+            if show_snps:
+                break
+
+    def visualize_clusts(self, **kwargs):
+        self.visualize_segs(use_clust = True, **kwargs)
+
+    def plot_likelihood_trace(self):
+        lt = np.vstack(self.lik_trace)
+        lt = lt[np.isnan(lt).sum(1) == 0, :]
+
+        lt = lt[self.burnin_iteration:, :]
+
+        plt.figure(); plt.clf()
+        plt.scatter(np.r_[0:len(lt)], lt[:, 0] - lt[:, 0].max())
+        #plt.scatter(np.r_[0:len(lt)], lt[:, 1] - lt[:, 1].max())
+        plt.scatter(np.r_[0:len(lt)], lt[:, 2] - lt[:, 2].max())
+        plt.scatter(np.r_[0:len(lt)], lt[:, 3] - lt[:, 3].max())
+        plt.scatter(np.r_[0:len(lt)], lt.sum(1) - lt.sum(1).max(), marker = '+', color = 'k')
+        plt.legend(["Clust", "DP", "Seg", "Total"])
+        plt.xlabel(r"Post-burnin iteration ($\times 100$)")
+        plt.ylabel(r"$\Delta$ likelihood")

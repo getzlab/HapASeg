@@ -31,19 +31,21 @@ phasing = wolf.ImportTask(
 
 # for Hapaseg itself
 hapaseg = wolf.ImportTask(
-  task_path = "../", # TODO: make remote
+  task_path = ".", # TODO: make remote
   task_name = "hapaseg"
 )
 
 # for coverage collection
 split_intervals = wolf.ImportTask(
   task_path = "git@github.com:getzlab/split_intervals_TOOL.git",
-  task_name = "split_intervals"
+  task_name = "split_intervals",
+  commit = "dc102d8"
 )
 
 cov_collect = wolf.ImportTask(
   task_path = "git@github.com:getzlab/covcollect.git",
-  task_name = "covcollect"
+  task_name = "covcollect",
+  branch = "tot_reads"
 )
 
 ####
@@ -112,10 +114,10 @@ def workflow(
 
   num_cov_seg_samples=5,
 
-  persistant_dry_run = False
+  persistent_dry_run = False
 ):
-    # alert for persistant dry run
-    if persistant_dry_run:
+    # alert for persistent dry run
+    if persistent_dry_run:
         #TODO push this message to canine
         print("WARNING: Skipping file localization in dry run!")
     
@@ -160,7 +162,7 @@ def workflow(
             "t_bai" : tumor_bai,
           },
         token=localization_token,
-        persistent_disk_dry_run = persistant_dry_run
+        persistent_disk_dry_run = persistent_dry_run
         )
         collect_tumor_coverage = True
     elif tumor_coverage_bed is not None:
@@ -176,7 +178,7 @@ def workflow(
             "n_bai" : normal_bai
           },
         token=localization_token,
-        persistent_disk_dry_run = persistant_dry_run
+        persistent_disk_dry_run = persistent_dry_run
         )
         collect_normal_coverage = True
     elif normal_coverage_bed is not None:
@@ -192,8 +194,13 @@ def workflow(
     # collect or load coverage
     # tumor
     if collect_tumor_coverage:
-        primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
-        primary_contigs.extend(['chrX','chrY','chrM'])
+        # FIXME: hack to account for "chr" in hg38 but not in hg19
+        if ref_genome_build == "hg38":
+            primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
+            primary_contigs.extend(['chrX','chrY','chrM'])
+        else:
+            primary_contigs = [str(x) for x in range(1, 23)] + ["X", "Y", "M"]
+
         # create scatter intervals
         split_intervals_task = split_intervals.split_intervals(
           bam = tumor_bam_localization_task["t_bam"],
@@ -204,18 +211,19 @@ def workflow(
 
         # shim task to transform split_intervals files into subset parameters for covcollect task
         @prefect.task
-        def interval_gather(interval_files):
+        def interval_gather(interval_files, primary_contigs):
             ints = []
             for f in interval_files:
                 ints.append(pd.read_csv(f, sep = "\t", header = None, names = ["chr", "start", "end"]))
             #filter non-primary contigs
-            primary_contigs = ['chr{}'.format(i) for i in range(1,23)]
-            primary_contigs.extend(['chrX','chrY','chrM'])
-            full_bed = pd.concat(ints).sort_values(["chr", "start", "end"])
+            full_bed = pd.concat(ints).sort_values(["chr", "start", "end"]).astype({ "chr" : str })
             filtered_bed = full_bed.loc[full_bed.chr.isin(primary_contigs)]
             return filtered_bed
 
-        subset_intervals = interval_gather(split_intervals_task["interval_files"])
+        subset_intervals = interval_gather(
+          split_intervals_task["interval_files"],
+          primary_contigs
+        )
 
         # dispatch coverage scatter
         tumor_cov_collect_task = cov_collect.Covcollect(
@@ -248,11 +256,21 @@ def workflow(
           ref_fasta = localization_task["ref_fasta"],
           ref_fasta_idx = localization_task["ref_fasta_idx"],
           ref_fasta_dict = localization_task["ref_fasta_dict"],
-          dens_cutoff = 0.58 # TODO: set dynamically
+          use_pod_genotyper = True
         )
 
     # otherwise, run M1 and get it from the BAM
     elif callstats_file is None and tumor_bam is not None and normal_bam is not None:
+        # split het sites file uniformly
+#        split_het_sites = wolf.Task(
+#          name = "split_het_sites",
+#          inputs = { "snp_list" : localization_task["common_snp_list"] },
+#          script = """
+#          sed '/^@/d' ${snp_list} | split -l 10000 -d -a 4 - snp_list_chunk
+#          """,
+#          outputs = { "snp_list_shards" : "snp_list_chunk*" }
+#        )
+
         m1_task = mutect1.mutect1(inputs=dict(
           pairName = "het_coverage",
           caseName = "tumor",
@@ -269,7 +287,12 @@ def workflow(
           refFastaIdx = localization_task["ref_fasta_idx"],
           refFastaDict = localization_task["ref_fasta_dict"],
 
-          intervals = split_intervals_task["interval_files"]
+          intervals = split_intervals_task["interval_files"],
+          #intervals = split_het_sites["snp_list_shards"],
+
+          exclude_chimeric = True#,
+
+          #force_calling = True,
         ))
 
         hp_scatter = het_pulldown.get_het_coverage_from_callstats(
@@ -278,7 +301,7 @@ def workflow(
           ref_fasta = localization_task["ref_fasta"],
           ref_fasta_idx = localization_task["ref_fasta_idx"],
           ref_fasta_dict = localization_task["ref_fasta_dict"],
-          dens_cutoff = 0.58 # TODO: set dynamically
+          use_pod_genotyper = True
         )
 
         # gather het pulldown
@@ -347,6 +370,13 @@ def workflow(
 
         F = F.join(F2)
 
+        # prepend "chr" to F's index if it's missing
+        idx = ~F.index.str.contains("^chr")
+        if idx.any():
+            new_index = F.index.values
+            new_index[idx] = "chr" + F.index[idx]
+            F = F.set_index(new_index)
+
         # reference panel BCFs
         R = pd.DataFrame({ "path" : localization_task } ).reset_index()
         F = F.join(R.join(R.loc[R["index"].str.contains("^chr.*_bcf$"), "index"].str.extract(r"(?P<chr>chr[^_]+)"), how = "right").set_index("chr").drop(columns = ["index"]).rename(columns = { "path" : "ref_bcf" }), how = "inner")
@@ -365,8 +395,10 @@ def workflow(
         vcf_idx_in = F["bcf_idx_path"],
         vcf_ref = F["ref_bcf"],
         vcf_ref_idx = F["ref_bcf_idx"],
-        output_file_prefix = "foo"
-      )
+        output_file_prefix = "foo",
+        num_threads = 4,
+      ),
+      resources = { "cpus-per-task" : 4 }
     )
 
     # TODO: run whatshap
@@ -429,55 +461,90 @@ def workflow(
      }
     )
     
-    hapaseg_arm_concat_task = hapaseg.Hapaseg_concat_arms(
-        inputs={
-        "arm_results":[hapaseg_arm_AMCMC_task["arm_level_MCMC"]],
-        "ref_fasta":localization_task["ref_fasta"] #pickle load will import capy
-        }
-    )
+#    hapaseg_arm_concat_task = hapaseg.Hapaseg_concat_arms(
+#        inputs={
+#        "arm_results":[hapaseg_arm_AMCMC_task["arm_level_MCMC"]],
+#        "ref_fasta":localization_task["ref_fasta"] #pickle load will import capy
+#        }
+#    )
+#    @prefect.task
+#    def get_arm_samples_range(arm_concat_object):
+#        obj = np.load(arm_concat_object)
+#        n_samples_range = list(range(int(obj["n_samps"])))
+#        return n_samples_range
+#    
+#    n_samps_range = get_arm_samples_range(hapaseg_arm_concat_task["num_samples_obj"])
+
+    # concat arm level results
     @prefect.task
-    def get_arm_samples_range(arm_concat_object):
-        obj = np.load(arm_concat_object)
-        n_samples_range = list(range(int(obj["n_samps"])))
-        return n_samples_range
-    
-    n_samps_range = get_arm_samples_range(hapaseg_arm_concat_task["num_samples_obj"])
-    
+    def concat_arm_level_results(arm_results):
+        A = []
+        for arm_file in arm_results:
+            with open(arm_file, "rb") as f:
+                H = pickle.load(f)
+                A.append(pd.Series({ "chr" : H.P["chr"].iloc[0], "start" : H.P["pos"].iloc[0], "end" : H.P["pos"].iloc[-1], "results" : H }))
+
+        # get into order
+        A = pd.concat(A, axis = 1).T.sort_values(["chr", "start", "end"]).reset_index(drop = True)
+
+        # save
+        _, tmpfile = tempfile.mkstemp(  )
+        A.to_pickle(tmpfile)
+
+        return tmpfile
+
+    arm_concat = concat_arm_level_results(hapaseg_arm_AMCMC_task["arm_level_MCMC"])
+
     ## run DP
 
-    # scatter DP
     hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
      inputs = {
-       "seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
-       "n_dp_iter" : 10,   # TODO: allow to be specified?
-       "seg_samp_idx" : n_samps_range,
-       "cytoband_file" : localization_task["cytoband_file"], # TODO: allow to be specified
+       "seg_dataframe" : arm_concat,
+       #"seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
+       "cytoband_file" : localization_task["cytoband_file"],
        "ref_fasta" : localization_task["ref_fasta"],
        "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
        "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink
      }
     )
-    
-    ##collect DP results
-    collect_adp_task = hapaseg.Hapaseg_collect_adp(
-        inputs={"dp_results":[hapaseg_allelic_DP_task["cluster_and_phase_assignments"]]
-               }
-    )
-    
-    ### coverage tasks ####
+
+    #
+    # coverage tasks
+    #
 
     # prepare coverage MCMC
     prep_cov_mcmc_task = hapaseg.Hapaseg_prepare_coverage_mcmc(
     inputs={
         "coverage_csv":tumor_cov_gather_task["coverage"], #each scatter result is the same
-        "allelic_clusters_object":collect_adp_task["full_dp_results"],
-        "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'][0], #each scatter result is the same
+        "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+        "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
+        "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
         "repl_pickle":ref_config["repl_file"],
         "gc_pickle":ref_config["gc_file"],
-        "ref_file_path":localization_task["ref_fasta"]
+        "ref_fasta":localization_task["ref_fasta"],
+        "bin_width":bin_width if wgs else 1
         }
     )
-    
+
+    # shim task to get number of allelic segments
+    #   (coverage MCMC will be scattered over each allelic segment)
+    @prefect.task
+    def get_N_seg_groups(S):
+        return list(range(len(pd.read_pickle(S))))
+
+    cov_mcmc_shard_range = get_N_seg_groups(prep_cov_mcmc_task["allelic_seg_groups"])
+
+    # coverage MCMC burnin(?) <- do we still need to burnin separately?
+    cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc(
+        inputs={
+            "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
+            "allelic_seg_indices":prep_cov_mcmc_task["allelic_seg_groups"],
+            "allelic_seg_scatter_idx":cov_mcmc_shard_range,
+            "num_draws":50,
+            "bin_width":bin_width,
+        }
+    )
+ 
     #get the cluster indices from the preprocess data and generate the burnin indices
     @prefect.task(nout=4)
     def _get_ADP_cluster_list(preprocess_data_obj):
@@ -506,9 +573,9 @@ def workflow(
         cluster_idxs = [i for i in np.arange(num_clusters)]
         print(cluster_idxs, cluster_list, range_list) 
         return len(cluster_idxs), cluster_idxs, cluster_list, range_list
-    
+
     num_clusters, cluster_idxs, cluster_list, range_list = _get_ADP_cluster_list(prep_cov_mcmc_task["preprocess_data"])
-    
+
     # coverage MCMC burnin
     cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc_burnin(
         inputs={
@@ -519,7 +586,7 @@ def workflow(
             "range":range_list
         }
     )
-    
+
     # coverage MCMC scatter post-burnin
     cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc(
         inputs={
@@ -530,7 +597,7 @@ def workflow(
             "burnin_files":[cov_mcmc_burnin_task["burnin_data"]] * num_clusters # this is to account for a wolf input len bug
         }
     )
-    
+
     # collect coverage MCMC
     cov_mcmc_gather_task = hapaseg.Hapaseg_collect_coverage_mcmc(
     inputs = {
@@ -539,6 +606,7 @@ def workflow(
         "bin_width":bin_width
         }
     )
+
     # coverage DP
     cov_dp_task = hapaseg.Hapaseg_coverage_dp(
     inputs = {
@@ -550,27 +618,26 @@ def workflow(
         "bin_width":bin_width
         }
     )
-    
+
     #get the adp draw number from the preprocess data object
     @prefect.task
     def _get_ADP_draw_num(preprocess_data_obj):
         return int(np.load(preprocess_data_obj)["adp_cluster"])
     
     adp_draw_num = _get_ADP_draw_num(prep_cov_mcmc_task["preprocess_data"])
-    
-    # generate acdp dataframe
 
+    # generate acdp dataframe 
     gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
     inputs = {
         "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'][0], #each scatter result is the same
-        "allelic_clusters_object":collect_adp_task["full_dp_results"],
+        "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
         "cdp_filepaths":[cov_dp_task["cov_dp_object"]],
         "allelic_draw_index":adp_draw_num,
         "ref_file_path":localization_task["ref_fasta"],
         "bin_width":bin_width
         }
     )
-    
+
     # run acdp
     acdp_task = hapaseg.Hapaseg_run_acdp(
     inputs = {
@@ -582,18 +649,20 @@ def workflow(
     )
 
     #cleanup by deleting bam disks. we make seperate tasks for the bams
-    if not persistant_dry_run and t_bam is not None and t_bai is not None:
+    if not persistent_dry_run and tumor_bam is not None and tumor_bai is not None:
         delete_tbams_task = DeleteDisk(
           inputs = {
             "disk" : [tumor_bam_localization_task["t_bam"], tumor_bam_localization_task["t_bai"]],
             "upstream" : m1_task["mutect1_cs"] if callstats_file is None else tumor_cov_gather_task["coverage"] 
+          }
      )
      
-    if not persistant_dry_run and n_bam is not None and n_bai is not None:
+    if not persistent_dry_run and normal_bam is not None and normal_bai is not None:
         delete_nbams_task = DeleteDisk(
           inputs = {
             "disk" : [normal_bam_localization_task["n_bam"], normal_bam_localization_task["n_bai"]],
             "upstream" : m1_task["mutect1_cs"]
+          }
     )
     #also delete the cached files disk
     delete_file_disk_task = DeleteDisk(
