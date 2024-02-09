@@ -126,6 +126,7 @@ def workflow(
   ref_genome_build=None, #must be hg19 or hg38
   
   target_list = None,
+  common_snp_list = None, # for adding a custom SNP list
   betahyp = 4, # hyperparameter for smoothing initial allelic segmentation. only applicable for whole exomes.
 
   localization_token=None,
@@ -184,7 +185,7 @@ def workflow(
         gc_file = ref_config["gc_file"],
 
         genetic_map_file = ref_config["genetic_map_file"],
-        common_snp_list = ref_config["common_snp_list"],
+        common_snp_list = ref_config["common_snp_list"] if common_snp_list is not None else common_snp_list,
           
         cytoband_file = ref_config["cytoband_file"],
         
