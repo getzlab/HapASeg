@@ -194,7 +194,7 @@ def workflow(
         gc_file = ref_config["gc_file"],
 
         genetic_map_file = ref_config["genetic_map_file"],
-        common_snp_list = ref_config["common_snp_list"] if common_snp_list is not None else common_snp_list,
+        common_snp_list = ref_config["common_snp_list"] if common_snp_list is None else common_snp_list,
           
         cytoband_file = ref_config["cytoband_file"],
         
