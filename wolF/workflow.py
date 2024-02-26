@@ -137,6 +137,8 @@ def workflow(
   target_list = None,
   common_snp_list = None, # for adding a custom SNP list
   betahyp = 4, # hyperparameter for smoothing initial allelic segmentation. only applicable for whole exomes.
+  adp_min_seg_len = 0, # set to >0 to set cutoff of minimum length of input segment ADP will cluster
+  adp_min_seg_snps = 0, # set to >0 to set cutoff of minimum number of SNPs in input segment that ADP will cluster
 
   localization_token=None,
 
@@ -632,6 +634,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
        #"seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
        "cytoband_file" : localization_task["cytoband_file"],
        "wgs" : wgs,
+       "min_seg_len" : adp_min_seg_len,
+       "min_seg_snps" : adp_min_seg_snps,
        "ref_fasta" : localization_task["ref_fasta"],
        "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
        "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink

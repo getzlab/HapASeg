@@ -121,6 +121,8 @@ def parse_args():
     dp.add_argument("--ref_fasta", required = True) # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
     dp.add_argument("--cytoband_file", required = True)
     dp.add_argument("--wgs", action="store_true", default=False)
+    dp.add_argument("--min_seg_len", default=0)
+    dp.add_argument("--min_seg_snps", default=0)
   
     ## coverage MCMC
     coverage_mcmc = subparsers.add_parser("coverage_mcmc",
@@ -495,7 +497,7 @@ def main():
         
     elif args.command == "dp":
         # load allelic segmentation samples
-        A = A_DP(args.seg_dataframe, ref_fasta=args.ref_fasta, wgs = args.wgs)
+        A = A_DP(args.seg_dataframe, ref_fasta=args.ref_fasta, wgs = args.wgs, min_seg_len = args.min_seg_len, min_seg_snps = args.min_seg_snps)
 
         # run DP
         snps_to_clusters, snps_to_phases, likelihoods = A.run()

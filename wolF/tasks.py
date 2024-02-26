@@ -117,6 +117,8 @@ class Hapaseg_concat_arms(wolf.Task):
 class Hapaseg_allelic_DP(wolf.Task):
     inputs = {
       "seg_dataframe" : None,
+      "min_seg_len" : 0,
+      "min_seg_snps" : 0,
       "wgs" : None,
       "ref_fasta" : None,
       "cytoband_file" : None
@@ -126,7 +128,7 @@ class Hapaseg_allelic_DP(wolf.Task):
         export CAPY_REF_FA=${ref_fasta}
         hapaseg dp --seg_dataframe ${seg_dataframe} \
                 --ref_fasta ${ref_fasta} \
-                --cytoband_file ${cytoband_file}"""
+                --cytoband_file ${cytoband_file} --min_seg_len ${min_seg_len} --min_seg_snps ${min_seg_snps}"""
         if self.conf["inputs"]["wgs"] == True:
             script += " --wgs"
         return script
@@ -138,7 +140,7 @@ class Hapaseg_allelic_DP(wolf.Task):
       "SNP_plot" : "figures/SNPs.png",
       "seg_plot" : "figures/segs_only.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1203"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:min_seg_len_v1253"
     resources = { "cpus-per-task": 3, "mem" : "9G" }
 
 class Hapaseg_prepare_coverage_mcmc(wolf.Task):
