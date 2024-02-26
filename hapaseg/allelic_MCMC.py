@@ -24,11 +24,17 @@ class A_MCMC:
       quit_after_burnin = False,
       n_iter = 100000,
       ref_bias = 1.0,
-      betahyp = -1
+      betahyp = -1,
+      amp_bias = 1
     ):
         #
         # dataframe stuff
         self.P = P.copy().reset_index()
+
+        # factor to downscale REF/ALT to simulate amplification bias
+        # TODO should this impact ref bias?
+        # TODO should only 1 allele be rescaled? no
+        self._rescale_ref_alt_counts(amp_bias)
 
         # factor by which to downscale all reference alleles, in order to
         # correct for bias against the alternate allele due to capture or alignment
@@ -37,9 +43,9 @@ class A_MCMC:
         # column indices for iloc
         self.min_idx = self.P.columns.get_loc("MIN_COUNT")
         self.maj_idx = self.P.columns.get_loc("MAJ_COUNT")
-        
-        self.min_arr = self.P.iloc[:, self.min_idx].astype(int).values
-        self.maj_arr = self.P.iloc[:, self.maj_idx].astype(int).values
+        # (JB) not sure if astype(int) required here
+        self.min_arr = self.P.iloc[:, self.min_idx].values
+        self.maj_arr = self.P.iloc[:, self.maj_idx].values
 
         # TODO: recompute CI's too? these are not actually used anywhere
         # TODO: we might want to have site-specific reference bias (inferred from post-burnin segs)
@@ -116,6 +122,12 @@ class A_MCMC:
             self.betahyp = (self.P["REF_COUNT"] + self.P["ALT_COUNT"]).mean()/4.0
         else:
             self.betahyp = float(betahyp)
+
+    def _rescale_ref_alt_counts(self, amp_bias = 1):
+        if amp_bias != 1:
+            self.P["REF_COUNT"] = self.P["REF_COUNT"] * amp_bias
+            self.P["ALT_COUNT"] = self.P["ALT_COUNT"] * amp_bias
+
 
     def _Piloc(self, st, en, col_idx, incl_idx = None):
         """
