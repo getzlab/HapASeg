@@ -139,6 +139,7 @@ def workflow(
   betahyp = 4, # hyperparameter for smoothing initial allelic segmentation. only applicable for whole exomes.
   adp_min_seg_len = 0, # set to >0 to set cutoff of minimum length of input segment ADP will cluster
   adp_min_seg_snps = 0, # set to >0 to set cutoff of minimum number of SNPs in input segment that ADP will cluster
+  amp_bias=1, # set this != 1 to adjust ALT/REF counts in allelic MCMC
 
   localization_token=None,
 
@@ -157,8 +158,7 @@ def workflow(
 
   workspace = None,
   entity_type = 'pair', # terra entity type (sample, pair)
-  entity_name = None,
-):
+  entity_name = None):
     # alert for persistent dry run
     if persistent_dry_run:
         #TODO push this message to canine
@@ -564,7 +564,8 @@ def workflow(
        "allele_counts" : hapaseg_load_snps_task["allele_counts"],
        "start" : chunks["start"],
        "end" : chunks["end"],
-       "betahyp" : -1 if wgs else 0
+       "betahyp" : -1 if wgs else 0,
+       "amp_bias": amp_bias
       }
     )
 

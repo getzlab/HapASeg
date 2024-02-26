@@ -47,7 +47,8 @@ class Hapaseg_burnin(wolf.Task):
       "allele_counts" : None,
       "start" : None,
       "end" : None,
-      "betahyp" : -1
+      "betahyp" : -1,
+      "amp_bias" : 1
     }
     
     script = """
@@ -55,13 +56,15 @@ class Hapaseg_burnin(wolf.Task):
             --start ${start} \
             --end ${end} \
             --stop_after_burnin \
-            --betahyp ${betahyp}"""
+            --betahyp ${betahyp} \
+            --amp_bias ${amp_bias}
+            """
 
     output_patterns = {
       "burnin_MCMC" : "amcmc_results.pickle"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1234"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:amp_bias_v1265"
 
 class Hapaseg_concat(wolf.Task):
     inputs = {
