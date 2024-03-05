@@ -201,6 +201,7 @@ def workflow(
         # reference panel
         **ref_config["ref_panel_1000g"]
       ),
+      name = "Localize_ref_files_HapASeg",
       protect_disk = True
     )
 
@@ -212,6 +213,7 @@ def workflow(
             "t_bam" : tumor_bam,
             "t_bai" : tumor_bai,
           },
+          name = "Localize_T_bam_HapASeg",
         token=localization_token,
         persistent_disk_dry_run = persistent_dry_run
         )
@@ -229,6 +231,7 @@ def workflow(
             "n_bam" : normal_bam,
             "n_bai" : normal_bai
           },
+          name = "Localize_N_bam_HapASeg",
         token=localization_token,
         persistent_disk_dry_run = persistent_dry_run
         )
