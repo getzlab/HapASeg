@@ -960,7 +960,9 @@ class DPinstance:
             if burned_in and (1 - (1 - 1/len(self.breakpoints))**(n_it - n_it_last)) > 0.95:
                 self.snps_to_clusters.append(self.S["clust"].copy())
                 self.phase_orientations.append(self.S["flipped"].copy())
-                self.segment_trace.append({ snp : self.S.iloc[snp, self.clust_col] for snp in self.breakpoints[:-1]})
+                # add breakpoints at chromosome boundaries
+                bp = self.breakpoints.copy() | np.flatnonzero(self.S["chr"].diff() != 0)
+                self.segment_trace.append({ snp : self.S.iloc[snp, self.clust_col] for snp in bp[:-1]})
                 self.likelihood_trace.append(self.compute_overall_lik_simple().sum())
                 n_it_last = n_it
 
