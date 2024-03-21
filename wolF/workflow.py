@@ -697,7 +697,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
 
     # prepare coverage MCMC
     prep_cov_mcmc_full_task = hapaseg.Hapaseg_prepare_coverage_mcmc(
-        name = "Hapaseg_prepare_coverage_mcmc_full"
+        name = "Hapaseg_prepare_coverage_mcmc_full",
         inputs={
             "coverage_csv":tumor_cov_gather_task["coverage"], #each scatter result is the same
             "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
@@ -719,7 +719,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
 
     # coverage MCMC burnin scatter
     cov_mcmc_full_scatter_task = hapaseg.Hapaseg_coverage_mcmc_by_Aseg(
-        name = "Hapaseg_coverage_mcmc_full_by_Aseg"
+        name = "Hapaseg_coverage_mcmc_full_by_Aseg",
         inputs={
             "preprocess_data":prep_cov_mcmc_full_task["preprocess_data"],
             "allelic_seg_indices":prep_cov_mcmc_full_task["allelic_seg_groups"],
