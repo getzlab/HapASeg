@@ -37,7 +37,8 @@ class CoverageMCMCRunner:
                  cluster_num=None,
                  allelic_sample=None,
                  bin_width=1,
-                 wgs=True
+                 wgs=True,
+                 SNP_expansion_radius = None
                  ):
 
         self.num_draws = num_draws
@@ -50,6 +51,8 @@ class CoverageMCMCRunner:
         self.ref_fasta = ref_fasta
         self.bin_width = bin_width
         self.wgs = wgs
+        if SNP_expansion_radius is None:
+            self.SNP_expansion_radius = 10000 if not self.wgs else 0
 
         # lnp hyperparameters - can make passable by arguments
         self.alpha_prior = 1e-5
@@ -366,26 +369,28 @@ class CoverageMCMCRunner:
           how = "left"
         ).rename(columns = { "min_ph" : "min_count", "maj_ph" : "maj_count" })
 
-        ## assign coverage bins within 10kb of each bin overlapping a SNP to its allelic segment
-        if True: # TODO: always expand, and set threshold based on WGS/WES?
-            max_dist = 1000000
-
+        ## assign coverage bins within <SNP_expansion_radius> of each bin overlapping a SNP to its allelic segment
+        # this is to get
+        # a) better total copy ratio estimates for whole exomes, by utilizing more bins
+        # b) comprehensive total copy ratio for genomes (to include bins that lack SNPs,
+        #    to catch focal events that may not have allelic information available)
+        if self.SNP_expansion_radius > 0:
             # make sure that SNP radii don't exceed the boundaries of their respective Segment Intervals
             SI = self.SNPs.groupby("seg_idx")["pos_gp"].agg([min, max])
             T = pd.DataFrame({
               "start" : np.maximum(
-                self.SNPs["pos_gp"].values - max_dist,
+                self.SNPs["pos_gp"].values - self.SNP_expansion_radius,
                 SI.loc[self.SNPs["seg_idx"], "min"].values
               ),
               "end" : np.minimum(
-                self.SNPs["pos_gp"].values + max_dist,
+                self.SNPs["pos_gp"].values + self.SNP_expansion_radius,
                 SI.loc[self.SNPs["seg_idx"], "max"].values
               ),
               "seg_idx" : self.SNPs["seg_idx"]
             })
 
             # collapse overlapping intevals
-            # index disjoint intervals ...
+            # index disjoint intervals, so that ...
             djidx = np.r_[-1, np.flatnonzero(T.iloc[1:]["start"].values >= T.iloc[:-1]["end"].values), len(T) - 1]
 
             # ... overlapping intervals will span all intervals between disjoint ones
@@ -395,9 +400,9 @@ class CoverageMCMCRunner:
               "end" : seq.gpos2chrpos(T["end"].iloc[djidx[1:]].values)[1],
               "seg_idx" : T["seg_idx"].iloc[djidx[:-1] + 1].values
             })
-            # TODO: extend intervals to midpoints of gaps
+            # TODO: extend intervals to midpoints of gaps?
 
-            # map midpoints of coverage bins to SNPs with radius +- max_dist
+            # map midpoints of coverage bins to SNPs with radius +- SNP_expansion_radius
             tidx = mut.map_mutations_to_targets(self.full_cov_df, To, inplace = False, poscol = "midpoint")
             tidx = tidx.loc[self.full_cov_df.loc[tidx.index, "seg_idx"] == -1]
             self.full_cov_df.loc[tidx.index, "seg_idx"] = T.loc[tidx, "seg_idx"].values

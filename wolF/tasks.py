@@ -155,7 +155,8 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "allelic_sample":"",
         "ref_fasta": None,
         "bin_width": 1,
-        "wgs": True
+        "wgs": True,
+        "SNP_expansion_radius" : 0
     }
     def script(self):
         script = """
@@ -165,7 +166,8 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         --SNPs_pickle ${SNPs_pickle} \
         --segmentations_pickle ${segmentations_pickle} \
         --repl_pickle ${repl_pickle} \
-        --bin_width ${bin_width}"""
+        --bin_width ${bin_width} \
+        --SNP_expansion_radius ${SNP_expansion_radius}"""
 
         if self.conf["inputs"]["wgs"] == True:
             script += " --wgs"

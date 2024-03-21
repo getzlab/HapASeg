@@ -162,6 +162,7 @@ def parse_args():
     preprocess_coverage_mcmc.add_argument("--ref_fasta", help="reference fasta file", required=True)
     preprocess_coverage_mcmc.add_argument("--bin_width", help = "Coverage bin width (for WGS only)", default = 1, type = int)
     preprocess_coverage_mcmc.add_argument("--wgs", help = "If not WGS, expand targets by +-150b to capture more SNPs", action = "store_true")
+    preprocess_coverage_mcmc.add_argument("--SNP_expansion_radius", help = "Number of bases around each SNP to include coverage bins lacking SNPs", default = 0, type = int)
 
     ## running coverage mcmc on single cluster for scatter task
     coverage_mcmc_shard = subparsers.add_parser("coverage_mcmc_shard",
@@ -572,7 +573,8 @@ def main():
                                              f_extracov_bed_list=args.extra_covariates_bed_paths,
                                              allelic_sample=args.allelic_sample,
                                              bin_width=args.bin_width,
-                                             wgs=args.wgs)
+                                             wgs=args.wgs,
+                                             SNP_expansion_radius=args.SNP_expansion_radius)
         Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
 
         # indices of coverage bins 
