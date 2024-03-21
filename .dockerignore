@@ -2,4 +2,7 @@
 **/*.call_stats.txt
 covars
 genome
+exome
+glasbey
+benchmarking_data
 .git
