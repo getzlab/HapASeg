@@ -681,60 +681,6 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             "bin_width":bin_width,
         }
     )
- 
-#    #get the cluster indices from the preprocess data and generate the burnin indices
-#    @prefect.task(nout=4)
-#    def _get_ADP_cluster_list(preprocess_data_obj):
-#        range_size = 2000
-#        data = np.load(preprocess_data_obj)
-#        
-#        Pi = data['Pi']
-#        r = data['r']
-#
-#        C = data['C']
-#        
-#        num_clusters = Pi.shape[1]
-#        
-#        c_assignments = np.argmax(Pi, axis=1)
-#        cluster_list = []
-#        range_list = []
-#
-#        # iterate through clusters and generate ranges
-#        for i in range(num_clusters):
-#            cluster_mask = (c_assignments == i)
-#            clust_size = len(r[cluster_mask])
-#            for j in range(int(np.ceil(clust_size / range_size))):
-#                cluster_list.append(i)
-#                range_list.append("{}-{}".format(j * range_size, min((j+1) * range_size, clust_size)))
-#        
-#        # also return a plain list of indices for the post-burnin run
-#        cluster_idxs = [i for i in np.arange(num_clusters)]
-#        print(cluster_idxs, cluster_list, range_list) 
-#        return len(cluster_idxs), cluster_idxs, cluster_list, range_list
-#
-#    num_clusters, cluster_idxs, cluster_list, range_list = _get_ADP_cluster_list(prep_cov_mcmc_task["preprocess_data"])
-#
-#    # old coverage MCMC burnin
-#    cov_mcmc_burnin_task = hapaseg.Hapaseg_coverage_mcmc_burnin(
-#        inputs={
-#            "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
-#            "num_draws":10,
-#            "cluster_num":cluster_list,
-#            "bin_width":bin_width,
-#            "range":range_list
-#        }
-#    )
-#
-#    # old coverage MCMC scatter post-burnin
-#    cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc(
-#        inputs={
-#            "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
-#            "num_draws":num_cov_seg_samples,
-#            "cluster_num":cluster_idxs,
-#            "bin_width":bin_width,
-#            "burnin_files":[cov_mcmc_burnin_task["burnin_data"]] * num_clusters # this is to account for a wolf input len bug
-#        }
-#    )
 
     # collect coverage MCMC
     cov_mcmc_gather_task = hapaseg.Hapaseg_collect_coverage_mcmc(
