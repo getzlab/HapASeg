@@ -642,6 +642,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
     # coverage tasks
     #
 
+    ## coverage segmentation on intervals that contain SNPs (for allelic copyratio analysis)
+
     # prepare coverage MCMC
     prep_cov_mcmc_task = hapaseg.Hapaseg_prepare_coverage_mcmc(
     inputs={
@@ -669,9 +671,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
 
     cov_mcmc_shards_list = get_N_seg_groups(prep_cov_mcmc_task["allelic_seg_idxs"])
 
-    # TODO: modify burnin task to subset to these indices
-
-    # coverage MCMC burnin(?) <- do we still need to burnin separately?
+    # coverage MCMC burnin scatter
     cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc_by_Aseg(
         inputs={
             "preprocess_data":prep_cov_mcmc_task["preprocess_data"],
@@ -746,7 +746,61 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
         "cytoband_file":localization_task["cytoband_file"]
         }
     )
-    
+
+    ## full coverage segmentation, including intervals that lack SNPs (for total CR output)
+
+    # prepare coverage MCMC
+    prep_cov_mcmc_full_task = hapaseg.Hapaseg_prepare_coverage_mcmc(
+        name = "Hapaseg_prepare_coverage_mcmc_full"
+        inputs={
+            "coverage_csv":tumor_cov_gather_task["coverage"], #each scatter result is the same
+            "allelic_clusters_object":hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+            "SNPs_pickle":hapaseg_allelic_DP_task['all_SNPs'],
+            "segmentations_pickle":hapaseg_allelic_DP_task['segmentation_breakpoints'],
+            "repl_pickle":localization_task["repl_file"],
+            "faire_pickle": "" if (not is_ffpe and not is_cfdna) else (localization_task["cfdna_wes_faire_file"] if (is_cfdna and not wgs) else localization_task["faire_file"]),
+            "gc_pickle":localization_task["gc_file"] if ref_config["gc_file"] != "" else "",
+            "normal_coverage_csv":normal_cov_gather_task["coverage"] if use_normal_coverage else "",
+            "extra_covariates":[extra_covariate_beds] if extra_covariate_beds is not None else "",
+            "ref_fasta":localization_task["ref_fasta"],
+            "bin_width":bin_width,
+            "wgs":wgs,
+            "SNP_expansion_radius" : 1000000 # TODO: allow this to be specified
+        }
+    )
+
+    cov_mcmc_full_shards_list = get_N_seg_groups(prep_cov_mcmc_full_task["allelic_seg_idxs"])
+
+    # coverage MCMC burnin scatter
+    cov_mcmc_full_scatter_task = hapaseg.Hapaseg_coverage_mcmc_by_Aseg(
+        name = "Hapaseg_coverage_mcmc_full_by_Aseg"
+        inputs={
+            "preprocess_data":prep_cov_mcmc_full_task["preprocess_data"],
+            "allelic_seg_indices":prep_cov_mcmc_full_task["allelic_seg_groups"],
+            "allelic_seg_scatter_idx":cov_mcmc_full_shards_list,
+            "num_draws":num_cov_seg_samples,
+            "bin_width":bin_width,
+        }
+    )
+
+    # collect coverage MCMC
+    cov_mcmc_full_gather_task = hapaseg.Hapaseg_collect_coverage_mcmc(
+        name = "Hapaseg_collect_coverage_mcmc_full",
+        inputs = {
+            "cov_mcmc_files":[cov_mcmc_full_scatter_task["cov_segmentation_data"]],
+            "cov_df_pickle":prep_cov_mcmc_full_task["cov_df_pickle"],
+            "seg_indices_pickle":prep_cov_mcmc_full_task["allelic_seg_groups"],
+            "bin_width":bin_width,
+            "cytoband_file":localization_task["cytoband_file"]
+        }
+    )
+
+    # TODO: add task to make TCR segfile from this
+
+    #
+    # CDP/ACDP tasks
+    #
+
     #get the adp draw number from the preprocess data object
     @prefect.task
     def _get_ADP_draw_num(preprocess_data_obj):
