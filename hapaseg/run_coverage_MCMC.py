@@ -331,7 +331,7 @@ class CoverageMCMCRunner:
         return cov_df
 
     # use SNP cluster assignments from the given draw assign coverage bins to clusters
-    # clusters with snps from different clusters are probabliztically assigned
+    # clusters with snps from different clusters are probabilistically assigned
     # method returns coverage df with only bins that overlap snps
     def assign_clusters(self):
         ## assign coverage intervals to allelic clusters and segments
@@ -367,26 +367,38 @@ class CoverageMCMCRunner:
         ).rename(columns = { "min_ph" : "min_count", "maj_ph" : "maj_count" })
 
         ## assign coverage bins within 10kb of each bin overlapping a SNP to its allelic segment
-        if not self.wgs: # TODO: always expand, and set threshold based on WGS/WES?
-            max_dist = 10000
+        if True: # TODO: always expand, and set threshold based on WGS/WES?
+            max_dist = 1000000
 
             # make sure that SNP radii don't exceed the boundaries of their respective Segment Intervals
             SI = self.SNPs.groupby("seg_idx")["pos_gp"].agg([min, max])
             T = pd.DataFrame({
-              "chr" : self.SNPs["chr"],
-              "start" : seq.gpos2chrpos(np.maximum(
+              "start" : np.maximum(
                 self.SNPs["pos_gp"].values - max_dist,
                 SI.loc[self.SNPs["seg_idx"], "min"].values
-              ))[1],
-              "end" : seq.gpos2chrpos(np.minimum(
+              ),
+              "end" : np.minimum(
                 self.SNPs["pos_gp"].values + max_dist,
                 SI.loc[self.SNPs["seg_idx"], "max"].values
-              ))[1],
+              ),
               "seg_idx" : self.SNPs["seg_idx"]
             })
 
+            # collapse overlapping intevals
+            # index disjoint intervals ...
+            djidx = np.r_[-1, np.flatnonzero(T.iloc[1:]["start"].values >= T.iloc[:-1]["end"].values), len(T) - 1]
+
+            # ... overlapping intervals will span all intervals between disjoint ones
+            To = pd.DataFrame({
+              "chr" : seq.gpos2chrpos(T["start"].iloc[djidx[:-1] + 1].values)[0],
+              "start" : seq.gpos2chrpos(T["start"].iloc[djidx[:-1] + 1].values)[1],
+              "end" : seq.gpos2chrpos(T["end"].iloc[djidx[1:]].values)[1],
+              "seg_idx" : T["seg_idx"].iloc[djidx[:-1] + 1].values
+            })
+            # TODO: extend intervals to midpoints of gaps
+
             # map midpoints of coverage bins to SNPs with radius +- max_dist
-            tidx = mut.map_mutations_to_targets(self.full_cov_df, T, inplace = False, poscol = "midpoint")
+            tidx = mut.map_mutations_to_targets(self.full_cov_df, To, inplace = False, poscol = "midpoint")
             tidx = tidx.loc[self.full_cov_df.loc[tidx.index, "seg_idx"] == -1]
             self.full_cov_df.loc[tidx.index, "seg_idx"] = T.loc[tidx, "seg_idx"].values
 
