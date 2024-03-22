@@ -712,7 +712,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             "bin_width":bin_width,
             "wgs":wgs,
             "SNP_expansion_radius" : 1000000 # TODO: allow this to be specified
-        }
+        },
+        resources = { "mem" : "8G" }
     )
 
     cov_mcmc_full_shards_list = get_N_seg_groups(prep_cov_mcmc_full_task["allelic_seg_idxs"])
