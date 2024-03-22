@@ -191,7 +191,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "allelic_seg_idxs": "allelic_seg_idxs.txt"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_bins_v1264"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_bins_v1268"
     resources = { "mem" : "4G" }
 
 #scatter by allelic segment
