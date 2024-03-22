@@ -53,6 +53,8 @@ class CoverageMCMCRunner:
         self.wgs = wgs
         if SNP_expansion_radius is None:
             self.SNP_expansion_radius = 10000 if not self.wgs else 0
+        else:
+            self.SNP_expansion_radius = SNP_expansion_radius
 
         # lnp hyperparameters - can make passable by arguments
         self.alpha_prior = 1e-5
