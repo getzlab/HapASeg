@@ -712,7 +712,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             "bin_width":bin_width,
             "wgs":wgs,
             "SNP_expansion_radius" : 1000000, # TODO: allow this to be specified
-            "region_blacklist_bed" : "https://github.com/Boyle-Lab/Blacklist/raw/master/lists/hg38-blacklist.v2.bed.gz" # XXX: does this need to be specifiable?
+            "region_blacklist_bed" : "gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/hg38-blacklist.v2.bed.gz" # XXX: does this need to be specifiable? TODO: add to reference disk; also need to add hg19
         },
         resources = { "mem" : "8G" }
     )
