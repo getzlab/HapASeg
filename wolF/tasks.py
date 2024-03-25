@@ -156,7 +156,8 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "ref_fasta": None,
         "bin_width": 1,
         "wgs": True,
-        "SNP_expansion_radius" : 0
+        "SNP_expansion_radius" : 0,
+        "region_blacklist_bed" : ""
     }
     def script(self):
         script = """
@@ -181,6 +182,8 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
             script += " --allelic_sample ${allelic_sample}"
         if self.conf["inputs"]["extra_covariates"] != "":
             script += " --extra_covariates_bed_paths ${extra_covariates}"
+        if self.conf["inputs"]["region_blacklist_bed"] != "":
+            script += " --region_blacklist_bed ${region_blacklist_bed}"
 
         return script
 

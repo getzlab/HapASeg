@@ -38,7 +38,8 @@ class CoverageMCMCRunner:
                  allelic_sample=None,
                  bin_width=1,
                  wgs=True,
-                 SNP_expansion_radius = None
+                 SNP_expansion_radius = None,
+                 region_blacklist_bed = None
                  ):
 
         self.num_draws = num_draws
@@ -55,6 +56,7 @@ class CoverageMCMCRunner:
             self.SNP_expansion_radius = 10000 if not self.wgs else 0
         else:
             self.SNP_expansion_radius = SNP_expansion_radius
+        self.region_blacklist_bed = region_blacklist_bed
 
         # lnp hyperparameters - can make passable by arguments
         self.alpha_prior = 1e-5
@@ -113,7 +115,7 @@ class CoverageMCMCRunner:
         Cov=Cov.reset_index(drop=True)
         Cov["start_g"] = seq.chrpos2gpos(Cov["chr"], Cov["start"], ref = self.ref_fasta)
         Cov["end_g"] = seq.chrpos2gpos(Cov["chr"], Cov["end"], ref = self.ref_fasta)
-        
+
         # filter bins with no reads
         Cov = Cov.loc[(Cov['tot_reads'] > 0) & (Cov['num_frags'] > 0)]
 
@@ -131,6 +133,16 @@ class CoverageMCMCRunner:
         
         # remove any fragcorr zero bins
         Cov = Cov.loc[Cov.fragcorr > 0]
+
+        # blacklist regions (if specified)
+        if self.region_blacklist_bed is not None:
+            B = pd.read_csv(self.region_blacklist_bed, sep = "\t", names = ["chr", "start", "end", "reason"])
+            B["chr"] = mut.convert_chr(B["chr"])
+            B = B.sort_values(["chr", "start", "end"])
+
+            # if midpoint of coverage bin is in blacklisted region, remove it
+            tidx = mut.map_mutations_to_targets(Cov, B, inplace = False, poscol = "midpoint")
+            Cov = Cov.drop(Cov.index[tidx.index])
 
         return Cov.reset_index(drop = True)
 
