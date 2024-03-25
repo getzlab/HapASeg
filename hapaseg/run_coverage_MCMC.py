@@ -407,7 +407,7 @@ class CoverageMCMCRunner:
             # map midpoints of coverage bins to SNPs with radius +- SNP_expansion_radius
             tidx = mut.map_mutations_to_targets(self.full_cov_df, To, inplace = False, poscol = "midpoint")
             tidx = tidx.loc[self.full_cov_df.loc[tidx.index, "seg_idx"] == -1]
-            self.full_cov_df.loc[tidx.index, "seg_idx"] = T.loc[tidx, "seg_idx"].values
+            self.full_cov_df.loc[tidx.index, "seg_idx"] = To.loc[tidx, "seg_idx"].values
 
             # set allelic counts to 0 for these coverage bins, since they don't actually contain SNPs
             self.full_cov_df.loc[tidx.index, "min_count"] = 0
