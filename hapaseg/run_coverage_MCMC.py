@@ -624,11 +624,11 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
                 seg_idxs.append(int(search.group(1)))
             
         cov_df = pd.read_pickle(cov_df_pickle)
-    
+
     clust_assignments = cov_df['allelic_cluster'].values
-    
+
     seg_data = pd.read_pickle(seg_indices_pickle)
-    
+
     seg_results = {}
     mu_i_results = {}
     ll_results = {} 
@@ -642,7 +642,7 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     num_draws = seg_results[seg_idxs[0]].shape[1]
     num_clusters = len(seg_data.allelic_cluster.unique())
     num_segments = len(seg_results)
-    
+
     # now we use these data to fill an overall coverage segmentation array
     coverage_segmentation = np.zeros((len(cov_df), num_draws))
     mu_i_values = np.zeros((len(cov_df), num_draws))
@@ -654,25 +654,33 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
             coverage_segmentation[seg_indices, d] = seg_results[seg][:,d] + global_counter
             mu_i_values[seg_indices, d] = mu_i_results[seg][:, d]
             global_counter += len(np.unique(seg_results[seg][:,d]))
-    
+
     # generate data to re-compute global beta
     # calculate likelihoods of each sample
     ll_samples_arr = np.zeros((num_segments, num_draws))
     for ID, (seg, ll_arr) in enumerate(ll_results.items()):
         ll_samples_arr[ID] = ll_arr
-    
+
     ll_samples = ll_samples_arr.sum(0)
     MAP_draw = np.nansum(ll_samples_arr, 0).argmax()
     MAP_seg = coverage_segmentation[:, MAP_draw]  
-    # refitting beta
+
+    ## refitting beta
+
+    # downsample coverage dataframe if necessary (e.g. when running on all coverage bins, memory usage of the regression gets out of hand)
+    if len(cov_df) > 400000:
+        print("INFO: downsampling coverage dataframe to 400k bins to re-run regression", file = sys.stderr)
+        cov_df = cov_df.sample(400000).sort_index()
+
     r = np.c_[cov_df["fragcorr"]]
-    ## create new intercept matrix using MAP coverage segmentation
-    Pi = np.zeros((len(MAP_seg), int(MAP_seg.max()) + 1), dtype=np.float16)
-    Pi[range(len(MAP_seg)), MAP_seg.astype(int)] = 1.
-    ## generate covars
+    # create new intercept matrix using MAP coverage segmentation
+    Pi = np.zeros((len(cov_df), int(MAP_seg[cov_df.index].max()) + 1), dtype=np.float16)
+    Pi[range(len(cov_df)), MAP_seg[cov_df.index].astype(int)] = 1.
+    Pi = Pi[:, Pi.sum(0) > 0]
+    # generate covars
     covar_columns = sorted(cov_df.columns[cov_df.columns.str.contains("(?:^C_.*_l?z$|C_log_len)")])
     C = np.c_[cov_df[covar_columns]]
-    ## do regression
+    # do regression
     pois_regr = PoissonRegression(r, C, Pi)
     mu_refit, beta_refit = pois_regr.fit()
 
