@@ -194,7 +194,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "allelic_seg_idxs": "allelic_seg_idxs.txt"
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_bins_v1268"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_bins_v1272"
     resources = { "mem" : "4G" }
 
 #scatter by allelic segment
@@ -274,7 +274,7 @@ class Hapaseg_collect_coverage_mcmc(wolf.Task):
         "seg_plot":'figures/segs.png',
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1158"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:all_bins_v1275"
     resources = {"cpus-per-task": 4, "mem" : "12G"} # need high mem for poisson regression on massive Pi matrix
 
 class Hapaseg_coverage_dp(wolf.Task):
