@@ -714,7 +714,7 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             "SNP_expansion_radius" : 1000000, # TODO: allow this to be specified
             "region_blacklist_bed" : "gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/hg38-blacklist.v2.bed.gz" # XXX: does this need to be specifiable? TODO: add to reference disk; also need to add hg19
         },
-        resources = { "mem" : "8G" }
+        resources = { "mem" : "12G" }
     )
 
     cov_mcmc_full_shards_list = get_N_seg_groups(prep_cov_mcmc_full_task["allelic_seg_idxs"])
