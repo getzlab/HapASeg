@@ -32,6 +32,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Call somatic copynumber alterations taking advantage of SNP phasing")
 
     parser.add_argument("--output_dir", default=".")
+    parser.add_argument("--sample_name", default="HapASeg")
     parser.add_argument("--capy_ref_path", default="/home/opriebe/data/ref/hg19/Homo_sapiens_assembly19.fasta")
     subparsers = parser.add_subparsers(dest="command")
 
@@ -717,7 +718,8 @@ def main():
         residuals = cov_df["fragcorr"]/np.exp(C@beta).ravel()
         plt.scatter(cov_df["start_g"], residuals, marker = ".", s = 1, c = np.array(["dodgerblue", "orangered"])[seg_idx % 2], alpha = 0.5)
         plt.scatter(cov_df["start_g"], emu[seg_idx].ravel(), marker = ".", s = 1, c = 'k')
-        
+        cov_df["resid"] = residuals
+
         plt.xlim([0, cov_df["end_g"].max()])
         plt.ylim([residuals.min(), residuals.max()])
         hs_utils.plot_chrbdy(args.cytoband_file)
@@ -725,6 +727,25 @@ def main():
         plt.ylabel("Corrected fragment coverage")
         plt.title("Total copy segmentation")
         plt.savefig(output_dir + "/figures/segs.png", dpi = 300)
+
+        ## make seg file
+        seg_df = cov_df.groupby(seg_idx).agg(
+          Chromosome = ("chr", "first"),
+          Start = ("start", "min"),
+          End = ("end", "max"),
+          Num_Probes = ("chr", "size"),
+          Segment_Mean = ("resid", "mean"),
+        )
+
+        # normalize TCR to mean = 2
+        slen = seg_df["End"] - seg_df["Start"]
+        seg_df["Segment_Mean"] /= seg_df["Segment_Mean"]@slen/slen.sum()/2
+
+        # add sample name
+        seg_df["Sample"] = args.sample_name
+
+        # save
+        seg_df.iloc[:, np.r_[-1, 0:(seg_df.shape[1] - 1)]].to_csv(f"{args.sample_name}_GISTIC.seg", sep = "\t", index = False)
 
     elif args.command == "coverage_dp":
         cov_df = pd.read_pickle(args.f_cov_df)
