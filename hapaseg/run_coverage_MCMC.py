@@ -625,6 +625,9 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
             
         cov_df = pd.read_pickle(cov_df_pickle)
 
+    # index may not be contiguous if coverage bins were filtered in `prepare_single_cluster()`
+    cov_df = cov_df.reset_index(drop = True)
+
     clust_assignments = cov_df['allelic_cluster'].values
 
     seg_data = pd.read_pickle(seg_indices_pickle)
