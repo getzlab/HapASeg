@@ -740,6 +740,10 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
             "seg_indices_pickle":prep_cov_mcmc_full_task["allelic_seg_groups"],
             "bin_width":bin_width,
             "cytoband_file":localization_task["cytoband_file"]
+        },
+        outputs = {
+          "gistic_segfile" : "*_GISTIC.seg",
+          "seg_plot":'figures/segs.png',
         }
     )
 
@@ -878,6 +882,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                    "hapaseg_segfile" : acdp_task["hapaseg_segfile"],
                    "absolute_segfile" : acdp_task["absolute_segfile"],
                    "hapaseg_skip_acdp_segfile": acdp_task["hapaseg_skip_acdp_segfile"],
+                   "gistic_segfile": cov_mcmc_full_gather_task["gistic_segfile"],
+                   "gistic_segplot": cov_mcmc_full_gather_task["seg_plot"],
                    "hapaseg_summary_plot": summary_plot_task["hapaseg_summary_plot"] 
                  }
     
