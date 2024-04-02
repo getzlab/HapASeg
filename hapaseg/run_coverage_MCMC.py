@@ -668,8 +668,12 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     ## refitting beta
 
     # downsample coverage dataframe if necessary (e.g. when running on all coverage bins, memory usage of the regression gets out of hand)
+    cov_df_og = None
+    ds_flag = False
     if len(cov_df) > 400000:
         print("INFO: downsampling coverage dataframe to 400k bins to re-run regression", file = sys.stderr)
+        ds_flag = True
+        cov_df_og = cov_df.copy()
         cov_df = cov_df.sample(400000).sort_index()
 
     r = np.c_[cov_df["fragcorr"]]
@@ -683,6 +687,21 @@ def aggregate_clusters(seg_indices_pickle=None, coverage_dir=None, f_file_list=N
     # do regression
     pois_regr = PoissonRegression(r, C, Pi)
     mu_refit, beta_refit = pois_regr.fit()
+
+    # refit mu to all bins, conditional on beta inferred from downsampled run
+    if ds_flag:
+        r = np.c_[cov_df_og["fragcorr"]]
+
+        # fit each segment independently
+        seg_bdy = np.r_[0, np.flatnonzero(np.diff(MAP_seg) != 0) + 1, len(MAP_seg)]
+        seg_bdy = np.c_[seg_bdy[:-1], seg_bdy[1:]]
+
+        C = np.c_[cov_df_og[covar_columns]]
+
+        mu_refit = np.zeros([int(MAP_seg.max()) + 1, 1])
+        for i, (st, en) in enumerate(seg_bdy):
+            pois_regr = PoissonRegression(r[st:en], np.zeros([en - st, 0]), np.ones([en - st, 1]), log_offset = C[st:en]@beta_refit)
+            mu_refit[i], _ = pois_regr.fit()
 
     return coverage_segmentation, mu_refit, beta_refit, ll_samples
 
