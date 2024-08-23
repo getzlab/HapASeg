@@ -133,6 +133,7 @@ def workflow(
   single_ended = False, # coverage collection differs depending on whether BAM is paired end
 
   ref_genome_build=None, #must be hg19 or hg38
+  ref_fasta_overwrite=None, # a dictionary of {"ref_fasta":{}, "ref_fasta_idx":{}, "ref_fasta_dict":{}} to overwrite standard fasta files
   
   target_list = None,
   common_snp_list = None, # for adding a custom SNP list
@@ -184,9 +185,9 @@ def workflow(
 
     localization_task = LocalizeToDisk(
       files = dict(
-        ref_fasta = ref_config["ref_fasta"],
-        ref_fasta_idx = ref_config["ref_fasta_idx"],
-        ref_fasta_dict = ref_config["ref_fasta_dict"],
+        ref_fasta = ref_fasta_overwrite["ref_fasta"] if ref_fasta_overwrite is not None else ref_config["ref_fasta"],
+        ref_fasta_idx = ref_fasta_overwrite["ref_fasta_idx"] if ref_fasta_overwrite is not None else ref_config["ref_fasta_idx"],
+        ref_fasta_dict = ref_fasta_overwrite["ref_fasta_dict"] if ref_fasta_overwrite is not None else ref_config["ref_fasta_dict"],
 
         repl_file = ref_config["repl_file"],
         faire_file = ref_config["faire_file"],
@@ -194,7 +195,7 @@ def workflow(
         gc_file = ref_config["gc_file"],
 
         genetic_map_file = ref_config["genetic_map_file"],
-        common_snp_list = ref_config["common_snp_list"] if common_snp_list is not None else common_snp_list,
+        common_snp_list = ref_config["common_snp_list"] if common_snp_list is None else common_snp_list,
           
         cytoband_file = ref_config["cytoband_file"],
         
