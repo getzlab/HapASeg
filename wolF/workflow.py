@@ -877,7 +877,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                    "hapaseg_segfile" : acdp_task["hapaseg_segfile"],
                    "absolute_segfile" : acdp_task["absolute_segfile"],
                    "hapaseg_skip_acdp_segfile": acdp_task["hapaseg_skip_acdp_segfile"],
-                   "hapaseg_summary_plot": summary_plot_task["hapaseg_summary_plot"] 
+                   "hapaseg_summary_plot": summary_plot_task["hapaseg_summary_plot"],
+                   "tumor_cov_bed" : tumor_cov_gather_task["coverage"]
                  }
     
     # sync workspace if passed
