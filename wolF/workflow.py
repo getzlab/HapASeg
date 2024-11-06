@@ -22,14 +22,7 @@ het_pulldown = wolf.ImportTask(
 
 mutect1 = wolf.ImportTask(
   task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
-  main_task = "mutect1",
-  commit = "d98b8f2"
-)
-
-# for mutect gather
-deTiN_tasks = wolf.ImportTask(
-    task_path = "git@github.com:getzlab/DeTiN_postprocess_TOOL.git",
-    commit = "708e9a7"
+  commit = "58b40cb"
 )
 
 # for phasing
@@ -386,7 +379,7 @@ def workflow(
           outputs = { "snp_list_shards" : "snp_list_chunk*" }
         )
 
-        m1_task = mutect1(inputs=dict(
+        m1_task = mutect1.mutect1(inputs=dict(
           pairName = "het_coverage",
           caseName = "tumor",
           ctrlName = "normal",
@@ -407,10 +400,12 @@ def workflow(
           exclude_chimeric = True,
           max_mismatch_baseq_sum = 1000, # set high to prevent physically phased SNPs from being removed
           force_calling = True,
+          zip_output = True,
+          output_wigs = False
         ))
 
         #running gather on mutect intervals
-        gatherMutect1 = deTiN_tasks.gatherMuTect1(
+        gatherMutect1 = mutect1.gatherMuTect1(
           inputs={
             'pairName' : "het_coverage",
             'ctrlName' : "normal",
