@@ -22,7 +22,7 @@ het_pulldown = wolf.ImportTask(
 
 mutect1 = wolf.ImportTask(
   task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
-  commit = "58b40cb"
+  commit = "2a1346d"
 )
 
 # for phasing
