@@ -22,14 +22,7 @@ het_pulldown = wolf.ImportTask(
 
 mutect1 = wolf.ImportTask(
   task_path = "git@github.com:getzlab/MuTect1_TOOL.git",
-  main_task = "mutect1",
-  commit = "d98b8f2"
-)
-
-# for mutect gather
-deTiN_tasks = wolf.ImportTask(
-    task_path = "git@github.com:getzlab/DeTiN_postprocess_TOOL.git",
-    commit = "708e9a7"
+  commit = "2a1346d"
 )
 
 # for phasing
@@ -133,6 +126,7 @@ def workflow(
   single_ended = False, # coverage collection differs depending on whether BAM is paired end
 
   ref_genome_build=None, #must be hg19 or hg38
+  ref_fasta_overwrite=None, # a dictionary of {"ref_fasta":{}, "ref_fasta_idx":{}, "ref_fasta_dict":{}} to overwrite standard fasta files
   
   target_list = None,
   common_snp_list = None, # for adding a custom SNP list
@@ -186,9 +180,9 @@ def workflow(
 
     localization_task = LocalizeToDisk(
       files = dict(
-        ref_fasta = ref_config["ref_fasta"],
-        ref_fasta_idx = ref_config["ref_fasta_idx"],
-        ref_fasta_dict = ref_config["ref_fasta_dict"],
+        ref_fasta = ref_fasta_overwrite["ref_fasta"] if ref_fasta_overwrite is not None else ref_config["ref_fasta"],
+        ref_fasta_idx = ref_fasta_overwrite["ref_fasta_idx"] if ref_fasta_overwrite is not None else ref_config["ref_fasta_idx"],
+        ref_fasta_dict = ref_fasta_overwrite["ref_fasta_dict"] if ref_fasta_overwrite is not None else ref_config["ref_fasta_dict"],
 
         repl_file = ref_config["repl_file"],
         faire_file = ref_config["faire_file"],
@@ -387,7 +381,7 @@ def workflow(
           outputs = { "snp_list_shards" : "snp_list_chunk*" }
         )
 
-        m1_task = mutect1(inputs=dict(
+        m1_task = mutect1.mutect1(inputs=dict(
           pairName = "het_coverage",
           caseName = "tumor",
           ctrlName = "normal",
@@ -408,10 +402,12 @@ def workflow(
           exclude_chimeric = True,
           max_mismatch_baseq_sum = 1000, # set high to prevent physically phased SNPs from being removed
           force_calling = True,
+          zip_output = True,
+          output_wigs = False
         ))
 
         #running gather on mutect intervals
-        gatherMutect1 = deTiN_tasks.gatherMuTect1(
+        gatherMutect1 = mutect1.gatherMuTect1(
           inputs={
             'pairName' : "het_coverage",
             'ctrlName' : "normal",
@@ -881,7 +877,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                    "hapaseg_segfile" : acdp_task["hapaseg_segfile"],
                    "absolute_segfile" : acdp_task["absolute_segfile"],
                    "hapaseg_skip_acdp_segfile": acdp_task["hapaseg_skip_acdp_segfile"],
-                   "hapaseg_summary_plot": summary_plot_task["hapaseg_summary_plot"] 
+                   "hapaseg_summary_plot": summary_plot_task["hapaseg_summary_plot"],
+                   "tumor_cov_bed" : tumor_cov_gather_task["coverage"]
                  }
     
     # sync workspace if passed
