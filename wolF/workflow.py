@@ -43,7 +43,7 @@ split_intervals = wolf.ImportTask(
 
 cov_collect = wolf.ImportTask(
   task_path = "git@github.com:getzlab/covcollect.git",
-  commit = "04d5422",
+  branch = "add-sanity-check",
   main_task = "Covcollect"
 )
 
@@ -289,9 +289,9 @@ def workflow(
 
         # gather tumor coverage
         tumor_cov_gather_task = wolf.Task(
-          name = "gather_coverage",
+          name = "gather_tumor_coverage",
           inputs = { "coverage_beds" : [tumor_cov_collect_task["coverage"]] },
-          script = """cat $(cat ${coverage_beds}) > coverage_cat.bed""",
+          script = "\n".join(["""cat $(cat ${coverage_beds}) > coverage_cat.bed""", """awk -F'\t' "NF != 9 {exit 1}" coverage_cat.bed"""]),
           outputs = { "coverage" : "coverage_cat.bed" }
         )
     else:
@@ -330,9 +330,9 @@ def workflow(
 
             # gather normal coverage
             normal_cov_gather_task = wolf.Task(
-              name = "gather_coverage",
+              name = "gather_normal_coverage",
               inputs = { "coverage_beds" : [normal_cov_collect_task["coverage"]] },
-              script = """cat $(cat ${coverage_beds}) > coverage_cat.bed""",
+              script = "\n".join(["""cat $(cat ${coverage_beds}) > coverage_cat.bed""", """awk -F'\t' "NF != 9 {exit 1}" coverage_cat.bed"""]),
               outputs = { "coverage" : "coverage_cat.bed" }
             )
         else:
