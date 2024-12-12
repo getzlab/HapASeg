@@ -198,6 +198,7 @@ def workflow(
         # reference panel
         **ref_config["ref_panel_1000g"]
       ),
+      name = "Localize_ref_files_HapASeg",
       protect_disk = True
     )
 
@@ -209,6 +210,7 @@ def workflow(
             "t_bam" : tumor_bam,
             "t_bai" : tumor_bai,
           },
+          name = "Localize_T_bam_HapASeg",
         token=localization_token,
         persistent_disk_dry_run = persistent_dry_run
         )
@@ -226,6 +228,7 @@ def workflow(
             "n_bam" : normal_bam,
             "n_bai" : normal_bai
           },
+          name = "Localize_N_bam_HapASeg",
         token=localization_token,
         persistent_disk_dry_run = persistent_dry_run
         )
@@ -465,6 +468,9 @@ def workflow(
         for chr in $(bcftools view -h all_chrs.bcf | ssed -nR '/^##contig/s/.*ID=(.*),.*/\1/p' | head -n24); do
           bcftools view -Ou -r ${chr} -o ${chr}.chrsplit.bcf all_chrs.bcf && bcftools index ${chr}.chrsplit.bcf
         done
+        if ! ls *.chrsplit.bcf 1> /dev/null 2>&1; then
+            exit 1 # This is to account for when silent errors are thrown where convert_het_pulldown does not write its output properly and throws an error but wolF does not catch this
+        fi
         """,
           outputs = {
             "bcf" : "*.chrsplit.bcf",
