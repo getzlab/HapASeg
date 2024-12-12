@@ -409,7 +409,7 @@ def workflow(
           force_calling = True,
           zip_output = True,
           output_wigs = False
-        ))
+        ), name="MuTect1FC_HapASeg")
 
         #running gather on mutect intervals
         gatherMutect1 = mutect1.gatherMuTect1(
@@ -419,7 +419,8 @@ def workflow(
             'caseName' : "tumor",
             'mutect1_cs' : [m1_task["mutect1_cs"]],
             'mutect1_vcf': [m1_task["mutect1_vcf"]]
-          }
+          },
+          name="gatherMuTect1FC_HapASeg"
         )
         
         hp_coverage = het_pulldown(
