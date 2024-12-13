@@ -94,7 +94,7 @@ def _hg38_config_gen(wgs):
         ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
         ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
         genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
-        common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
+        common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/snp_list_XY.txt",
         faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle',
         cfdna_wes_faire_file = '', # TODO: cfDNA file needs to be generated for hg38
         cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt',
