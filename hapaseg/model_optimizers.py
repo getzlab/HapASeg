@@ -4,6 +4,8 @@ import scipy.special as ss
 import copy
 
 ## Poisson regression
+MAX_DELTA = 1
+"""The maximum change in the LNP distribution in a single Newton-Raphson step."""
 
 
 class PoissonRegression:
@@ -129,6 +131,10 @@ class PoissonRegression:
                 H = hbeta
 
             delta = np.linalg.inv(H) @ grad
+
+            if np.any(np.abs(delta) > MAX_DELTA):
+                delta *= MAX_DELTA / np.max(np.abs(delta))
+
             if self.intercept:
                 self.mu -= delta[0 : len(self.mu)]
                 self.beta -= delta[len(self.mu) :]
