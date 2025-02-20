@@ -1,3 +1,4 @@
+from typing import Union
 import numpy as np
 import scipy.special as ss
 import copy
@@ -6,11 +7,42 @@ import copy
 
 
 class PoissonRegression:
+    """
+    The PoisonRegression class serves to fit Log-Normal Poisson distributions to the observed data.
+
+    The prior of the mean of the log-normal distribution is a normal distribution with mean `self.mumu` and variance `self.musig2`.
+    The prior of the variance of the log-normal distribution is an inverse-gamma distribution with
+    """
+
+    r: np.ndarray
+    """The data we fit. A [N, 1] np-array."""
+    C: np.ndarray
+    """The covariates of the Log-Normal Poisson regression. A [N, covariates] np-array."""
+    Pi: np.ndarray
+    """A matrix mapping things to sets, but I don't know what things and what sets. A [N, ???] np-array."""
+
+    beta: np.ndarray
+    """The coefficients of each covariate."""
+
+    log_exposure: Union[np.ndarray, float]
+    log_offset: Union[np.ndarray, float]
+
+    mu: np.ndarray
+
+    mumu: float
+    """The mean of the prior of the mean."""
+    musig2: float
+    """The variance of the prior of the mean."""
+    betamu: np.ndarray
+    """The first parameter of the inverse-gamma distribution describing the prior of the variance?"""
+    betasiginv: float
+    """The second parameter of the inverse-gamma distribution describing the prior of the variance."""
+
     def __init__(
         self,
-        r,
-        C,
-        Pi,
+        r: np.ndarray,
+        C: np.ndarray,
+        Pi: np.ndarray,
         log_exposure=0,
         log_offset=0,
         intercept=True,
