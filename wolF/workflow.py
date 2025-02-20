@@ -878,6 +878,8 @@ docker = "gcr.io/broad-getzlab-workflows/hapaseg:v1021"
                    "hapaseg_summary_plot": summary_plot_task["hapaseg_summary_plot"],
                    "tumor_cov_bed" : tumor_cov_gather_task["coverage"]
                  }
+    if use_normal_coverage:
+        output_dict['normal_cov_bed'] = tumor_cov_gather_task["coverage"]
     
     # sync workspace if passed
     if workspace is not None:
