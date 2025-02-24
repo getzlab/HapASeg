@@ -1,5 +1,7 @@
 import wolf
 
+print("Loaded the fixed version of HapASeg.")
+
 
 class Hapaseg(wolf.Task):
     inputs = {
