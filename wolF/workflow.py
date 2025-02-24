@@ -493,7 +493,7 @@ def workflow(
             name="convert_het_pulldown",
             inputs={
                 "genotype_file": hp_coverage["normal_genotype"],
-                "sample_name": "test",  # TODO: allow to be specified
+                "sample_name": "HAPASEG_CONVERT_HET_PULLDOWN_TASK",  # TODO: allow to be specified
                 "ref_fasta": localization_task["ref_fasta"],
                 "ref_fasta_idx": localization_task["ref_fasta_idx"],
                 "ref_fasta_dict": localization_task["ref_fasta_dict"],
@@ -997,8 +997,9 @@ A.to_pickle('./concat_arms.pickle')
         "hapaseg_summary_plot": summary_plot_task["hapaseg_summary_plot"],
         "tumor_cov_bed": tumor_cov_gather_task["coverage"],
     }
+
     if use_normal_coverage:
-        output_dict["normal_cov_bed"] = tumor_cov_gather_task["coverage"]
+        output_dict["normal_cov_bed"] = normal_cov_gather_task["coverage"]
 
     # sync workspace if passed
     if workspace is not None:
