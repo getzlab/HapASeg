@@ -1,7 +1,5 @@
 import wolf
 
-print("Loaded the fixed version of HapASeg.")
-
 LATEST_HAPASEG_DOCKER = "gcr.io/broad-getzlab-workflows/hapaseg:opt-fix-2_v1269"
 
 
