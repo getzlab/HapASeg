@@ -159,6 +159,9 @@ def workflow(
         print("WARNING: Skipping file localization in dry run!")
     
     ###
+    # tumor-only mode
+    if not tumor_only_genotyping:
+        tumor_only_genotyping = tumor_only
 
      # integer target list implies wgs
     bin_width = target_list if isinstance(target_list, int) else 1
