@@ -39,9 +39,9 @@ split_intervals = wolf.ImportTask(
 )
 
 cov_collect = wolf.ImportTask(
-    task_path="git@github.com:getzlab/covcollect.git",
-    commit="04d5422",
-    main_task="Covcollect",
+  task_path = "git@github.com:getzlab/covcollect.git",
+  branch = "add-sanity-check",
+  main_task = "Covcollect"
 )
 
 ####
@@ -106,17 +106,18 @@ def _hg19_config_gen(wgs):
 def _hg38_config_gen(wgs):
     hg38_ref_dict = pd.read_pickle(CWD + "/ref_panel.hg38.pickle")
 
-    hg38_ref_config = dict(
-        ref_fasta="gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
-        ref_fasta_idx="gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
-        ref_fasta_dict="gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
-        genetic_map_file="gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
-        common_snp_list="gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
-        faire_file="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle",
-        cfdna_wes_faire_file="",  # TODO: cfDNA file needs to be generated for hg38
-        cytoband_file="gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt",
-        repl_file="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/RT.raw.hg38.pickle",
-        ref_panel_1000g=hg38_ref_dict,
+
+    hg38_ref_config= dict(
+        ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
+        ref_fasta_idx = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
+        ref_fasta_dict = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
+        genetic_map_file = "gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
+        common_snp_list = "gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/snp_list_1000_genome_15pct_with_header.txt",
+        faire_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle',
+        cfdna_wes_faire_file = '', # TODO: cfDNA file needs to be generated for hg38
+        cytoband_file= 'gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt',
+        repl_file = 'gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/RT/RT.raw.hg38.pickle',
+        ref_panel_1000g = hg38_ref_dict
     )
     # if we're using whole genome we can use the precomputed gc file for 200 bp bins
     # hg38_ref_config['gc_file'] = 'gs://opriebe-tmp/GC_hg38_2kb.pickle' if wgs else ""
@@ -191,41 +192,39 @@ def workflow(
         )
 
     localization_task = LocalizeToDisk(
-        files=dict(
-            ref_fasta=ref_fasta_overwrite["ref_fasta"]
-            if ref_fasta_overwrite is not None
-            else ref_config["ref_fasta"],
-            ref_fasta_idx=ref_fasta_overwrite["ref_fasta_idx"]
-            if ref_fasta_overwrite is not None
-            else ref_config["ref_fasta_idx"],
-            ref_fasta_dict=ref_fasta_overwrite["ref_fasta_dict"]
-            if ref_fasta_overwrite is not None
-            else ref_config["ref_fasta_dict"],
-            repl_file=ref_config["repl_file"],
-            faire_file=ref_config["faire_file"],
-            cfdna_wes_faire_file=ref_config["cfdna_wes_faire_file"],
-            gc_file=ref_config["gc_file"],
-            genetic_map_file=ref_config["genetic_map_file"],
-            common_snp_list=ref_config["common_snp_list"]
-            if common_snp_list is None
-            else common_snp_list,
-            cytoband_file=ref_config["cytoband_file"],
+        files = dict(
+            ref_fasta = ref_fasta_overwrite["ref_fasta"] if ref_fasta_overwrite is not None else ref_config["ref_fasta"],
+            ref_fasta_idx = ref_fasta_overwrite["ref_fasta_idx"] if ref_fasta_overwrite is not None else ref_config["ref_fasta_idx"],
+            ref_fasta_dict = ref_fasta_overwrite["ref_fasta_dict"] if ref_fasta_overwrite is not None else ref_config["ref_fasta_dict"],
+
+            repl_file = ref_config["repl_file"],
+            faire_file = ref_config["faire_file"],
+            cfdna_wes_faire_file = ref_config["cfdna_wes_faire_file"],
+            gc_file = ref_config["gc_file"],
+
+            genetic_map_file = ref_config["genetic_map_file"],
+            common_snp_list = ref_config["common_snp_list"] if common_snp_list is None else common_snp_list,
+
+            cytoband_file = ref_config["cytoband_file"],
+
             # reference panel
-            **ref_config["ref_panel_1000g"],
+            **ref_config["ref_panel_1000g"]
         ),
-        protect_disk=True,
+        name = "Localize_ref_files_HapASeg",
+        protect_disk = True
     )
 
     #
     # localize BAMs to RODISK
     if tumor_bam is not None and tumor_bai is not None:
         tumor_bam_localization_task = wolf.LocalizeToDisk(
-            files={
-                "t_bam": tumor_bam,
-                "t_bai": tumor_bai,
+            files = {
+                "t_bam" : tumor_bam,
+                "t_bai" : tumor_bai,
             },
+            name = "Localize_T_bam_HapASeg",
             token=localization_token,
-            persistent_disk_dry_run=persistent_dry_run,
+            persistent_disk_dry_run = persistent_dry_run
         )
         collect_tumor_coverage = True
     elif tumor_coverage_bed is not None:
@@ -239,9 +238,13 @@ def workflow(
     collect_normal_coverage = False
     if normal_bam is not None and normal_bai is not None:
         normal_bam_localization_task = wolf.LocalizeToDisk(
-            files={"n_bam": normal_bam, "n_bai": normal_bai},
+            files = {
+                "n_bam" : normal_bam,
+                "n_bai" : normal_bai
+            },
+            name = "Localize_N_bam_HapASeg",
             token=localization_token,
-            persistent_disk_dry_run=persistent_dry_run,
+            persistent_disk_dry_run = persistent_dry_run
         )
         collect_normal_coverage = True
     elif normal_coverage_bed is not None:
@@ -315,10 +318,10 @@ def workflow(
 
         # gather tumor coverage
         tumor_cov_gather_task = wolf.Task(
-            name="gather_coverage",
-            inputs={"coverage_beds": [tumor_cov_collect_task["coverage"]]},
-            script="""cat $(cat ${coverage_beds}) > coverage_cat.bed""",
-            outputs={"coverage": "coverage_cat.bed"},
+            name = "gather_tumor_coverage",
+            inputs = { "coverage_beds" : [tumor_cov_collect_task["coverage"]] },
+            script = "\n".join(["""cat $(cat ${coverage_beds}) > coverage_cat.bed""", """awk -F'\t' "NF != 9 {exit 1}" coverage_cat.bed"""]),
+            outputs = { "coverage" : "coverage_cat.bed" }
         )
     else:
         tumor_cov_gather_task = {"coverage": tumor_coverage_bed}
@@ -355,10 +358,10 @@ def workflow(
 
             # gather normal coverage
             normal_cov_gather_task = wolf.Task(
-                name="gather_coverage",
-                inputs={"coverage_beds": [normal_cov_collect_task["coverage"]]},
-                script="""cat $(cat ${coverage_beds}) > coverage_cat.bed""",
-                outputs={"coverage": "coverage_cat.bed"},
+                name = "gather_normal_coverage",
+                inputs = { "coverage_beds" : [normal_cov_collect_task["coverage"]] },
+                script = "\n".join(["""cat $(cat ${coverage_beds}) > coverage_cat.bed""", """awk -F'\t' "NF != 9 {exit 1}" coverage_cat.bed"""]),
+                outputs = { "coverage" : "coverage_cat.bed" }
             )
         else:
             normal_cov_gather_task = {"coverage": normal_coverage_bed}
@@ -412,6 +415,7 @@ def workflow(
                 "chunk_size": 10000 if wgs else 150000,
             },
             script="""
+          set -eux
           grep '^@' ${snp_list} > header
           sed '/^@/d' ${snp_list} | split -l ${chunk_size} -d -a 4 --filter 'cat header /dev/stdin > $FILE' --additional-suffix '.picard' - snp_list_chunk
           """,
@@ -423,25 +427,27 @@ def workflow(
                 pairName="het_coverage",
                 caseName="tumor",
                 ctrlName="normal",
+
                 t_bam=tumor_bam_localization_task["t_bam"],
                 t_bai=tumor_bam_localization_task["t_bai"],
-                n_bam=normal_bam_localization_task["n_bam"]
-                if not tumor_only
-                else "",
-                n_bai=normal_bam_localization_task["n_bai"]
-                if not tumor_only
-                else "",
+                n_bam=normal_bam_localization_task["n_bam"] if not tumor_only else "",
+                n_bai=normal_bam_localization_task["n_bai"] if not tumor_only else "",
+
                 fracContam=0,
+
                 refFasta=localization_task["ref_fasta"],
                 refFastaIdx=localization_task["ref_fasta_idx"],
                 refFastaDict=localization_task["ref_fasta_dict"],
+
                 intervals=split_het_sites["snp_list_shards"],
+
                 exclude_chimeric=True,
                 max_mismatch_baseq_sum=1000,  # set high to prevent physically phased SNPs from being removed
                 force_calling=True,
                 zip_output=True,
                 output_wigs=False,
-            )
+            ),
+            name="MuTect1FC_HapASeg"
         )
 
         # running gather on mutect intervals
@@ -452,7 +458,8 @@ def workflow(
                 "caseName": "tumor",
                 "mutect1_cs": [m1_task["mutect1_cs"]],
                 "mutect1_vcf": [m1_task["mutect1_vcf"]],
-            }
+            },
+            name="gatherMuTect1FC_HapASeg"
         )
 
         hp_coverage = het_pulldown(
@@ -493,13 +500,13 @@ def workflow(
             name="convert_het_pulldown",
             inputs={
                 "genotype_file": hp_coverage["normal_genotype"],
-                "sample_name": "HAPASEG_CONVERT_HET_PULLDOWN_TASK",  # TODO: allow to be specified
+                "sample_name": "test",  # TODO: allow to be specified
                 "ref_fasta": localization_task["ref_fasta"],
                 "ref_fasta_idx": localization_task["ref_fasta_idx"],
-                "ref_fasta_dict": localization_task["ref_fasta_dict"],
+                "ref_fasta_dict": localization_task["ref_fasta_dict"]
             },
             script=r"""
-        set -x
+        set -eux
         bcftools convert --tsv2vcf ${genotype_file} -c CHROM,POS,AA -s ${sample_name} \
           -f ${ref_fasta} -Ou -o all_chrs.bcf && bcftools index all_chrs.bcf
         for chr in $(bcftools view -h all_chrs.bcf | ssed -nR '/^##contig/s/.*ID=(.*),.*/\1/p' | head -n24); do
