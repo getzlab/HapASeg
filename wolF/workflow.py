@@ -235,7 +235,6 @@ def workflow(
         )
 
     use_normal_coverage = True
-    collect_normal_coverage = False
     if normal_bam is not None and normal_bai is not None:
         normal_bam_localization_task = wolf.LocalizeToDisk(
             files = {
@@ -246,9 +245,6 @@ def workflow(
             token=localization_token,
             persistent_disk_dry_run = persistent_dry_run
         )
-        collect_normal_coverage = True
-    elif normal_coverage_bed is not None:
-        collect_normal_coverage = False
     else:
         print(
             "Normal coverage will not be used as a covariate; ability to regress out germline CNVs may suffer."
@@ -328,7 +324,7 @@ def workflow(
 
     ## normal
     if use_normal_coverage:
-        if collect_normal_coverage:
+        if normal_coverage_bed is None:
             # create scatter intervals
             normal_split_intervals_task = split_intervals.split_intervals(
                 jobname_suffix="hapaseg_normal_cov",
