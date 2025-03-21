@@ -259,8 +259,7 @@ def workflow(
 
     # FIXME: hack to account for "chr" in hg38 but not in hg19
     if ref_genome_build == "hg38":
-        primary_contigs = ["chr{}".format(i) for i in range(1, 23)]
-        primary_contigs.extend(["chrX", "chrY", "chrM"])
+        primary_contigs = ["chr{}".format(i) for i in range(1, 23)] + ["chrX", "chrY", "chrM"]
     else:
         primary_contigs = [str(x) for x in range(1, 23)] + ["X", "Y", "M"]
 
@@ -474,7 +473,6 @@ def workflow(
                 else 10,  # tumor min coverage; set higher for exomes due to off-target signal being noisier
             )
         )
-
         # hp_gather = het_pulldown.gather_het_coverage(
         #     inputs = {
         #         "tumor_hets" : hp_coverage["tumor_hets"],
