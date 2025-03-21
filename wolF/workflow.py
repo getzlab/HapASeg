@@ -364,6 +364,7 @@ def workflow(
 
     # get het site coverage/genotypes from callstats
     if callstats_file is not None:
+        print('HapASeg: Callstats file is not None. Running only the pulldown.')
         hp_coverage = het_pulldown(
             inputs=dict(
                 callstats_file=callstats_file,
@@ -384,6 +385,7 @@ def workflow(
 
     # for benchmarking we pass a hetsites file
     elif hetsites_file is not None:
+        print('HapASeg: Hetsites file is not None. Using it directly.')
         if genotype_file is not None:
             hp_coverage = {
                 "tumor_hets": hetsites_file,
@@ -398,11 +400,8 @@ def workflow(
             )
 
     # otherwise, run M1 and get it from the BAM
-    elif (
-        callstats_file is None
-        and tumor_bam is not None
-        and normal_bam is not None
-    ):
+    elif tumor_bam is not None and normal_bam is not None:
+        print('HapASeg: Hetsites file and callstats file are None. Computing het sites from BAM files.')
         # split het sites file uniformly
         split_het_sites = wolf.Task(
             name="split_het_sites",
@@ -491,6 +490,7 @@ def workflow(
 
     # run phasing if we don't have a phased vcf passed
     if phased_vcf is None:
+        print('HapASeg: Phased VCF is None. Computing phasing.')
         # shim task to convert output of het pulldown to VCF
         convert_task = wolf.Task(
             name="convert_het_pulldown",
