@@ -1,4 +1,3 @@
-from typing import Dict, Optional
 import numpy as np
 import os
 import pandas as pd
@@ -229,7 +228,7 @@ def workflow(
     genotyping_method="mixture_model",
     single_ended=False,  # coverage collection differs depending on whether BAM is paired end
     ref_genome_build=None,  # must be hg19 or hg38
-    ref_fasta_overwrite: Optional[Dict[str, str]]=None,  # a dictionary of {"ref_fasta":{}, "ref_fasta_idx":{}, "ref_fasta_dict":{}} to overwrite standard fasta files
+    ref_fasta_overwrite=None,  # a dictionary of {"ref_fasta":{}, "ref_fasta_idx":{}, "ref_fasta_dict":{}} to overwrite standard fasta files
     target_list=None,
     common_snp_list=None,  # for adding a custom SNP list
     betahyp=4,  # hyperparameter for smoothing initial allelic segmentation. only applicable for whole exomes.
@@ -281,8 +280,6 @@ def workflow(
                 ref_genome_build
             )
         )
-    if ref_fasta_overwrite is None:
-        ref_fasta_overwrite = dict(ref_fasta = ref_config["ref_fasta"], ref_fasta_idx = ref_config["ref_fasta_idx"], ref_fasta_dict = ref_config["ref_fasta_dict"])
 
     localization_task = LocalizeToDisk(
         files = dict(
