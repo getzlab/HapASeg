@@ -1,11 +1,9 @@
-import glob
+from typing import Dict, Optional
 import numpy as np
 import os
 import pandas as pd
-import pickle
 import prefect
 import subprocess
-import tempfile
 import wolf
 
 from wolf.localization import LocalizeToDisk, DeleteDisk
@@ -62,7 +60,7 @@ def make_ref_dict(bucket, build):
     )
     ref_panel = ref_panel.join(
         ref_panel["path"].str.extract(
-            ".*(?P<chr>chr[^.]+).*(?P<ext>bcf(?:\.csi)?)"
+            r".*(?P<chr>chr[^.]+).*(?P<ext>bcf(?:\.csi)?)"
         )
     )
     ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
@@ -80,7 +78,52 @@ CWD = os.path.dirname(os.path.abspath(__file__))
 
 # hg19
 def _hg19_config_gen(wgs):
-    hg19_ref_dict = pd.read_pickle(CWD + "/ref_panel.hg19.pickle")
+    hg19_ref_dict = {
+        'chr1_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr1.phase3_integrated.20130502.genotypes.bcf',
+        'chr1_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr1.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr10_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr10.phase3_integrated.20130502.genotypes.bcf',
+        'chr10_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr10.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr11_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr11.phase3_integrated.20130502.genotypes.bcf',
+        'chr11_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr11.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr12_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr12.phase3_integrated.20130502.genotypes.bcf',
+        'chr12_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr12.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr13_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr13.phase3_integrated.20130502.genotypes.bcf',
+        'chr13_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr13.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr14_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr14.phase3_integrated.20130502.genotypes.bcf',
+        'chr14_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr14.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr15_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr15.phase3_integrated.20130502.genotypes.bcf',
+        'chr15_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr15.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr16_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr16.phase3_integrated.20130502.genotypes.bcf',
+        'chr16_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr16.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr17_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr17.phase3_integrated.20130502.genotypes.bcf',
+        'chr17_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr17.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr18_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr18.phase3_integrated.20130502.genotypes.bcf',
+        'chr18_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr18.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr19_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr19.phase3_integrated.20130502.genotypes.bcf',
+        'chr19_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr19.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr2_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr2.phase3_integrated.20130502.genotypes.bcf',
+        'chr2_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr2.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr20_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr20.phase3_integrated.20130502.genotypes.bcf',
+        'chr20_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr20.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr21_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr21.phase3_integrated.20130502.genotypes.bcf',
+        'chr21_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr21.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr22_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr22.phase3_integrated.20130502.genotypes.bcf',
+        'chr22_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr22.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr3_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr3.phase3_integrated.20130502.genotypes.bcf',
+        'chr3_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr3.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr4_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr4.phase3_integrated.20130502.genotypes.bcf',
+        'chr4_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr4.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr5_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr5.phase3_integrated.20130502.genotypes.bcf',
+        'chr5_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr5.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr6_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr6.phase3_integrated.20130502.genotypes.bcf',
+        'chr6_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr6.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr7_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr7.phase3_integrated.20130502.genotypes.bcf',
+        'chr7_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr7.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr8_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr8.phase3_integrated.20130502.genotypes.bcf',
+        'chr8_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr8.phase3_integrated.20130502.genotypes.bcf.csi',
+        'chr9_bcf': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr9.phase3_integrated.20130502.genotypes.bcf',
+        'chr9_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg19/1000genomes/ALL.chr9.phase3_integrated.20130502.genotypes.bcf.csi'
+    }
 
     hg19_ref_config = dict(
         ref_fasta="gs://getzlab-workflows-reference_files-oa/hg19/Homo_sapiens_assembly19.fasta",
@@ -104,8 +147,54 @@ def _hg19_config_gen(wgs):
 
 # hg38
 def _hg38_config_gen(wgs):
-    hg38_ref_dict = pd.read_pickle(CWD + "/ref_panel.hg38.pickle")
-
+    hg38_ref_dict = {
+        'chr1_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr1.bcf',
+        'chr1_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr1.bcf.csi',
+        'chr10_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr10.bcf',
+        'chr10_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr10.bcf.csi',
+        'chr11_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr11.bcf',
+        'chr11_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr11.bcf.csi',
+        'chr12_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr12.bcf',
+        'chr12_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr12.bcf.csi',
+        'chr13_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr13.bcf',
+        'chr13_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr13.bcf.csi',
+        'chr14_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr14.bcf',
+        'chr14_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr14.bcf.csi',
+        'chr15_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr15.bcf',
+        'chr15_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr15.bcf.csi',
+        'chr16_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr16.bcf',
+        'chr16_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr16.bcf.csi',
+        'chr17_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr17.bcf',
+        'chr17_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr17.bcf.csi',
+        'chr18_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr18.bcf',
+        'chr18_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr18.bcf.csi',
+        'chr19_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr19.bcf',
+        'chr19_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr19.bcf.csi',
+        'chr2_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr2.bcf',
+        'chr2_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr2.bcf.csi',
+        'chr20_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr20.bcf',
+        'chr20_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr20.bcf.csi',
+        'chr21_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr21.bcf',
+        'chr21_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr21.bcf.csi',
+        'chr22_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr22.bcf',
+        'chr22_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr22.bcf.csi',
+        'chr3_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr3.bcf',
+        'chr3_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr3.bcf.csi',
+        'chr4_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr4.bcf',
+        'chr4_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr4.bcf.csi',
+        'chr5_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr5.bcf',
+        'chr5_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr5.bcf.csi',
+        'chr6_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr6.bcf',
+        'chr6_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr6.bcf.csi',
+        'chr7_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr7.bcf',
+        'chr7_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr7.bcf.csi',
+        'chr8_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr8.bcf',
+        'chr8_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr8.bcf.csi',
+        'chr9_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr9.bcf',
+        'chr9_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chr9.bcf.csi',
+        'chrX_bcf': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chrX.bcf',
+        'chrX_bcf.csi': 'gs://getzlab-workflows-reference_files-oa/hg38/1000genomes/chrX.bcf.csi'
+    }
 
     hg38_ref_config= dict(
         ref_fasta = "gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa",
@@ -140,7 +229,7 @@ def workflow(
     genotyping_method="mixture_model",
     single_ended=False,  # coverage collection differs depending on whether BAM is paired end
     ref_genome_build=None,  # must be hg19 or hg38
-    ref_fasta_overwrite=None,  # a dictionary of {"ref_fasta":{}, "ref_fasta_idx":{}, "ref_fasta_dict":{}} to overwrite standard fasta files
+    ref_fasta_overwrite: Optional[Dict[str, str]]=None,  # a dictionary of {"ref_fasta":{}, "ref_fasta_idx":{}, "ref_fasta_dict":{}} to overwrite standard fasta files
     target_list=None,
     common_snp_list=None,  # for adding a custom SNP list
     betahyp=4,  # hyperparameter for smoothing initial allelic segmentation. only applicable for whole exomes.
@@ -156,6 +245,8 @@ def workflow(
     workspace=None,
     entity_type="pair",  # terra entity type (sample, pair)
     entity_name=None,
+    tumor_is_localized=False,  # Marks if the tumor sample is already localized and doesn't have to be localized again.
+    normal_is_localized=False,  # Marks if the normal sample is already localized and doesn't have to be localized again.
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -190,6 +281,8 @@ def workflow(
                 ref_genome_build
             )
         )
+    if ref_fasta_overwrite is None:
+        ref_fasta_overwrite = dict(ref_fasta = ref_config["ref_fasta"], ref_fasta_idx = ref_config["ref_fasta_idx"], ref_fasta_dict = ref_config["ref_fasta_dict"])
 
     localization_task = LocalizeToDisk(
         files = dict(
@@ -217,16 +310,19 @@ def workflow(
     #
     # localize BAMs to RODISK
     if tumor_bam is not None and tumor_bai is not None:
-        tumor_bam_localization_task = wolf.LocalizeToDisk(
-            files = {
-                "t_bam" : tumor_bam,
-                "t_bai" : tumor_bai,
-            },
-            name = "Localize_T_bam_HapASeg",
-            token=localization_token,
-            persistent_disk_dry_run = persistent_dry_run
-        )
-        collect_tumor_coverage = True
+        if tumor_is_localized:
+            tumor_bam_localization_task = dict(t_bam = tumor_bam, t_bai = tumor_bai)
+        else:    
+            tumor_bam_localization_task = wolf.LocalizeToDisk(
+                files = {
+                    "t_bam" : tumor_bam,
+                    "t_bai" : tumor_bai,
+                },
+                name = "Localize_T_bam_HapASeg",
+                token=localization_token,
+                persistent_disk_dry_run = persistent_dry_run
+            )
+            collect_tumor_coverage = True
     elif tumor_coverage_bed is not None:
         collect_tumor_coverage = False
     else:
@@ -236,15 +332,18 @@ def workflow(
 
     use_normal_coverage = True
     if normal_bam is not None and normal_bai is not None:
-        normal_bam_localization_task = wolf.LocalizeToDisk(
-            files = {
-                "n_bam" : normal_bam,
-                "n_bai" : normal_bai
-            },
-            name = "Localize_N_bam_HapASeg",
-            token=localization_token,
-            persistent_disk_dry_run = persistent_dry_run
-        )
+        if normal_is_localized:
+            normal_bam_localization_task = dict(n_bam = normal_bam, n_bai = normal_bai)
+        else:
+            normal_bam_localization_task = wolf.LocalizeToDisk(
+                files = {
+                    "n_bam" : normal_bam,
+                    "n_bai" : normal_bai
+                },
+                name = "Localize_N_bam_HapASeg",
+                token=localization_token,
+                persistent_disk_dry_run = persistent_dry_run
+            )
     else:
         print(
             "Normal coverage will not be used as a covariate; ability to regress out germline CNVs may suffer."
@@ -363,7 +462,6 @@ def workflow(
 
     # get het site coverage/genotypes from callstats
     if callstats_file is not None:
-        print('HapASeg: Callstats file is not None. Running only the pulldown.')
         hp_coverage = het_pulldown(
             inputs=dict(
                 callstats_file=callstats_file,
@@ -384,7 +482,6 @@ def workflow(
 
     # for benchmarking we pass a hetsites file
     elif hetsites_file is not None:
-        print('HapASeg: Hetsites file is not None. Using it directly.')
         if genotype_file is not None:
             hp_coverage = {
                 "tumor_hets": hetsites_file,
@@ -400,7 +497,6 @@ def workflow(
 
     # otherwise, run M1 and get it from the BAM
     elif tumor_bam is not None and normal_bam is not None:
-        print('HapASeg: Hetsites file and callstats file are None. Computing het sites from BAM files.')
         # split het sites file uniformly
         split_het_sites = wolf.Task(
             name="split_het_sites",
@@ -488,7 +584,6 @@ def workflow(
 
     # run phasing if we don't have a phased vcf passed
     if phased_vcf is None:
-        print('HapASeg: Phased VCF is None. Computing phasing.')
         # shim task to convert output of het pulldown to VCF
         convert_task = wolf.Task(
             name="convert_het_pulldown",
