@@ -301,7 +301,7 @@ def covLNP_ll(
 class CovLNP_NR_prior:
     observations: np.ndarray
     """The observed coverage values."""
-    covariate_coefficients: np.ndarray
+    beta: np.ndarray
     """The coefficients of the covariates."""
     covariates: np.ndarray
     """The covariates affecting the observations."""
@@ -332,7 +332,7 @@ class CovLNP_NR_prior:
         """
         # legrende roots/weights for quadrature
         self.observations = observations
-        self.covariate_coefficients = covariate_coefficients
+        self.beta = covariate_coefficients
         self.covar_effect = covariates @ covariate_coefficients + exposure
 
         self.mu_prior = mu_prior
@@ -682,6 +682,10 @@ class CovLNP_NR_prior:
             if debug:
                 print("hess:", hess)
             delta = np.linalg.inv(hess) @ grad
+
+            if np.any(np.abs(delta) > MAX_DELTA):
+                delta *= MAX_DELTA / np.max(np.abs(delta))
+
             self.mu -= delta[0]
             self.lgsigma -= delta[1]
             if debug:
