@@ -1,11 +1,8 @@
-import glob
 import numpy as np
 import os
 import pandas as pd
-import pickle
 import prefect
 import subprocess
-import tempfile
 import wolf
 
 from wolf.localization import LocalizeToDisk, DeleteDisk
@@ -111,7 +108,7 @@ def _hg38_config_gen(wgs):
         ref_fasta_idx="gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
         ref_fasta_dict="gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
         genetic_map_file="gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
-        common_snp_list="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/snp_list_1000_genome_15pct_with_header.txt",
+        common_snp_list="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/snp_list_1000_genome_15pct_with_header_filtered.txt",
         faire_file="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle",
         cfdna_wes_faire_file="",  # TODO: cfDNA file needs to be generated for hg38
         cytoband_file="gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt",
@@ -377,7 +374,6 @@ def workflow(
 
     # get het site coverage/genotypes from callstats
     if callstats_file is not None:
-        print("HapASeg: Callstats file is not None. Running only the pulldown.")
         hp_coverage = het_pulldown(
             inputs=dict(
                 callstats_file=callstats_file,
@@ -398,7 +394,6 @@ def workflow(
 
     # for benchmarking we pass a hetsites file
     elif hetsites_file is not None:
-        print("HapASeg: Hetsites file is not None. Using it directly.")
         if genotype_file is not None:
             hp_coverage = {
                 "tumor_hets": hetsites_file,
@@ -414,9 +409,6 @@ def workflow(
 
     # otherwise, run M1 and get it from the BAM
     elif tumor_bam is not None and normal_bam is not None:
-        print(
-            "HapASeg: Hetsites file and callstats file are None. Computing het sites from BAM files."
-        )
         # split het sites file uniformly
         split_het_sites = wolf.Task(
             name="split_het_sites",
@@ -503,7 +495,6 @@ def workflow(
 
     # run phasing if we don't have a phased vcf passed
     if phased_vcf is None:
-        print("HapASeg: Phased VCF is None. Computing phasing.")
         # shim task to convert output of het pulldown to VCF
         convert_task = wolf.Task(
             name="convert_het_pulldown",
