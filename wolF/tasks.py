@@ -169,7 +169,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         --repl_pickle ${repl_pickle} \
         --bin_width ${bin_width}"""
 
-        if self.conf["inputs"]["wgs"] == True:
+        if self.conf["inputs"]["wgs"]:
             script += " --wgs"
         if self.conf["inputs"]["faire_pickle"] != "":
             script += " --faire_pickle ${faire_pickle}"
