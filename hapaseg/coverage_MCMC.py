@@ -787,6 +787,9 @@ class Coverage_MCMC_AllClusters:
             self.ll_clusters[k] = new_acluster.get_ll()
 
     def save_sample(self):
+        """
+        Adds the current MCMC state to the list of saved MCMC states.
+        """
         mu_i_save = []
         lsigma_i_save = []
         F_save = []
@@ -799,7 +802,19 @@ class Coverage_MCMC_AllClusters:
         self.lsigma_i_samples.append(lsigma_i_save)
         self.F_samples.append(F_save)
 
-    def pick_cluster(self, n_it):
+    def pick_cluster(self, n_it: int) -> int:
+        """
+        Randomly picks a cluster from the current set of clusters.
+
+        In the first 1000 iterations, the cluster is picked uniformly from the set of clusters.
+        After that, the cluster is picked with probability proportional to its length.
+
+        Args:
+            n_it (int): The number of MCMC iterations done up to now.
+
+        Returns:
+            int: The index of a random cluster.
+        """
         # randomly select clusters with equal probabilites for the first 1k iterations then select based on size
         # TODO: tweak this to dynamically decide when to switch selection probabilites
         if n_it < 1000:

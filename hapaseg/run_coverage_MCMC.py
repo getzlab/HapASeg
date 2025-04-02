@@ -80,18 +80,6 @@ class CoverageMCMCRunner:
         self.aseg_cov_df = self.load_covariates(self.aseg_cov_df)
         self.aseg_cov_df = self.filter_and_scale_covariates(self.aseg_cov_df)
 
-    def run_all_clusters(self):
-        Pi, r, C, filtered_cov_df = self.assign_clusters()
-        # run coverage mcmc on all clusters
-        # assign coverage bins to allelic clusters from the specified allelic sample (if specified; o.w. random choice)
-        cov_mcmc = NB_MCMC_AllClusters(self.num_draws, r, C, Pi)
-
-        # either way we run and save results
-        cov_mcmc.run()
-        self.model = cov_mcmc
-        segment_samples, global_beta, mu_i_samples = cov_mcmc.prepare_results()
-        return segment_samples, global_beta, mu_i_samples, filtered_cov_df
-
     # Do preprocessing for running on each ADP cluster individually
     def prepare_single_cluster(self):
         cluster_map, observations, covariates, filtered_cov_df = (

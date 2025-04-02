@@ -1,5 +1,7 @@
 import wolf
 
+HAPASEG_DOCKER_VERSION = "hapaseg-debug_v1294"
+
 
 class Hapaseg(wolf.Task):
     inputs = {
