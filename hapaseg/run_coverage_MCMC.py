@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Optional, Tuple
 import numpy as np
 import pandas as pd
 import pickle
@@ -22,6 +22,14 @@ zt = lambda x: (x - np.nanmean(x)) / np.nanstd(x)
 
 
 class CoverageMCMCRunner:
+    num_draws: int
+    cluster_num: Optional[int]
+
+    f_repl: str
+    f_faire: str
+    f_GC: Optional[str]
+    f_Ncov: Optional[str]
+
     def __init__(
         self,
         coverage_csv,
@@ -29,10 +37,10 @@ class CoverageMCMCRunner:
         f_allelic_clusters,
         f_SNPs,
         f_segs,
-        ref_fasta,
+        ref_fasta: str,
         # covariates
-        f_repl,
-        f_faire,
+        f_repl: str,
+        f_faire: str,
         f_GC=None,
         f_Ncov=None,
         f_extracov_bed_list=None,

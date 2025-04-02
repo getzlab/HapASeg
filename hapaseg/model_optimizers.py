@@ -698,9 +698,6 @@ class CovLNP_NR_prior:
                 return self.mu, self.lgsigma
         print("did not converge!")
         raise ValueError("DNC")
-        if ret_hess:
-            return None, None, None
-        return None, None
 
 
 def covLNP_ll_prior(

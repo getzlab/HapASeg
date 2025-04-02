@@ -1,3 +1,4 @@
+from typing import Dict, Literal, Optional, Tuple
 import numpy as np
 import scipy.special as ss
 import sortedcontainers as sc
@@ -14,7 +15,6 @@ from scipy.signal import find_peaks
 from .model_optimizers import (
     PoissonRegression,
     CovLNP_NR_prior,
-    covLNP_ll,
     covLNP_ll_prior,
 )
 import scipy.sparse as sp
@@ -28,13 +28,48 @@ colors = mpl.cm.get_cmap("tab10").colors
 
 
 class AllelicCluster:
-    def __init__(self, r, C, mu_0, beta_0, bin_width=1):
+    observations: np.ndarray
+    """A [N] np-array containing the observed coverage of each bin."""
+    covariates: np.ndarray
+    """A [N, covariates] np-array containing the covariates at each bin."""
+    mu: float
+    """The log-mean of the log-normal Poisson distribution."""
+    beta: np.ndarray
+    """The coefficient of each covariate."""
+    lsigma: float
+    """The log-sigma parameter of the log-normal Poisson distribution."""
+    sigma: float
+    """The exponent of the sigma parameter of the log-normal Poisson distribution."""
+    bin_exposure: int
+    """A constant factor shifting all the expected bin coverages, equal to the bin width."""
+    segment_ID: np.ndarray
+    """An [N] np-array containing the index of the segment of each observation."""
+    segments: sc.SortedSet
+    """A sorted list containing the start index of each cluster."""
+    segment_lens: sc.SortedDict
+    """A sorted dict mapping the cluster index to the length of the segment."""
+
+    cache_LL: Dict[Tuple[int, int], float]
+    """A cache for segment log-likelihoods."""
+    cache_mu_lsigma: Dict[Tuple[int, int], Tuple[float, float]]
+    """A cache for segment LNP log-mean and log-sigma."""
+    cache_hess: Dict[Tuple[int, int], np.ndarray]
+    """A cache for segment hessians."""
+
+    def __init__(
+        self,
+        r: np.ndarray,
+        C: np.ndarray,
+        mu: np.ndarray,
+        beta: np.ndarray,
+        bin_width=1,
+    ):
         # cluster wide params
-        self.r = r
-        self.C = C
-        assert len(mu_0) == 1
-        self.mu = np.asscalar(mu_0)
-        self.beta = beta_0
+        self.observations = r
+        self.covariates = C
+        assert len(mu) == 1
+        self.mu = mu.item()
+        self.beta = beta
         self.lsigma = 1  # log sigma lnp parameter
         self.sigma = np.exp(self.lsigma)  # sigma lnp parameter
 
@@ -50,28 +85,22 @@ class AllelicCluster:
         self.exp = 0
 
         # all segment params
-        self.lsigma_i_arr = np.ones(len(self.r))
-        self.mu_i_arr = np.zeros(len(self.r))
+        self.lsigma_i_arr = np.ones(len(self.observations))
+        self.mu_i_arr = np.zeros(len(self.observations))
 
         self.lamda = 1e-10
         self.alpha_prior = 1e-5
         self.beta_prior = 4e-3
 
         # keep cache of previously computed breakpoints for fast splitting
-        sz = tuple(np.r_[1, 1] * (len(r) + 1))
-        self.cache_LL_ptr = sp.dok_matrix(sz, dtype=np.int64)
-        self.cache_LL = []
-        self.cache_mu_ptr = sp.dok_matrix(sz, dtype=np.int64)
-        self.cache_mu = []
-        self.cache_lsigma_ptr = sp.dok_matrix(sz, dtype=np.int64)
-        self.cache_lsigma = []
-        self.cache_hess_ptr = sp.dok_matrix(sz, dtype=np.int64)
-        self.cache_hess = []
+        self.cache_LL = {}
+        self.cache_mu_lsigma = {}
+        self.cache_hess = {}
 
         # all intervals start out in one segment, which also means no breakpoints
-        self.segment_ID = np.zeros(len(self.r))
+        self.segment_ID = np.zeros(len(self.observations))
         self.segments = sc.SortedSet([0])
-        self.segment_lens = sc.SortedDict([(0, len(self.r))])
+        self.segment_lens = sc.SortedDict([(0, len(self.observations))])
 
         # keep cache of previously computed breakpoints for fast splitting
         # these breakpoints keys are in the form (st, en, breakpoint)
@@ -79,7 +108,7 @@ class AllelicCluster:
 
         self.phase_history = []
         self.F = sc.SortedList()
-        self.F.update([0, len(self.r)])
+        self.F.update([0, len(self.observations)])
 
         self.ll_traces = []
 
@@ -92,7 +121,7 @@ class AllelicCluster:
     # fits lnp model to this cluster using initial params as starting point
     def _init_params(self):
         self.mu, self.lgsigma = self.lnp_init()
-        self.lgsigma_i_arr = np.ones(len(self.r)) * self.lsigma
+        self.lgsigma_i_arr = np.ones(len(self.observations)) * self.lsigma
         self.sigma_i_arr = np.exp(self.lsigma_i_arr)
 
     def get_seg_ind(self, seg):
@@ -102,26 +131,26 @@ class AllelicCluster:
         return seg_l, seg_r + self.segment_lens[seg_r]
 
     def get_ll(self):
-        bdy = np.r_[list(self.segments), len(self.r)]
+        bdy = np.r_[list(self.segments), len(self.observations)]
         bdy = np.c_[bdy[:-1], bdy[1:]]
         ll = 0
         for st, en in bdy:
             # lookup in cache
-            if (ptr := self.cache_LL_ptr[st, en]) != 0:
-                ll += self.cache_LL[ptr]
+            if (curr_ll := self.cache_LL.get((st, en), None)) is not None:
+                ll += curr_ll
             else:
                 ll += self.ll_segment(
-                    [st, en], self.mu_i_arr[st], self.lsigma_i_arr[st]
+                    (st, en), self.mu_i_arr[st], self.lsigma_i_arr[st]
                 )
         return ll
 
     # read in the merged cluster assignments from burnin scatter jobs and
     # fill in data structures for cluster mcmc accordingly
     def _init_burnin(self, reconciled_assignments):
-        if len(self.r) != len(reconciled_assignments):
+        if len(self.observations) != len(reconciled_assignments):
             raise ValueError(
                 "reconciled_assignemnts did not match the number of cluster bins, expected {} got {}".format(
-                    len(self.r), len(reconciled_assignments)
+                    len(self.observations), len(reconciled_assignments)
                 )
             )
 
@@ -150,12 +179,12 @@ class AllelicCluster:
         # refit poisson to get new beta
         pois_regr = PoissonRegression(
             np.exp(
-                np.log(self.r).flatten()
+                np.log(self.observations).flatten()
                 - np.log(self.bin_exposure)
                 - self.mu_i_arr
             )[:, None],
-            self.C,
-            np.ones(self.r.shape).reshape(-1, 1),
+            self.covariates,
+            np.ones(self.observations.shape).reshape(-1, 1),
         )
         mu, beta = pois_regr.fit()
         self.beta = beta
@@ -174,9 +203,9 @@ class AllelicCluster:
     def lnp_init(self):
         # fit LNP
         lnp = CovLNP_NR_prior(
-            self.r,
+            self.observations,
             self.beta,
-            self.C,
+            self.covariates,
             exposure=np.log(self.bin_exposure),
             init_prior=False,
             lamda=self.lamda,
@@ -186,24 +215,34 @@ class AllelicCluster:
         )
         return lnp.fit()
 
-    def lnp_optimizer(self, ind, ret_hess=False):
-        if self.cache_mu_ptr[ind[0], ind[1]] != 0:
-            mu = self.cache_mu[self.cache_mu_ptr[ind[0], ind[1]]]
-            lsigma = self.cache_lsigma[self.cache_lsigma_ptr[ind[0], ind[1]]]
+    def lnp_optimizer(
+        self, ind: Tuple[int, int], ret_hess=False
+    ) -> Tuple[float, float, Optional[np.ndarray]]:
+        """Computes the LNP parameters for the given index.
+
+        Args:
+            ind (tuple[int, int]): A tuple containing the start and stop indices of a segment.
+            ret_hess (bool, optional): Whether to return the Hessian. Defaults to False.
+
+        Returns:
+            Tuple: A tuple containing the log-mean, log-sigma, and hessian of the log-normal Poisson distribution fit on the target range.
+        """
+        if ind in self.cache_mu_lsigma:
+            mu, lsigma = self.cache_mu_lsigma[ind]
             if ret_hess:
                 return (
                     mu,
                     lsigma,
-                    self.cache_hess[self.cache_hess_ptr[ind[0], ind[1]]],
+                    self.cache_hess[ind],
                 )
             else:
-                return mu, lsigma
+                return mu, lsigma, None
 
         # cache miss; compute values
         lnp = CovLNP_NR_prior(
-            self.r[ind[0] : ind[1]],
+            self.observations[ind[0] : ind[1]],
             self.beta,
-            self.C[ind[0] : ind[1]],
+            self.covariates[ind[0] : ind[1]],
             exposure=np.log(self.bin_exposure),
             mu_prior=self.mu,
             lamda=self.lamda,
@@ -218,9 +257,9 @@ class AllelicCluster:
             # try adding some jitter
             try:
                 lnp = CovLNP_NR_prior(
-                    self.r[ind[0] : ind[1]],
+                    self.observations[ind[0] : ind[1]],
                     self.beta,
-                    self.C[ind[0] : ind[1]],
+                    self.covariates[ind[0] : ind[1]],
                     exposure=np.log(self.bin_exposure),
                     mu_prior=self.mu,
                     lamda=self.lamda,
@@ -234,29 +273,26 @@ class AllelicCluster:
                 res = (np.nan, np.nan, np.full((2, 2), np.nan))
 
         # save to cache
-        self.cache_mu.append(res[0])
-        self.cache_mu_ptr[ind[0], ind[1]] = len(self.cache_mu) - 1
-        self.cache_lsigma.append(res[1])
-        self.cache_lsigma_ptr[ind[0], ind[1]] = len(self.cache_lsigma) - 1
-        self.cache_hess.append(res[2])
-        self.cache_hess_ptr[ind[0], ind[1]] = len(self.cache_hess) - 1
+        self.cache_mu_lsigma[ind] = (res[0], res[1])
 
         if ret_hess:
+            assert len(res) == 3
+            self.cache_hess[ind] = res[2]
             return res[0], res[1], res[2]
         else:
-            return res[0], res[1]
+            return res[0], res[1], None
 
     # method for refitting beta value of the cluster
     def refit_beta(self):
         # fit poisson to get new beta
         pois_regr = PoissonRegression(
             np.exp(
-                np.log(self.r).flatten()
+                np.log(self.observations).flatten()
                 - np.log(self.bin_exposure)
                 - self.mu_i_arr
             ).reshape(-1, 1),
-            self.C,
-            np.ones(self.r.shape).reshape(-1, 1),
+            self.covariates,
+            np.ones(self.observations.shape).reshape(-1, 1),
         )
         mu, beta = pois_regr.fit()
         self.beta = beta
@@ -266,19 +302,19 @@ class AllelicCluster:
 
         # refit to segments to get lsigma_i and mu_i arrays
         for row in np.array(self.F).reshape(-1, 2):
-            mu_i, lsigma_i = self.lnp_optimizer(row)
+            mu_i, lsigma_i, _ = self.lnp_optimizer(row)
             self.mu_i_arr[row[0] : row[1]] = mu_i
             self.lsigma_i_arr[row[0] : row[1]] = lsigma_i
 
     ## caluculating overall ll of allelic cluster under lnp model
-    def ll_segment(self, ind, mu_i, lgsigma):
+    def ll_segment(self, ind: Tuple[int, int], mu_i: float, lgsigma: float):
         exposure = np.log(self.bin_exposure)
         mu_tot = mu_i
         ll = covLNP_ll_prior(
-            self.r[ind[0] : ind[1]],
+            self.observations[ind[0] : ind[1]],
             mu_tot,
             lgsigma,
-            self.C[ind[0] : ind[1]],
+            self.covariates[ind[0] : ind[1]],
             self.beta,
             exposure=exposure,
             mu_prior=self.mu,
@@ -339,9 +375,9 @@ class AllelicCluster:
     #
     def _find_difs(self, ind):
         residuals = np.exp(
-            np.log(self.r[ind[0] : ind[1]].flatten())
-            - (self.mu.flatten())
-            - (self.C[ind[0] : ind[1]] @ self.beta).flatten()
+            np.log(self.observations[ind[0] : ind[1]].flatten())
+            - (self.mu)
+            - (self.covariates[ind[0] : ind[1]] @ self.beta).flatten()
         )
 
         minimal = False
@@ -404,20 +440,18 @@ class AllelicCluster:
 
                 # lookup likelihoods in cache
                 # left:
-                if (ptr := self.cache_LL_ptr[ind[0], ix]) != 0:
-                    ll_l = self.cache_LL[ptr]
+                if (ind[0], ix) in self.cache_LL:
+                    ll_l = self.cache_LL[ind[0], ix]
                 else:
-                    ll_l = self.ll_segment([ind[0], ix], mu_l, lsigma_l)
-                    self.cache_LL.append(ll_l)
-                    self.cache_LL_ptr[ind[0], ix] = len(self.cache_LL) - 1
+                    ll_l = self.ll_segment((ind[0], ix), mu_l, lsigma_l)
+                    self.cache_LL[ind[0], ix] = ll_l
 
                 # right:
-                if (ptr := self.cache_LL_ptr[ix, ind[1]]) != 0:
-                    ll_r = self.cache_LL[ptr]
+                if (ix, ind[1]) in self.cache_LL:
+                    ll_r = self.cache_LL[ix, ind[1]]
                 else:
-                    ll_r = self.ll_segment([ix, ind[1]], mu_r, lsigma_r)
-                    self.cache_LL.append(ll_r)
-                    self.cache_LL_ptr[ix, ind[1]] = len(self.cache_LL) - 1
+                    ll_r = self.ll_segment((ix, ind[1]), mu_r, lsigma_r)
+                    self.cache_LL[ix, ind[1]] = ll_r
 
                 lls.append(ll_l + ll_r)
         return lls, mus, lsigmas, Hs
@@ -592,31 +626,27 @@ class AllelicCluster:
         mu_share, lsigma_share, H_share = self.lnp_optimizer(ind, True)
 
         # lookup cache
-        if (ptr := self.cache_LL_ptr[ind[0], ind[1]]) != 0:
-            ll_join = self.cache_LL[ptr]
+        if ind in self.cache_LL:
+            ll_join = self.cache_LL[ind]
         else:
             ll_join = self.ll_segment(ind, mu_share, lsigma_share)
-
-            # add to cache
-            self.cache_LL.append(ll_join)
-            self.cache_LL_ptr[ind[0], ind[1]] = len(self.cache_LL) - 1
+            self.cache_LL[ind] = ll_join
         return (
             mu_share,
             lsigma_share,
             self._get_log_ML_gaussint_join(H_share) + ll_join,
         )
 
-    """
-	Split segment method. This method chooses a segment at random
-	from the allelic cluster, and calculates the MLs of splitting the segment either every possible position or positions
-	informed by the change kernel heuristic. Compares the MLs of splitting the segment at each position with the ML of 
-	the joint cluster and probabilistically takes an action proportional to likelihood. 
-	
-	Returns -1 if splitting was skipped due to segment being too small to split (<4 bins), 0 if the choice was not to
-	leave the cluster as is, and <breakpoint> if the segment was split at <breakpoint>
-	"""
+    def split(self, debug: bool) -> Literal[0, -1]:
+        """
+        Split segment method. This method chooses a segment at random
+        from the allelic cluster, and calculates the MLs of splitting the segment either every possible position or positions
+        informed by the change kernel heuristic. Compares the MLs of splitting the segment at each position with the ML of
+        the joint cluster and probabilistically takes an action proportional to likelihood.
 
-    def split(self, debug):
+        Returns -1 if splitting was skipped due to segment being too small to split (<4 bins), 0 if the choice was not to
+        leave the cluster as is, and <breakpoint> if the segment was split at <breakpoint>
+        """
         # pick a random segment
         seg = np.random.choice(self.segments)
 
@@ -671,16 +701,15 @@ class AllelicCluster:
         # otherwise we have chosen to join and we do nothing
         return 0
 
-    """
-	Join segments method. This method chooses a segment at random from the allelic cluster, and probabilistically 
-	chooses to join that segment with its neighbor to the right. This action is taken with probability equal to the 
-	ratio of the joint and split MLs
-	
-	returns -1 if there is only one segment, 0 if the proposed join is rejected, and <breakpoint> if a join occurred,
-	where <breakpoint is the left most index of the right segment joined.
-	"""
+    def join(self, debug) -> Literal[0, -1]:
+        """
+        Join segments method. This method chooses a segment at random from the allelic cluster, and probabilistically
+        chooses to join that segment with its neighbor to the right. This action is taken with probability equal to the
+        ratio of the joint and split MLs
 
-    def join(self, debug):
+        returns -1 if there is only one segment, 0 if the proposed join is rejected, and <breakpoint> if a join occurred,
+        where <breakpoint is the left most index of the right segment joined.
+        """
         num_segs = len(self.segments)
         # if theres only one segment, skip
         if num_segs == 1:
@@ -744,7 +773,6 @@ class Coverage_MCMC_AllClusters:
         self.r = r
         self.C = C
         self.Pi = Pi
-        self.beta = None
         self.bin_exposure = bin_width
 
         # for now assume that the Pi vector assigns each bin to exactly one cluster
@@ -766,9 +794,7 @@ class Coverage_MCMC_AllClusters:
 
         self.ll_clusters = np.zeros(self.n_clusters)
         self.ll_iter = []
-        self._init_clusters()
 
-    def _init_clusters(self):
         # first we find good starting values for mu and beta for each cluster by fitting a poisson model
         pois_regr = PoissonRegression(self.r, self.C, self.Pi)
         mu_0, self.beta = pois_regr.fit()
@@ -930,10 +956,41 @@ class Coverage_MCMC_AllClusters:
 
 
 class Coverage_MCMC_SingleCluster:
-    def __init__(self, n_iter, r, C, mu, beta, bin_width=1):
+    n_iter: int
+    observations: np.ndarray
+    """A [N, 1] np-array containing the coverage data."""
+    covariates: np.ndarray
+    """A [N, covariates] np-array containing for each bin the covariates at that bin."""
+    beta: np.ndarray
+    """A [covariates, 1] np-array containing the coefficient of each covariate."""
+    mu: np.ndarray
+    """A [clusters, 1] np-array containing the coverage mean of each cluster. (According to the Poisson model?)"""
+    bin_width: int
+    """The width of all bins."""
+    burnt_in: bool
+    """Whether the MCMC has finished the burn-in."""
+    from_burnin: bool
+    """Whether the MCMC was initialized at a burned in position."""
+    num_segments: int
+    """The current segment count of the MCMC."""
+    cluster: AllelicCluster
+    """The object holding the MCMC state and actually performing the MCMC moves."""
+
+    ll_cluster: float
+    """The current state log-likelihood."""
+
+    def __init__(
+        self,
+        n_iter: int,
+        observations: np.ndarray,
+        covariates: np.ndarray,
+        mu: np.ndarray,
+        beta: np.ndarray,
+        bin_width=1,
+    ):
         self.n_iter = n_iter
-        self.r = r
-        self.C = C
+        self.observations = observations
+        self.covariates = covariates
         self.beta = beta
         self.mu = mu
         self.bin_width = bin_width
@@ -944,7 +1001,6 @@ class Coverage_MCMC_SingleCluster:
         # flag designating whether we initialized from burnin scatter
         self.from_burnin = False
 
-        self.cluster = None
         self.num_segments = 1
 
         self.mu_i_samples = []
@@ -954,11 +1010,13 @@ class Coverage_MCMC_SingleCluster:
 
         self.ll_cluster = 0
         self.ll_iter = []
-        self._init_cluster()
 
-    def _init_cluster(self):
         self.cluster = AllelicCluster(
-            self.r, self.C, self.mu, self.beta, bin_width=self.bin_width
+            self.observations,
+            self.covariates,
+            self.mu,
+            self.beta,
+            bin_width=self.bin_width,
         )
 
         # set initial ll
@@ -981,6 +1039,16 @@ class Coverage_MCMC_SingleCluster:
         self.ll_samples.append(self.cluster.get_ll())
 
     def run(self, debug=False, stop_after_burnin=False):
+        """Runs the MCMC.
+
+        The MCMC has two kinds of moves: Cluster splits and cluster joins, both handled by the `AllelicCluster` object.
+        The MCMC is considered burned in when the log-likelihood is smaller than the one 50 steps before it.
+
+        Args:
+            debug (bool, optional): A deprecated flag, causing an exception to be thrown by some split moves. Defaults to False.
+            stop_after_burnin (bool, optional): Whether to stop the MCMC after the burn-in, or continue for some more iterations. Defaults to False.
+        """
+
         print(
             "Starting MCMC coverage segmentation ...",
             flush=True,
@@ -991,9 +1059,9 @@ class Coverage_MCMC_SingleCluster:
         n_it = 0
         if self.from_burnin:
             min_it = max(200, self.num_segments)
-            refit = True if len(self.r) > 1000 else False
+            refit = True if len(self.observations) > 1000 else False
         else:
-            min_it = min(200, max(50, self.r.shape[0]))
+            min_it = min(200, max(50, self.observations.shape[0]))
             refit = False
 
         lookback_len = min(50, min_it)
@@ -1048,7 +1116,7 @@ class Coverage_MCMC_SingleCluster:
     # return just the local beta in this case since we cant do global calculation until we see all of the clusters
     def prepare_results(self):
         num_draws = len(self.F_samples)
-        num_bins = len(self.cluster.r)
+        num_bins = len(self.cluster.observations)
 
         segmentation_samples = np.zeros((num_bins, num_draws))
         mu_i_full = np.zeros((num_bins, num_draws))
@@ -1066,10 +1134,10 @@ class Coverage_MCMC_SingleCluster:
 
     def visualize_cluster_samples(self, savepath):
         residuals = np.exp(
-            np.log(self.cluster.r.flatten())
+            np.log(self.cluster.observations.flatten())
             - (self.cluster.mu.flatten())
             - np.log(self.bin_width)
-            - (self.cluster.C @ self.cluster.beta).flatten()
+            - (self.cluster.covariates @ self.cluster.beta).flatten()
         )
         num_draws = len(self.F_samples)
         fig, axs = plt.subplots(

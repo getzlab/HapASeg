@@ -891,9 +891,15 @@ def main():
             bin_width=args.bin_width,
             wgs=args.wgs,
         )
-        Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = (
-            cov_mcmc_runner.prepare_single_cluster()
-        )
+        (
+            Pi,
+            observations,
+            covariates,
+            all_mu,
+            global_beta,
+            cov_df,
+            adp_cluster,
+        ) = cov_mcmc_runner.prepare_single_cluster()
 
         # indices of coverage bins
         seg_g = cov_df.groupby(
@@ -908,8 +914,8 @@ def main():
         np.savez(
             os.path.join(output_dir, "preprocess_data"),
             Pi=Pi,
-            r=r,
-            C=C,
+            r=observations,
+            C=covariates,
             all_mu=all_mu,
             global_beta=global_beta,
             adp_cluster=adp_cluster,
@@ -931,32 +937,32 @@ def main():
         preprocess_data = np.load(args.preprocess_data)
 
         # extract preprocessed data from this cluster
-        Pi = preprocess_data["Pi"]
-        mu = preprocess_data["all_mu"]  # [args.cluster_num]
-        beta = preprocess_data["global_beta"]
-        c_assignments = np.argmax(Pi, axis=1)
-        # cluster_mask = (c_assignments == args.cluster_num)
-        r = preprocess_data["r"]  # [cluster_mask]
-        C = preprocess_data["C"]  # [cluster_mask]
+        Pi: np.ndarray = preprocess_data["Pi"]  # [N, clusters]
+        mu: np.ndarray = preprocess_data["all_mu"]  # [clusters, 1]
+        beta: np.ndarray = preprocess_data["global_beta"]  # [covariates]
+
+        observations = preprocess_data["r"]  # [N, 1]
+        covariates = preprocess_data["C"]  # [N, covariates]
 
         # load and (weakly) verify allelic segment indices
         seg_g_idx = pd.read_pickle(args.allelic_seg_indices)
         # if len(np.hstack(seg_g_idx["indices"])) != C.shape[0]:
         #    raise ValueError("Size mismatch between allelic segment assignments and coverage bin data!")
-
+        allelic_seg_idx: int = args.allelic_seg_idx
         # subset to a single allelic segment
-        if args.allelic_seg_idx not in seg_g_idx.index:
+        if allelic_seg_idx not in seg_g_idx.index:
             raise ValueError("Allelic segment index out of bounds!")
 
-        seg_indices = seg_g_idx.loc[args.allelic_seg_idx]
+        # The mask for observations belonging to the current cluster.
+        seg_indices = seg_g_idx.loc[allelic_seg_idx]
 
-        mu = mu[seg_g_idx.index.get_loc(args.allelic_seg_idx)]
-        C = C[seg_indices["indices"], :]
-        r = r[seg_indices["indices"], :]
+        mu = mu[seg_g_idx.index.get_loc(allelic_seg_idx)]
+        covariates = covariates[seg_indices["indices"], :]
+        observations = observations[seg_indices["indices"], :]
 
         # run cov MCMC
         cov_mcmc = Coverage_MCMC_SingleCluster(
-            args.num_draws, r, C, mu, beta, args.bin_width
+            args.num_draws, observations, covariates, mu, beta, args.bin_width
         )
 
         cov_mcmc.run()
@@ -966,15 +972,9 @@ def main():
             cov_mcmc.prepare_results()
         )
 
-        model_save_str = "cov_mcmc_model_allelic_seg_{}.pickle".format(
-            args.allelic_seg_idx
-        )
-        data_save_str = "cov_mcmc_data_allelic_seg_{}".format(
-            args.allelic_seg_idx
-        )
-        figure_save_str = "cov_mcmc_allelic_seg_{}_visual".format(
-            args.allelic_seg_idx
-        )
+        model_save_str = f"cov_mcmc_model_allelic_seg_{allelic_seg_idx}.pickle"
+        data_save_str = f"cov_mcmc_data_allelic_seg_{allelic_seg_idx}"
+        figure_save_str = f"cov_mcmc_allelic_seg_{allelic_seg_idx}_visual"
 
         # save samples
         with open(os.path.join(output_dir, model_save_str), "wb") as f:
@@ -1040,11 +1040,11 @@ def main():
             ]
         )
         emu = np.exp(mu)
-        C = np.c_[cov_df[covar_columns]]
+        covariates = np.c_[cov_df[covar_columns]]
         seg_idx = full_segmentation[:, ll_samples.argmax()].astype(int)
 
         f = plt.figure(figsize=[17.56, 5.67])
-        residuals = cov_df["fragcorr"] / np.exp(C @ beta).ravel()
+        residuals = cov_df["fragcorr"] / np.exp(covariates @ beta).ravel()
         plt.scatter(
             cov_df["start_g"],
             residuals,
@@ -1229,8 +1229,10 @@ def main():
         covar_cols = sorted(
             cov_df.columns[cov_df.columns.str.contains("^C_.*z$|^C_log_len$")]
         )
-        C = cov_df[covar_cols].values
-        residuals = np.exp(np.log(cov_df.fragcorr) - (C @ acdp.beta).flatten())
+        covariates = cov_df[covar_cols].values
+        residuals = np.exp(
+            np.log(cov_df.fragcorr) - (covariates @ acdp.beta).flatten()
+        )
 
         for i in cov_df.segment_ID.unique():
             sub = cov_df.loc[cov_df.segment_ID == i]
