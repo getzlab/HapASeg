@@ -32,7 +32,7 @@ class AllelicCluster:
     """A [N] np-array containing the observed coverage of each bin."""
     covariates: np.ndarray
     """A [N, covariates] np-array containing the covariates at each bin."""
-    mu: float
+    mu: np.floating
     """The log-mean of the log-normal Poisson distribution."""
     beta: np.ndarray
     """The coefficient of each covariate."""
@@ -325,25 +325,31 @@ class AllelicCluster:
         return ll
 
     # method for fast difference kernel calculation
-    def _run_kernel(self, residuals, window):
-        r_arr = np.ones(2 * window)
-        r_arr[:window] = 0
-        l_arr = np.ones(2 * window)
-        l_arr[window:] = 0
-        conv_dif = np.abs(
-            np.convolve(residuals, r_arr, mode="valid")
-            - np.convolve(residuals, l_arr, mode="valid")
-        )
-        return conv_dif
+    def _run_kernel(self, residuals: np.ndarray, window: int) -> np.ndarray:
+        """
+        Computes the difference kernel on the residuals.
+        The kernel is `[-1]*window + [1]*window`, and computes the absolute difference between the `window` positions and the `window` following positions.
+        With `window==1`, this would be equivalent to `np.diff`.
 
-    """
-	method for convolving a change kernel with a given window across an array of residuals. This change kernel returns 
-	the absolute difference between the means of the residuals within windows on either side of a rolling change point.
-	
-	returns a list of peaks above the 98th quantile that are seperated by at least max(25, window/2)
-	"""
+        Args:
+            residuals (np.ndarray): An `[N]` np-array containing the observations.
+            window (int): Half the size of the kernel/
 
-    def _change_kernel(self, ind, residuals, window):
+        Returns:
+            np.ndarray: An `[N - 2*window + 1]` np-array, containing the differences between the sums of two adjecant subsegments.
+        """
+        kernel = np.concatenate([-np.ones(window), np.ones(window)])
+        return np.abs(np.convolve(residuals, kernel, mode="valid"))
+
+    def _change_kernel(
+        self, ind: Tuple[int, int], residuals: np.ndarray, window: int
+    ):
+        """
+        method for convolving a change kernel with a given window across an array of residuals. This change kernel returns
+        the absolute difference between the means of the residuals within windows on either side of a rolling change point.
+
+        returns a list of peaks above the 98th quantile that are seperated by at least max(25, window/2)
+        """
         difs = self._run_kernel(residuals, window)
         if window > 10:
             x = np.r_[: len(difs)]
@@ -364,16 +370,14 @@ class AllelicCluster:
         peaks = peaks + ind[0] + window
         return list(peaks)
 
-    """
-	method for narrowing search space of possible split positions in a segment. Finds the indices of the top ~2% of 
-	the difference kernel values for multiple window sizes in addition to the first and last window bins. Falls back on 
-	an exhaustive search, which means returning all possible split points.
-	
-	returns list of possible split points to try
-	"""
-
-    #
     def _find_difs(self, ind):
+        """
+        method for narrowing search space of possible split positions in a segment. Finds the indices of the top ~2% of
+        the difference kernel values for multiple window sizes in addition to the first and last window bins. Falls back on
+        an exhaustive search, which means returning all possible split points.
+
+        returns list of possible split points to try
+        """
         residuals = np.exp(
             np.log(self.observations[ind[0] : ind[1]].flatten())
             - (self.mu)
@@ -410,14 +414,13 @@ class AllelicCluster:
             difs_idxs = np.r_[difs_idxs, ind[0] + 10, ind[1] - 10]
         return list(difs_idxs)
 
-    """
-	Given the indices of the segment and the proposed split indices to try, this method computes the likelihood of each
-	split proposal and saves the associated mu, lsigma and Hessian results associated to the split segments. 
-	
-	Returns lists of likelihoods and optimal split parameters
-	"""
-
     def _calculate_splits(self, ind, split_indices):
+        """
+        Given the indices of the segment and the proposed split indices to try, this method computes the likelihood of each
+        split proposal and saves the associated mu, lsigma and Hessian results associated to the split segments.
+
+        Returns lists of likelihoods and optimal split parameters
+        """
         lls = []
         mus = []
         lsigmas = []
@@ -456,16 +459,15 @@ class AllelicCluster:
                 lls.append(ll_l + ll_r)
         return lls, mus, lsigmas, Hs
 
-    """
-	This method is simpler of the two options for refining the search space of possible splits, which is important for 
-	both finding the best split and for properly normalizing the split likelihoods. This neighborhood sampling approach
-	simply samples the 5 positions on either side of a split proposal.
-	
-	returns an amended list of likelihoods and optimal parameters for the original split indicies in addition to the 
-	ones sampled from the neighbors of the originals.
-	"""
-
     def _neighborhood_sampling(self, ind, lls, split_indices, mus, lsigmas, Hs):
+        """
+        This method is simpler of the two options for refining the search space of possible splits, which is important for
+        both finding the best split and for properly normalizing the split likelihoods. This neighborhood sampling approach
+        simply samples the 5 positions on either side of a split proposal.
+
+        returns an amended list of likelihoods and optimal parameters for the original split indicies in addition to the
+        ones sampled from the neighbors of the originals.
+        """
         # find the most likely index and those indices within a significant range
         # (rn 7 -> at least 1/1000th as likely)
         top_lik = max(lls)
@@ -494,17 +496,16 @@ class AllelicCluster:
 
         return lls, split_indices, mus, lsigmas, Hs
 
-    """
-		This method is used for refining the search space of possible splits, which is important for 
-		both finding the best split and for properly normalizing the split likelihoods. It works by iteratively sampling
-		points in either direction of a proposed split until it reaches a potential split point which is less than 1/1k 
-		as likely as the most likely point seen so far.
-
-		returns an amended list of likelihoods and optimal parameters for the original split indicies in addition to the 
-		ones sampled.
-		"""
-
     def _detailed_sampling(self, ind, lls, split_indices, mus, lsigmas, Hs):
+        """
+        This method is used for refining the search space of possible splits, which is important for
+        both finding the best split and for properly normalizing the split likelihoods. It works by iteratively sampling
+        points in either direction of a proposed split until it reaches a potential split point which is less than 1/1k
+        as likely as the most likely point seen so far.
+
+        returns an amended list of likelihoods and optimal parameters for the original split indicies in addition to the
+        ones sampled.
+        """
         if ind[1] - ind[0] > 25000:
             max_samples = 5
         else:
@@ -568,9 +569,11 @@ class AllelicCluster:
                     break
         return lls, split_indices, mus, lsigmas, Hs
 
-    # function for calculating the log marginal likelihood of a split given the log likelihood and the hessians for
-    # the NB fit of each split segment
     def _lls_to_MLs(self, lls, Hs):
+        """
+        function for calculating the log marginal likelihood of a split given the log likelihood and the hessians for
+        the NB fit of each split segment
+        """
         MLs = np.zeros(len(lls))
         for i, (ll, Hs) in enumerate(zip(lls, Hs)):
             laplacian = self._get_log_ML_gaussint_split(Hs[0], Hs[1])
@@ -580,12 +583,11 @@ class AllelicCluster:
             MLs[i] = ll + laplacian
         return MLs
 
-    """
-	Function for computing log MLs for all possible split points of interest. If a segment is small enough we will 
-	consider every possible split point, otherwise will use change kernel and detailed sampling
-	"""
-
     def _get_split_liks(self, ind, debug=False):
+        """
+        Function for computing log MLs for all possible split points of interest. If a segment is small enough we will
+        consider every possible split point, otherwise will use change kernel and detailed sampling
+        """
         ind_len = ind[1] - ind[0]
         # do not allow segments to be split into segments of size less than 2
         if ind_len < 4 and not debug:
@@ -701,14 +703,14 @@ class AllelicCluster:
         # otherwise we have chosen to join and we do nothing
         return 0
 
-    def join(self, debug) -> Literal[0, -1]:
+    def join(self, debug) -> int:
         """
         Join segments method. This method chooses a segment at random from the allelic cluster, and probabilistically
         chooses to join that segment with its neighbor to the right. This action is taken with probability equal to the
         ratio of the joint and split MLs
 
         returns -1 if there is only one segment, 0 if the proposed join is rejected, and <breakpoint> if a join occurred,
-        where <breakpoint is the left most index of the right segment joined.
+        where <breakpoint> is the left most index of the right segment joined.
         """
         num_segs = len(self.segments)
         # if theres only one segment, skip
