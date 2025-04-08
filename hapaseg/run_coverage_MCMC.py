@@ -1,4 +1,4 @@
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 import pickle
@@ -772,9 +772,12 @@ def find_outliers(r, thresh=-25):
 
 # function for sorting file strings by the cluster number rather than alphanumeric
 def nat_sort(lst):
-    convert = lambda text: int(text) if text.isdigit() else text.lower()
-    alphanum_key = lambda key: [convert(c) for c in re.split("([0-9]+)", key)]
-    return sorted(lst, key=alphanum_key)
+    def convert(text: str):
+        return int(text) if text.isdigit() else text.lower()
+
+    return sorted(
+        lst, key=lambda key: [convert(c) for c in re.split(r"([0-9]+)", key)]
+    )
 
 
 # find outliers at ends of allelic segments using segment mean +- sigma * segment_std
@@ -817,10 +820,10 @@ def edge_outliers(cov_df, sigma=5):
 
 # function for collecting coverage mcmc results from each ADP cluster
 def aggregate_clusters(
-    seg_indices_pickle=None,
-    coverage_dir=None,
-    f_file_list=None,
-    cov_df_pickle=None,
+    seg_indices_pickle: Optional[str] = None,
+    coverage_dir: Optional[str] = None,
+    f_file_list: Optional[str] = None,
+    cov_df_pickle: Optional[str] = None,
     bin_width=1,
 ):
     if coverage_dir is None and f_file_list is None:
@@ -842,14 +845,15 @@ def aggregate_clusters(
     else:
         if cov_df_pickle is None:
             raise ValueError("Need to pass in cov_df file")
+        assert f_file_list is not None
         file_ext = os.path.splitext(os.path.basename(f_file_list))[1]
         if file_ext == ".txt":
             # read in files from f_file_list
             read_files = []
             with open(f_file_list, "r") as f:
                 all_lines = f.readlines()
-                for l in all_lines:
-                    to_add = l.rstrip("\n")
+                for line in all_lines:
+                    to_add = line.rstrip("\n")
                     if to_add != "nan":
                         read_files.append(to_add)
 
@@ -862,7 +866,7 @@ def aggregate_clusters(
 
         seg_idxs = []
         for f in seg_files:
-            search = re.search(".*allelic_seg_(\d+).npz.*", f)
+            search = re.search(r".*allelic_seg_(\d+).npz.*", f)
             if search:
                 seg_idxs.append(int(search.group(1)))
 

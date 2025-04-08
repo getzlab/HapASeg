@@ -185,7 +185,7 @@ def generate_acdp_df(
 
             try:
                 # there may still be convergence issues after beta refitting
-                res = lnp.fit(ret_hess=True)
+                res = lnp.fit()
             except:
                 # in such case, we filter the problematic bins
                 filter_mask = poisson_outlier_filter(r, C, beta)
@@ -210,7 +210,7 @@ def generate_acdp_df(
                         lamda=1e-10,
                         init_prior=False,
                     )
-                    res = lnp.fit(ret_hess=True)
+                    res = lnp.fit()
 
             mu = res[0]
             a_cov_seg_df.loc[

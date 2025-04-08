@@ -294,7 +294,7 @@ class Run_Cov_DP:
             # aggregate r and C arrays
             r = np.hstack([self.segment_r_list[i] for i in cluster_set])
             C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
-            mu_opt, lsigma_opt, H_opt = self.lnp_optimizer(r, C, ret_hess=True)
+            mu_opt, lsigma_opt, H_opt = self.lnp_optimizer(r, C)
             ll_opt = self.ll_lnp(
                 r, mu_opt, C, self.beta, lsigma_opt, self.bin_exposure
             )
@@ -308,7 +308,7 @@ class Run_Cov_DP:
         # aggregate r and C arrays
         r = np.hstack([self.segment_r_list[i] for i in cluster_set])
         C = np.concatenate([self.segment_C_list[i] for i in cluster_set])
-        mu_opt, lgsigma_opt = self.lnp_optimizer(r, C, ret_hess=False)
+        mu_opt, lgsigma_opt = self.lnp_optimizer(r, C)
         ll_opt = self.ll_lnp(
             r, mu_opt, C, self.beta, lgsigma_opt, self.bin_exposure
         )
@@ -345,7 +345,7 @@ class Run_Cov_DP:
                 r = np.hstack([self.prior_r_list[i] for i in cluster_set])
                 C = np.concatenate([self.prior_C_list[i] for i in cluster_set])
 
-            mu_opt, lgsigma_opt, H_opt = self.lnp_optimizer(r, C, ret_hess=True)
+            mu_opt, lgsigma_opt, H_opt = self.lnp_optimizer(r, C)
             ll_opt = self.ll_lnp(
                 r, mu_opt, C, self.beta, lgsigma_opt, self.bin_exposure
             )
@@ -359,22 +359,19 @@ class Run_Cov_DP:
 
     # returns optimal NB parameter values, along with optionally the hessian
     # from the MLE point
-    def stats_optimizer(self, r, C, ret_hess=False):
+    def stats_optimizer(self, r, C):
         offset = (C @ self.beta).flatten()
         exog = np.ones(r.shape[0])
         exposure = np.ones(r.shape[0]) * self.bin_exposure
         sNB = statsNB(r, exog, exposure=exposure, offset=offset)
         res = sNB.fit(disp=0)
-        if ret_hess:
-            return (
-                res.params[0],
-                -np.log(res.params[1]),
-                sNB.hessian(res.params),
-            )
-        else:
-            return res.params[0], -np.log(res.params[1])
+        return (
+            res.params[0],
+            -np.log(res.params[1]),
+            sNB.hessian(res.params),
+        )
 
-    def lnp_optimizer(self, r, C, ret_hess=False):
+    def lnp_optimizer(self, r, C):
         lnp = CovLNP_NR_prior(
             r[:, None],
             self.beta,
@@ -388,8 +385,8 @@ class Run_Cov_DP:
         )
 
         try:
-            res = lnp.fit(ret_hess=ret_hess)
-        except:
+            res = lnp.fit()
+        except ValueError:
             try:
                 lnp = CovLNP_NR_prior(
                     r[:, None],
@@ -403,8 +400,8 @@ class Run_Cov_DP:
                     init_prior=False,
                     extra_roots=True,
                 )
-                res = lnp.fit(ret_hess=ret_hess, extra_roots=True)
-            except:
+                res = lnp.fit(extra_roots=True)
+            except ValueError:
                 res = np.nan, np.nan, np.full((2, 2), np.nan)
         return res
 

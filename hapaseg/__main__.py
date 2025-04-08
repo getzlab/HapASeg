@@ -962,7 +962,12 @@ def main():
 
         # run cov MCMC
         cov_mcmc = Coverage_MCMC_SingleCluster(
-            args.num_draws, observations, covariates, mu, beta, args.bin_width
+            args.num_draws,
+            observations,
+            covariates,
+            mu,
+            beta,
+            args.bin_width,
         )
 
         cov_mcmc.run()
@@ -996,7 +1001,8 @@ def main():
     elif args.command == "collect_cov_mcmc":
         if args.coverage_dir:
             full_segmentation, mu, beta, ll_samples = aggregate_clusters(
-                coverage_dir=args.coverage_dir, cov_df_pickle=args.cov_df_pickle
+                coverage_dir=args.coverage_dir,
+                cov_df_pickle=args.cov_df_pickle,
             )
 
         elif args.cov_mcmc_files:
@@ -1276,7 +1282,10 @@ def main():
             )
             axs[2].add_patch(mu_major)
             ci_major = mpl.patches.Rectangle(
-                (row["start_g"], row["mu.major"] - 1.95 * row["sigma.major"]),
+                (
+                    row["start_g"],
+                    row["mu.major"] - 1.95 * row["sigma.major"],
+                ),
                 seg_len,
                 2 * 1.95 * row["sigma.major"],
                 alpha=0.1,
@@ -1293,7 +1302,10 @@ def main():
             )
             axs[2].add_patch(mu_minor)
             ci_minor = mpl.patches.Rectangle(
-                (row["start_g"], row["mu.minor"] - 1.95 * row["sigma.minor"]),
+                (
+                    row["start_g"],
+                    row["mu.minor"] - 1.95 * row["sigma.minor"],
+                ),
                 seg_len,
                 2 * 1.95 * row["sigma.minor"],
                 alpha=0.1,
@@ -1317,6 +1329,9 @@ def main():
         plt.savefig(
             os.path.join(args.outdir, "hapaseg_summary_plot.png"), dpi=200
         )
+
+
+# prof.dump_stats("profile.pr")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,6 @@
-from typing import Dict, Literal, Optional, Tuple
+import enum
+from typing import Dict, List, Optional, Set, Tuple, Union
 import numpy as np
-import scipy.special as ss
 import sortedcontainers as sc
 import sys
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
@@ -17,7 +17,6 @@ from .model_optimizers import (
     CovLNP_NR_prior,
     covLNP_ll_prior,
 )
-import scipy.sparse as sp
 
 # turn off warnings for statsmodels fitting
 warnings.simplefilter("ignore", ConvergenceWarning)
@@ -25,6 +24,15 @@ warnings.simplefilter("ignore", HessianInversionWarning)
 np.seterr(divide="ignore")
 
 colors = mpl.cm.get_cmap("tab10").colors
+
+
+WINDOW_SIZES = 10 * 2 ** np.arange(7)
+"""The base list of kernel sizes to use when searching for double breakpoints."""
+
+
+class MoveType(enum.Enum):
+    JOIN = enum.auto()
+    SPLIT = enum.auto()
 
 
 class AllelicCluster:
@@ -45,16 +53,19 @@ class AllelicCluster:
     segment_ID: np.ndarray
     """An [N] np-array containing the index of the segment of each observation."""
     segments: sc.SortedSet
-    """A sorted list containing the start index of each cluster."""
+    """A sorted list containing the start index of each segment."""
     segment_lens: sc.SortedDict
-    """A sorted dict mapping the cluster index to the length of the segment."""
+    """A sorted dict mapping the segment index to the length of the segment."""
+    F: sc.SortedList
+    """
+    A sorted list containing the segment breakpoints.
+    Breakpoints are kept twice, once as segment end and once as segment start.
+    """
 
     cache_LL: Dict[Tuple[int, int], float]
     """A cache for segment log-likelihoods."""
-    cache_mu_lsigma: Dict[Tuple[int, int], Tuple[float, float]]
-    """A cache for segment LNP log-mean and log-sigma."""
-    cache_hess: Dict[Tuple[int, int], np.ndarray]
-    """A cache for segment hessians."""
+    cache_mu_lsigma_hess: Dict[Tuple[int, int], Tuple[float, float, np.ndarray]]
+    """A cache for segment LNP log-mean, log-sigma, and hessian."""
 
     def __init__(
         self,
@@ -94,8 +105,7 @@ class AllelicCluster:
 
         # keep cache of previously computed breakpoints for fast splitting
         self.cache_LL = {}
-        self.cache_mu_lsigma = {}
-        self.cache_hess = {}
+        self.cache_mu_lsigma_hess = {}
 
         # all intervals start out in one segment, which also means no breakpoints
         self.segment_ID = np.zeros(len(self.observations))
@@ -120,11 +130,16 @@ class AllelicCluster:
 
     # fits lnp model to this cluster using initial params as starting point
     def _init_params(self):
-        self.mu, self.lgsigma = self.lnp_init()
+        self.mu, self.lgsigma, _ = self.lnp_init()
         self.lgsigma_i_arr = np.ones(len(self.observations)) * self.lsigma
         self.sigma_i_arr = np.exp(self.lsigma_i_arr)
 
-    def get_seg_ind(self, seg):
+    def get_seg_ind(self, seg: int) -> Tuple[int, int]:
+        """Gets the start and end positions of a semgent.
+
+        Args:
+            seg (int): The start position of a segment.
+        """
         return seg, seg + self.segment_lens[seg]
 
     def get_join_seg_ind(self, seg_l, seg_r):
@@ -194,13 +209,13 @@ class AllelicCluster:
 
         # now we need to update the lsigma and mu_i arrays based on the burnin segmentation
         for row in np.array(self.F).reshape(-1, 2):
-            mu_i, lsigma_i = self.lnp_optimizer(row)
+            mu_i, lsigma_i, _ = self.lnp_optimizer(row)
             self.mu_i_arr[row[0] : row[1]] = mu_i
             self.lsigma_i_arr[row[0] : row[1]] = lsigma_i
 
         print("finished reading in burnin data")
 
-    def lnp_init(self):
+    def lnp_init(self) -> Tuple[np.floating, np.floating, np.ndarray]:
         # fit LNP
         lnp = CovLNP_NR_prior(
             self.observations,
@@ -216,27 +231,19 @@ class AllelicCluster:
         return lnp.fit()
 
     def lnp_optimizer(
-        self, ind: Tuple[int, int], ret_hess=False
-    ) -> Tuple[float, float, Optional[np.ndarray]]:
+        self,
+        ind: Tuple[int, int],
+    ) -> Tuple[float, float, np.ndarray]:
         """Computes the LNP parameters for the given index.
 
         Args:
             ind (tuple[int, int]): A tuple containing the start and stop indices of a segment.
-            ret_hess (bool, optional): Whether to return the Hessian. Defaults to False.
 
         Returns:
             Tuple: A tuple containing the log-mean, log-sigma, and hessian of the log-normal Poisson distribution fit on the target range.
         """
-        if ind in self.cache_mu_lsigma:
-            mu, lsigma = self.cache_mu_lsigma[ind]
-            if ret_hess:
-                return (
-                    mu,
-                    lsigma,
-                    self.cache_hess[ind],
-                )
-            else:
-                return mu, lsigma, None
+        if ind in self.cache_mu_lsigma_hess:
+            return self.cache_mu_lsigma_hess[ind]
 
         # cache miss; compute values
         lnp = CovLNP_NR_prior(
@@ -252,8 +259,15 @@ class AllelicCluster:
         )
 
         try:
-            res = lnp.fit(ret_hess=ret_hess)
-        except:
+            res = lnp.fit()
+        except ValueError:
+            print(f"AllelicCluster::lnp_optimize({ind}) did not converge!")
+            print(f"obs={self.observations[ind[0] : ind[1]]}")
+            print(f"beta={self.beta}")
+            print(f"exposure={self.bin_exposure}")
+            print(f"lambda={self.lamda}")
+            print(f"alpha_prior={self.alpha_prior}")
+            print(f"beta_prior={self.beta_prior}")
             # try adding some jitter
             try:
                 lnp = CovLNP_NR_prior(
@@ -268,19 +282,13 @@ class AllelicCluster:
                     extra_roots=True,
                     init_prior=False,
                 )
-                res = lnp.fit(ret_hess=ret_hess)
-            except:
+                res = lnp.fit()
+            except ValueError:
                 res = (np.nan, np.nan, np.full((2, 2), np.nan))
 
         # save to cache
-        self.cache_mu_lsigma[ind] = (res[0], res[1])
-
-        if ret_hess:
-            assert len(res) == 3
-            self.cache_hess[ind] = res[2]
-            return res[0], res[1], res[2]
-        else:
-            return res[0], res[1], None
+        self.cache_mu_lsigma_hess[ind] = res
+        return res
 
     # method for refitting beta value of the cluster
     def refit_beta(self):
@@ -294,11 +302,15 @@ class AllelicCluster:
             self.covariates,
             np.ones(self.observations.shape).reshape(-1, 1),
         )
+
         mu, beta = pois_regr.fit()
         self.beta = beta
 
         # get new lnp mu and lsigma values
         self._init_params()
+
+        self.cache_LL.clear()
+        self.cache_mu_lsigma_hess.clear()
 
         # refit to segments to get lsigma_i and mu_i arrays
         for row in np.array(self.F).reshape(-1, 2):
@@ -307,7 +319,12 @@ class AllelicCluster:
             self.lsigma_i_arr[row[0] : row[1]] = lsigma_i
 
     ## caluculating overall ll of allelic cluster under lnp model
-    def ll_segment(self, ind: Tuple[int, int], mu_i: float, lgsigma: float):
+    def ll_segment(
+        self,
+        ind: Tuple[int, int],
+        mu_i: Union[np.ndarray, float],
+        lgsigma: Union[np.ndarray, float],
+    ):
         exposure = np.log(self.bin_exposure)
         mu_tot = mu_i
         ll = covLNP_ll_prior(
@@ -343,7 +360,7 @@ class AllelicCluster:
 
     def _change_kernel(
         self, ind: Tuple[int, int], residuals: np.ndarray, window: int
-    ):
+    ) -> List[int]:
         """
         method for convolving a change kernel with a given window across an array of residuals. This change kernel returns
         the absolute difference between the means of the residuals within windows on either side of a rolling change point.
@@ -370,7 +387,9 @@ class AllelicCluster:
         peaks = peaks + ind[0] + window
         return list(peaks)
 
-    def _find_difs(self, ind):
+    def _find_difs(
+        self, ind: Tuple[int, int], window_sizes: Optional[np.ndarray] = None
+    ) -> List[int]:
         """
         method for narrowing search space of possible split positions in a segment. Finds the indices of the top ~2% of
         the difference kernel values for multiple window sizes in addition to the first and last window bins. Falls back on
@@ -385,21 +404,24 @@ class AllelicCluster:
         )
 
         minimal = False
-        len_ind = ind[1] - ind[0]
-        if len_ind > 50000:
-            windows = np.array([1000])
-        elif len_ind > 10000:
-            windows = np.array([500])
-        elif len_ind > 5000:
-            windows = np.array([500, 100, 25])
-        elif len_ind > 1000:
-            windows = np.array([100, 50, 25])
-        else:
-            minimal = True
-            windows = np.array([50, 10])
-        windows = windows[2 * windows < len_ind]
+        ind_len = ind[1] - ind[0]
+        if window_sizes is None:
+            if ind_len > 50000:
+                window_sizes = np.array([1000])
+            elif ind_len > 10000:
+                window_sizes = np.array([500])
+            elif ind_len > 5000:
+                window_sizes = np.array([500, 100, 25])
+            elif ind_len > 1000:
+                window_sizes = np.array([100, 50, 25])
+            else:
+                minimal = True
+                window_sizes = np.array([50, 10])
+
+        window_sizes = window_sizes[window_sizes * 2 < ind_len]
+
         difs = []
-        for window in windows:
+        for window in window_sizes:
             difs.append(self._change_kernel(ind, residuals, window))
         difs_idxs = set().union(*difs)
         difs_idxs = np.r_[list(difs_idxs)]
@@ -414,87 +436,54 @@ class AllelicCluster:
             difs_idxs = np.r_[difs_idxs, ind[0] + 10, ind[1] - 10]
         return list(difs_idxs)
 
-    def _calculate_splits(self, ind, split_indices):
+    def _calculate_splits(
+        self, ind: Tuple[int, int], split_indices: List[int]
+    ) -> Tuple[
+        List[float],
+        List[Tuple[float, float]],
+        List[Tuple[float, float]],
+        List[Tuple[np.ndarray, np.ndarray]],
+    ]:
         """
         Given the indices of the segment and the proposed split indices to try, this method computes the likelihood of each
         split proposal and saves the associated mu, lsigma and Hessian results associated to the split segments.
 
-        Returns lists of likelihoods and optimal split parameters
+        Returns a tuple containing four lists:
+        * The list of split log-likelihoods.
+        * The list of the left and right LNP log-means.
+        * The list of the left and right LNP log-sigmas.
+        * The list of the left and right Hessians.
         """
         lls = []
         mus = []
         lsigmas = []
         Hs = []
         for ix in split_indices:
-            if ix < 0:
-                # no split proposal
-                ll_join = self.ll_cluster(self.mu_i_arr, self.lsigma_i_arr)
-                lls.append(ll_join)
-                mus.append(None)
-                lsigmas.append(None)
-                Hs.append(None)
+            mu_l, lsigma_l, H_l = self.lnp_optimizer((ind[0], ix))
+            mu_r, lsigma_r, H_r = self.lnp_optimizer((ix, ind[1]))
+
+            mus.append((mu_l, mu_r))
+            lsigmas.append((lsigma_l, lsigma_r))
+            Hs.append((H_l, H_r))
+
+            # lookup likelihoods in cache
+            # left:
+            if (ind[0], ix) in self.cache_LL:
+                ll_l = self.cache_LL[ind[0], ix]
             else:
-                mu_l, lsigma_l, H_l = self.lnp_optimizer((ind[0], ix), True)
-                mu_r, lsigma_r, H_r = self.lnp_optimizer((ix, ind[1]), True)
+                ll_l = self.ll_segment((ind[0], ix), mu_l, lsigma_l)
+                self.cache_LL[ind[0], ix] = ll_l
 
-                mus.append((mu_l, mu_r))
-                lsigmas.append((lsigma_l, lsigma_r))
-                Hs.append((H_l, H_r))
+            # right:
+            if (ix, ind[1]) in self.cache_LL:
+                ll_r = self.cache_LL[ix, ind[1]]
+            else:
+                ll_r = self.ll_segment((ix, ind[1]), mu_r, lsigma_r)
+                self.cache_LL[ix, ind[1]] = ll_r
 
-                # lookup likelihoods in cache
-                # left:
-                if (ind[0], ix) in self.cache_LL:
-                    ll_l = self.cache_LL[ind[0], ix]
-                else:
-                    ll_l = self.ll_segment((ind[0], ix), mu_l, lsigma_l)
-                    self.cache_LL[ind[0], ix] = ll_l
+            lls.append(ll_l + ll_r)
 
-                # right:
-                if (ix, ind[1]) in self.cache_LL:
-                    ll_r = self.cache_LL[ix, ind[1]]
-                else:
-                    ll_r = self.ll_segment((ix, ind[1]), mu_r, lsigma_r)
-                    self.cache_LL[ix, ind[1]] = ll_r
-
-                lls.append(ll_l + ll_r)
         return lls, mus, lsigmas, Hs
-
-    def _neighborhood_sampling(self, ind, lls, split_indices, mus, lsigmas, Hs):
-        """
-        This method is simpler of the two options for refining the search space of possible splits, which is important for
-        both finding the best split and for properly normalizing the split likelihoods. This neighborhood sampling approach
-        simply samples the 5 positions on either side of a split proposal.
-
-        returns an amended list of likelihoods and optimal parameters for the original split indicies in addition to the
-        ones sampled from the neighbors of the originals.
-        """
-        # find the most likely index and those indices within a significant range
-        # (rn 7 -> at least 1/1000th as likely)
-        top_lik = max(lls)
-        within_range = np.r_[lls] > (top_lik - 7)
-        significant = np.r_[split_indices][within_range]
-
-        # increase sampling of significantly likely regions
-        extra_samples = sc.SortedSet({})
-        for s in significant:
-            # dont sample around no split index
-            if s < 0:
-                continue
-            for i in np.r_[max(ind[0] + 2, s - 5) : min(ind[1] - 1, s + 5)]:
-                extra_samples.add(i)
-
-        # no need to resample things we already calculated
-        extra_samples = list(extra_samples - set(significant))
-        lls_add, mus_add, lsigmas_add, Hs_add = self._calculate_splits(
-            ind, extra_samples
-        )
-        lls.extend(lls_add)
-        mus.extend(mus_add)
-        lsigmas.extend(lsigmas_add)
-        Hs.extend(Hs_add)
-        split_indices.extend(extra_samples)
-
-        return lls, split_indices, mus, lsigmas, Hs
 
     def _detailed_sampling(self, ind, lls, split_indices, mus, lsigmas, Hs):
         """
@@ -569,21 +558,23 @@ class AllelicCluster:
                     break
         return lls, split_indices, mus, lsigmas, Hs
 
-    def _lls_to_MLs(self, lls, Hs):
+    def _lls_to_MLs(
+        self, lls: List[float], hessians: List[Tuple[np.ndarray, np.ndarray]]
+    ) -> np.ndarray:
         """
         function for calculating the log marginal likelihood of a split given the log likelihood and the hessians for
         the NB fit of each split segment
         """
         MLs = np.zeros(len(lls))
-        for i, (ll, Hs) in enumerate(zip(lls, Hs)):
-            laplacian = self._get_log_ML_gaussint_split(Hs[0], Hs[1])
+        for i, (ll, hessian) in enumerate(zip(lls, hessians)):
+            laplacian = self._get_log_ML_gaussint_split(hessian[0], hessian[1])
             # the split results in a nan make it impossible to split there
             if np.isnan(laplacian):
                 laplacian = -1e50
             MLs[i] = ll + laplacian
         return MLs
 
-    def _get_split_liks(self, ind, debug=False):
+    def _get_split_likelihoods(self, ind: Tuple[int, int], debug=False):
         """
         Function for computing log MLs for all possible split points of interest. If a segment is small enough we will
         consider every possible split point, otherwise will use change kernel and detailed sampling
@@ -624,8 +615,8 @@ class AllelicCluster:
         )
 
     # computes the log ML of joining two segments
-    def _log_ML_join(self, ind, ret_opt_params=False):
-        mu_share, lsigma_share, H_share = self.lnp_optimizer(ind, True)
+    def _log_ML_join(self, ind):
+        mu_share, lsigma_share, H_share = self.lnp_optimizer(ind)
 
         # lookup cache
         if ind in self.cache_LL:
@@ -639,14 +630,14 @@ class AllelicCluster:
             self._get_log_ML_gaussint_join(H_share) + ll_join,
         )
 
-    def split(self, debug: bool) -> Literal[0, -1]:
+    def split(self, debug: bool) -> int:
         """
         Split segment method. This method chooses a segment at random
         from the allelic cluster, and calculates the MLs of splitting the segment either every possible position or positions
         informed by the change kernel heuristic. Compares the MLs of splitting the segment at each position with the ML of
         the joint cluster and probabilistically takes an action proportional to likelihood.
 
-        Returns -1 if splitting was skipped due to segment being too small to split (<4 bins), 0 if the choice was not to
+        Returns -1 if splitting was skipped due to segment being too small to split (<4 bins), 0 if the choice was to
         leave the cluster as is, and <breakpoint> if the segment was split at <breakpoint>
         """
         # pick a random segment
@@ -660,7 +651,7 @@ class AllelicCluster:
         ind = self.get_seg_ind(seg)
 
         split_indices, log_split_MLs, all_mus, all_lsigmas = (
-            self._get_split_liks(ind, debug=debug)
+            self._get_split_likelihoods(ind, debug=debug)
         )
         _, _, log_join_ML = self._log_ML_join(ind)
 
@@ -727,11 +718,11 @@ class AllelicCluster:
         log_split_ML = lls_split[0] + self._get_log_ML_gaussint_split(
             Hs[0][0], Hs[0][1]
         )
+
         mu_share, lsigma_share, log_join_ML = self._log_ML_join(ind)
 
         log_MLs = np.r_[log_split_ML, log_join_ML]
-        max_ML = max(log_MLs)
-        k_probs = np.exp(log_MLs - max_ML) / np.exp(log_MLs - max_ML).sum()
+        k_probs = np.exp(log_MLs - np.logaddexp.reduce(log_MLs))
 
         if np.isnan(k_probs).any():
             print(
@@ -762,6 +753,189 @@ class AllelicCluster:
             return seg_r
 
         return 0
+
+    def get_mu_lsigma_hess(
+        self, ind: Tuple[int, int], cache=False
+    ) -> Tuple[float, float, np.ndarray]:
+        if ind in self.cache_mu_lsigma_hess:
+            return self.cache_mu_lsigma_hess[ind]
+
+        mu, lsigma, hess = self.lnp_optimizer(ind)
+        if cache:
+            self.cache_mu_lsigma_hess[ind] = (mu, lsigma, hess)
+
+        return mu, lsigma, hess
+
+    def get_segment_ml(self, ind: Tuple[int, int], cache=True) -> float:
+        """
+        Gets the maximum-likelihood of the segment.
+
+        Args:
+            ind (Tuple[int, int]): A tuple containing the start point and end point of the segment.
+            cache (bool, optional): Whether to cache the LNP intermediates. Defaults to False.
+        """
+        # Getting the Hessian of the segment.
+        mu, lsigma, hess = self.get_mu_lsigma_hess(ind, cache=cache)
+
+        # Getting the maximal likelihood.
+        if ind in self.cache_LL:
+            ll = self.cache_LL[ind]
+        else:
+            ll = self.ll_segment(ind, mu, lsigma)
+            if cache:
+                self.cache_LL[ind] = ll
+
+        return ll + self._get_log_ML_gaussint_join(hess)
+
+    def get_breakpoint_pairs(
+        self, ind: Tuple[int, int]
+    ) -> Set[Tuple[int, int]]:
+        """
+        Gets all pairs of breakpoints for the double-split action in the given segment.
+
+        Args:
+            ind (Tuple[int, int]): The identifier for a single segment.
+        """
+
+        residuals = np.exp(
+            np.log(self.observations[ind[0] : ind[1]].flatten())
+            - (self.mu)
+            - (self.covariates[ind[0] : ind[1]] @ self.beta).flatten()
+        )
+
+        breakpoint_pairs = set()
+        for kernel_size in WINDOW_SIZES[WINDOW_SIZES * 2 < ind[1] - ind[0]]:
+            split_indices = sorted(
+                self._change_kernel(ind, residuals, kernel_size)
+            )
+
+            for start, stop in zip(split_indices, split_indices[1:]):
+                breakpoint_pairs.add((start, stop))
+
+        return breakpoint_pairs
+
+    def split_double(self, debug: bool) -> int:
+        """
+        A double-split method. This method chooses a segment at random and attempts to excise from it a sub-segment, or takes a sub-segment and attempts to remove it.
+
+        To reduce the size of the search space, the sub-segment is chosen using the change kernel heuristic, and among all possible sub-segments
+        one is chosen with the probability equal to the log-likelihood.
+
+        Returns 0 if the choice was to leave the cluster as is, and <breakpoint> if the segment was split at <breakpoint>
+        """
+
+        # Pick a random segment
+        # We use a Gibbs sampler formulation, wherein we pick a segment and pick the next state with probabilites corresponding to the likelihood.
+        # To allow reverse moves, if two adjacent breakpoints are a breakpoint pair of the segment containing them, then we also allow the reverse move.
+        reverse_move_segments: Dict[int, Tuple[int, int]] = {}
+        for idx, seg in enumerate(self.segments):
+            if (idx == 0) or (idx == len(self.segments) - 1):
+                continue
+            nxt = seg + self.segment_lens[seg]
+            prev: int = self.segments[idx - 1]
+            nxt_nxt = nxt + self.segment_lens[nxt]
+
+            if (seg, nxt) in self.get_breakpoint_pairs((prev, nxt_nxt)):
+                reverse_move_segments[seg] = (prev, nxt_nxt)
+        # Choosing a random move.
+        if np.random.random() < len(self.segments) / (
+            len(self.segments) + len(reverse_move_segments)
+        ):
+            # Making a split move.
+            seg = np.random.choice(self.segments)
+            ind = self.get_seg_ind(seg)
+        else:
+            seg: int = np.random.choice(list(reverse_move_segments))
+            small_ind = self.get_seg_ind(seg)
+            ind = reverse_move_segments[seg]
+
+            # We start by removing the segment seg to make the join and split actions similar.
+            self.segment_ID[ind[0] : ind[1]] = ind[0]
+            self.segments.discard(small_ind[0])
+            self.segments.discard(small_ind[1])
+            del self.segment_lens[small_ind[0]]
+            del self.segment_lens[small_ind[1]]
+            self.segment_lens[ind[0]] = ind[1] - ind[0]
+
+            # update mu_i and lsigma_i values
+
+            mu_share, lsigma_share, _ = self.get_mu_lsigma_hess(ind)
+
+            self.mu_i_arr[ind[0] : ind[1]] = mu_share
+            self.lsigma_i_arr[ind[0] : ind[1]] = lsigma_share
+
+            # we need to discard twice since the breakpoint is saved
+            # both as an end to an interval and a start to the next interval
+            self.F.discard(small_ind[0])
+            self.F.discard(small_ind[0])
+            self.F.discard(small_ind[1])
+            self.F.discard(small_ind[1])
+
+        # Making sure we don't count windows twice
+        breakpoint_pairs = list(self.get_breakpoint_pairs(ind))
+        if len(breakpoint_pairs) == 0:
+            return -1
+
+        base_ml = self.get_segment_ml(ind)
+        pair_mls = [
+            self.get_segment_ml((ind[0], bp[0]))
+            + self.get_segment_ml((bp[0], bp[1]))
+            + self.get_segment_ml((bp[1], ind[1]))
+            for bp in breakpoint_pairs
+        ] + [base_ml]
+
+        # Choosing a split.
+        mls = np.array(pair_mls)
+        split_probs: np.ndarray = np.exp(mls - np.max(mls))
+        split_probs /= np.sum(split_probs)
+
+        if np.isnan(split_probs).any():
+            print(
+                "skipping split iteration due to nan. log MLs: ",
+                mls,
+                flush=True,
+            )
+            return 0
+
+        split = np.random.choice(np.arange(len(split_probs)), p=split_probs)
+        # Choosing not to split.
+        if split == len(breakpoint_pairs):
+            return 0
+
+        low_break, high_break = breakpoint_pairs[split]
+
+        self.segments.add(low_break)
+        self.segments.add(high_break)
+
+        self.F.update([low_break, low_break, high_break, high_break])
+
+        self.segment_ID[low_break:high_break] = low_break
+        self.segment_ID[high_break : ind[1]] = high_break
+
+        self.segment_lens[ind[0]] = low_break - ind[0]
+        self.segment_lens[low_break] = high_break - low_break
+        self.segment_lens[high_break] = ind[1] - high_break
+
+        self.phase_history.append(self.F.copy())
+
+        low_mu, low_ls, _ = self.get_mu_lsigma_hess(
+            (ind[0], low_break), cache=True
+        )
+        self.mu_i_arr[ind[0] : low_break] = low_mu
+        self.lsigma_i_arr[ind[0] : low_break] = low_ls
+
+        mid_mu, mid_ls, _ = self.get_mu_lsigma_hess(
+            (low_break, high_break), cache=True
+        )
+        self.mu_i_arr[low_break:high_break] = mid_mu
+        self.lsigma_i_arr[low_break:high_break] = mid_ls
+
+        high_mu, high_ls, _ = self.get_mu_lsigma_hess(
+            (high_break, ind[1]), cache=True
+        )
+        self.mu_i_arr[low_break:high_break] = high_mu
+        self.lsigma_i_arr[low_break:high_break] = high_ls
+        return low_break
 
 
 class Coverage_MCMC_AllClusters:
@@ -1098,20 +1272,31 @@ class Coverage_MCMC_SingleCluster:
                 self.save_sample()
                 past_it = n_it
 
-            if np.random.rand() > 0.5:
+            action = np.random.randint(3)
+            if action == 0:
                 # split
                 res = self.cluster.split(debug)
                 # if we made a change, update ll of cluster
                 if res > 0:
                     self.ll_cluster = self.cluster.get_ll()
                     self.num_segments += 1
-            else:
+            elif action == 1:
                 # join
                 res = self.cluster.join(debug)
                 # if we made a change, update ll of cluster
                 if res > 0:
                     self.ll_cluster = self.cluster.get_ll()
                     self.num_segments -= 1
+            elif action == 2:
+                res = self.cluster.split_double(debug)
+                # if we made a change, update ll of cluster
+                if res > 0:
+                    self.ll_cluster = self.cluster.get_ll()
+                    self.num_segments += 1
+            else:
+                raise ValueError(
+                    f"The action is sampled in [0, 4), and should not be {action}!"
+                )
             n_it += 1
             self.ll_iter.append(self.ll_cluster)
 

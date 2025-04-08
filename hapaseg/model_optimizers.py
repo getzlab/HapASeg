@@ -5,7 +5,7 @@ import copy
 
 ## Poisson regression
 MAX_DELTA = 1
-"""The maximum change in the LNP distribution in a single Newton-Raphson step."""
+"""The maximum change in the LNP parameters in a single Newton-Raphson step."""
 
 
 class PoissonRegression:
@@ -634,7 +634,7 @@ class CovLNP_NR_prior:
         )
         return grad, hess
 
-    def fit(self, ret_hess=False, debug=False, extra_roots=False):
+    def fit(self, debug=False, extra_roots=False):
         radius_mult = 500 if extra_roots else 6
         for it in range(100):
             if debug:
@@ -693,9 +693,7 @@ class CovLNP_NR_prior:
             if np.linalg.norm(grad) < 5e-5:
                 if it > 100:
                     print("took {} iterations".format(it))
-                if ret_hess:
-                    return self.mu, self.lgsigma, hess
-                return self.mu, self.lgsigma
+                return self.mu, self.lgsigma, hess
         print("did not converge!")
         raise ValueError("DNC")
 
@@ -960,7 +958,7 @@ class CovLNP_NR_prior_herm:
         )
         return grad, hess
 
-    def fit(self, ret_hess=False, debug=False, extra_roots=False):
+    def fit(self, *, debug=False, extra_roots=False):
         radius_mult = 500 if extra_roots else 6
         max_its = 50 if extra_roots else 200
         for it in range(max_its):
@@ -988,11 +986,6 @@ class CovLNP_NR_prior_herm:
                 print(it)
                 if it > 100:
                     print("took {} iterations".format(it))
-                if ret_hess:
-                    return self.mu, self.lgsigma, hess
-                return self.mu, self.lgsigma
+                return self.mu, self.lgsigma, hess
         print("did not converge!")
         raise ValueError("DNC")
-        if ret_hess:
-            return None, None, None
-        return None, None
