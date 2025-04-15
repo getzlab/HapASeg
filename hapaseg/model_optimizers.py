@@ -57,7 +57,7 @@ class PoissonRegression:
         observations: np.ndarray,
         covariates: np.ndarray,
         cluster_index: np.ndarray,
-        log_exposure=0,
+        log_exposure: Union[np.ndarray, float] = 0,
         log_offset=0,
         intercept=True,
         mumu=0,
@@ -315,10 +315,10 @@ class CovLNP_NR_prior:
 
     def __init__(
         self,
-        observations,
-        covariate_coefficients,
-        covariates,
-        exposure=np.array([[0]]),
+        observations: np.ndarray,
+        covariate_coefficients: np.ndarray,
+        covariates: np.ndarray,
+        exposure: Union[np.ndarray, float] = np.array([[0]]),
         extra_roots=False,
         init_prior=True,
         *,

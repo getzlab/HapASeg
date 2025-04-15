@@ -1,21 +1,16 @@
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 import pickle
 import glob
 import re
 import os
-import scipy.special as ss
 import sys
 import tqdm
 from capy import mut, seq
 import scipy.stats as stats
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
 
-from .coverage_MCMC import (
-    Coverage_MCMC_AllClusters,
-    Coverage_MCMC_SingleCluster,
-)
 from .model_optimizers import PoissonRegression, CovLNP_NR_prior
 
 zt = lambda x: (x - np.nanmean(x)) / np.nanstd(x)
@@ -29,6 +24,19 @@ class CoverageMCMCRunner:
     f_faire: str
     f_GC: Optional[str]
     f_Ncov: Optional[str]
+
+    ref_fasta: str
+    bin_width: Union[int, np.ndarray]
+    wgs: bool
+
+    # LNP hyperparameters
+    alpha_prior: float
+    beta_prior: float
+    lamda: float
+
+    allelic_clusters: np.lib.npyio.NpzFile
+    segmentations: List[Dict[int, int]]
+    cov_full_df: pd.DataFrame
 
     def __init__(
         self,
@@ -47,7 +55,7 @@ class CoverageMCMCRunner:
         num_draws=50,
         cluster_num=None,
         allelic_sample=None,
-        bin_width=1,
+        bin_width: Union[int, np.ndarray] = 1,
         wgs=True,
     ):
         self.num_draws = num_draws
@@ -100,7 +108,6 @@ class CoverageMCMCRunner:
             log_exposure=np.log(self.bin_width),
         )
         all_mu, global_beta = pois_regr.fit()
-
         # filter bins from each segment based on lnp convergence
         full_mask = filter_segments(
             cluster_map,
@@ -179,7 +186,7 @@ class CoverageMCMCRunner:
 
         return Cov.reset_index(drop=True)
 
-    def load_SNPs(self, f_snps):
+    def load_SNPs(self, f_snps) -> pd.DataFrame:
         SNPs = pd.read_pickle(f_snps)
 
         # annotate SNPs with allelic clusters
@@ -378,7 +385,7 @@ class CoverageMCMCRunner:
 
         return cov_df
 
-    def filter_and_scale_covariates(self, cov_df):
+    def filter_and_scale_covariates(self, cov_df) -> pd.DataFrame:
         Cslice = cov_df.loc[:, cov_df.columns.str.contains("^C_")]
 
         ## scale covariates
@@ -430,7 +437,7 @@ class CoverageMCMCRunner:
         naidx = Cslice.isna().any(1)
 
         # coverage outliers
-        outlier_mask = find_outliers(cov_df["fragcorr"].values)
+        outlier_mask = find_outliers(cov_df)
 
         # remove covariate outliers (+- 6 sigma)
         z_norm_columns = Cslice.columns.str.contains("^C_.*z$")
@@ -638,7 +645,7 @@ def poisson_outlier_filter(
     C,
     beta,
     mu_prior=None,
-    exposure=0.0,
+    exposure: Union[np.ndarray, float] = 0.0,
     alpha_prior=1e-5,
     beta_prior=4e-3,
     lamda=1e-10,
@@ -697,12 +704,12 @@ def poisson_outlier_filter(
 
 # runs poisson filtering on each segment, returning a final mask over all bins
 def filter_segments(
-    Pi,
-    r,
-    C,
+    Pi: np.ndarray,
+    r: np.ndarray,
+    C: np.ndarray,
     beta,
     mus,
-    exposure=0.0,
+    exposure: Union[np.ndarray, float] = 0.0,
     alpha_prior=1e-5,
     beta_prior=4e-3,
     lamda=1e-10,
@@ -731,9 +738,17 @@ def filter_segments(
 
 # TODO switch to lnp
 # function for fitting nb model without covariates
-def fit_nb(r):
-    endog = r.flatten()
-    exog = np.ones(len(r))
+def fit_nb(observations: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Fits a negative binomial model for the given observations.
+
+    Args:
+        observations (np.ndarray): A numpy array containing samples presumably sampled from a negative binomial distribution.
+
+    Returns:
+        Tuple[np.ndarray, np.ndarray]: The mu and epsilon parameters of the negative binomial distributions.
+    """
+    endog = observations.flatten()
+    exog = np.ones(len(observations))
     sNB = statsNB(endog, exog)
     res = sNB.fit(disp=0)
     mu = res.params[0]
@@ -742,36 +757,86 @@ def fit_nb(r):
 
 
 # function for computing log survivial function values
-def scipy_sf(r, mu, epsi):
-    r = r.flatten()
+def negative_binomial_scipy_logsf(
+    observations: np.ndarray, mu: np.ndarray, epsi: np.ndarray
+) -> np.ndarray:
+    """Computes the log of the survival function of a negative binoial distribution with the given mu and epsilon parameters
+    at the given observations.
+
+    Args:
+        observations (np.ndarray): An [N] np-array containing samples presumably sampled from a negative binomial distribution.
+        mu (np.ndarray): The mu parameter of the NB distribution.
+        epsi (np.ndarray): The epsilon parameter of the NB distribution.
+
+    Returns:
+        np.ndarray: An [N] np-array containing the log of the survival function of the negative binomial distribution at the given samples..
+    """
+    observations = observations.flatten()
     mu = mu.flatten()
     epsi = epsi.flatten()
     exp = np.exp(mu).flatten()
-    return stats.nbinom.logsf(r, epsi, (1 - (exp / (exp + epsi))))
+    return stats.nbinom.logsf(observations, epsi, (1 - (exp / (exp + epsi))))
 
 
 # function for computing log cdf values
-def scipy_cdf(r, mu, epsi):
-    r = r.flatten()
+def negative_binomial_scipy_logcdf(
+    observations: np.ndarray, mu: np.ndarray, epsi: np.ndarray
+) -> np.ndarray:
+    """
+    Computes the log of the CDF of a negative binoial distribution with the given mu and epsilon parameters
+    at the given observations.
+
+    Args:
+        observations (np.ndarray): An [N] np-array containing samples presumably sampled from a negative binomial distribution.
+        mu (np.ndarray): The mu parameter of the NB distribution.
+        epsi (np.ndarray): The epsilon parameter of the NB distribution.
+
+    Returns:
+        np.ndarray: An [N] np-array containing the log of the CDF of the negative binomial distribution at the given samples..
+    """
+    observations = observations.flatten()
     mu = mu.flatten()
     epsi = epsi.flatten()
     exp = np.exp(mu).flatten()
-    return stats.nbinom.logcdf(r, epsi, (1 - (exp / (exp + epsi))))
+    return stats.nbinom.logcdf(observations, epsi, (1 - (exp / (exp + epsi))))
 
 
 # function for finding nb outliers based on input log threshold
-def find_outliers(r, thresh=-25):
-    mu, lepsi = fit_nb(r)
-    logsf = scipy_sf(r, mu, np.exp(lepsi))
-    logcdf = scipy_cdf(r, mu, np.exp(lepsi))
-    outliers = np.logical_or(logcdf < thresh, logsf < thresh)
-    if outliers.sum() > len(r) * 0.05:
-        raise ValueError("greater than 5% of bins considered outliers")
-    return outliers
+def find_outliers(cov_df: pd.DataFrame, thresh=-25.0) -> np.ndarray:
+    """
+    Finds observations that are outliers.
+    Fits a negative binomial distribution on the observations, and eliminates cells with too low log-likelihood or log-CDF.
+
+    Args:
+        observations (np.ndarray): An [N] np-array containing samples presumably sampled from a negative binomial distribution.
+        thresh (float, optional): The cutoff log-likelihood at which to declare observations as outliers. Defaults to -25.
+
+    Returns:
+        np.ndarray: An [N] np-array containing for each observation if it is an outlier.
+    """
+    indices = []
+    masks = []
+
+    for seg_idx, df in cov_df.groupby("seg_idx"):
+        observations = df["fragcorr"].to_numpy()
+        mu, lepsi = fit_nb(observations)
+        logsf = negative_binomial_scipy_logsf(observations, mu, np.exp(lepsi))
+        logcdf = negative_binomial_scipy_logcdf(observations, mu, np.exp(lepsi))
+        outliers = np.logical_or(logcdf < thresh, logsf < thresh)
+        if outliers.sum() > len(observations) * 0.05:
+            raise ValueError(r"greater than 5% of bins considered outliers")
+
+        indices.append(df.index)
+        masks.append(outliers)
+
+    indices = np.concatenate(indices)
+    masks = np.concatenate(masks)
+
+    return masks[np.argsort(indices)]
 
 
 # function for sorting file strings by the cluster number rather than alphanumeric
-def nat_sort(lst):
+def nat_sort(lst: List[str]) -> List[str]:
     def convert(text: str):
         return int(text) if text.isdigit() else text.lower()
 
