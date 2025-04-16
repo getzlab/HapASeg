@@ -118,7 +118,7 @@ def _hg38_config_gen(wgs):
         ref_fasta_idx="gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
         ref_fasta_dict="gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
         genetic_map_file="gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
-        common_snp_list="gs://getzlab-workflows-reference_files-oa/hg38/gnomad/gnomAD_MAF10_50pct_45prob_hg38_final.txt",
+        common_snp_list="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/snp_list_1000_genome_15pct_with_header_filtered.txt",
         cytoband_file="gs://getzlab-workflows-reference_files-oa/hg19/cytoBand.txt",
         repl_file="gs://opriebe-tmp/GSE137764_H1.hg38.pickle",
         ref_panel_1000g=hg38_ref_dict,
