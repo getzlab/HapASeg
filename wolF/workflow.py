@@ -17,7 +17,9 @@ het_pulldown = wolf.ImportTask(
 
 
 mutect1 = wolf.ImportTask(
-    task_path="git@github.com:getzlab/MuTect1_TOOL.git", commit="2a1346d"
+    task_path="git@github.com:getzlab/MuTect1_TOOL.git",
+    branch="master",
+    commit="cdfb5e0",
 )
 
 # for phasing
@@ -108,7 +110,7 @@ def _hg38_config_gen(wgs):
         ref_fasta_idx="gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
         ref_fasta_dict="gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
         genetic_map_file="gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
-        common_snp_list="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/snp_list_1000_genome_15pct_with_header_filtered.txt",
+        common_snp_list="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/snp_list_1000_genome_15pct_with_header_filtered_filtered.txt",
         faire_file="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle",
         cfdna_wes_faire_file="",  # TODO: cfDNA file needs to be generated for hg38
         cytoband_file="gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt",
