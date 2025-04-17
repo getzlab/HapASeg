@@ -248,6 +248,7 @@ def workflow(
         print(
             "Normal coverage will not be used as a covariate; ability to regress out germline CNVs may suffer."
         )
+        normal_bam_localization_task = {"n_bam": None, "n_bai": None}
         use_normal_coverage = False
 
     if tumor_coverage_bed is not None:
