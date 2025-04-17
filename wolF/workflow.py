@@ -410,7 +410,7 @@ def workflow(
             )
 
     # otherwise, run M1 and get it from the BAM
-    elif tumor_bam is not None and normal_bam is not None:
+    elif tumor_bam is not None:
         # split het sites file uniformly
         split_het_sites = wolf.Task(
             name="split_het_sites",
