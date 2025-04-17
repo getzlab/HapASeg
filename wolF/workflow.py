@@ -248,7 +248,7 @@ def workflow(
         print(
             "Normal coverage will not be used as a covariate; ability to regress out germline CNVs may suffer."
         )
-        normal_bam_localization_task = {"n_bam": None, "n_bai": None}
+        normal_bam_localization_task = {"n_bam": "", "n_bai": ""}
         use_normal_coverage = False
 
     if tumor_coverage_bed is not None:
@@ -426,7 +426,8 @@ def workflow(
           """,
             outputs={"snp_list_shards": "snp_list_chunk*"},
         )
-
+        print("Running MuTect1FC!")
+        print(f"{tumor_only=}")
         m1_task = mutect1.mutect1(
             inputs=dict(
                 pairName="het_coverage",
