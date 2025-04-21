@@ -951,6 +951,7 @@ A.to_pickle('./concat_arms.pickle')
         "hapaseg_skip_acdp_segfile": acdp_task["hapaseg_skip_acdp_segfile"],
         "hapaseg_summary_plot": summary_plot_task["hapaseg_summary_plot"],
         "tumor_cov_bed": tumor_cov_gather_task["coverage"],
+        "snp_phasing": combine_task["combined_vcf"],
     }
 
     if use_normal_coverage:
