@@ -957,6 +957,9 @@ A.to_pickle('./concat_arms.pickle')
     if use_normal_coverage:
         output_dict["normal_cov_bed"] = normal_cov_gather_task["coverage"]
 
+    print("HapASeg output dict:")
+    print(output_dict)
+
     # sync workspace if passed
     if workspace is not None:
         sync_task = wolf.fc.SyncToWorkspace(
