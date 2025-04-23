@@ -134,9 +134,9 @@ class Hapaseg_allelic_DP(wolf.Task):
         "cluster_and_phase_assignments": "allelic_DP_SNP_clusts_and_phase_assignments.npz",
         "all_SNPs": "all_SNPs.pickle",
         "segmentation_breakpoints": "segmentations.pickle",
-        "likelihood_trace_plot": "figures/likelihood_trace.png",
-        "SNP_plot": "figures/SNPs.png",
-        "seg_plot": "figures/segs_only.png",
+        # "likelihood_trace_plot": "figures/likelihood_trace.png",
+        # "SNP_plot": "figures/SNPs.png",
+        # "seg_plot": "figures/segs_only.png",
     }
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1316"
     resources = {"cpus-per-task": 3, "mem": "9G"}
