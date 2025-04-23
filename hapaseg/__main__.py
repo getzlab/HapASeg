@@ -823,30 +823,30 @@ def main():
         # full SNP dataframe
         A.SNPs.to_pickle(output_dir + "/all_SNPs.pickle")
 
-        #
-        # plot DP results
+        # #
+        # # plot DP results
 
-        # 0. likelihood trace
-        A.DP_run.plot_likelihood_trace()
-        plt.savefig(output_dir + "/figures/likelihood_trace.png", dpi=300)
+        # # 0. likelihood trace
+        # A.DP_run.plot_likelihood_trace()
+        # plt.savefig(output_dir + "/figures/likelihood_trace.png", dpi=300)
 
-        # 1. SNPs + segments
-        f = plt.figure(figsize=[17.56, 5.67])
-        hs_utils.plot_chrbdy(args.cytoband_file)
-        A.DP_run.visualize_segs(f=f, show_snps=True)
-        plt.ylabel("Haplotypic imbalance")
-        plt.title("SNPs + allelic segmentation (MAP)")
-        plt.savefig(output_dir + "/figures/SNPs.png", dpi=300)
-        plt.close()
+        # # 1. SNPs + segments
+        # f = plt.figure(figsize=[17.56, 5.67])
+        # hs_utils.plot_chrbdy(args.cytoband_file)
+        # A.DP_run.visualize_segs(f=f, show_snps=True)
+        # plt.ylabel("Haplotypic imbalance")
+        # plt.title("SNPs + allelic segmentation (MAP)")
+        # plt.savefig(output_dir + "/figures/SNPs.png", dpi=300)
+        # plt.close()
 
-        # 2. segments alone
-        f = plt.figure(figsize=[17.56, 5.67])
-        hs_utils.plot_chrbdy(args.cytoband_file)
-        A.DP_run.visualize_segs(f=f, show_snps=False)
-        plt.ylabel("Haplotypic imbalance")
-        plt.title("Allelic segmentation (posterior)")
-        plt.savefig(output_dir + "/figures/segs_only.png", dpi=300)
-        plt.close()
+        # # 2. segments alone
+        # f = plt.figure(figsize=[17.56, 5.67])
+        # hs_utils.plot_chrbdy(args.cytoband_file)
+        # A.DP_run.visualize_segs(f=f, show_snps=False)
+        # plt.ylabel("Haplotypic imbalance")
+        # plt.title("Allelic segmentation (posterior)")
+        # plt.savefig(output_dir + "/figures/segs_only.png", dpi=300)
+        # plt.close()
 
     ## running coverage mcmc on all clusters
     elif args.command == "coverage_mcmc":
