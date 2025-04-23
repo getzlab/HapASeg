@@ -227,6 +227,7 @@ def workflow(
             name="Localize_T_bam_HapASeg",
             token=localization_token,
             persistent_disk_dry_run=persistent_dry_run,
+            check_md5=True,
         )
         collect_tumor_coverage = True
     elif tumor_coverage_bed is not None:
@@ -243,6 +244,7 @@ def workflow(
             name="Localize_N_bam_HapASeg",
             token=localization_token,
             persistent_disk_dry_run=persistent_dry_run,
+            check_md5=True,
         )
     else:
         print(
