@@ -1,7 +1,7 @@
 import wolf
 
 
-class Hapaseg(wolf.Task):
+class hapaseg(wolf.Task):
     inputs = {
         "phased_VCF",
         "tumor_allele_counts",
@@ -19,7 +19,7 @@ class Hapaseg(wolf.Task):
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1316"
 
 
-class Hapaseg_load_snps(wolf.Task):
+class hapaseg_load_snps(wolf.Task):
     inputs = {
         "phased_VCF": None,
         "tumor_allele_counts": None,
@@ -46,7 +46,7 @@ class Hapaseg_load_snps(wolf.Task):
     resources = {"cpus-per-task": 2, "mem": "4G"}
 
 
-class Hapaseg_burnin(wolf.Task):
+class hapaseg_burnin(wolf.Task):
     inputs = {"allele_counts": None, "start": None, "end": None, "betahyp": -1}
 
     script = """
@@ -61,7 +61,7 @@ class Hapaseg_burnin(wolf.Task):
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1316"
 
 
-class Hapaseg_concat(wolf.Task):
+class hapaseg_concat(wolf.Task):
     inputs = {"chunks", "scatter_intervals"}
     script = """
     CHUNKS_STR=$(cat ${chunks} | tr '\n' ' ')
@@ -74,7 +74,7 @@ class Hapaseg_concat(wolf.Task):
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1316"
 
 
-class Hapaseg_amcmc(wolf.Task):
+class hapaseg_amcmc(wolf.Task):
     inputs = {
         "amcmc_object": None,
         "ref_bias": None,
@@ -95,7 +95,7 @@ class Hapaseg_amcmc(wolf.Task):
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1316"
 
 
-class Hapaseg_concat_arms(wolf.Task):
+class hapaseg_concat_arms(wolf.Task):
     inputs = {
         "arm_results": None,
         "ref_fasta": None,
@@ -112,7 +112,7 @@ class Hapaseg_concat_arms(wolf.Task):
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1316"
 
 
-class Hapaseg_allelic_DP(wolf.Task):
+class hapaseg_allelic_dp(wolf.Task):
     inputs = {
         "seg_dataframe": None,
         "wgs": None,
@@ -142,7 +142,7 @@ class Hapaseg_allelic_DP(wolf.Task):
     resources = {"cpus-per-task": 3, "mem": "9G"}
 
 
-class Hapaseg_prepare_coverage_mcmc(wolf.Task):
+class hapaseg_prepare_coverage_mcmc(wolf.Task):
     inputs = {
         "coverage_csv": None,
         "allelic_clusters_object": None,
@@ -196,7 +196,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
 
 
 # scatter by allelic segment
-class Hapaseg_coverage_mcmc_by_Aseg(wolf.Task):
+class hapaseg_coverage_mcmc_by_Aseg(wolf.Task):
     inputs = {
         "preprocess_data": None,
         "num_draws": 50,
@@ -226,7 +226,7 @@ class Hapaseg_coverage_mcmc_by_Aseg(wolf.Task):
     resources = {"cpus-per-task": 4, "mem": "5G"}
 
 
-class Hapaseg_coverage_mcmc(wolf.Task):
+class hapaseg_coverage_mcmc(wolf.Task):
     inputs = {
         "preprocess_data": None,  # npz of covariate matrix (C), global beta, ADP cluster mu's, covbin ADP cluster assignments (all_mu), covbin raw coverage values (r)
         "allelic_seg_indices": None,  # dataframe containing indicies into C/r/all_mu for each allelic segment
@@ -256,7 +256,7 @@ class Hapaseg_coverage_mcmc(wolf.Task):
     resources = {"cpus-per-task": 4, "mem": "5G"}
 
 
-class Hapaseg_collect_coverage_mcmc(wolf.Task):
+class hapaseg_collect_coverage_mcmc(wolf.Task):
     inputs = {
         "cov_mcmc_files": None,
         "cov_df_pickle": None,
@@ -281,7 +281,7 @@ class Hapaseg_collect_coverage_mcmc(wolf.Task):
     }  # need high mem for poisson regression on massive Pi matrix
 
 
-class Hapaseg_coverage_dp(wolf.Task):
+class hapaseg_coverage_dp(wolf.Task):
     inputs = {
         "f_cov_df": None,
         "cov_mcmc_data": None,
@@ -314,7 +314,7 @@ class Hapaseg_coverage_dp(wolf.Task):
     }  # potentially overkill and wont be necessary if cache table implemented
 
 
-class Hapaseg_acdp_generate_df(wolf.Task):
+class hapaseg_acdp_generate_df(wolf.Task):
     inputs = {
         "SNPs_pickle": None,
         "allelic_clusters_object": None,
@@ -357,7 +357,7 @@ class Hapaseg_acdp_generate_df(wolf.Task):
     resources = {"cpus-per-task": 2, "mem": "3G"}
 
 
-class Hapaseg_run_acdp(wolf.Task):
+class hapaseg_run_acdp(wolf.Task):
     inputs = {
         "cov_seg_data": None,
         "acdp_df": None,
@@ -399,7 +399,7 @@ class Hapaseg_run_acdp(wolf.Task):
     resources = {"cpus-per-task": 4, "mem": "6G"}
 
 
-class Hapaseg_summary_plot(wolf.Task):
+class hapaseg_summary_plot(wolf.Task):
     inputs = {
         "snps_pickle": None,
         "adp_results": None,

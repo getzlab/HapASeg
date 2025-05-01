@@ -526,7 +526,7 @@ main.main()
 
 # run with wolF (if Docker is up-to-date)
 from wolF import tasks
-run = tasks.Hapaseg_prepare_coverage_mcmc(
+run = tasks.hapaseg_prepare_coverage_mcmc(
   inputs = {
     "coverage_csv" : args.coverage_csv,
     "allelic_clusters_object" : args.allelic_clusters_object
@@ -539,7 +539,7 @@ run = tasks.Hapaseg_prepare_coverage_mcmc(
 )
 
 # run platinum
-pt = tasks.Hapaseg_prepare_coverage_mcmc(
+pt = tasks.hapaseg_prepare_coverage_mcmc(
   inputs = {
     "coverage_csv" : "gs://jh-xfer/HapASeg_platinum/coverage/wgs_sim_1_coverage_hapaseg_format.bed",
     "allelic_clusters_object" : "gs://jh-xfer/HapASeg_platinum/coverage/allelic_DP_SNP_clusts_and_phase_assignments.npz",

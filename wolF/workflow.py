@@ -618,7 +618,7 @@ def workflow(
     # run HapASeg
 
     # load SNPs
-    hapaseg_load_snps_task = hapaseg.Hapaseg_load_snps(
+    hapaseg_load_snps_task = hapaseg.hapaseg_load_snps(
         inputs={
             "phased_VCF": combine_task["combined_vcf"],
             "tumor_allele_counts": hp_coverage["tumor_hets"],
@@ -636,7 +636,7 @@ def workflow(
     chunks = get_chunks(hapaseg_load_snps_task["scatter_chunks"])
 
     # burnin chunks
-    hapaseg_burnin_task = hapaseg.Hapaseg_burnin(
+    hapaseg_burnin_task = hapaseg.hapaseg_burnin(
         inputs={
             "allele_counts": hapaseg_load_snps_task["allele_counts"],
             "start": chunks["start"],
@@ -646,7 +646,7 @@ def workflow(
     )
 
     # concat burned in chunks, infer reference bias
-    hapaseg_concat_task = hapaseg.Hapaseg_concat(
+    hapaseg_concat_task = hapaseg.hapaseg_concat(
         inputs={
             "chunks": [hapaseg_burnin_task["burnin_MCMC"]],
             "scatter_intervals": hapaseg_load_snps_task["scatter_chunks"],
@@ -654,7 +654,7 @@ def workflow(
     )
 
     # run on arms
-    hapaseg_arm_AMCMC_task = hapaseg.Hapaseg_amcmc(
+    hapaseg_arm_AMCMC_task = hapaseg.hapaseg_amcmc(
         inputs={
             "amcmc_object": hapaseg_concat_task["arms"],
             "ref_bias": hapaseg_concat_task["ref_bias"],
@@ -705,7 +705,7 @@ A.to_pickle('./concat_arms.pickle')
 
     ## run DP
 
-    hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
+    hapaseg_allelic_DP_task = hapaseg.hapaseg_allelic_dp(
         inputs={
             "seg_dataframe": arm_concat["all_arms_obj"],
             # "seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
@@ -726,7 +726,7 @@ A.to_pickle('./concat_arms.pickle')
     #
 
     # prepare coverage MCMC
-    prep_cov_mcmc_task = hapaseg.Hapaseg_prepare_coverage_mcmc(
+    prep_cov_mcmc_task = hapaseg.hapaseg_prepare_coverage_mcmc(
         inputs={
             "coverage_csv": tumor_cov_gather_task[
                 "coverage"
@@ -775,7 +775,7 @@ A.to_pickle('./concat_arms.pickle')
     # TODO: modify burnin task to subset to these indices
 
     # coverage MCMC burnin(?) <- do we still need to burnin separately?
-    cov_mcmc_scatter_task = hapaseg.Hapaseg_coverage_mcmc_by_Aseg(
+    cov_mcmc_scatter_task = hapaseg.hapaseg_coverage_mcmc_by_Aseg(
         inputs={
             "preprocess_data": prep_cov_mcmc_task["preprocess_data"],
             "allelic_seg_indices": prep_cov_mcmc_task["allelic_seg_groups"],
@@ -786,7 +786,7 @@ A.to_pickle('./concat_arms.pickle')
     )
 
     # collect coverage MCMC
-    cov_mcmc_gather_task = hapaseg.Hapaseg_collect_coverage_mcmc(
+    cov_mcmc_gather_task = hapaseg.hapaseg_collect_coverage_mcmc(
         inputs={
             "cov_mcmc_files": [cov_mcmc_scatter_task["cov_segmentation_data"]],
             "cov_df_pickle": prep_cov_mcmc_task["cov_df_pickle"],
@@ -806,7 +806,7 @@ A.to_pickle('./concat_arms.pickle')
     # only run cov DP if using exomes. genomes should have enough bins in each segment
     if not wgs and run_cdp:
         # coverage DP
-        cov_dp_task = hapaseg.Hapaseg_coverage_dp(
+        cov_dp_task = hapaseg.hapaseg_coverage_dp(
             inputs={
                 "f_cov_df": prep_cov_mcmc_task["cov_df_pickle"],
                 "cov_mcmc_data": cov_mcmc_gather_task["cov_collected_data"],
@@ -818,7 +818,7 @@ A.to_pickle('./concat_arms.pickle')
         )
 
         # generate acdp dataframe
-        gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
+        gen_acdp_task = hapaseg.hapaseg_acdp_generate_df(
             inputs={
                 "SNPs_pickle": hapaseg_allelic_DP_task[
                     "all_SNPs"
@@ -833,7 +833,7 @@ A.to_pickle('./concat_arms.pickle')
             }
         )
         # run acdp
-        acdp_task = hapaseg.Hapaseg_run_acdp(
+        acdp_task = hapaseg.hapaseg_run_acdp(
             inputs={
                 "cov_seg_data": cov_mcmc_gather_task["cov_collected_data"],
                 "acdp_df": gen_acdp_task["acdp_df_pickle"],
@@ -846,7 +846,7 @@ A.to_pickle('./concat_arms.pickle')
         )
     else:
         # otherwise generate acdp dataframe directly from cov_mcmc results
-        gen_acdp_task = hapaseg.Hapaseg_acdp_generate_df(
+        gen_acdp_task = hapaseg.hapaseg_acdp_generate_df(
             inputs={
                 "SNPs_pickle": hapaseg_allelic_DP_task[
                     "all_SNPs"
@@ -864,7 +864,7 @@ A.to_pickle('./concat_arms.pickle')
         )
 
         # run acdp
-        acdp_task = hapaseg.Hapaseg_run_acdp(
+        acdp_task = hapaseg.hapaseg_run_acdp(
             inputs={
                 "cov_seg_data": cov_mcmc_gather_task["cov_collected_data"],
                 "acdp_df": gen_acdp_task["acdp_df_pickle"],
@@ -878,7 +878,7 @@ A.to_pickle('./concat_arms.pickle')
         )
 
         # create final summary plot
-        summary_plot_task = hapaseg.Hapaseg_summary_plot(
+        summary_plot_task = hapaseg.hapaseg_summary_plot(
             inputs={
                 "snps_pickle": hapaseg_allelic_DP_task["all_SNPs"],
                 "adp_results": hapaseg_allelic_DP_task[
