@@ -192,7 +192,7 @@ def workflow(
 
         genetic_map_file = ref_config["genetic_map_file"],
         common_snp_list = ref_config["common_snp_list"] if common_snp_list is None else common_snp_list,
-          
+        
         cytoband_file = ref_config["cytoband_file"],
         
         # reference panel
