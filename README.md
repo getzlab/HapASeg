@@ -1,12 +1,13 @@
 # HapASeg
-### A haplotype aware segmentation algorithm for calling homologue specific somatic copy number events
+### Haplotype Aware Segmentation algorithm for estimating homologue-specific somatic copy number alterations
 
 ## Installation
-HapASeg requires a number of dependencies that can be complicated to install. We provide a docker image that builds a container for running HapASeg in `hapaseg_local/Dockerfile`. One can build the container from the root directory by invoking ```docker build -f ./hapaseg_local/Dockerfile -t hapaseg_image .``` 
-HapASeg also relies on a number of reference files that can be downloaded automatically by calling ```docker run -v {workdir}:{/workdir/} hapaseg_image hapaseg_local_install_ref_files /workdir/ref_files/``` where `workdir` is the local path with the necessary input files, which will be mounted to `/workdir/` within the container. Adjust filepaths arguments accordingly. 
+HapASeg requires a number of dependencies that can be complicated to install. We provide a docker image that builds a container for running HapASeg in `hapaseg_local/Dockerfile`. To build the container from the root directory, invoke ```docker build -f ./hapaseg_local/Dockerfile -t hapaseg_image .``` 
+
+HapASeg also relies on a number of reference files. These files can be downloaded automatically by calling ```docker run -v {./workdir}:{/workdir/} hapaseg_image hapaseg_local_install_ref_files --ref-build {ref-build} /workdir/ref_files/``` where `ref_build` is the reference genome build of the input sample BAMS (hg19 or hg38 or both) and `workdir` is the local path where the reference files will be saved. 
 
 ## Usage
-Once the reference files have been downloaded, the method can be run by calling ```docker run -v {workdir}:{/workdir/} hapaseg_image hapaseg_local ...``` with the desired inputs. Use `--help` for more options.
+Once the reference files have been downloaded, the HapASeg can be executed by calling ```docker run -v {workdir}:{/workdir/} hapaseg_image hapaseg_local ...``` with the desired inputs. Use `--help` to see the run options. Here, `workdir` is the local path where the reference files were saved. Directories containing sample BAM files can be mounted with additional -v mount commands if they are not already in `workdir`.
 
 `hapaseg_local` has several subroutines that are ammenable to parallelization. Set the maximum number of cpus and memory that you would like HapASeg to using the `--max-cpus` and `--max-mem` commands. The default behaviour is to use all available resources. The method requires at least 12GB of memory to run.
 
