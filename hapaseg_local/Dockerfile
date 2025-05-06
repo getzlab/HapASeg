@@ -136,7 +136,7 @@ RUN cp /build/covcollect/src/covcollect /app && rm -rf /build/*
 RUN apt-get install -y parallel
 
 
-ARG cache_invalidate=13
+ARG cache_invalidate=14
 #
 # HapASeg {{{
 RUN pip install sortedcontainers click

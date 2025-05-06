@@ -547,6 +547,51 @@ def hapaseg_local_main(
 
     return output_dict
 
+def save_final_results(output_dict, results_path):
+    """
+    Save final HapaSeg results by creating symlinks to important output files.
+    
+    Args:
+        output_dict: Dictionary containing paths to output files
+        results_dir: Directory where symlinks should be created
+    """
+    # Create a function to handle creating symlinks
+    def create_symlink(source_file, target_path):
+        print(source_file, target_path)
+        if source_file is None:
+            return False
+        source_path = Path(source_file)
+        if not source_path.exists():
+            return False
+        link_path = target_path.joinpath(source_path.name)
+        if link_path.exists():
+            link_path.unlink()
+        link_path.symlink_to(source_path)
+        return True
+
+    # Softlink the hapaseg summary plot to the results directory
+    if 'hapaseg_summary_plot_results_dict' in output_dict and 'hapaseg_summary_plot' in output_dict['hapaseg_summary_plot_results_dict']:
+        create_symlink(output_dict['hapaseg_summary_plot_results_dict']['hapaseg_summary_plot'], results_path)
+
+    # Softlink relevant ACDP outputs
+    acdp_outputs = [
+        "acdp_model_pickle", 
+        "acdp_clusters_plot", 
+        "acdp_tuples_plot",
+        "hapaseg_segfile", 
+        "absolute_segfile", 
+        "hapaseg_skip_acdp_segfile",
+        "acdp_optimal_fit_params"
+    ]
+    
+    # Add optional outputs that are only generated when not using single draw
+    if "acdp_sd_plot" in output_dict:
+        acdp_outputs.extend(["acdp_sd_plot", "acdp_sd_best_plot"])
+    
+    # Create symlinks for all available ACDP outputs
+    for output_key in acdp_outputs:
+        create_symlink(output_dict['hapaseg_run_acdp_results_dict'][output_key], results_path)
+
 @click.command()
 @click.argument('out_dir', type=click.Path())
 @click.argument('sample_name', type=str)
@@ -643,8 +688,17 @@ def run_hapaseg_local(out_dir,
     # Call the actual function
     kwargs['out_dir'] = out_dir
     kwargs['sample_name'] = sample_name
-    hapaseg_local_main(**kwargs)
-
+    output_dict = hapaseg_local_main(**kwargs)
+    
+    # save output dict results to a results directory
+    out_path = Path(out_dir)
+    results_path = out_path.joinpath(f"{sample_name}/Hapaseg_final_results")
+    results_path.mkdir(exist_ok=True, parents=True)
+    # Save final results to the results directory
+    save_final_results(output_dict, results_path)
+    
+    click.echo(f"Final results saved to {results_path}")
 
 if __name__ == '__main__':
     run_hapaseg_local()
+

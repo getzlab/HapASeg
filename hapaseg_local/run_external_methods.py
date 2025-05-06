@@ -283,8 +283,6 @@ def run_parallel_tasks(
         
         # Check if output files for this chunk already exist
         chunk_outputs_exist = results_exist(chunk_results)
-        if not chunk_outputs_exist:
-            print(chunk_results)
         
         # Add to execution list if outputs don't exist
         if not chunk_outputs_exist:
@@ -487,7 +485,7 @@ def convert_hetpull_2_vcf_script(out_path:Path,
     bcftools convert --tsv2vcf {genotype_file} -c CHROM,POS,AA -s {sample_name} \
         -f {ref_fasta} -Ou -o {out_path.joinpath('all_chrs.bcf')} && bcftools index {out_path.joinpath('all_chrs.bcf')}
     for chr in $(bcftools view -h {out_path.joinpath('all_chrs.bcf')} | ssed -nR '/^##contig/s/.*ID=(.*),.*/\\1/p' | head -n24); do
-        bcftools view -Ou -r ${{chr}} -o {out_path}/${{chr}}.chrsplit.bcf all_chrs.bcf && bcftools index {out_path}/${{chr}}.chrsplit.bcf
+        bcftools view -Ou -r ${{chr}} -o {out_path}/${{chr}}.chrsplit.bcf {out_path.joinpath('all_chrs.bcf')} && bcftools index {out_path}/${{chr}}.chrsplit.bcf
     done
     """
     # TODO: figure out output naming

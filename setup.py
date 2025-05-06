@@ -30,8 +30,8 @@ setup(
     },
     description = '',
     url = '',
-    author = 'Oliver Priebe, Julian Hess',
-    author_email = 'opriebe@broadinstitute.org, jhess@broadinstitute.org',
+    author = 'Julian Hess, Oliver Priebe',
+    author_email = 'jhess@broadinstitute.org, opriebe@broadinstitute.org',
 
     install_requires = [
         'pandas==1.4.2',
