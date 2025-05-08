@@ -802,7 +802,9 @@ def negative_binomial_scipy_logcdf(
 
 
 # function for finding nb outliers based on input log threshold
-def find_outliers(cov_df: pd.DataFrame, thresh=-25.0) -> np.ndarray:
+def find_outliers(
+    cov_df: pd.DataFrame, thresh=-25.0, chunk_size=50
+) -> np.ndarray:
     """
     Finds observations that are outliers.
     Fits a negative binomial distribution on the observations, and eliminates cells with too low log-likelihood or log-CDF.
@@ -810,6 +812,7 @@ def find_outliers(cov_df: pd.DataFrame, thresh=-25.0) -> np.ndarray:
     Args:
         observations (np.ndarray): An [N] np-array containing samples presumably sampled from a negative binomial distribution.
         thresh (float, optional): The cutoff log-likelihood at which to declare observations as outliers. Defaults to -25.
+        chunk_size(int, optional): The size of chunks to use when searching for outliers.
 
     Returns:
         np.ndarray: An [N] np-array containing for each observation if it is an outlier.
@@ -817,17 +820,33 @@ def find_outliers(cov_df: pd.DataFrame, thresh=-25.0) -> np.ndarray:
     indices = []
     masks = []
 
-    for seg_idx, df in cov_df.groupby("seg_idx"):
-        observations = df["fragcorr"].to_numpy()
-        mu, lepsi = fit_nb(observations)
-        logsf = negative_binomial_scipy_logsf(observations, mu, np.exp(lepsi))
-        logcdf = negative_binomial_scipy_logcdf(observations, mu, np.exp(lepsi))
-        outliers = np.logical_or(logcdf < thresh, logsf < thresh)
-        if outliers.sum() > len(observations) * 0.05:
-            raise ValueError(r"greater than 5% of bins considered outliers")
+    if chunk_size is None:
+        chunk_size = len(cov_df)
 
-        indices.append(df.index)
-        masks.append(outliers)
+    outlier_count = 0
+
+    for _, cluster_df in cov_df.groupby("seg_idx"):
+        num_chunks = int(np.ceil(len(cluster_df) / chunk_size))
+        chunk_size = int(np.ceil(len(cluster_df) / num_chunks))
+
+        for chunk in range(0, len(cluster_df), chunk_size):
+            chunk_df = cluster_df.iloc[chunk : chunk + chunk_size]
+            observations = chunk_df["fragcorr"].to_numpy()
+            mu, lepsi = fit_nb(observations)
+            logsf = negative_binomial_scipy_logsf(
+                observations, mu, np.exp(lepsi)
+            )
+            logcdf = negative_binomial_scipy_logcdf(
+                observations, mu, np.exp(lepsi)
+            )
+            outliers = np.logical_or(logcdf < thresh, logsf < thresh)
+            outlier_count += outliers.sum()
+
+            indices.append(chunk_df.index)
+            masks.append(outliers)
+
+    if outlier_count > len(cov_df) * 0.05:
+        raise ValueError(r"greater than 5% of bins considered outliers")
 
     indices = np.concatenate(indices)
     masks = np.concatenate(masks)
