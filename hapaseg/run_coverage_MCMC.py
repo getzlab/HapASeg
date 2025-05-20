@@ -417,7 +417,7 @@ class CoverageMCMCRunner:
         # GC content follows a roughly quadratic relationship with coverage,
         # but only WGS has bins with high enough GC content that this is noticeable.
         if self.wgs:
-            cov_df["C_GC2_z"] = cov_df["C_GC_z"] ** 2
+            cov_df["C_GC2_z"] = zt(cov_df["C_GC_z"] ** 2)
 
         # log bin length gets zero-centered (so that we can see how much it deviates from 1 [perfect proportionality to target length])
         if "C_log_len" in cov_df.columns:
