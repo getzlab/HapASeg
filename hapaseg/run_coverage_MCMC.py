@@ -499,9 +499,8 @@ class CoverageMCMCRunner:
         ).rename(columns={"min_ph": "min_count", "maj_ph": "maj_count"})
 
         ## assign coverage bins within 10kb of each bin overlapping a SNP to its allelic segment
-        if (
-            not self.wgs
-        ):  # TODO: always expand, and set threshold based on WGS/WES?
+        # if not self.wgs:  # TODO: always expand, and set threshold based on WGS/WES?
+        if True:
             max_dist = 10000
 
             # make sure that SNP radii don't exceed the boundaries of their respective Segment Intervals
