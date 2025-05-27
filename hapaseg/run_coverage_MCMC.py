@@ -500,8 +500,10 @@ class CoverageMCMCRunner:
 
         ## assign coverage bins within 10kb of each bin overlapping a SNP to its allelic segment
         # if not self.wgs:  # TODO: always expand, and set threshold based on WGS/WES?
+        # Bugfix attempt: We don't want to drop coverage bins, even in germline LOH regions.
+        # If the coverage is segmented, they will just not have an allelic ratio. If it isn't
         if True:
-            max_dist = 10000
+            max_dist = 1000000
 
             # make sure that SNP radii don't exceed the boundaries of their respective Segment Intervals
             SI = self.SNPs.groupby("seg_idx")["pos_gp"].agg([min, max])
