@@ -7,6 +7,7 @@ import re
 import os
 import sys
 import tqdm
+import warnings
 from capy import mut, seq
 import scipy.stats as stats
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
@@ -37,6 +38,7 @@ class CoverageMCMCRunner:
     allelic_clusters: np.lib.npyio.NpzFile
     segmentations: List[Dict[int, int]]
     cov_full_df: pd.DataFrame
+    snps: pd.DataFrame
 
     def __init__(
         self,
@@ -85,7 +87,7 @@ class CoverageMCMCRunner:
             )
         # coverage input is expected to be a df file with columns: ["chr", "start", "end", "covcorr", "covraw"]
         self.full_cov_df = self.load_coverage(coverage_csv)
-        self.SNPs = self.load_SNPs(f_SNPs)
+        self.snps = self.load_snps(f_SNPs)
 
         self.model = None
 
@@ -186,7 +188,7 @@ class CoverageMCMCRunner:
 
         return Cov.reset_index(drop=True)
 
-    def load_SNPs(self, f_snps) -> pd.DataFrame:
+    def load_snps(self, f_snps) -> pd.DataFrame:
         SNPs = pd.read_pickle(f_snps)
 
         # annotate SNPs with allelic clusters
@@ -228,18 +230,18 @@ class CoverageMCMCRunner:
             AI.loc[-1, :] = np.nan
             self.full_cov_df["start_pad"] = seq.gpos2chrpos(
                 np.maximum(
-                    self.full_cov_df["start_g"].values - 300,
+                    self.full_cov_df["start_g"].values - 300,  # type: ignore
                     AI.loc[
                         self.full_cov_df["allelic_seg_overlap"], "start_g"
-                    ].values,
+                    ].values,  # type: ignore
                 )
             )[1]
             self.full_cov_df["end_pad"] = seq.gpos2chrpos(
                 np.minimum(
-                    self.full_cov_df["end_g"].values + 300,
+                    self.full_cov_df["end_g"].values + 300,  # type: ignore
                     AI.loc[
                         self.full_cov_df["allelic_seg_overlap"], "end_g"
-                    ].values,
+                    ].values,  # type: ignore
                 )
             )[1]
             tidx_ext = mut.map_mutations_to_targets(
@@ -265,7 +267,9 @@ class CoverageMCMCRunner:
 
         # this indexing assumes 0-indexed start and end cols
         for i, chrm, start, end in tqdm.tqdm(
-            cov_df[["chr", "start", "end"]].itertuples(), total=len(cov_df)
+            cov_df[["chr", "start", "end"]].itertuples(),
+            "Generating GC content",
+            total=len(cov_df),
         ):
             cov_df.iat[i, -1] = F[chrm - 1][start : end + 1].gc
 
@@ -366,7 +370,9 @@ class CoverageMCMCRunner:
         if self.f_extracov_bed_list is not None:
             print("Loading additional covariates ...", file=sys.stderr)
             with open(self.f_extracov_bed_list, "r") as f:
-                for i, bed_file in tqdm.tqdm(enumerate(f.readlines())):
+                for i, bed_file in tqdm.tqdm(
+                    enumerate(f.readlines()), "Loading covariates"
+                ):
                     extracov_df = pd.read_csv(
                         bed_file.rstrip(), sep="\t", header=None
                     ).rename(columns={0: "chr", 1: "start", 2: "end"})
@@ -434,16 +440,16 @@ class CoverageMCMCRunner:
         ]
 
         # no NaN covariates
-        naidx = Cslice.isna().any(1)
-
+        naidx = Cslice.isna().any(1)  # type: ignore
         # coverage outliers
-        outlier_mask = find_outliers(cov_df)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            outlier_mask = find_outliers(cov_df)
 
         # remove covariate outliers (+- 6 sigma)
         z_norm_columns = Cslice.columns.str.contains("^C_.*z$")
         covar_6sig_idx = (Cslice.loc[:, z_norm_columns].abs() < 6).all(axis=1)
 
-        # apply all filters
         cov_df = cov_df.loc[~naidx & ~outlier_mask & covar_6sig_idx]
 
         # remove outlier bins at ends of segments
@@ -467,7 +473,8 @@ class CoverageMCMCRunner:
 
         print("Mapping SNPs to targets ...", file=sys.stderr)
         for targ, D in tqdm.tqdm(
-            self.SNPs.groupby("targ_idx")[["clust_choice", "seg_idx"]]
+            self.snps.groupby("targ_idx")[["clust_choice", "seg_idx"]],
+            "Assigning clusters to bins",
         ):
             if targ == -1:  # SNP does not overlap a coverage bin
                 continue
@@ -485,59 +492,88 @@ class CoverageMCMCRunner:
 
         # fix phases based on the cluster choice
         phases = self.allelic_clusters["snps_to_phases"][self.allelic_sample]
-        self.SNPs.loc[:, ["min_ph", "maj_ph"]] = self.SNPs.loc[
+        self.snps.loc[:, ["min_ph", "maj_ph"]] = self.snps.loc[
             :, ["min", "maj"]
         ].values[
-            np.c_[0 : len(self.SNPs)], np.c_[[0, 1], [1, 0]][phases.astype(int)]
+            np.c_[0 : len(self.snps)], np.c_[[0, 1], [1, 0]][phases.astype(int)]
         ]
 
         self.full_cov_df = self.full_cov_df.merge(
-            self.SNPs.groupby("targ_idx")[["min_ph", "maj_ph"]].sum(),
+            self.snps.groupby("targ_idx")[["min_ph", "maj_ph"]].sum(),
             left_index=True,
             right_index=True,
             how="left",
         ).rename(columns={"min_ph": "min_count", "maj_ph": "maj_count"})
 
-        ## assign coverage bins within 10kb of each bin overlapping a SNP to its allelic segment
-        # if not self.wgs:  # TODO: always expand, and set threshold based on WGS/WES?
-        # Bugfix attempt: We don't want to drop coverage bins, even in germline LOH regions.
-        # If the coverage is segmented, they will just not have an allelic ratio. If it isn't
-        if True:
-            max_dist = 1000000
+        # Assigning every coverage bin to the allelic imbalance segment with the closest SNP.
+        self.full_cov_df.sort_values(["chr", "start"], inplace=True)
+        self.snps.sort_values(["chr", "pos"], inplace=True)
 
-            # make sure that SNP radii don't exceed the boundaries of their respective Segment Intervals
-            SI = self.SNPs.groupby("seg_idx")["pos_gp"].agg([min, max])
-            T = pd.DataFrame(
-                {
-                    "chr": self.SNPs["chr"],
-                    "start": seq.gpos2chrpos(
-                        np.maximum(
-                            self.SNPs["pos_gp"].values - max_dist,
-                            SI.loc[self.SNPs["seg_idx"], "min"].values,
-                        )
-                    )[1],
-                    "end": seq.gpos2chrpos(
-                        np.minimum(
-                            self.SNPs["pos_gp"].values + max_dist,
-                            SI.loc[self.SNPs["seg_idx"], "max"].values,
-                        )
-                    )[1],
-                    "seg_idx": self.SNPs["seg_idx"],
-                }
+        empty_bins = self.full_cov_df.query("seg_idx == -1")
+        empty_index = empty_bins.index
+
+        for contig in empty_bins["chr"].drop_duplicates():
+            snps = self.snps.query("chr == @contig")
+            if len(snps) == 0:
+                continue
+            snp_pos: np.ndarray = snps["pos"].values  # type: ignore
+            snp_clust: np.ndarray = snps["seg_idx"].values  # type: ignore
+
+            bins = empty_bins.query("chr == @contig")
+            bins_pos: np.ndarray = bins["midpoint"].values  # type: ignore
+
+            raw_idx = np.searchsorted(snp_pos, bins_pos)
+            post_idx = np.clip(raw_idx, 0, len(snps) - 1)
+            pre_idx = (post_idx - 1).clip(0, len(snps) - 1)
+
+            target_idx = np.where(
+                snp_pos[post_idx] - bins_pos < bins_pos - snp_pos[pre_idx],
+                post_idx,
+                pre_idx,
             )
+            self.full_cov_df.loc[bins.index, "target_idx"] = target_idx
+            self.full_cov_df.loc[bins.index, "seg_idx"] = snp_clust[target_idx]
 
-            # map midpoints of coverage bins to SNPs with radius +- max_dist
-            tidx = mut.map_mutations_to_targets(
-                self.full_cov_df, T, inplace=False, poscol="midpoint"
-            )
-            tidx = tidx.loc[self.full_cov_df.loc[tidx.index, "seg_idx"] == -1]
-            self.full_cov_df.loc[tidx.index, "seg_idx"] = T.loc[
-                tidx, "seg_idx"
-            ].values
+        self.full_cov_df.loc[empty_index, "min_count"] = 0
+        self.full_cov_df.loc[empty_index, "maj_count"] = 0
 
-            # set allelic counts to 0 for these coverage bins, since they don't actually contain SNPs
-            self.full_cov_df.loc[tidx.index, "min_count"] = 0
-            self.full_cov_df.loc[tidx.index, "maj_count"] = 0
+        # ## assign coverage bins within 10kb of each bin overlapping a SNP to its allelic segment
+        # if True:  # TODO: always expand, and set threshold based on WGS/WES?
+        #     max_dist = 1000000
+
+        #     # make sure that SNP radii don't exceed the boundaries of their respective Segment Intervals
+        #     SI = self.SNPs.groupby("seg_idx")["pos_gp"].agg([min, max])
+        #     T = pd.DataFrame(
+        #         {
+        #             "chr": self.SNPs["chr"],
+        #             "start": seq.gpos2chrpos(
+        #                 np.maximum(
+        #                     self.SNPs["pos_gp"].values - max_dist,
+        #                     SI.loc[self.SNPs["seg_idx"], "min"].values,
+        #                 )
+        #             )[1],
+        #             "end": seq.gpos2chrpos(
+        #                 np.minimum(
+        #                     self.SNPs["pos_gp"].values + max_dist,
+        #                     SI.loc[self.SNPs["seg_idx"], "max"].values,
+        #                 )
+        #             )[1],
+        #             "seg_idx": self.SNPs["seg_idx"],
+        #         }
+        #     )
+
+        #     # map midpoints of coverage bins to SNPs with radius +- max_dist
+        #     tidx = mut.map_mutations_to_targets(
+        #         self.full_cov_df, T, inplace=False, poscol="midpoint"
+        #     )
+        #     tidx = tidx.loc[self.full_cov_df.loc[tidx.index, "seg_idx"] == -1]
+        #     self.full_cov_df.loc[tidx.index, "seg_idx"] = T.loc[
+        #         tidx, "seg_idx"
+        #     ].values
+
+        #     # set allelic counts to 0 for these coverage bins, since they don't actually contain SNPs
+        #     self.full_cov_df.loc[tidx.index, "min_count"] = 0
+        #     self.full_cov_df.loc[tidx.index, "maj_count"] = 0
 
         ## subset to targets containing SNPs
         Cov_overlap = self.full_cov_df.loc[self.full_cov_df["seg_idx"] != -1, :]
@@ -719,7 +755,9 @@ def filter_segments(
     seg_labels = np.argmax(Pi, 1)
     mu_arr = mus.flatten()
     print("filtering outlier bins from segments...")
-    for i, seg_idx in tqdm.tqdm(enumerate(sorted(np.unique(seg_labels)))):
+    for i, seg_idx in tqdm.tqdm(
+        enumerate(sorted(np.unique(seg_labels))), "Filtering segments"
+    ):
         seg_mask = seg_labels == seg_idx
         mask = poisson_outlier_filter(
             r[seg_mask, :],
@@ -825,7 +863,6 @@ def find_outliers(
         chunk_size = len(cov_df)
 
     outlier_count = 0
-
     for _, cluster_df in cov_df.groupby("seg_idx"):
         num_chunks = int(np.ceil(len(cluster_df) / chunk_size))
         chunk_size = int(np.ceil(len(cluster_df) / num_chunks))
