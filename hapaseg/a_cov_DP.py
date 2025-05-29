@@ -1,13 +1,14 @@
-import colorama
-import copy
-import itertools
+from pathlib import Path
+from typing import Dict, Iterable, List, Optional, Tuple, Union
+import matplotlib
 import matplotlib.pyplot as plt
-import matplotlib as mpl
+from matplotlib import patches
+import matplotlib.transforms
+import matplotlib.collections
+import matplotlib.cm
 import numpy as np
-import numpy_groupies as npg
 import pandas as pd
 import scipy.stats as s
-import scipy.sparse as sp
 import scipy.special as ss
 import sortedcontainers as sc
 import pickle
@@ -17,21 +18,27 @@ import tqdm
 from kneed import KneeLocator
 from scipy.signal import find_peaks
 
-from capy import seq, mut
+from capy import seq  # type: ignore
 
 from .model_optimizers import CovLNP_NR_prior
 from .run_coverage_MCMC import poisson_outlier_filter
 
-from .utils import *
+from .utils import plot_chrbdy, parse_cytoband
 
-colors = mpl.cm.get_cmap("tab20").colors
+colors = matplotlib.cm.get_cmap("tab20").colors  # type: ignore
+
+
+HALF_LOG2PI = np.log(2 * np.pi) / 2
+"""log(2pi) / 2"""
 
 
 # method for concatenating dp draws into a single large df to be used by the acdp
 def generate_acdp_df(
     SNP_path,  # path to SNP df
     ADP_path,  # path to npz ADP result
-    cdp_object_path=None,  # path to CDP runner pickle object
+    cdp_object_path: Union[
+        str, Path, None
+    ] = None,  # path to CDP runner pickle object
     cdp_scatter_files=None,  # path to CDP scattered pickle obj txt file
     cov_df_path=None,  # cov_df file if using segments directly from cov mcmc
     cov_mcmc_data_path=None,  # segmentation data if using segments from cov_mcmc
@@ -39,8 +46,6 @@ def generate_acdp_df(
     ADP_draw_index=-1,  # index of ADP draw used in Coverage MCMC
     wgs=False,  # if wgs, will only create acdp df for best draw
 ):
-    SNPs = pd.read_pickle(SNP_path)
-    ADP_clusters = np.load(ADP_path)
     alpha_prior = 1e-5
     beta_prior = 4e-3
 
@@ -50,7 +55,7 @@ def generate_acdp_df(
     ## directly from coverage segmentation to acdp
     dp_run_data = []
     if cdp_object_path is not None:
-        with open(CDP_path, "rb") as f:
+        with open(cdp_object_path, "rb") as f:
             dp_pickle = pickle.load(f)
             DP_runs = dp_pickle.DP_runs
         for run_idx, dp_run in enumerate(DP_runs):
@@ -85,7 +90,7 @@ def generate_acdp_df(
                     (run_idx, dp_run.cov_df, dp_run.bins_to_clusters[-1])
                 )
                 DP_lls.append(dp_run.ll_history[-1])
-        beta = dp_pickle.beta
+        beta = dp_pickle.beta  # type: ignore
         best_run = np.argmax(DP_lls)
 
         if wgs:
@@ -255,14 +260,47 @@ def generate_acdp_df(
 
 
 class AllelicCoverage_DP_runner:
+    """
+    A struct for running the combined Dirichlet process using both coverage and allelic imbalance.
+    """
+
+    cov_df: pd.DataFrame
+    cytoband_file: Union[str, Path]
+    seed_all_clusters: bool
+    wgs: bool
+    draw_idx: Optional[int]
+    default_draw: int
+    lnp_data: Dict[Tuple[int, int, int], Tuple[float, float, np.ndarray]]
+    num_segments: int
+    """The number of segments the ACDP runner has."""
+    segment_r_list: List[np.ndarray]
+    """For every segment and allele, stores simulated samples of the allele coverage."""
+    segment_V_list: np.ndarray
+    """For every segment and allele, stores an estiamte for the variance of the allele coverage."""
+    segment_counts: np.ndarray
+    segment_allele: np.ndarray
+    cluster_assignments: np.ndarray
+    segment_sums: np.ndarray
+    segment_ssd: np.ndarray
+    greylist_segments: sc.SortedSet
+    """Tiny segments that we are not sure if we want to keep."""
+    alpha_0: float
+    beta_0: float
+    kappa_0: float
+    loggamma_alpha_0: float
+    log_beta_0: float
+    unclustered_seg_df: pd.DataFrame
+    acdp: "Optional[AllelicCoverage_DP]"
+    beta: np.ndarray
+
     def __init__(
         self,
-        cov_df,
-        beta,
-        cytoband_file,
-        lnp_data,
+        cov_df: pd.DataFrame,
+        beta: np.ndarray,
+        cytoband_file: str,
+        lnp_data: Dict[Tuple[int, int, int], Tuple[float, float, np.ndarray]],
         wgs=False,
-        draw_idx=None,
+        draw_idx: Optional[int] = None,
         seed_all_clusters=True,
     ):
         self.cov_df = cov_df.reset_index()
@@ -283,7 +321,7 @@ class AllelicCoverage_DP_runner:
                 ["allelic_cluster", "cov_DP_cluster", "allele", "dp_draw"]
             )
         )
-        self.segment_r_list = [None] * self.num_segments
+        self.segment_r_list = [None] * self.num_segments  # type: ignore # Initialized in self._init_segments.
         self.segment_V_list = np.zeros(self.num_segments)
         self.segment_counts = np.zeros(self.num_segments, dtype=int)
         self.segment_allele = np.zeros(self.num_segments, dtype=int)
@@ -319,8 +357,6 @@ class AllelicCoverage_DP_runner:
         ):
             self.cov_df.loc[grouped.index, "acdp_segID"] = ID
 
-            mu = grouped["cov_DP_mu"].values[0]
-            sigma = grouped["cov_DP_sigma"].values[0]
             group_len = len(grouped)
             if group_len > 10:
                 major, minor = (
@@ -399,7 +435,9 @@ class AllelicCoverage_DP_runner:
         means = np.array(
             [self.segment_r_list[s].mean() for s in range(self.num_segments)]
         )
-        slope, intercept = s.linregress(means, np.sqrt(self.segment_V_list))[:2]
+        slope: float
+        intercept: float
+        slope, intercept = s.linregress(means, np.sqrt(self.segment_V_list))[:2]  # type: ignore
         median_mean, median_std = (
             np.median(means),
             np.median(np.sqrt(self.segment_V_list)),
@@ -437,6 +475,7 @@ class AllelicCoverage_DP_runner:
                 "maj_count",
             ]
         ]
+        # min_df is a concise version of self.cov_df, containing only the rows defined above in the given order.
         min_df = acdp_single.iloc[num_bins:, row_idxs]
 
         segs_df = pd.DataFrame.from_records(
@@ -457,7 +496,6 @@ class AllelicCoverage_DP_runner:
             )
             .values
         )
-
         segs_df.loc[
             :,
             [
@@ -471,7 +509,7 @@ class AllelicCoverage_DP_runner:
         ] = np.nan
         for i, row in segs_df.iterrows():
             lnp_res = self.lnp_data[(row[3], row[5], opt_idx)]
-            a, b = row[[6, 7]]
+            a, b = row[[6, 7]]  # type: ignore
             sz = int(row["n_hets"])
             norm_samples = np.random.multivariate_normal(
                 mean=(lnp_res[0], lnp_res[1]),
@@ -512,7 +550,10 @@ class AllelicCoverage_DP_runner:
 
             mu_n, kappa_n, alpha_n, beta_n = (
                 AllelicCoverage_DP.ML_normalgamma_params(
-                    self, sz, mu_maj, ((r_maj - mu_maj) ** 2).sum()
+                    self,  # type: ignore
+                    sz,
+                    mu_maj,
+                    ((r_maj - mu_maj) ** 2).sum(),
                 )
             )
             post_sigma_maj = (
@@ -520,14 +561,17 @@ class AllelicCoverage_DP_runner:
             )
             mu_n, kappa_n, alpha_n, beta_n = (
                 AllelicCoverage_DP.ML_normalgamma_params(
-                    self, sz, mu_min, ((r_min - mu_min) ** 2).sum()
+                    self,  # type: ignore
+                    sz,
+                    mu_min,
+                    ((r_min - mu_min) ** 2).sum(),
                 )
             )
             post_sigma_min = (
                 beta_n / (alpha_n * kappa_n) * np.sqrt(alpha_n / (alpha_n - 1))
             )
 
-            segs_df.loc[
+            segs_df.loc[  # type: ignore
                 i,
                 [
                     "mu.major",
@@ -588,7 +632,6 @@ class AllelicCoverage_DP_runner:
             segs_df["sigma.tau"] = np.sqrt(
                 segs_df["sigma.major"] ** 2 + segs_df["sigma.minor"] ** 2
             )
-
             # rescale such that mean is 2
             segs_df["length"] = segs_df["End.bp"] - segs_df["Start.bp"]
             sf = (
@@ -657,7 +700,7 @@ class AllelicCoverage_DP_runner:
         ax = plt.gca()
         for _, row in segs_df.iterrows():
             ax.add_patch(
-                mpl.patches.Rectangle(
+                patches.Rectangle(
                     (
                         row.start_g,
                         row["mu.major"] - 1.95 * row["emp.sigma.major"],
@@ -671,7 +714,7 @@ class AllelicCoverage_DP_runner:
                 )
             )
             ax.add_patch(
-                mpl.patches.Rectangle(
+                patches.Rectangle(
                     (
                         row.start_g,
                         row["mu.minor"] - 1.95 * row["emp.sigma.minor"],
@@ -685,7 +728,7 @@ class AllelicCoverage_DP_runner:
                 )
             )
             ax.add_patch(
-                mpl.patches.Rectangle(
+                patches.Rectangle(
                     (
                         row.start_g,
                         row["mu.major"] - 1.95 * row["post.sigma.major"],
@@ -699,7 +742,7 @@ class AllelicCoverage_DP_runner:
                 )
             )
             ax.add_patch(
-                mpl.patches.Rectangle(
+                patches.Rectangle(
                     (
                         row.start_g,
                         row["mu.major"] - 1.95 * row["post.sigma.minor"],
@@ -794,7 +837,7 @@ class AllelicCoverage_DP_runner:
         clonal_arr = np.array(list(clonal_imbs.values()))
 
         purity_res = np.array(
-            [beta.logpdf(clonal_arr) for beta in beta_dict.values()]
+            [beta.logpdf(clonal_arr) for beta in beta_dict.values()]  # type: ignore
         ).transpose((2, 1, 0))
 
         opt_purity_idx = purity_res.max(1).sum(1).argmax()
@@ -967,7 +1010,7 @@ class AllelicCoverage_DP_runner:
         for seg, seg_datapoints in subclonal_segs_data:
             up, low = seg_datapoints.max(), seg_datapoints.min()
             seg_res = {
-                c: norm.logpdf(seg_datapoints).sum()
+                c: norm.logpdf(seg_datapoints).sum()  # type: ignore
                 for c, norm in target_normals.items()
             }
             seg_res[-1] = np.log(1 / (up - low)) * len(seg_datapoints)
@@ -1085,18 +1128,80 @@ class AllelicCoverage_DP_runner:
 
         return acdp_combined, opt_purity, opt_k
 
-    def run(self, n_iter, segs_to_use=None, return_res=False):
+    def run(self, n_iter: int, segs_to_use=None):
+        """
+        Runs the ACDP.
+
+        Args:
+            n_iter (_type_): _description_
+            segs_to_use (_type_, optional): _description_. Defaults to None.
+
+        Returns:
+            _type_: _description_
+        """
         acdp = AllelicCoverage_DP(self, segs_to_use)
-        acdp_res = acdp.run(n_iter)
+        acdp.run(n_iter)
         self.acdp = acdp
-        if return_res:
-            return acdp, acdp_res
-        else:
-            return acdp
+        return acdp
 
 
 class AllelicCoverage_DP:
-    def __init__(self, runner_obj, segs_to_use=None, assign_greylist=False):
+    cov_df: pd.DataFrame
+    cytoband_file: Union[str, Path]
+    seed_all_clusters: bool
+    wgs: bool
+    draw_idx: Optional[int]
+    default_draw: int
+    num_segments: int
+    segment_r_list: List[np.ndarray]
+    segment_V_list: np.ndarray
+    segment_counts: np.ndarray
+    segment_allele: np.ndarray
+    cluster_assignments: np.ndarray
+    segment_sums: np.ndarray
+    segment_ssd: np.ndarray
+    greylist_segments: sc.SortedSet
+    """Seems to be a list of segments that are only conditionally considered, and will be dropped if we don't like them enough."""
+    beta: float
+    to_assign_greylist: bool
+    """Whether to use the greylist to optionally remove or keep weird clusters."""
+
+    # import hyperparameters from runner object
+    alpha_0: float
+    beta_0: float
+    kappa_0: float
+    loggamma_alpha_0: float
+    log_beta_0: float
+    seg_count_norm = 5.0
+
+    segments: sc.SortedSet
+
+    cluster_counts: sc.SortedDict
+    unassigned_segs: sc.SortedSet
+    cluster_dict: sc.SortedDict
+    cluster_MLs: sc.SortedDict
+    cluster_sums: sc.SortedDict
+    cluster_ssd: sc.SortedDict  # sum of squared deviations
+
+    ML_total_history: List
+    DP_total_history: List
+    MLDP_total_history: List
+
+    # containers for saving the MCMC trace_cov_dp
+    clusters_to_segs: List[sc.SortedDict]
+    """A list storing cluster -> bin list assignments."""
+    bins_to_clusters: List[np.ndarray]
+    """A list storing bin -> cluster assignments."""
+    draw_indices: List[int]
+
+    alpha: float
+
+    def __init__(
+        self,
+        runner_obj,
+        segs_to_use: Optional[Iterable[int]] = None,
+        assign_greylist=False,
+    ):
         # load data from top-level runner
         self.cov_df = runner_obj.cov_df
         self.cytoband_file = runner_obj.cytoband_file
@@ -1123,7 +1228,6 @@ class AllelicCoverage_DP:
         self.loggamma_alpha_0 = runner_obj.loggamma_alpha_0
         self.log_beta_0 = runner_obj.log_beta_0
 
-        self.half_log2pi = np.log(2 * np.pi) / 2
         self.seg_count_norm = 5.0
 
         if segs_to_use is None:
@@ -1176,48 +1280,48 @@ class AllelicCoverage_DP:
             # next cluster index is the next unused cluster index (i.e. not used by prior cluster or current)
             # or zero if no clusters were formed
             self.next_cluster_index = (
-                i + 1 if len(self.segments - self.greylist_segments) > 0 else 0
+                i + 1 if len(self.segments - self.greylist_segments) > 0 else 0  # type: ignore
             )
 
         # datapoint array generation methods
 
         # generate cluster from list of segment IDs
 
-    def _cluster_gen_from_list(self, cluster_list):
+    def _cluster_gen_from_list(self, cluster_list: Iterable[int]):
         r_lst = []
         for s in cluster_list:
             r_lst.append(self.segment_r_list[s])
         r = np.hstack(r_lst)
         return r
 
-    def _cluster_gen_add_one(self, clusterID, segID):
-        return np.concatenate(
-            [self.cluster_datapoints[clusterID], self.segment_r_list[segID]],
-            axis=0,
-        )
+    # def _cluster_gen_add_one(self, clusterID, segID):
+    #     return np.concatenate(
+    #         [self.cluster_datapoints[clusterID], self.segment_r_list[segID]],
+    #         axis=0,
+    #     )
 
-    # assumes the datapoints are ordered by segment ID
-    def _cluster_gen_remove_one(self, clusterID, segID):
-        cur = self.cluster_datapoints[clusterID]
-        segs = self.cluster_dict[clusterID]
-        seg_ind = segs.index(segID)
-        st = self.segment_counts[segs][:seg_ind].sum()
-        en = st + self.segment_counts[segID]
-        return np.concatenate([cur[:st], cur[en:]], axis=0)
+    # # assumes the datapoints are ordered by segment ID
+    # def _cluster_gen_remove_one(self, clusterID, segID):
+    #     cur = self.cluster_datapoints[clusterID]
+    #     segs = self.cluster_dict[clusterID]
+    #     seg_ind = segs.index(segID)
+    #     st = self.segment_counts[segs][:seg_ind].sum()
+    #     en = st + self.segment_counts[segID]
+    #     return np.concatenate([cur[:st], cur[en:]], axis=0)
 
-    def _cluster_gen_merge(self, clust_A, clust_B):
-        return np.concatenate(
-            [
-                self.cluster_datapoints[clust_A],
-                self.cluster_datapoints[clust_B],
-            ],
-            axis=0,
-        )
+    # def _cluster_gen_merge(self, clust_A, clust_B):
+    #     return np.concatenate(
+    #         [
+    #             self.cluster_datapoints[clust_A],
+    #             self.cluster_datapoints[clust_B],
+    #         ],
+    #         axis=0,
+    #     )
 
     def _ML_cluster_direct(self, n, r_mean, ssd):
         return self.ML_normalgamma(n, r_mean, ssd)
 
-    def _ML_cluster_from_list(self, cluster_list):
+    def _ML_cluster_from_list(self, cluster_list: Iterable[int]):
         r = self._cluster_gen_from_list(cluster_list)
         n = len(r)
         ssd = n * r.var()
@@ -1264,7 +1368,7 @@ class AllelicCoverage_DP:
             + self.alpha_0 * self.log_beta_0
             - alpha_n * np.log(beta_n)
             + np.log(self.kappa_0 / kappa_n) / 2
-            - n * self.half_log2pi
+            - n * HALF_LOG2PI
         )
 
     # utility methods for ssd and mean calculations
@@ -1475,7 +1579,7 @@ class AllelicCoverage_DP:
             r = self.segment_r_list[segID]
 
             log_liks = np.r_[
-                [norm.logpdf(r).sum() for c, norm in norms.items()]
+                [norm.logpdf(r).sum() for c, norm in norms.items()]  # type: ignore
             ]
             null_lik = np.log(1 / (r.max() - r.min())) * len(r)
             clusterID = clusters[log_liks.argmax()]
@@ -2015,7 +2119,7 @@ class AllelicCoverage_DP:
 
         # check if there is a unfinished run
         if run_len >= min_len:
-            run_intervals += [prev_idx, i - 1]
+            run_intervals += [prev_idx, i - 1]  # type: ignore
         return np.array(run_intervals).reshape(-1, 2)
 
     def _get_seg_terr(self, df):
@@ -2197,12 +2301,12 @@ class AllelicCoverage_DP:
             ADP_dict[ADP] = (group["maj_count"].sum(), group["min_count"].sum())
 
         # set up canvas according to options
-        figsize = [22, 7] if figsize is None else figsize
+        figsize = (22, 7) if figsize is None else figsize
         if plot_hist:
-            fig = plt.figure(6, figsize=[22, 7])
+            fig = plt.figure(6, figsize=(22.0, 7.0))
             plt.clf()
-            ax_g = fig.add_axes([0, 0, 0.85, 1])
-            ax_hist = fig.add_axes([0.855, 0, 0.145, 1])
+            ax_g = fig.add_axes((0, 0, 0.85, 1))
+            ax_hist = fig.add_axes((0.855, 0, 0.145, 1))
             ax_hist.tick_params(
                 axis="y",
                 labelleft=False,
@@ -2211,15 +2315,17 @@ class AllelicCoverage_DP:
                 labelright=True,
             )
         else:
-            fig = plt.figure(6, figsize=[22, 7])
+            fig = plt.figure(6, figsize=(22, 7))
             plt.clf()
             ax_g = plt.gca()
+            ax_hist = None
 
         # to plot the cdp colors agnostic of yscale we create a new transform
-        cdp_trans = mpl.transforms.blended_transform_factory(
+        cdp_trans = matplotlib.transforms.blended_transform_factory(
             ax_g.transData, ax_g.transAxes
         )
 
+        ax_g2 = None
         if plot_SNP_imbalance:
             # make a twin axis for the allelic imbalance
             ax_g2 = ax_g.twinx()
@@ -2233,7 +2339,8 @@ class AllelicCoverage_DP:
             if cdp_draw is None
             else self._get_cdp_colors(cdp_draw)
         )
-        if plot_SNP_imbalance or self.wgs:
+        adp_colors = None
+        if plot_SNP_imbalance or self.wgs or show_cdp:
             adp_colors = self._get_adp_colors()
 
         full_df = list(
@@ -2301,7 +2408,8 @@ class AllelicCoverage_DP:
                             rasterized=True,
                         )
                     # plot the allelic imbalance of each coverage bin
-                    if plot_SNP_imbalance:
+                    if ax_g2 is not None:
+                        assert adp_colors is not None
                         ax_g2.scatter(
                             locs,
                             x["min_count"] / (x["min_count"] + x["maj_count"]),
@@ -2315,7 +2423,7 @@ class AllelicCoverage_DP:
 
                     # plot CDP cluster assignments
                     if show_cdp:
-                        lc = mpl.collections.LineCollection(
+                        lc = matplotlib.collections.LineCollection(
                             [[(l, 0), (l, 0.01)] for l in locs],
                             color=cdp_colors[quad[1]],
                             transform=cdp_trans,
@@ -2343,13 +2451,13 @@ class AllelicCoverage_DP:
 
                         # draw the acdp segment
                         ax_g.add_patch(
-                            mpl.patches.Rectangle(
+                            patches.Rectangle(
                                 (
                                     x.iloc[intv[0]].start_g,
                                     tup_mean - 1.95 * tup_std,
                                 ),
                                 tup_width,
-                                np.maximum(0, 2 * 1.95 * tup_std),
+                                np.maximum(0, 2 * 1.95 * tup_std),  # type: ignore
                                 facecolor=cluster_colors[i],
                                 fill=True,
                                 alpha=0.5 if cdp_draw is None else 0.8,
@@ -2372,7 +2480,7 @@ class AllelicCoverage_DP:
                             or (cdp_draw is not None and quad[3] == cdp_draw)
                         ):
                             ax_g.add_patch(
-                                mpl.patches.Rectangle(
+                                patches.Rectangle(
                                     (x.iloc[intv[0]].start_g, 0),
                                     tup_width,
                                     0.01,
@@ -2414,7 +2522,7 @@ class AllelicCoverage_DP:
                         ## once with the edges and one with the faces, in order
                         ## to set the zorder of the edges to the top
                         ax_g.add_patch(
-                            mpl.patches.Rectangle(
+                            patches.Rectangle(
                                 (
                                     bins.iloc[intv[0]].start_g,
                                     tup_mean - 1.95 * tup_std,
@@ -2433,7 +2541,7 @@ class AllelicCoverage_DP:
                         )
                         # now draw edges
                         ax_g.add_patch(
-                            mpl.patches.Rectangle(
+                            patches.Rectangle(
                                 (
                                     bins.iloc[intv[0]].start_g,
                                     tup_mean - 1.95 * tup_std,
@@ -2461,8 +2569,9 @@ class AllelicCoverage_DP:
 
                         # show adp cluster at bottom of plot
                         if show_cdp:
+                            assert adp_colors is not None
                             ax_g.add_patch(
-                                mpl.patches.Rectangle(
+                                patches.Rectangle(
                                     (bins.iloc[intv[0]].start_g, 0),
                                     tup_width,
                                     0.01,
@@ -2499,6 +2608,7 @@ class AllelicCoverage_DP:
 
         # now that we know the maximum allelic coverage value we can set our bins and plot the histogram
         if plot_hist:
+            assert ax_hist is not None
             real = []
             hist_bin_width = max(1, int(round_max_acov / 250))
             for i, c in enumerate(cluster_stats.keys()):
@@ -2536,10 +2646,11 @@ class AllelicCoverage_DP:
         last_g = ends.end[:last_chr_idx].sum()
 
         ax_g.set_xlim((0.0, last_g))
-        ax_g.set_ylim([0, round_max_acov])
+        ax_g.set_ylim((0, round_max_acov))
 
         if plot_hist:
-            ax_hist.set_ylim([0, round_max_acov])
+            assert ax_hist is not None
+            ax_hist.set_ylim((0, round_max_acov))
 
         if save_path is not None:
             plt.savefig(save_path, bbox_inches="tight", dpi=500)
@@ -2589,7 +2700,7 @@ class AllelicCoverage_DP:
                 )
                 counter += 1
             ax.add_patch(
-                mpl.patches.Rectangle(
+                patches.Rectangle(
                     (c0, 0),
                     counter - c0,
                     rmax,
@@ -2625,7 +2736,7 @@ class AllelicCoverage_DP:
                 alpha=[
                     0.6 if s in self.greylist_segments else 1
                     for s in self.cluster_dict[c]
-                ],
+                ],  # type: ignore
             )
             counter += len(vals)
 
@@ -2640,7 +2751,7 @@ class AllelicCoverage_DP:
         self.cov_df.loc[:, "cluster_mu_uncertainty"] = np.nan
         for c in self.cluster_dict:
             for seg in self.cluster_dict[c]:
-                self.cov_df.loc[
+                self.cov_df.loc[  # type: ignore
                     self.cov_df.acdp_segID == seg,
                     [
                         "acdp_cluster",
@@ -2679,8 +2790,8 @@ class AllelicCoverage_DP:
                 "cluster_mu_uncertainty",
             ]
         ]
-        maj_vals = df.iloc[:num_bins, row_idxs].values
-        min_vals = df.iloc[num_bins:, row_idxs].values
+        maj_vals = df.iloc[:num_bins, row_idxs].values  # type: ignore
+        min_vals = df.iloc[num_bins:, row_idxs].values  # type: ignore
 
         collapsed = []
         (
@@ -2743,7 +2854,7 @@ class AllelicCoverage_DP:
                 min_mu,
                 min_sigma,
                 min_mu_unc,
-                i - last_i,
+                i - last_i,  # type: ignore
             )
         )
         seg_df = pd.DataFrame(
@@ -2789,7 +2900,7 @@ class AllelicCoverage_DP:
             seg_df.loc[:, "sigma.tau"] = np.sqrt(
                 seg_df["sigma.major"] ** 2 + seg_df["sigma.minor"] ** 2
             )
-            nan_mask = ~seg_df.isnull().any(1)
+            nan_mask = ~seg_df.isnull().any(1)  # type: ignore
             sf = (
                 seg_df.loc[nan_mask]["length"].values
                 @ seg_df.loc[nan_mask]["tau"].values
