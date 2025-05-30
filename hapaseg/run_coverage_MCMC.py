@@ -534,8 +534,8 @@ class CoverageMCMCRunner:
             self.full_cov_df.loc[bins.index, "target_idx"] = target_idx
             self.full_cov_df.loc[bins.index, "seg_idx"] = snp_clust[target_idx]
 
-        self.full_cov_df.loc[empty_index, "min_count"] = 1
-        self.full_cov_df.loc[empty_index, "maj_count"] = 1
+        self.full_cov_df.loc[empty_index, "min_count"] = 0.001
+        self.full_cov_df.loc[empty_index, "maj_count"] = 0.001
 
         # ## assign coverage bins within 10kb of each bin overlapping a SNP to its allelic segment
         # if True:  # TODO: always expand, and set threshold based on WGS/WES?

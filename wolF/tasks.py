@@ -191,7 +191,7 @@ class hapaseg_prepare_coverage_mcmc(wolf.Task):
         "allelic_seg_idxs": "allelic_seg_idxs.txt",
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1328"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1331"
     resources = {"mem": "6G"}
 
 
@@ -222,7 +222,7 @@ class hapaseg_coverage_mcmc_by_Aseg(wolf.Task):
         "cov_seg_figure": "cov_mcmc_*_visual.png",
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1329"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1331"
     resources = {"cpus-per-task": 4, "mem": "5G"}
 
 
@@ -252,7 +252,7 @@ class hapaseg_coverage_mcmc(wolf.Task):
         "cov_seg_figure": "cov_mcmc_cluster_*_visual.png",
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1329"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1331"
     resources = {"cpus-per-task": 4, "mem": "5G"}
 
 
@@ -274,7 +274,7 @@ class hapaseg_collect_coverage_mcmc(wolf.Task):
         "seg_plot": "figures/segs.png",
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1329"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1331"
     resources = {
         "cpus-per-task": 4,
         "mem": "27G",
@@ -307,7 +307,7 @@ class hapaseg_coverage_dp(wolf.Task):
         "cov_dp_object": "Cov_DP_model*",
         "cov_dp_figure": "cov_dp_visual_draw*",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1329"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1331"
     resources = {
         "cpus-per-task": 8,
         "mem": "10G",
@@ -353,8 +353,8 @@ class hapaseg_acdp_generate_df(wolf.Task):
         "opt_cdp_idx": ("opt_cdp_draw.txt", wolf.read_file),
         "lnp_data_pickle": "lnp_data.pickle",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1329"
-    resources = {"cpus-per-task": 2, "mem": "3G"}
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1331"
+    resources = {"cpus-per-task": 2, "mem": "5G"}
 
 
 class hapaseg_run_acdp(wolf.Task):
@@ -395,7 +395,7 @@ class hapaseg_run_acdp(wolf.Task):
         "acdp_optimal_fit_params": "acdp_optimal_fit_params.txt",
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1329"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1331"
     resources = {"cpus-per-task": 4, "mem": "6G"}
 
 
@@ -418,5 +418,5 @@ class hapaseg_summary_plot(wolf.Task):
     """
 
     output_patterns = {"hapaseg_summary_plot": "hapaseg_summary_plot.png"}
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1329"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1331"
     resources = {"cpus-per-task": 2, "mem": "8G"}
