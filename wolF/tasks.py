@@ -277,7 +277,7 @@ class hapaseg_collect_coverage_mcmc(wolf.Task):
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:beta_v1329"
     resources = {
         "cpus-per-task": 4,
-        "mem": "12G",
+        "mem": "27G",
     }  # need high mem for poisson regression on massive Pi matrix
 
 
