@@ -299,9 +299,6 @@ def main():
         snps.allele_counts.to_pickle(output_dir + "/allele_counts.pickle")
         chunks.to_csv(output_dir + "/scatter_chunks.tsv", sep="\t", index=False)
 
-    elif args.command == "load_coverage":
-        pass
-
     elif args.command == "amcmc":
         # loading from SNP dataframe produced by `hapaseg load`
         if args.snp_dataframe is not None:
@@ -365,7 +362,7 @@ def main():
         X = []
         j = 0
         for chunk in R["results"]:
-            bpl = np.array(chunk.breakpoints);
+            bpl = np.array(chunk.breakpoints)
             bpl = np.c_[bpl[0:-1], bpl[1:]]
 
             for i, (st, en) in enumerate(bpl):
@@ -626,43 +623,6 @@ def main():
         # run cov MCMC
         cov_mcmc = Coverage_MCMC_SingleCluster(args.num_draws, r, C, mu, beta, args.bin_width)
 
-#        # if we get a range argument well be doing burnin on a subset of the coverage bins
-#        if args.range is not None:
-#            #parse range from string
-#            range_lst = args.range.split('-')
-#            st,en = int(range_lst[0]), int(range_lst[1]) 
-#            if st > en or st < 0 or en > len(r):
-#                raise ValueError("invalid range! got range {} for cluster {} with size {}".format(args.range, args.cluster_num, len(r)))
-#            
-#            #trim data to our desired range
-#            r = r[st:en]
-#            C = C[st:en]
-#            num_draws = 1
-#            
-#            # if we're just burning in a subset use different save strings
-#            model_save_str = 'cov_mcmc_model_cluster_{}_{}.pickle'.format(args.cluster_num, args.range)
-#            data_save_str = 'cov_mcmc_data_cluster_{}_{}'.format(args.cluster_num, args.range)
-#            figure_save_str = 'cov_mcmc_cluster_{}_{}_visual'.format(args.cluster_num, args.range)
-#            
-#        else:
-#            #if not in burnin use the specified number of draws
-#            num_draws = args.num_draws
-#            
-#            
-#            model_save_str = 'cov_mcmc_model_cluster_{}.pickle'.format(args.cluster_num)
-#            data_save_str = 'cov_mcmc_data_cluster_{}'.format(args.cluster_num)
-#            figure_save_str = 'cov_mcmc_cluster_{}_visual'.format(args.cluster_num)
-#        
-#        # run on the specified cluster
-#        cov_mcmc = NB_MCMC_SingleCluster(num_draws, r, C, mu, beta, args.cluster_num, args.bin_width)
-#        
-#        # if we're using burnin results load them now
-#        if args.burnin_files is not None:
-#            with open(args.burnin_files, 'r') as f:
-#                file_list = f.read().splitlines()
-#            assignments_arr = aggregate_burnin_files(file_list, args.cluster_num)
-#            cov_mcmc.init_burnin(assignments_arr)
-
         cov_mcmc.run()
 
         # collect the results
@@ -779,10 +739,10 @@ def main():
             raise ValueError("must pass a cdp filepath, list of cdp filepaths or cov_df pickle and mcmc seg file")
            
         acdp_df.to_pickle(os.path.join(output_dir, "acdp_df.pickle"))
-        with open('./lnp_data.pickle', 'wb') as f:
+        with open(os.path.join(output_dir, "lnp_data.pickle"), 'wb') as f:
             pickle.dump(lnp_data, f)
 
-        with open('./opt_cdp_draw.txt', 'w') as f:
+        with open(os.path.join(output_dir, "opt_cdp_draw.txt"), 'w') as f:
             f.write(str(opt_cdp_idx))
        
     elif args.command == "allelic_coverage_dp":
@@ -808,28 +768,28 @@ def main():
         
         # save segmentation df
         seg_df = acdp_combined.create_allelic_segs_df()
-        seg_df.to_csv('./hapaseg_segfile.txt', sep = '\t', index = False)
+        seg_df.to_csv(os.path.join(output_dir, 'hapaseg_segfile.txt'), sep = '\t', index = False)
     
         absolute_df = acdp_combined.create_allelic_segs_df(absolute_format=True)
-        absolute_df.to_csv('./absolute_segfile.txt', sep='\t', index=False)
+        absolute_df.to_csv(os.path.join(output_dir, 'absolute_segfile.txt'), sep='\t', index=False)
     
         # save the unclustered segs
-        acdp.unclustered_seg_df.to_csv('./hapaseg_skip_acdp_segfile.txt', sep = "\t", index = False)
+        acdp.unclustered_seg_df.to_csv(os.path.join(output_dir, 'hapaseg_skip_acdp_segfile.txt'), sep = "\t", index = False)
 
         # make visualizations
         acdp_combined.visualize_ACDP_clusters(output_dir)
 
         if args.wgs:
-            acdp_combined.visualize_ACDP('./acdp_agg_draws.png', use_cluster_stats=True)
+            acdp_combined.visualize_ACDP(os.path.join(output_dir, 'acdp_agg_draws.png'), use_cluster_stats=True)
         else:
-            acdp_combined.visualize_ACDP('./acdp_agg_draws.png', plot_real_cov=True, use_cluster_stats=True)
+            acdp_combined.visualize_ACDP(os.path.join(output_dir, 'acdp_agg_draws.png'), plot_real_cov=True, use_cluster_stats=True)
         
         if not args.use_single_draw:
-            acdp_combined.visualize_ACDP('./acdp_best_cdp_draw.png', use_cluster_stats=True, cdp_draw=int(args.opt_cdp_idx))
-            acdp_combined.visualize_ACDP('./acdp_all_draws.png')
+            acdp_combined.visualize_ACDP(os.path.join(output_dir, 'acdp_best_cdp_draw.png'), use_cluster_stats=True, cdp_draw=int(args.opt_cdp_idx))
+            acdp_combined.visualize_ACDP(os.path.join(output_dir, 'acdp_all_draws.png'))
         
         # print opt purity and opt k
-        with open('./acdp_optimal_fit_params.txt', 'w') as f:
+        with open(os.path.join(output_dir, 'acdp_optimal_fit_params.txt'), 'w')  as f:
             f.write('purity\tk\n')
             f.write(f'{opt_purity}\t{opt_k}\n')
         
