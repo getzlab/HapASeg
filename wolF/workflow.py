@@ -443,7 +443,8 @@ def workflow(
 
                 intervals=split_het_sites["snp_list_shards"],
 
-                exclude_chimeric=True,
+                exclude_chimeric=False,
+                gap_events_threshold=100,
                 max_mismatch_baseq_sum=1000,  # set high to prevent physically phased SNPs from being removed
                 force_calling=True,
                 zip_output=True,
