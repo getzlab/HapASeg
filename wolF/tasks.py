@@ -419,4 +419,4 @@ class Hapaseg_summary_plot(wolf.Task):
 
     output_patterns = {"hapaseg_summary_plot": "hapaseg_summary_plot.png"}
     docker = "gcr.io/broad-getzlab-workflows/hapaseg:hapaseg-debug_v1300"
-    resources = {"cpus-per-task": 2, "mem": "6G"}
+    resources = {"cpus-per-task": 2, "mem": "8G"}

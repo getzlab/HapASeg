@@ -402,7 +402,12 @@ def workflow(
                 "normal_genotype": genotype_file,
             }
         elif phased_vcf is not None:
-            hp_coverage = {"tumor_hets": hetsites_file, "normal_hets": normal_hets_file if normal_hets_file is not None else ""}
+            hp_coverage = {
+                "tumor_hets": hetsites_file,
+                "normal_hets": normal_hets_file
+                if normal_hets_file is not None
+                else "",
+            }
         else:
             raise ValueError(
                 "Must provide either genotype file to run phasing or phased vcf to skip phasing"
