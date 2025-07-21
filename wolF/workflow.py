@@ -154,6 +154,7 @@ def workflow(
     workspace=None,
     entity_type="pair",  # terra entity type (sample, pair)
     entity_name=None,
+    normal_hets_file=None,
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -398,14 +399,19 @@ def workflow(
 
     # for benchmarking we pass a hetsites file
     elif hetsites_file is not None:
-        if genotype_file is not None:
+        if genotype_file is not None and normal_hets_file is not None:
             hp_coverage = {
                 "tumor_hets": hetsites_file,
-                "normal_hets": "",
+                "normal_hets": normal_hets_file,
                 "normal_genotype": genotype_file,
             }
         elif phased_vcf is not None:
-            hp_coverage = {"tumor_hets": hetsites_file, "normal_hets": ""}
+            hp_coverage = {
+                "tumor_hets": hetsites_file,
+                "normal_hets": normal_hets_file
+                if normal_hets_file is not None
+                else "",
+            }
         else:
             raise ValueError(
                 "Must provide either genotype file to run phasing or phased vcf to skip phasing"
