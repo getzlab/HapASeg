@@ -17,13 +17,11 @@ het_pulldown = wolf.ImportTask(
 
 
 mutect1 = wolf.ImportTask(
-    task_path="git@github.com:getzlab/MuTect1_TOOL.git", commit="2a1346d"
+    task_path="git@github.com:getzlab/MuTect1_TOOL.git", branch="master", commit="cdfb5e0"
 )
 
 # for phasing
-phasing = wolf.ImportTask(
-    task_path="git@github.com:getzlab/phasing_TOOL.git", commit="9ae9bd0"
-)
+phasing = wolf.ImportTask(task_path="git@github.com:getzlab/phasing_TOOL.git", commit="9ae9bd0")
 
 # for Hapaseg itself
 from . import tasks as hapaseg
@@ -49,18 +47,14 @@ cov_collect = wolf.ImportTask(
 def make_ref_dict(bucket, build):
     ref_panel = pd.DataFrame(
         {
-            "path": subprocess.check_output(
-                f"gsutil ls {bucket}/*.bcf*", shell=True
-            )
+            "path": subprocess.check_output(f"gsutil ls {bucket}/*.bcf*", shell=True)
             .decode()
             .rstrip()
             .split("\n")
         }
     )
     ref_panel = ref_panel.join(
-        ref_panel["path"].str.extract(
-            ".*(?P<chr>chr[^.]+).*(?P<ext>bcf(?:\.csi)?)"
-        )
+        ref_panel["path"].str.extract(".*(?P<chr>chr[^.]+).*(?P<ext>bcf(?:\.csi)?)")
     )
     ref_panel["key"] = ref_panel["chr"] + "_" + ref_panel["ext"]
     pd.to_pickle(
@@ -108,7 +102,7 @@ def _hg38_config_gen(wgs):
         ref_fasta_idx="gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.fa.fai",
         ref_fasta_dict="gs://getzlab-workflows-reference_files-oa/hg38/gdc/GRCh38.d1.vd1.dict",
         genetic_map_file="gs://getzlab-workflows-reference_files-oa/hg38/eagle/genetic_map_hg38_withX.txt.gz",
-        common_snp_list="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/snp_list_1000_genome_15pct_with_header_filtered.txt",
+        common_snp_list="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/snp_list_1000_genome_15pct_with_header_filtered_filtered.txt",
         faire_file="gs://getzlab-workflows-reference_files-oa/hg38/hapaseg/FAIRE/coverage.dedup.raw.10kb.hg38.pickle",
         cfdna_wes_faire_file="",  # TODO: cfDNA file needs to be generated for hg38
         cytoband_file="gs://getzlab-workflows-reference_files-oa/hg38/cytoBand.txt",
@@ -174,18 +168,14 @@ def workflow(
 
     # Select config based on ref genome choice
     if ref_genome_build is None:
-        raise ValueError(
-            "Reference genome must be specified! Options are 'hg19' or hg38'"
-        )
+        raise ValueError("Reference genome must be specified! Options are 'hg19' or hg38'")
     elif ref_genome_build == "hg19":
         ref_config = _hg19_config_gen(wgs)
     elif ref_genome_build == "hg38":
         ref_config = _hg38_config_gen(wgs)
     else:
         raise ValueError(
-            "Reference genome options are 'hg19' or hg38', got {}".format(
-                ref_genome_build
-            )
+            "Reference genome options are 'hg19' or hg38', got {}".format(ref_genome_build)
         )
 
     localization_task = LocalizeToDisk(
@@ -231,9 +221,7 @@ def workflow(
     elif tumor_coverage_bed is not None:
         collect_tumor_coverage = False
     else:
-        raise ValueError(
-            "You must supply either a tumor BAM+BAI or a tumor coverage BED file!"
-        )
+        raise ValueError("You must supply either a tumor BAM+BAI or a tumor coverage BED file!")
 
     use_normal_coverage = True
     if normal_bam is not None and normal_bai is not None:
@@ -270,17 +258,9 @@ def workflow(
     def interval_gather(interval_files, primary_contigs):
         ints = []
         for f in interval_files:
-            ints.append(
-                pd.read_csv(
-                    f, sep="\t", header=None, names=["chr", "start", "end"]
-                )
-            )
+            ints.append(pd.read_csv(f, sep="\t", header=None, names=["chr", "start", "end"]))
         # filter non-primary contigs
-        full_bed = (
-            pd.concat(ints)
-            .sort_values(["chr", "start", "end"])
-            .astype({"chr": str})
-        )
+        full_bed = pd.concat(ints).sort_values(["chr", "start", "end"]).astype({"chr": str})
         filtered_bed = full_bed.loc[full_bed.chr.isin(primary_contigs)]
         return filtered_bed
 
@@ -404,9 +384,7 @@ def workflow(
         elif phased_vcf is not None:
             hp_coverage = {
                 "tumor_hets": hetsites_file,
-                "normal_hets": normal_hets_file
-                if normal_hets_file is not None
-                else "",
+                "normal_hets": normal_hets_file if normal_hets_file is not None else "",
             }
         else:
             raise ValueError(
@@ -437,12 +415,8 @@ def workflow(
                 ctrlName="normal",
                 t_bam=tumor_bam_localization_task["t_bam"],
                 t_bai=tumor_bam_localization_task["t_bai"],
-                n_bam=normal_bam_localization_task["n_bam"]
-                if not tumor_only
-                else "",
-                n_bai=normal_bam_localization_task["n_bai"]
-                if not tumor_only
-                else "",
+                n_bam=normal_bam_localization_task["n_bam"] if not tumor_only else "",
+                n_bai=normal_bam_localization_task["n_bai"] if not tumor_only else "",
                 fracContam=0,
                 refFasta=localization_task["ref_fasta"],
                 refFastaIdx=localization_task["ref_fasta_idx"],
@@ -530,9 +504,7 @@ def workflow(
             # BCFs
             F = pd.DataFrame(dict(bcf_path=bcf_path))
             F = F.set_index(
-                F["bcf_path"]
-                .apply(os.path.basename)
-                .str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1")
+                F["bcf_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1")
             )
 
             # indices
@@ -556,9 +528,9 @@ def workflow(
             R = pd.DataFrame({"path": localization_task}).reset_index()
             F = F.join(
                 R.join(
-                    R.loc[
-                        R["index"].str.contains("^chr.*_bcf$"), "index"
-                    ].str.extract(r"(?P<chr>chr[^_]+)"),
+                    R.loc[R["index"].str.contains("^chr.*_bcf$"), "index"].str.extract(
+                        r"(?P<chr>chr[^_]+)"
+                    ),
                     how="right",
                 )
                 .set_index("chr")
@@ -568,9 +540,9 @@ def workflow(
             )
             F = F.join(
                 R.join(
-                    R.loc[
-                        R["index"].str.contains("^chr.*csi$"), "index"
-                    ].str.extract(r"(?P<chr>chr[^_]+)"),
+                    R.loc[R["index"].str.contains("^chr.*csi$"), "index"].str.extract(
+                        r"(?P<chr>chr[^_]+)"
+                    ),
                     how="right",
                 )
                 .set_index("chr")
@@ -581,9 +553,7 @@ def workflow(
 
             return F
 
-        F = order_indices(
-            convert_task["bcf"], convert_task["bcf_idx"], localization_task
-        )
+        F = order_indices(convert_task["bcf"], convert_task["bcf_idx"], localization_task)
 
         #
         # run Eagle, per chromosome
@@ -730,16 +700,10 @@ A.to_pickle('./concat_arms.pickle')
     # prepare coverage MCMC
     prep_cov_mcmc_task = hapaseg.Hapaseg_prepare_coverage_mcmc(
         inputs={
-            "coverage_csv": tumor_cov_gather_task[
-                "coverage"
-            ],  # each scatter result is the same
-            "allelic_clusters_object": hapaseg_allelic_DP_task[
-                "cluster_and_phase_assignments"
-            ],
+            "coverage_csv": tumor_cov_gather_task["coverage"],  # each scatter result is the same
+            "allelic_clusters_object": hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
             "SNPs_pickle": hapaseg_allelic_DP_task["all_SNPs"],
-            "segmentations_pickle": hapaseg_allelic_DP_task[
-                "segmentation_breakpoints"
-            ],
+            "segmentations_pickle": hapaseg_allelic_DP_task["segmentation_breakpoints"],
             "repl_pickle": localization_task["repl_file"],
             "faire_pickle": ""
             if (not is_ffpe and not is_cfdna)
@@ -748,15 +712,11 @@ A.to_pickle('./concat_arms.pickle')
                 if (is_cfdna and not wgs)
                 else localization_task["faire_file"]
             ),
-            "gc_pickle": localization_task["gc_file"]
-            if ref_config["gc_file"] != ""
-            else "",
+            "gc_pickle": localization_task["gc_file"] if ref_config["gc_file"] != "" else "",
             "normal_coverage_csv": normal_cov_gather_task["coverage"]
             if use_normal_coverage
             else "",
-            "extra_covariates": [extra_covariate_beds]
-            if extra_covariate_beds is not None
-            else "",
+            "extra_covariates": [extra_covariate_beds] if extra_covariate_beds is not None else "",
             "ref_fasta": localization_task["ref_fasta"],
             "bin_width": bin_width,
             "wgs": wgs,
@@ -770,9 +730,7 @@ A.to_pickle('./concat_arms.pickle')
         indices = np.r_[np.genfromtxt(idx_file, delimiter="\n", dtype=int)]
         return list(indices)
 
-    cov_mcmc_shards_list = get_N_seg_groups(
-        prep_cov_mcmc_task["allelic_seg_idxs"]
-    )
+    cov_mcmc_shards_list = get_N_seg_groups(prep_cov_mcmc_task["allelic_seg_idxs"])
 
     # TODO: modify burnin task to subset to these indices
 
@@ -825,9 +783,7 @@ A.to_pickle('./concat_arms.pickle')
                 "SNPs_pickle": hapaseg_allelic_DP_task[
                     "all_SNPs"
                 ],  # each scatter result is the same
-                "allelic_clusters_object": hapaseg_allelic_DP_task[
-                    "cluster_and_phase_assignments"
-                ],
+                "allelic_clusters_object": hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
                 "cdp_filepaths": [cov_dp_task["cov_dp_object"]],
                 "allelic_draw_index": adp_draw_num,
                 "ref_file_path": localization_task["ref_fasta"],
@@ -853,9 +809,7 @@ A.to_pickle('./concat_arms.pickle')
                 "SNPs_pickle": hapaseg_allelic_DP_task[
                     "all_SNPs"
                 ],  # each scatter result is the same
-                "allelic_clusters_object": hapaseg_allelic_DP_task[
-                    "cluster_and_phase_assignments"
-                ],
+                "allelic_clusters_object": hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
                 "cov_df_pickle": prep_cov_mcmc_task["cov_df_pickle"],
                 "cov_seg_data": cov_mcmc_gather_task["cov_collected_data"],
                 "ref_file_path": localization_task["ref_fasta"],
@@ -883,12 +837,8 @@ A.to_pickle('./concat_arms.pickle')
         summary_plot_task = hapaseg.Hapaseg_summary_plot(
             inputs={
                 "snps_pickle": hapaseg_allelic_DP_task["all_SNPs"],
-                "adp_results": hapaseg_allelic_DP_task[
-                    "cluster_and_phase_assignments"
-                ],
-                "segmentations_pickle": hapaseg_allelic_DP_task[
-                    "segmentation_breakpoints"
-                ],
+                "adp_results": hapaseg_allelic_DP_task["cluster_and_phase_assignments"],
+                "segmentations_pickle": hapaseg_allelic_DP_task["segmentation_breakpoints"],
                 "acdp_model": acdp_task["acdp_model_pickle"],
                 "ref_fasta": localization_task["ref_fasta"],
                 "cytoband_file": localization_task["cytoband_file"],
@@ -908,11 +858,7 @@ A.to_pickle('./concat_arms.pickle')
 
     if cleanup_disks:
         # cleanup by deleting bam disks. we make seperate tasks for the bams
-        if (
-            not persistent_dry_run
-            and tumor_bam is not None
-            and tumor_bai is not None
-        ):
+        if not persistent_dry_run and tumor_bam is not None and tumor_bai is not None:
             delete_tbams_task = DeleteDisk(
                 inputs={
                     "disk": [
@@ -925,11 +871,7 @@ A.to_pickle('./concat_arms.pickle')
                 }
             )
 
-        if (
-            not persistent_dry_run
-            and normal_bam is not None
-            and normal_bai is not None
-        ):
+        if not persistent_dry_run and normal_bam is not None and normal_bai is not None:
             delete_nbams_task = DeleteDisk(
                 inputs={
                     "disk": [
