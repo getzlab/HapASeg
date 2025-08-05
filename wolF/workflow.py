@@ -37,7 +37,7 @@ from . import tasks as hapaseg
 split_intervals = wolf.ImportTask(
     task_path="git@github.com:getzlab/split_intervals_TOOL.git",
     task_name="split_intervals",
-    commit="dc102d8",
+    branch="check_if_empty"
 )
 
 cov_collect = wolf.ImportTask(
