@@ -116,9 +116,6 @@ def _hg38_config_gen(wgs):
 
 
 def workflow(
-    callstats_file=None,
-    hetsites_file=None,
-    genotype_file=None,
     tumor_bam=None,
     tumor_bai=None,
     tumor_coverage_bed=None,
@@ -147,6 +144,9 @@ def workflow(
     entity_type="pair",  # terra entity type (sample, pair)
     entity_name=None,
     normal_hets_file=None,
+    callstats_file=None,
+    hetsites_file=None,
+    genotype_file=None,
 ):
     # alert for persistent dry run
     if persistent_dry_run:
