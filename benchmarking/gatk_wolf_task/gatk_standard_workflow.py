@@ -30,7 +30,6 @@ def GATK_standard_pipeline(
         localization_token=None,
         persistent_disk_dry_run=False
     ):
-    print("localization flag: {}".format(persistent_dry_run))   
     # localize_bams
     tumor_loc_task = LocalizeToDisk(
           files = {
