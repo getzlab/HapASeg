@@ -18,7 +18,7 @@ from capy import mut, seq
 from .load import HapasegSNPs
 from .run_allelic_MCMC import AllelicMCMCRunner
 from .allelic_MCMC import A_MCMC 
-
+from .utils import exclude_region_from_segfile
 from .allelic_DP import A_DP, DPinstance, load_DP_object_from_outputs
 from . import utils as hs_utils
 
@@ -771,18 +771,18 @@ def main():
         # save segmentation df
         seg_df = acdp_combined.create_allelic_segs_df()
         if args.exclude_region_bed is not None:
-            seg_df = exclude_region_from_segfile_with_trimming(seg_df, args.exclude_region_bed)
+            seg_df = exclude_region_from_segfile(seg_df, args.exclude_region_bed)
         seg_df.to_csv(os.path.join(output_dir, 'hapaseg_segfile.txt'), sep = '\t', index = False)
     
         absolute_df = acdp_combined.create_allelic_segs_df(absolute_format=True)
         if args.exclude_region_bed is not None:
-            absolute_df = exclude_region_from_segfile_with_trimming(absolute_df, args.exclude_region_bed)
+            absolute_df = exclude_region_from_segfile(absolute_df, args.exclude_region_bed)
         absolute_df.to_csv(os.path.join(output_dir, 'absolute_segfile.txt'), sep='\t', index=False)
     
         # save the unclustered segs
         unclustered_seg_df = acdp.unclustered_seg_df.copy()
         if args.exclude_region_bed is not None:
-            unclustered_seg_df = exclude_region_from_segfile_with_trimming(unclustered_seg_df, args.exclude_region_bed)
+            unclustered_seg_df = exclude_region_from_segfile(unclustered_seg_df, args.exclude_region_bed)
         unclustered_seg_df.to_csv(os.path.join(output_dir, 'hapaseg_skip_acdp_segfile.txt'), sep = "\t", index = False)
 
         # make visualizations
