@@ -193,7 +193,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "allelic_seg_idxs": "allelic_seg_idxs.txt",
     }
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:opt-fix-2_v1269"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:exlusion_bed_v1301"
     resources = {"mem": "6G"}
 
 
