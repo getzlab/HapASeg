@@ -157,6 +157,7 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
         "ref_fasta": None,
         "bin_width": 1,
         "wgs": True,
+        "exclude_region_bed": None,
     }
 
     def script(self):
@@ -181,7 +182,8 @@ class Hapaseg_prepare_coverage_mcmc(wolf.Task):
             script += " --allelic_sample ${allelic_sample}"
         if self.conf["inputs"]["extra_covariates"] != "":
             script += " --extra_covariates_bed_paths ${extra_covariates}"
-
+        if self.conf["inputs"]["exclude_region_bed"] is not None:
+            script += " --exclude_region_bed ${exclude_region_bed}"
         return script
 
     output_patterns = {

@@ -79,6 +79,7 @@ def hapaseg_local_main(
 
     extra_covariate_beds = None, # list of filepaths to BED files containing additional covariates to use for coverage model
     ref_file_override_dict = {}, # dictionary of reference file variable name keys and file path values to override the default ref file config
+    exclude_region_bed = None, # bed file of regions to exclude from the analysis
 
     max_cpus = 8,
     max_memory = 16,
@@ -372,7 +373,8 @@ def hapaseg_local_main(
             'faire_pickle': "" if (not is_ffpe and not is_cfdna) else (ref_config["cfdna_wes_faire_file"] if (is_cfdna and not wgs) else ref_config["faire_file"]),
             'gc_pickle': "",
             'normal_coverage_csv': covcollect_n_results_dict["coverage"],
-            'extra_covariates': extra_covariate_beds if extra_covariate_beds is not None else None
+            'extra_covariates': extra_covariate_beds if extra_covariate_beds is not None else None,
+            'exclude_region_bed': exclude_region_bed if exclude_region_bed is not None else None
         }
     )
 

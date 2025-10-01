@@ -10,7 +10,7 @@ import tqdm
 from capy import mut, seq
 import scipy.stats as stats
 from statsmodels.discrete.discrete_model import NegativeBinomial as statsNB
-
+from .utils import exclude_region_from_bed
 from .coverage_MCMC import Coverage_MCMC_AllClusters, Coverage_MCMC_SingleCluster
 from .model_optimizers import PoissonRegression, CovLNP_NR_prior
 
@@ -37,7 +37,8 @@ class CoverageMCMCRunner:
                  cluster_num=None,
                  allelic_sample=None,
                  bin_width=1,
-                 wgs=True
+                 wgs=True,
+                 exclude_region_bed=None
                  ):
 
         self.num_draws = num_draws
@@ -50,6 +51,7 @@ class CoverageMCMCRunner:
         self.ref_fasta = ref_fasta
         self.bin_width = bin_width
         self.wgs = wgs
+        self.exclude_region_bed = exclude_region_bed
 
         # lnp hyperparameters - can make passable by arguments
         self.alpha_prior = 1e-5
@@ -131,7 +133,12 @@ class CoverageMCMCRunner:
         # remove any fragcorr zero bins
         Cov = Cov.loc[Cov.fragcorr > 0]
 
+        # remove any bins in the exclude region bed
+        if self.exclude_region_bed is not None:
+            Cov = self.exclude_region_from_bed(Cov, self.exclude_region_bed)
+
         return Cov.reset_index(drop = True)
+
 
     def load_SNPs(self, f_snps):
         SNPs = pd.read_pickle(f_snps)

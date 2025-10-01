@@ -268,7 +268,8 @@ def make_hapaseg_prepare_coverage_mcmc_script(
     gc_pickle: str = "",
     normal_coverage_csv: str = "",
     allelic_sample: str = "",
-    extra_covariates: Optional[List[str]] = None
+    extra_covariates: Optional[List[str]] = None,
+    exclude_region_bed: Optional[str] = None
 ):
     """
     Generate a script to prepare data for HapASeg coverage MCMC.
@@ -303,7 +304,8 @@ def make_hapaseg_prepare_coverage_mcmc_script(
         Allelic sample identifier (default: "")
     extra_covariates : str, optional
         Path to extra covariates bed files (default: "")
-    
+    exclude_region_bed : str, optional
+        Path to exclude region bed file (default: "")
     Returns:
     --------
     tuple
@@ -342,7 +344,8 @@ def make_hapaseg_prepare_coverage_mcmc_script(
         script += f" --allelic_sample {allelic_sample}"
     if extra_covariates:
         script += f" --extra_covariates_bed_paths {extra_covariates_file}"
-    
+    if exclude_region_bed:
+        script += f" --exclude_region_bed {exclude_region_bed}"
     # Define output file paths
     preprocess_data_path = out_path.joinpath("preprocess_data.npz")
     cov_df_pickle_path = out_path.joinpath("cov_df.pickle")

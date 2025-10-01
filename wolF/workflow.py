@@ -158,6 +158,7 @@ def workflow(
     workspace=None,
     entity_type="pair",  # terra entity type (sample, pair)
     entity_name=None,
+    exclude_region_bed=None,
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -756,6 +757,7 @@ A.to_pickle('./concat_arms.pickle')
             "ref_fasta": localization_task["ref_fasta"],
             "bin_width": bin_width,
             "wgs": wgs,
+            "exclude_region_bed": exclude_region_bed,
         }
     )
 

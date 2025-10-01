@@ -162,6 +162,7 @@ def parse_args():
     preprocess_coverage_mcmc.add_argument("--ref_fasta", help="reference fasta file", required=True)
     preprocess_coverage_mcmc.add_argument("--bin_width", help = "Coverage bin width (for WGS only)", default = 1, type = int)
     preprocess_coverage_mcmc.add_argument("--wgs", help = "If not WGS, expand targets by +-150b to capture more SNPs", action = "store_true")
+    preprocess_coverage_mcmc.add_argument("--exclude_region_bed", help="bed file of regions to exclude from the analysis", default=None)
 
     ## running coverage mcmc on single cluster for scatter task
     coverage_mcmc_shard = subparsers.add_parser("coverage_mcmc_shard",
@@ -569,7 +570,8 @@ def main():
                                              f_extracov_bed_list=args.extra_covariates_bed_paths,
                                              allelic_sample=args.allelic_sample,
                                              bin_width=args.bin_width,
-                                             wgs=args.wgs)
+                                             wgs=args.wgs,
+                                             exclude_region_bed=args.exclude_region_bed)
         Pi, r, C, all_mu, global_beta, cov_df, adp_cluster = cov_mcmc_runner.prepare_single_cluster()
 
         # indices of coverage bins 
@@ -768,13 +770,20 @@ def main():
         
         # save segmentation df
         seg_df = acdp_combined.create_allelic_segs_df()
+        if args.exclude_region_bed is not None:
+            seg_df = exclude_region_from_segfile_with_trimming(seg_df, args.exclude_region_bed)
         seg_df.to_csv(os.path.join(output_dir, 'hapaseg_segfile.txt'), sep = '\t', index = False)
     
         absolute_df = acdp_combined.create_allelic_segs_df(absolute_format=True)
+        if args.exclude_region_bed is not None:
+            absolute_df = exclude_region_from_segfile_with_trimming(absolute_df, args.exclude_region_bed)
         absolute_df.to_csv(os.path.join(output_dir, 'absolute_segfile.txt'), sep='\t', index=False)
     
         # save the unclustered segs
-        acdp.unclustered_seg_df.to_csv(os.path.join(output_dir, 'hapaseg_skip_acdp_segfile.txt'), sep = "\t", index = False)
+        unclustered_seg_df = acdp.unclustered_seg_df.copy()
+        if args.exclude_region_bed is not None:
+            unclustered_seg_df = exclude_region_from_segfile_with_trimming(unclustered_seg_df, args.exclude_region_bed)
+        unclustered_seg_df.to_csv(os.path.join(output_dir, 'hapaseg_skip_acdp_segfile.txt'), sep = "\t", index = False)
 
         # make visualizations
         acdp_combined.visualize_ACDP_clusters(output_dir)
