@@ -153,7 +153,7 @@ def exclude_region_from_bed(Cov, exclude_region_bed_path):
             if overlaps:
                 keep_mask[idx] = False
 
-    print(f"Excluding {len(Cov[~keep_mask])} bins from {len(Cov)} total bins using exclusion region bed file: {exclude_region_bed}")
+    print(f"Excluding {len(Cov[~keep_mask])} bins from {len(Cov)} total bins using exclusion region bed file: {exclude_region_bed_path}")
     
     return Cov[keep_mask]
 
