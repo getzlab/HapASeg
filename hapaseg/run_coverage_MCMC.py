@@ -135,7 +135,7 @@ class CoverageMCMCRunner:
 
         # remove any bins in the exclude region bed
         if self.exclude_region_bed is not None:
-            Cov = self.exclude_region_from_bed(Cov, self.exclude_region_bed)
+            Cov = exclude_region_from_bed(Cov, self.exclude_region_bed)
 
         return Cov.reset_index(drop = True)
 

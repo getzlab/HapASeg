@@ -26,7 +26,7 @@ from .coverage_MCMC import Coverage_MCMC_SingleCluster
 from .run_coverage_MCMC import CoverageMCMCRunner, aggregate_clusters, aggregate_burnin_files 
 from .coverage_DP import Coverage_DP
 from .a_cov_DP import generate_acdp_df, AllelicCoverage_DP, AllelicCoverage_DP_runner
-
+from .utils import exclude_region_from_segfile
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Call somatic copynumber alterations taking advantage of SNP phasing")
