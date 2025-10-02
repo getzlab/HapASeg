@@ -206,7 +206,7 @@ def exclude_region_from_segfile(segfile_df, exclude_region_bed_path):
             
             if not has_any_overlap:
                 # no overlap, keep the segment as is
-                result_rows.append(pd.DataFrame([segfile_df.loc[idx]]).astype({ "Chromosome" : int, "Start.bp" : int, "End.bp" : int, "num_bins": int}))
+                result_rows.append(pd.DataFrame([segfile_df.loc[idx]]).astype({ "Chromosome" : int, "Start.bp" : int, "End.bp" : int}))
                 continue
             
             # handle partial overlaps - may result in multiple segments if excluded region is in the middle
@@ -245,7 +245,7 @@ def exclude_region_from_segfile(segfile_df, exclude_region_bed_path):
                     row = segfile_df.loc[idx].copy()
                     row["Start.bp"] = interval_start
                     row["End.bp"] = interval_end
-                    result_rows.append(pd.DataFrame([row]).astype({ "Chromosome" : int, "Start.bp" : int, "End.bp" : int, "num_bins": int}))
+                    result_rows.append(pd.DataFrame([row]).astype({ "Chromosome" : int, "Start.bp" : int, "End.bp" : int}))
 
     if len(result_rows) == 0:
         print("Warning: All segments excluded using exclusion region bed file")
