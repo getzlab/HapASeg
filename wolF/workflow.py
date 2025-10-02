@@ -929,6 +929,7 @@ A.to_pickle('./concat_arms.pickle')
                 "wgs": wgs,
                 "lnp_data_pickle": gen_acdp_task["lnp_data_pickle"],
                 "use_single_draw": True,  # for now only use single best draw for wgs
+                "exclude_region_bed": exclude_region_bed if exclude_region_bed is not None else ""
             }
         )
 

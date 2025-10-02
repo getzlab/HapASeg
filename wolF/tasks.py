@@ -369,6 +369,7 @@ class Hapaseg_run_acdp(wolf.Task):
         "lnp_data_pickle": None,
         "wgs": False,
         "use_single_draw": "",
+        "exclude_region_bed": "",
     }
 
     def script(self):
@@ -384,6 +385,9 @@ class Hapaseg_run_acdp(wolf.Task):
             script += " --wgs"
         if self.conf["inputs"]["use_single_draw"] == True:
             script += " --use_single_draw"
+        if self.conf["inputs"]["exclude_region_bed"] != "":
+            script += f" --exclude_region_bed " + self.conf["inputs"]["exclude_region_bed"]
+
         return script
 
     output_patterns = {
