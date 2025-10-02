@@ -386,7 +386,7 @@ class Hapaseg_run_acdp(wolf.Task):
         if self.conf["inputs"]["use_single_draw"] == True:
             script += " --use_single_draw"
         if self.conf["inputs"]["exclude_region_bed"] != "":
-            script += f" --exclude_region_bed " + self.conf["inputs"]["exclude_region_bed"]
+            script += f" --exclude_region_bed $exclude_region_bed"
 
         return script
 
