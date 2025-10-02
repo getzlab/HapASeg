@@ -896,6 +896,7 @@ A.to_pickle('./concat_arms.pickle')
                 "opt_cdp_idx": gen_acdp_task["opt_cdp_idx"],
                 "lnp_data_pickle": gen_acdp_task["lnp_data_pickle"],
                 "wgs": wgs,
+                "exclude_region_bed": exclude_region_bed if exclude_region_bed is not None else ""
             }
         )
     else:
