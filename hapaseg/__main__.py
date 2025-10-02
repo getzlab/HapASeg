@@ -227,6 +227,7 @@ def parse_args():
     ac_dp.add_argument("--lnp_data_pickle", help="path to lnp data dictionary", required=True)
     ac_dp.add_argument("--use_single_draw", help="flag to force acdp to only use best draw", default=False, action='store_true')
     ac_dp.add_argument("--warmstart", type=bool, default=True, help="run clustering with warmstart")
+    ac_dp.add_argument("--exclude_region_bed", help="bed file of regions to exclude from the analysis", default=None)
 
     # final summary plot
     fp = subparsers.add_parser("summary_plot", help = "summary plot of HapASeg results")
