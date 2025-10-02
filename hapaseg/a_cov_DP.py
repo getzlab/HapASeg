@@ -1781,4 +1781,4 @@ class AllelicCoverage_DP:
             return seg_df[["Chromosome", "Start.bp", "End.bp", "n_probes", "length", "n_hets", "f", "tau", "sigma.tau", "mu.minor","sigma.minor", "mu.major", "sigma.major", "SegLabelCNLOH"]].astype({ "Chromosome" : int, "Start.bp" : int, "End.bp" : int })
         
         else:
-            return seg_df[["Chromosome", 'Start.bp', 'End.bp', 'num_bins', 'mu.major', 'sigma.major', 'mu.minor', 'sigma.minor']]
+            return seg_df[["Chromosome", 'Start.bp', 'End.bp', 'num_bins', 'mu.major', 'sigma.major', 'mu.minor', 'sigma.minor']].astype({ "Chromosome" : int, "Start.bp" : int, "End.bp" : int, "num_bins": int})
