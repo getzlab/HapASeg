@@ -51,5 +51,5 @@ setup(
         "Typing :: Typed",
         "License :: OSI Approved :: BSD License"
     ],
-    license="BSD3"
+    license="GPL3"
 )
