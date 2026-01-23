@@ -14,6 +14,7 @@ RUN git clone -b oliver_sim_changes https://github.com/getzlab/cnv_suite.git && 
 ADD benchmarking/ ./benchmarking
 COPY setup.py .
 COPY hapaseg ./hapaseg
+COPY hapaseg_local ./hapaseg_local
 RUN pip install .
 
 WORKDIR /app

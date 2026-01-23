@@ -563,9 +563,6 @@ def main():
         snps.allele_counts.to_pickle(output_dir + "/allele_counts.pickle")
         chunks.to_csv(output_dir + "/scatter_chunks.tsv", sep="\t", index=False)
 
-    elif args.command == "load_coverage":
-        pass
-
     elif args.command == "amcmc":
         # loading from SNP dataframe produced by `hapaseg load`
         if args.snp_dataframe is not None:
@@ -1146,10 +1143,10 @@ def main():
             )
 
         acdp_df.to_pickle(os.path.join(output_dir, "acdp_df.pickle"))
-        with open("./lnp_data.pickle", "wb") as f:
+        with open(os.path.join(output_dir, "lnp_data.pickle"), 'wb') as f:
             pickle.dump(lnp_data, f)
 
-        with open("./opt_cdp_draw.txt", "w") as f:
+        with open(os.path.join(output_dir, "opt_cdp_draw.txt"), 'w') as f:
             f.write(str(opt_cdp_idx))
 
     elif args.command == "allelic_coverage_dp":
@@ -1177,43 +1174,31 @@ def main():
 
         # save segmentation df
         seg_df = acdp_combined.create_allelic_segs_df()
-        seg_df.to_csv("./hapaseg_segfile.txt", sep="\t", index=False)
-
+        seg_df.to_csv(os.path.join(output_dir, 'hapaseg_segfile.txt'), sep = '\t', index = False)
+    
         absolute_df = acdp_combined.create_allelic_segs_df(absolute_format=True)
-        absolute_df.to_csv("./absolute_segfile.txt", sep="\t", index=False)
-
+        absolute_df.to_csv(os.path.join(output_dir, 'absolute_segfile.txt'), sep='\t', index=False)
+    
         # save the unclustered segs
-        acdp.unclustered_seg_df.to_csv(
-            "./hapaseg_skip_acdp_segfile.txt", sep="\t", index=False
-        )
+        acdp.unclustered_seg_df.to_csv(os.path.join(output_dir, 'hapaseg_skip_acdp_segfile.txt'), sep = "\t", index = False)
 
         # make visualizations
         acdp_combined.visualize_ACDP_clusters(output_dir)
 
         if args.wgs:
-            acdp_combined.visualize_ACDP(
-                "./acdp_agg_draws.png", use_cluster_stats=True
-            )
+            acdp_combined.visualize_ACDP(os.path.join(output_dir, 'acdp_agg_draws.png'), use_cluster_stats=True)
         else:
-            acdp_combined.visualize_ACDP(
-                "./acdp_agg_draws.png",
-                plot_real_cov=True,
-                use_cluster_stats=True,
-            )
-
+            acdp_combined.visualize_ACDP(os.path.join(output_dir, 'acdp_agg_draws.png'), plot_real_cov=True, use_cluster_stats=True)
+        
         if not args.use_single_draw:
-            acdp_combined.visualize_ACDP(
-                "./acdp_best_cdp_draw.png",
-                use_cluster_stats=True,
-                cdp_draw=int(args.opt_cdp_idx),
-            )
-            acdp_combined.visualize_ACDP("./acdp_all_draws.png")
-
+            acdp_combined.visualize_ACDP(os.path.join(output_dir, 'acdp_best_cdp_draw.png'), use_cluster_stats=True, cdp_draw=int(args.opt_cdp_idx))
+            acdp_combined.visualize_ACDP(os.path.join(output_dir, 'acdp_all_draws.png'))
+        
         # print opt purity and opt k
-        with open("./acdp_optimal_fit_params.txt", "w") as f:
-            f.write("purity\tk\n")
-            f.write(f"{opt_purity}\t{opt_k}\n")
-
+        with open(os.path.join(output_dir, 'acdp_optimal_fit_params.txt'), 'w')  as f:
+            f.write('purity\tk\n')
+            f.write(f'{opt_purity}\t{opt_k}\n')
+        
         with open(os.path.join(output_dir, "acdp_model.pickle"), "wb") as f:
             pickle.dump(acdp_combined, f)
 

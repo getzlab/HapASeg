@@ -133,25 +133,12 @@ class CoverageMCMCRunner:
         )
 
     def load_coverage(self, coverage_csv):
-        Cov = pd.read_csv(
-            coverage_csv,
-            sep="\t",
-            names=[
-                "chr",
-                "start",
-                "end",
-                "covcorr",
-                "mean_frag_len",
-                "std_frag_len",
-                "num_frags",
-                "tot_reads",
-                "fail_reads",
-            ],
-            low_memory=False,
-        )
-        Cov.loc[Cov["chr"] == "chrM", "chr"] = (
-            "chrMT"  # change mitocondrial contigs to follow mut conventions
-        )
+        Cov = pd.read_csv(coverage_csv, sep="\t", names=["chr", "start", "end", "covcorr", "mean_frag_len", "std_frag_len", "num_frags", "tot_reads", "fail_reads"], low_memory=False)
+        # remove non-primary contigs
+        primary_contig_names = ["chr" + str(x) for x in ["MT"] + list(range(1, 23)) + ["X", "Y"]] + \
+            [str(x) for x in ["MT"] + list(range(1, 23)) + ["X", "Y"]]
+        Cov = Cov.loc[Cov['chr'].isin(primary_contig_names)]
+        Cov.loc[Cov['chr'] == 'chrM', 'chr'] = 'chrMT' #change mitocondrial contigs to follow mut conventions
         Cov["chr"] = mut.convert_chr(Cov["chr"])
         Cov = Cov.loc[Cov["chr"] != 0]
         Cov = Cov.reset_index(drop=True)

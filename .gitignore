@@ -1,0 +1,4 @@
+build/
+dist/
+HapASeg.egg-info/
+hapaseg/__pycache__/
