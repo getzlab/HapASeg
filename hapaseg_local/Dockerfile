@@ -112,12 +112,12 @@ RUN cp /build/covcollect/src/covcollect /app && rm -rf /build/*
   # prereq: install GATK
   RUN git clone https://github.com/broadgsa/gatk-protected.git && cd gatk-protected && \
     git reset --hard 3.1 
-  RUN cd gatk-protected && sed -i '401,557d' pom.xml && mvn -Ddisable.queue -Dhttps.protocols=TLSv1.2 install
+  RUN cd gatk-protected && sed -i '401,557d' pom.xml && mvn -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Ddisable.queue -Dhttps.protocols=TLSv1.2 install
   
   # install MuTect
   ARG cache_invalidate=xxx
   RUN git clone https://github.com/getzlab/mutect.git && cd mutect && \
-     mvn -Ddisable.queue -Dhttps.protocols=TLSv1.2 verify
+     mvn -Ddisable.queue -Dhttps.protocols=TLSv1.2 -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true verify
   
   # symlink to /app
   WORKDIR /app

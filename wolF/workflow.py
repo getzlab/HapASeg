@@ -231,7 +231,7 @@ def workflow(
             token=localization_token,
             persistent_disk_dry_run=persistent_dry_run,
         )
-    else:
+    elif normal_coverage_bed is None:
         print(
             "Normal coverage will not be used as a covariate; ability to regress out germline CNVs may suffer."
         )
