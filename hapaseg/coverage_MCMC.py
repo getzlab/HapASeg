@@ -220,7 +220,6 @@ class AllelicCluster:
 	returns a list of peaks above the 98th quantile that are seperated by at least max(25, window/2)
 	"""
 	def _change_kernel(self, ind, residuals, window):
-		
 		difs = self._run_kernel(residuals, window)
 		if window > 10:
 			x = np.r_[:len(difs)]
@@ -253,34 +252,20 @@ class AllelicCluster:
 		residuals = np.exp(np.log(self.r[ind[0]:ind[1]].flatten()) - (self.mu.flatten()) - (
 					self.C[ind[0]:ind[1]] @ self.beta).flatten())
 	   
-		minimal=False
-		len_ind = ind[1]-ind[0]
-		if len_ind > 50000:
-			windows=np.array([1000])
-		elif len_ind > 10000:
-			windows=np.array([500])
-		elif len_ind > 5000:
-			windows=np.array([500,100,25])
-		elif len_ind > 1000:
-			windows = np.array([100, 50, 25])
-		else:
-			minimal = True
-			windows = np.array([50, 10])
-		windows = windows[2*windows < len_ind]
+		windows = np.logspace(1, 3, 5).astype(int)
+		windows = windows[2*windows < (ind[1] - ind[0])]
 		difs = []
 		for window in windows:
 			difs.append(self._change_kernel(ind, residuals, window))
 		difs_idxs = set().union(*difs)
 		difs_idxs = np.r_[list(difs_idxs)]
-		# if there are no that pass the threshold return them all
-		if len(difs_idxs) ==0:
+		# if there are no that pass the threshold return them all (should not happen?)
+		if len(difs_idxs) == 0:
 			print('no significant bins', flush=True)
 			return list(np.r_[ind[0] + 2:ind[1] - 1])
 
-		# add on first and last windows edges if were in a small interval
-		# since these are not considered by the kernel
-		if minimal:
-			difs_idxs = np.r_[difs_idxs, ind[0] + 10, ind[1]-10]
+		# add on first and last windows edges since these are not considered by the kernel
+		difs_idxs = np.r_[difs_idxs, ind[0] + 10, ind[1]-10]
 		return list(difs_idxs)
 
 	"""
