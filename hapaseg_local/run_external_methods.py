@@ -413,7 +413,7 @@ def make_mutect_script(
         cs_path = out_dir.joinpath('het_coverage.MuTect1.call_stats.txt')
         vcf_path = out_dir.joinpath('het_coverage.Mutect1.vcf')
 
-        script = f"""/usr/local/java/jdk1.7.0_80/bin/java -Xmx3g -jar /app/mutect.jar \
+        script = f"""$JAVA_HOME/bin/java -Xmx3g -jar /app/mutect.jar \
             --analysis_type MuTect \
             --tumor_sample_name {caseName} \
             -I:tumor {t_bam} \
