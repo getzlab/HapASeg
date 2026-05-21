@@ -105,7 +105,7 @@ def download_ref_files(out_dir, ref_build):
                     print(f'Failed download of {file_type} with source {sd_tuple[0]} and local destination {sd_tuple[1]} with error {e}')
 
                 if file_type == 'cytoband_file':
-                    subprocess.check_call(f"""(echo -e "chr\tstart\tend\tband\tstain"; cat {ref_dir_hg38_path.joinpath(sd_tuple[1])} | grep -E "^(chr([1-9]|1[0-9]|2[0-2]|X|Y))\\b") > tst.txt && mv tst.txt {ref_dir_hg38_path.joinpath(sd_tuple[1])}""", shell = True)
+                    subprocess.check_call(f"""(echo "chr\tstart\tend\tband\tstain"; cat {ref_dir_hg38_path.joinpath(sd_tuple[1])} | grep -E "^(chr([1-9]|1[0-9]|2[0-2]|X|Y))\\b") > tst.txt && mv tst.txt {ref_dir_hg38_path.joinpath(sd_tuple[1])}""", shell = True)
     print('Done downloading reference files')
 
 

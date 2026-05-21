@@ -97,17 +97,17 @@ RUN cp /build/covcollect/src/covcollect /app && rm -rf /build/*
 
   #
   # prereqs
-  
+    
   # install JDK
-  RUN wget https://files.liferay.com/mirrors/download.oracle.com/otn-pub/java/jdk/7u80-b15/jdk-7u80-linux-x64.tar.gz && \
-   tar xzf jdk-7u80-linux-x64.tar.gz && mkdir /usr/local/java && mv jdk1.7.0_80/ /usr/local/java
-  
+  RUN wget https://download.java.net/openjdk/jdk7u75/ri/openjdk-7u75-b13-linux-x64-18_dec_2014.tar.gz && \
+      tar xzf openjdk-7u75-b13-linux-x64-18_dec_2014.tar.gz && \
+      mkdir -p /usr/local/java && \
+      mv java-se-7u75-ri /usr/local/java/ && \
+      rm openjdk-7u75-b13-linux-x64-18_dec_2014.tar.gz  
+
+  ENV JAVA_HOME=/usr/local/java/java-se-7u75-ri
   # install Maven
   RUN apt-get update && apt install -y maven
-  
-  #
-  # get/install MuTect
-  ENV JAVA_HOME=/usr/local/java/jdk1.7.0_80
   
   # prereq: install GATK
   RUN git clone https://github.com/broadgsa/gatk-protected.git && cd gatk-protected && \

@@ -20,7 +20,7 @@ HG38_REF_FILES = dict(
     # fix 1kg ref panel 
         #hg19_ref_dict = pd.read_pickle(CWD + "/ref_panel.hg19.pickle")
 
-        ref_fasta =("/Users/oliverpriebe/dev/HapASegRevisions/reffiles/hg38/GRCh38.d1.vd1.fa", "hg38_GRCh38.d1.vd1.fa"),
+        ref_fasta =("https://zenodo.org/records/19325399/files/hg38_GRCh38.d1.vd1.fa", "hg38_GRCh38.d1.vd1.fa"),
         ref_fasta_idx = ("https://zenodo.org/records/19325399/files/hg38_GRCh38.d1.vd1.fa.fai", "hg38_GRCh38.d1.vd1.fa.fai"),
         ref_fasta_dict = ("https://zenodo.org/records/19325399/files/hg38_GRCh38.d1.vd1.dict", "hg38_GRCh38.d1.vd1.dict"),
         genetic_map_file = ("https://zenodo.org/records/19325399/files/hg38_genetic_map_hg38_withX.txt.gz", "genetic_map_hg38_withX.txt.gz"),
