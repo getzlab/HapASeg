@@ -84,7 +84,7 @@ ENV LD_LIBRARY_PATH=/usr/local/lib
 
 #
 # COVCOLLECT {{{
-RUN git clone --recurse-submodules https://github.com/getzlab/covcollect.git -b fix && cd covcollect/src && make
+RUN git clone --recurse-submodules https://github.com/getzlab/covcollect.git && cd covcollect/src && make
 WORKDIR /app
 ENV PATH=$PATH:/app
 RUN cp /build/covcollect/src/covcollect /app && rm -rf /build/*
