@@ -1,3 +1,4 @@
+import re
 import sys
 import subprocess
 import click
@@ -19,13 +20,28 @@ def gsutil_download(gs_uri, local_path):
 def unzip(local_path):
     subprocess.check_call(f"""gunzip -f {local_path}""", shell = True)
 
-def downlaod_ref_file(source, local_path):
-    if source[:3] == 'gs:':
-        gsutil_download(source, local_path)
-    else:
-        wget_download(source, local_path)
+def copy_local_file(source, local_path):
+    source_path = Path(source)
+    if not source_path.exists():
+        raise FileNotFoundError(f"Local source file not found: {source}")
+    subprocess.check_call(['cp', str(source_path), str(local_path)])
+    print(f"Copied file: {local_path}")
 
-    if source[-3:] == '.gz':
+def download_ref_file(source, local_path):
+    source_str = str(source)
+    final_path = Path(str(local_path).rstrip('.gz')) if source_str.endswith('.gz') else Path(local_path)
+    if final_path.exists():
+        print(f"File already exists, skipping: {final_path}")
+        return
+
+    if source_str[:3] == 'gs:':
+        gsutil_download(source_str, local_path)
+    elif source_str.startswith('/') or source_str.startswith('./') or source_str.startswith('../'):
+        copy_local_file(source_str, local_path)
+    else:
+        wget_download(source_str, local_path)
+
+    if source_str.endswith('.gz'):
         unzip(local_path)
 
 
@@ -67,7 +83,7 @@ def download_ref_files(out_dir, ref_build):
                                          )
             else:
                 try:
-                    downlaod_ref_file(sd_tuple[0], ref_dir_hg19_path.joinpath(sd_tuple[1]))
+                    download_ref_file(sd_tuple[0], ref_dir_hg19_path.joinpath(sd_tuple[1]))
                 except Exception as e:
                     print(f'Failed download of {file_type} with source {sd_tuple[0]} and local destination {sd_tuple[1]} with error {e}')
 
@@ -84,14 +100,12 @@ def download_ref_files(out_dir, ref_build):
                                             )
             else:
                 try:
-                    downlaod_ref_file(sd_tuple[0], ref_dir_hg38_path.joinpath(sd_tuple[1]))
+                    download_ref_file(sd_tuple[0], ref_dir_hg38_path.joinpath(sd_tuple[1]))
                 except Exception as e:
                     print(f'Failed download of {file_type} with source {sd_tuple[0]} and local destination {sd_tuple[1]} with error {e}')
 
                 if file_type == 'cytoband_file':
-                    # need to filter cytoband file to only include autosomes
-                    outpath = ref_dir_hg38_path.joinpath(sd_tuple[1])
-                    subprocess.check_call(f"""(echo -e "chr\tstart\tend\tband\tstain"; cat {str(outpath).rstrip('.gz')} | grep -E "^(chr([1-9]|1[0-9]|2[0-2]|X|Y))\\b") > tst.txt && mv tst.txt {outpath}""", shell = True)
+                    subprocess.check_call(f"""(echo "chr\tstart\tend\tband\tstain"; cat {ref_dir_hg38_path.joinpath(sd_tuple[1])} | grep -E "^(chr([1-9]|1[0-9]|2[0-2]|X|Y))\\b") > tst.txt && mv tst.txt {ref_dir_hg38_path.joinpath(sd_tuple[1])}""", shell = True)
     print('Done downloading reference files')
 
 
