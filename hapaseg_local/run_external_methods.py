@@ -185,10 +185,7 @@ def run_gnu_parallel_tasks_backend(script_dict, log_dir: Path, max_jobs=8):
 
 def popen_command_pipe_outputs(script: str, out_dir: Path):
     # Open files for writing logs
-    with (
-        open(out_dir.joinpath("stdout.log"), "w") as stdout_file,
-        open(out_dir.joinpath("stderr.log"), "w") as stderr_file,
-    ):
+    with open(out_dir.joinpath("stdout.log"), "w") as stdout_file, open(out_dir.joinpath("stderr.log"), "w") as stderr_file:
         # Run command and redirect output to files
         process = subprocess.Popen(script, stdout=stdout_file, stderr=stderr_file, shell=True)
     return process
@@ -196,10 +193,7 @@ def popen_command_pipe_outputs(script: str, out_dir: Path):
 
 def run_command_pipe_outputs(script: str, out_dir: Path):
     # Open files for writing logs
-    with (
-        open(out_dir.joinpath("stdout.log"), "w") as stdout_file,
-        open(out_dir.joinpath("stderr.log"), "w") as stderr_file,
-    ):
+    with open(out_dir.joinpath("stdout.log"), "w") as stdout_file, open(out_dir.joinpath("stderr.log"), "w") as stderr_file:
         # Run command and redirect output to files
         results = subprocess.run(script, stdout=stdout_file, stderr=stderr_file, shell=True)
     return results
