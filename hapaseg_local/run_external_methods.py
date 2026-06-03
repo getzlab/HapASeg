@@ -460,7 +460,7 @@ def make_mutect_scripts(
     # Viewing the BAM file to determine the contigs.
     header = samtools_view(t_bam)
     contigs = {
-        row[1]: int(row[2].split(":")[1])
+        row[1].split(':')[1]: int(row[2].split(":")[1])
         for row in header
         if row[0] == "@SQ" and "_" not in row[1] and "-" not in row[1]
     }
