@@ -514,7 +514,7 @@ def make_mutect_scripts(
                     file.write(line)
             else:
                 try:
-                    contig, start, rest = line.split("\t", 3)
+                    contig, start, rest = line.split("\t", 2)
                     if contig in segment_lengths:
                         files[contig, start // segment_lengths[contig]].write(line)
                 except:
