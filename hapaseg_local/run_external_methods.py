@@ -516,7 +516,7 @@ def make_mutect_scripts(
                 try:
                     contig, start, rest = line.split("\t", 2)
                     if contig in segment_lengths:
-                        files[contig, start // segment_lengths[contig]].write(line)
+                        files[contig, int(start) // segment_lengths[contig]].write(line)
                 except:
                     print(f"Failed to parse {line}")
                     raise
