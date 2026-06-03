@@ -183,6 +183,7 @@ def run_gnu_parallel_tasks_backend(script_dict, log_dir: Path, max_jobs=8):
         return False
 
 
+# fmt:off
 def popen_command_pipe_outputs(script: str, out_dir: Path):
     # Open files for writing logs
     with open(out_dir.joinpath("stdout.log"), "w") as stdout_file, open(out_dir.joinpath("stderr.log"), "w") as stderr_file:
@@ -197,6 +198,7 @@ def run_command_pipe_outputs(script: str, out_dir: Path):
         # Run command and redirect output to files
         results = subprocess.run(script, stdout=stdout_file, stderr=stderr_file, shell=True)
     return results
+# fmt:on
 
 
 def run_parallel_tasks(
@@ -460,7 +462,7 @@ def make_mutect_scripts(
     # Viewing the BAM file to determine the contigs.
     header = samtools_view(t_bam)
     contigs = {
-        row[1].split(':')[1]: int(row[2].split(":")[1])
+        row[1].split(":")[1]: int(row[2].split(":")[1])
         for row in header
         if row[0] == "@SQ" and "_" not in row[1] and "-" not in row[1]
     }
@@ -491,8 +493,9 @@ def make_mutect_scripts(
             jump = int(math.ceil(length / n_parts))
             for i in range(0, length, jump):
                 proc_intervals.append(f"{contig}:{i + 1}{(min(i + jump, length))}")
-                
+
     elif Path(intervals).exists():
+        print(f"Splitting {intervals}")
         segment_lengths = {}
         files: Dict[Tuple[str, int], TextIO] = {}
         # If the intervals are given, we split them to files.
@@ -502,7 +505,7 @@ def make_mutect_scripts(
             segment_lengths[contig] = jump
             for i in range(n_parts):
                 path = workdir / f"mutect_{contig}_{i}.intervals"
-                files[contig, i] = path.open('w')
+                files[contig, i] = path.open("w")
                 proc_intervals.append(str(path))
 
         for line in Path(intervals).open():
@@ -510,9 +513,13 @@ def make_mutect_scripts(
                 for file in files.values():
                     file.write(line)
             else:
-                contig, start, rest = line.split("\t", 3)
-                if contig in segment_lengths:
-                    files[contig, start // segment_lengths[contig]].write(line)
+                try:
+                    contig, start, rest = line.split("\t", 3)
+                    if contig in segment_lengths:
+                        files[contig, start // segment_lengths[contig]].write(line)
+                except:
+                    print(f"Failed to parse {line}")
+                    raise
 
         for file in files.values():
             file.close()
