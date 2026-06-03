@@ -2,7 +2,7 @@ import math
 import subprocess
 from pathlib import Path
 import time
-from typing import List, Optional, TextIO
+from typing import List, Optional, Set, TextIO
 import os
 import tempfile
 import glob
@@ -485,19 +485,21 @@ def make_mutect_scripts(
     workdir = out_dir / "mutect1_workdir"
     workdir.mkdir(parents=True, exist_ok=True)
 
-    proc_intervals = []
+    proc_intervals: List[Tuple[str, int, str]] = []
     if intervals is None:
         # If no intervals are given, we make our own intervals, splitting the chromosomes relatively uniformly.
         for contig, length in contigs.items():
             n_parts = int(math.ceil(length / low))
             jump = int(math.ceil(length / n_parts))
             for i in range(0, length, jump):
-                proc_intervals.append(f"{contig}:{i + 1}{(min(i + jump, length))}")
+                proc_intervals.append((contig, i, f"{contig}:{i + 1}{(min(i + jump, length))}"))
 
     elif Path(intervals).exists():
         print(f"Splitting {intervals}")
         segment_lengths = {}
         files: Dict[Tuple[str, int], TextIO] = {}
+        not_empty: Set[Tuple[str, int]] = set()
+
         # If the intervals are given, we split them to files.
         for contig, length in contigs.items():
             n_parts = int(math.ceil(length / low))
@@ -506,23 +508,24 @@ def make_mutect_scripts(
             for i in range(n_parts):
                 path = workdir / f"mutect_{contig}_{i}.intervals"
                 files[contig, i] = path.open("w")
-                proc_intervals.append(str(path))
 
         for line in Path(intervals).open():
             if line.startswith("@"):
                 for file in files.values():
                     file.write(line)
             else:
-                try:
-                    contig, start, rest = line.split("\t", 2)
-                    if contig in segment_lengths:
-                        files[contig, int(start) // segment_lengths[contig]].write(line)
-                except:
-                    print(f"Failed to parse {line}")
-                    raise
+                contig, start, rest = line.split("\t", 2)
+                if contig in segment_lengths:
+                    files[contig, int(start) // segment_lengths[contig]].write(line)
+                    not_empty.add((contig, int(start) // segment_lengths[contig]))
 
         for file in files.values():
             file.close()
+
+        for contig, i in not_empty:
+            path = workdir / f"mutect_{contig}_{i}.intervals"
+            proc_intervals.append((contig, i, str(path)))
+
     else:
         raise ValueError(f"Unknown interval format: {intervals}")
 
@@ -530,9 +533,9 @@ def make_mutect_scripts(
     vcf_paths: List[Path] = []
     scripts: List[str] = []
 
-    for idx, intervals in enumerate(proc_intervals):
-        cs_path = out_dir / f"het_coverage_{idx}.MuTect1.call_stats.txt"
-        vcf_path = out_dir / f"het_coverage_{idx}.Mutect1.vcf"
+    for contig, idx, intervals in proc_intervals:
+        cs_path = out_dir / f"het_coverage_{contig}_{idx}.MuTect1.call_stats.txt"
+        vcf_path = out_dir / f"het_coverage_{contig}_{idx}.Mutect1.vcf"
 
         cs_paths.append(cs_path)
         vcf_paths.append(vcf_path)
