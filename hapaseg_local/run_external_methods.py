@@ -491,6 +491,7 @@ def make_mutect_scripts(
             jump = int(math.ceil(length / n_parts))
             for i in range(0, length, jump):
                 proc_intervals.append(f"{contig}:{i + 1}{(min(i + jump, length))}")
+                
     elif Path(intervals).exists():
         segment_lengths = {}
         files: Dict[Tuple[str, int], TextIO] = {}
@@ -501,7 +502,7 @@ def make_mutect_scripts(
             segment_lengths[contig] = jump
             for i in range(n_parts):
                 path = workdir / f"mutect_{contig}_{i}.intervals"
-                files[contig, i] = path.open()
+                files[contig, i] = path.open('w')
                 proc_intervals.append(str(path))
 
         for line in Path(intervals).open():
