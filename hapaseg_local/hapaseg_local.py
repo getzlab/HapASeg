@@ -129,11 +129,14 @@ def hapaseg_local_main(
     if not results_exist(covcollect_t_results_dict):
         scripts_to_run["covcollect_t_script"] = covcollect_t_script
 
-    for idx, script in enumerate(mutect_scripts):
-        scripts_to_run[f"mutect_script_{idx}"] = script
-
-    # if not results_exist(mutect_results_dict):
-    #     scripts_to_run["mutect_script"] = mutect_script
+    # Running MuTect1 only if it wasn't already run.
+    mutect_cs = out_path / "mutect1.callstats.txt"
+    if not mutect_cs.exists():
+        for idx, script in enumerate(mutect_scripts):
+            scripts_to_run[f"mutect_script_{idx}"] = script
+        run_mutect = True
+    else:
+        run_mutect = False
 
     # Run only the tasks that need to be executed
     if scripts_to_run:
@@ -144,21 +147,20 @@ def hapaseg_local_main(
     else:
         print("All CovCollect and Mutect results already exist. Skipping execution.")
 
-    # Merging the MuTect results.
-    mutect_cs = out_path / "mutect1.callstats.txt"
-    writer = mutect_cs.open("w")
-    has_header = False
+    if run_mutect:
+        writer = mutect_cs.open("w")
+        has_header = False
 
-    for file in mutect_results_dict["mutect1_cs"]:
-        f = file.open()
-        if has_header:
-            next(f)
-            next(f)
-        else:
-            has_header = True
-        for ln in f:
-            writer.write(ln)
-    writer.close()
+        for file in mutect_results_dict["mutect1_cs"]:
+            f = file.open()
+            if has_header:
+                next(f)
+                next(f)
+            else:
+                has_header = True
+            for ln in f:
+                writer.write(ln)
+        writer.close()
 
     # RUN HET COVERAGE
     hetpull_results_dict = run_single_task(

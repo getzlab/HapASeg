@@ -643,7 +643,15 @@ def make_eagle_script(
     # TODO: Figure out output naming
     out_path.mkdir(exist_ok=True, parents=True)
     out_file_prefix = out_path.joinpath(output_file_prefix)
-    script = f"""eagle --geneticMapFile {genetic_map_file} --outPrefix {out_file_prefix} --numThreads {num_threads} --vcfRef {vcf_ref} --vcfTarget {vcf_in} --vcfOutFormat v"""
+    script = f"""
+    eagle --geneticMapFile {genetic_map_file} --outPrefix {out_file_prefix} --numThreads {num_threads} --vcfRef {vcf_ref} --vcfTarget {vcf_in} --vcfOutFormat v
+    if [ ! -f "{out_file_prefix}.vcf" ]; then
+        echo "Error: Eagle2 did not produce the output file {out_file_prefix}.vcf." >&2
+        exit 1
+    fi
+
+
+    """
     output_patterns = {"phased_vcf": f"{out_file_prefix}.vcf"}
     return script, output_patterns
 
