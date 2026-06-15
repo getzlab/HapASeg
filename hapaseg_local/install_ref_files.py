@@ -64,7 +64,7 @@ def download_ref_files(out_dir, ref_build):
     ref_dir_path.mkdir(exist_ok=True, parents=True)
     
     try:
-	    subprocess.check_call("[ -f ~/.config/gcloud/config_sentinel ]", shell = True)
+        subprocess.check_call("[ -f ~/.config/gcloud/config_sentinel ]", shell = True)
     except subprocess.CalledProcessError:
         print("gcloud is not configured. Please run `gcloud auth login` and `gcloud auth application-default login` and try again.", file = sys.stderr)
         sys.exit(1)
