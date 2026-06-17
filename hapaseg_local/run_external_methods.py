@@ -587,6 +587,7 @@ def make_het_pulldown_script(
     tumor_only=False,
     pod_min_depth=10,
     min_tumor_depth=1,
+    mutect=False,
 ):
     out_path.mkdir(exist_ok=True, parents=True)
     out_stem = out_path.joinpath("het_coverage")
@@ -597,6 +598,7 @@ def make_het_pulldown_script(
         + ("--use_tonly_genotyper " if tumor_only else "")
         + (f" --min_tumor_depth {min_tumor_depth}" if min_tumor_depth != "" else "")
         + (f" -s {common_snp_list}" if common_snp_list != "" else "")
+        + (" --mutect" if mutect else "")
     )
     outputs = {
         "tumor_hets": str(out_stem) + ".tumor.tsv",

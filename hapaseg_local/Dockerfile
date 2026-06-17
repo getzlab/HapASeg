@@ -158,6 +158,6 @@ RUN pip install .
 # Het pulldown {{{
   #RUN git clone https://github.com/getzlab/CApy.git && cd CApy && git checkout eb95ce4 && pip install .
   RUN git clone https://github.com/oliverpriebe/CApy.git && pip install ./CApy
-  RUN git clone https://github.com/getzlab/het_pulldown_from_callstats_TOOL.git && cd het_pulldown_from_callstats_TOOL && cp hetmodels.py hetpull.py /app
+  RUN git clone https://github.com/getzlab/het_pulldown_from_callstats_TOOL.git -b hapaseg-local && cd het_pulldown_from_callstats_TOOL && cp hetmodels.py hetpull.py /app
   
   #}}}
