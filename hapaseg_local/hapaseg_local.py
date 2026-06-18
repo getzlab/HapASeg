@@ -10,6 +10,7 @@ import click
 import re
 import yaml
 from pathlib import Path
+from typing import Optional
 
 # Fix the relative import to work when run as a script
 try:
@@ -52,17 +53,18 @@ def job_resources(job_cpus, job_memory, max_cpus, max_memory):
 
 
 def hapaseg_local_main(
-    sample_name=None,
-    ref_root_path=None,
-    out_dir=None,
-    tumor_bam=None,
-    tumor_bai=None,
-    normal_bam=None,
-    normal_bai=None,
+    sample_name: Path,
+    ref_root_path: Path,
+    out_dir: Path,
+    tumor_bam: Path,
+    tumor_bai: Path,
+    normal_bam: Path,
+    normal_bai: Path,
+    het_site_calls: Optional[Path] = None,
     genotyping_method="mixture_model",
     single_ended=False,  # Flag for designating if sequencing was done with single ended reads. Coverage collection differs depending on whether BAM is paired end
-    ref_genome_build=None,  # reference genome build string. Must be hg19 or hg38
-    WES_target_list=None,  # WES exome bait set list
+    ref_genome_build: Optional[str] = None,  # reference genome build string. Must be hg19 or hg38
+    WES_target_list: Optional[Path] = None,  # WES exome bait set list
     WGS_bin_size=2000,  # WGS bin size default: 2000 base pairs
     common_snp_list=None,  # for adding a custom SNP list
     betahyp=4,  # hyperparameter for smoothing initial allelic segmentation. only applicable for whole exomes.
@@ -76,7 +78,6 @@ def hapaseg_local_main(
     max_cpus=8,
     max_memory=16,
 ):
-
     # integer target list implies wgs
     wgs = True if WES_target_list is None else False
 
@@ -129,14 +130,18 @@ def hapaseg_local_main(
     if not results_exist(covcollect_t_results_dict):
         scripts_to_run["covcollect_t_script"] = covcollect_t_script
 
-    # Running MuTect1 only if it wasn't already run.
-    mutect_cs = out_path / "mutect1.callstats.txt"
-    if not mutect_cs.exists():
-        for idx, script in enumerate(mutect_scripts):
-            scripts_to_run[f"mutect_script_{idx}"] = script
-        run_mutect = True
-    else:
-        run_mutect = False
+    run_mutect = False
+    is_mutect_out = False
+    if het_site_calls is None:
+        is_mutect_out = True
+        # Running MuTect1 only if it wasn't already run.
+        het_site_calls = out_path / "mutect1.callstats.txt"
+        if not het_site_calls.exists():
+            for idx, script in enumerate(mutect_scripts):
+                scripts_to_run[f"mutect_script_{idx}"] = script
+            run_mutect = True
+
+    # assert het_site_calls is not None
 
     # Run only the tasks that need to be executed
     if scripts_to_run:
@@ -148,7 +153,7 @@ def hapaseg_local_main(
         print("All CovCollect and Mutect results already exist. Skipping execution.")
 
     if run_mutect:
-        writer = mutect_cs.open("w")
+        writer = het_site_calls.open("w")
         has_header = False
 
         for file in mutect_results_dict["mutect1_cs"]:
@@ -168,18 +173,19 @@ def hapaseg_local_main(
         "Het_pulldown",
         make_het_pulldown_script,
         dict(
-            callstats_file=mutect_cs,
+            callstats_file=het_site_calls,
             ref_fasta=ref_config["ref_fasta"],
             ref_fasta_idx=ref_config["ref_fasta_idx"],
             ref_fasta_dict=ref_config["ref_fasta_dict"],
             method=genotyping_method,
-            common_snp_list=ref_config["common_snp_list"],
+            # common_snp_list=ref_config["common_snp_list"],
             pod_min_depth=10
             if wgs
             else 4,  # normal min genotyping depth; set lower for exomes due to bait falloff (normal coverage in flanking regions will be proportionally much lower than tumor coverage)
             min_tumor_depth=1
             if wgs
             else 10,  # tumor min coverage; set higher for exomes due to off-target signal being noisier
+            mutect=is_mutect_out,
         ),
     )
 
@@ -635,7 +641,8 @@ def save_final_results(output_dict, results_path):
 @click.option("--tumor-bam", required=True, type=click.Path(exists=True), help="Tumor sample BAM file")
 @click.option("--tumor-bai", required=True, type=click.Path(exists=True), help="Tumor sample BAM index file (BAI)")
 @click.option("--normal-bam", required=True, type=click.Path(exists=True), help="Normal sample BAM file")
-@click.option("--normal-bai", help="Normal sample BAM index file (BAI)")
+@click.option("--normal-bai", required=True, type=click.Path(exists=True), help="Normal sample BAM index file (BAI)")
+@click.option("--het-site-calls", help="A TSV file containing the allelic depths in heterozygous sites.")
 @click.option("--ref-genome-build", required=True, help="Reference genome build string. Must be hg19 or hg38")
 @click.option("--ref-root-path", required=True, type=click.Path(exists=True), help="Reference root path")
 @click.option(
