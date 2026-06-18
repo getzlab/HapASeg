@@ -178,7 +178,7 @@ def hapaseg_local_main(
             ref_fasta_idx=ref_config["ref_fasta_idx"],
             ref_fasta_dict=ref_config["ref_fasta_dict"],
             method=genotyping_method,
-            common_snp_list=ref_config["common_snp_list"],
+            # common_snp_list=ref_config["common_snp_list"],
             pod_min_depth=10
             if wgs
             else 4,  # normal min genotyping depth; set lower for exomes due to bait falloff (normal coverage in flanking regions will be proportionally much lower than tumor coverage)
