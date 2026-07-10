@@ -1,11 +1,6 @@
-import glob
 import numpy as np
-import os
 import pandas as pd
-import pickle
-import prefect
 import subprocess
-import tempfile
 import wolf
 
 #
@@ -231,7 +226,6 @@ def workflow(
         )
 
         # shim task to transform split_intervals files into subset parameters for covcollect task
-        @prefect.task
         def interval_gather(interval_files):
             ints = []
             for f in interval_files:
@@ -289,7 +283,6 @@ def workflow(
     )
 
     # get the cluster indices from the preprocess data and generate the burnin indices
-    @prefect.task(nout=4)
     def _get_ADP_cluster_list(preprocess_data_obj):
         range_size = 2000
         data = np.load(preprocess_data_obj)
@@ -344,8 +337,7 @@ def workflow(
             "num_draws": num_cov_samples,
             "cluster_num": cluster_idxs,
             "bin_width": bin_width,
-            "burnin_files": [cov_mcmc_burnin_task["burnin_data"]]
-            * num_clusters,  # this is to account for a wolf input len bug
+            "burnin_files": [cov_mcmc_burnin_task["burnin_data"]] * num_clusters,  # this is to account for a wolf input len bug
         }
     )
 
@@ -370,7 +362,6 @@ def workflow(
     )
 
     # get the adp draw number from the preprocess data object
-    @prefect.task
     def _get_ADP_draw_num(preprocess_data_obj):
         return int(np.load(preprocess_data_obj)["adp_cluster"])
 
