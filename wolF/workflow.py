@@ -1,6 +1,7 @@
 import numpy as np
 import os
 import pandas as pd
+import prefect
 import subprocess
 import wolf
 
@@ -253,6 +254,7 @@ def workflow(
         primary_contigs = [str(x) for x in range(1, 23)] + ["X", "Y", "M"]
 
     # shim task to transform split_intervals files into subset parameters for covcollect task
+    @prefect.task
     def interval_gather(interval_files, primary_contigs):
         ints = []
         for f in interval_files:
@@ -497,6 +499,7 @@ def workflow(
 
         #
         # ensure that BCFs/indices/reference BCFs are in the same order
+        @prefect.task
         def order_indices(bcf_path, bcf_idx_path, localization_task):
             # BCFs
             F = pd.DataFrame(dict(bcf_path=bcf_path))
@@ -598,6 +601,7 @@ def workflow(
     )
 
     # get intervals for burnin
+    @prefect.task
     def get_chunks(scatter_chunks):
         return pd.read_csv(scatter_chunks, sep="\t")
 
@@ -721,6 +725,7 @@ A.to_pickle('./concat_arms.pickle')
 
     # shim task to get number of allelic segments
     #   (coverage MCMC will be scattered over each allelic segment)
+    @prefect.task
     def get_N_seg_groups(idx_file):
         indices = np.r_[np.genfromtxt(idx_file, delimiter="\n", dtype=int)]
         return list(indices)
@@ -752,6 +757,7 @@ A.to_pickle('./concat_arms.pickle')
     )
 
     # get the adp draw number from the preprocess data object
+    @prefect.task
     def _get_ADP_draw_num(preprocess_data_obj):
         return int(np.load(preprocess_data_obj)["adp_cluster"])
 
