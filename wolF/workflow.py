@@ -504,7 +504,7 @@ def workflow(
             # BCFs
             F = pd.DataFrame(dict(bcf_path=bcf_path))
             F = F.set_index(
-                F["bcf_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1")
+                F["bcf_path"].apply(os.path.basename).str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1", regex=True)
             )
 
             # indices
@@ -512,7 +512,7 @@ def workflow(
             F2 = F2.set_index(
                 F2["bcf_idx_path"]
                 .apply(os.path.basename)
-                .str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1")
+                .str.replace(r"^((?:chr)?(?:[^.]+)).*", r"\1", regex=True)
             )
 
             F = F.join(F2)
