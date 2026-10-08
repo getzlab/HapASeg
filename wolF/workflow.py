@@ -520,9 +520,7 @@ def workflow(
             # prepend "chr" to F's index if it's missing
             idx = ~F.index.str.contains("^chr")
             if idx.any():
-                new_index = F.index.values
-                new_index[idx] = "chr" + F.index[idx]
-                F = F.set_index(new_index)
+                F.index = F.index.where(~idx, "chr" + F.index)
 
             # reference panel BCFs
             R = pd.DataFrame({"path": localization_task}).reset_index()
