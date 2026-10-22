@@ -66,7 +66,7 @@ class Hapaseg_burnin(wolf.Task):
 
     output_patterns = {"burnin_MCMC": "amcmc_results.pickle"}
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:amp_bias_v1265"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:bioskryb-2.0"
 
 class Hapaseg_concat(wolf.Task):
     inputs = {"chunks", "scatter_intervals"}
@@ -147,7 +147,7 @@ class Hapaseg_allelic_DP(wolf.Task):
         "SNP_plot": "figures/SNPs.png",
         "seg_plot": "figures/segs_only.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:min_seg_len_v1253"
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:bioskryb-2.0"
     resources = { "cpus-per-task": 3, "mem" : "9G" }
 
 class Hapaseg_prepare_coverage_mcmc(wolf.Task):
