@@ -21,16 +21,22 @@ class MySortedList(sc.SortedList):
 
 class A_MCMC:
     def __init__(
-        self,
-        P,
-        quit_after_burnin=False,
-        n_iter=100000,
-        ref_bias=1.0,
-        betahyp=-1,
+      self,
+      P,
+      quit_after_burnin = False,
+      n_iter = 100000,
+      ref_bias = 1.0,
+      betahyp = -1,
+      amp_bias = 1
     ):
         #
         # dataframe stuff
         self.P = P.copy().reset_index()
+
+        # factor to downscale REF/ALT to simulate amplification bias
+        # TODO should this impact ref bias?
+        # TODO should only 1 allele be rescaled? no
+        self._rescale_ref_alt_counts(amp_bias)
 
         # factor by which to downscale all reference alleles, in order to
         # correct for bias against the alternate allele due to capture or alignment
@@ -127,7 +133,13 @@ class A_MCMC:
         else:
             self.betahyp = float(betahyp)
 
-    def _Piloc(self, st, en, col_idx, incl_idx=None):
+    def _rescale_ref_alt_counts(self, amp_bias = 1):
+        if amp_bias != 1:
+            self.P["REF_COUNT"] = self.P["REF_COUNT"] * amp_bias
+            self.P["ALT_COUNT"] = self.P["ALT_COUNT"] * amp_bias
+
+
+    def _Piloc(self, st, en, col_idx, incl_idx = None):
         """
         Returns only SNPs flagged for inclusion within the range st:en
         """

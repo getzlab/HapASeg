@@ -47,19 +47,26 @@ class Hapaseg_load_snps(wolf.Task):
 
 
 class Hapaseg_burnin(wolf.Task):
-    inputs = {"allele_counts": None, "start": None, "end": None, "betahyp": -1}
-
+    inputs = {
+      "allele_counts" : None,
+      "start" : None,
+      "end" : None,
+      "betahyp" : -1,
+      "amp_bias" : 1
+    }
+    
     script = """
     hapaseg amcmc --snp_dataframe ${allele_counts} \
             --start ${start} \
             --end ${end} \
             --stop_after_burnin \
-            --betahyp ${betahyp}"""
+            --betahyp ${betahyp} \
+            --amp_bias ${amp_bias}
+            """
 
     output_patterns = {"burnin_MCMC": "amcmc_results.pickle"}
 
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:hapaseg-debug_v1300"
-
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:amp_bias_v1265"
 
 class Hapaseg_concat(wolf.Task):
     inputs = {"chunks", "scatter_intervals"}
@@ -114,10 +121,12 @@ class Hapaseg_concat_arms(wolf.Task):
 
 class Hapaseg_allelic_DP(wolf.Task):
     inputs = {
-        "seg_dataframe": None,
-        "wgs": None,
-        "ref_fasta": None,
-        "cytoband_file": None,
+      "seg_dataframe" : None,
+      "min_seg_len" : 0,
+      "min_seg_snps" : 0,
+      "wgs" : None,
+      "ref_fasta" : None,
+      "cytoband_file" : None
     }
 
     def script(self):
@@ -125,8 +134,8 @@ class Hapaseg_allelic_DP(wolf.Task):
         export CAPY_REF_FA=${ref_fasta}
         hapaseg dp --seg_dataframe ${seg_dataframe} \
                 --ref_fasta ${ref_fasta} \
-                --cytoband_file ${cytoband_file}"""
-        if self.conf["inputs"]["wgs"]:
+                --cytoband_file ${cytoband_file} --min_seg_len ${min_seg_len} --min_seg_snps ${min_seg_snps}"""
+        if self.conf["inputs"]["wgs"] == True:
             script += " --wgs"
         return script
 
@@ -138,9 +147,8 @@ class Hapaseg_allelic_DP(wolf.Task):
         "SNP_plot": "figures/SNPs.png",
         "seg_plot": "figures/segs_only.png",
     }
-    docker = "gcr.io/broad-getzlab-workflows/hapaseg:hapaseg-debug_v1300"
-    resources = {"cpus-per-task": 3, "mem": "9G"}
-
+    docker = "gcr.io/broad-getzlab-workflows/hapaseg:min_seg_len_v1253"
+    resources = { "cpus-per-task": 3, "mem" : "9G" }
 
 class Hapaseg_prepare_coverage_mcmc(wolf.Task):
     inputs = {

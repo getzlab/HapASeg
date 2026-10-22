@@ -116,37 +116,40 @@ def _hg38_config_gen(wgs):
 
 
 def workflow(
-    callstats_file=None,
-    hetsites_file=None,
-    genotype_file=None,
-    tumor_bam=None,
-    tumor_bai=None,
-    tumor_coverage_bed=None,
-    normal_bam=None,
-    normal_bai=None,
-    normal_coverage_bed=None,
-    tumor_only_genotyping=False,  # backend way of changing to tumor only genotyping; if pipeline is run in tumor_only mode, should automatically set to True
-    tumor_only=False,
-    genotyping_method="mixture_model",
-    single_ended=False,  # coverage collection differs depending on whether BAM is paired end
-    ref_genome_build=None,  # must be hg19 or hg38
-    ref_fasta_overwrite=None,  # a dictionary of {"ref_fasta":{}, "ref_fasta_idx":{}, "ref_fasta_dict":{}} to overwrite standard fasta files
-    target_list=None,
-    common_snp_list=None,  # for adding a custom SNP list
-    betahyp=4,  # hyperparameter for smoothing initial allelic segmentation. only applicable for whole exomes.
-    localization_token=None,
-    num_cov_seg_samples=5,
-    run_cdp=False,  # option to run coverage DP on WES data
-    phased_vcf=None,  # if running for benchmarking, can skip phasing by passsing vcf
-    persistent_dry_run=False,
-    cleanup_disks=False,
-    is_ffpe=False,  # use FAIRE as covariate
-    is_cfdna=False,  # use FAIRE (w/ cfDNA samples) as covariate
-    extra_covariate_beds=None,
-    workspace=None,
-    entity_type="pair",  # terra entity type (sample, pair)
-    entity_name=None,
-    normal_hets_file=None,
+  callstats_file = None,
+  hetsites_file = None,
+  genotype_file =None,
+  tumor_bam = None,
+  tumor_bai = None,
+  tumor_coverage_bed = None,
+  normal_bam = None,
+  normal_bai = None,
+  normal_coverage_bed = None,
+  tumor_only_genotyping = False, # backend way of changing to tumor only genotyping; if pipeline is run in tumor_only mode, should automatically set to True
+  tumor_only = False,
+  genotyping_method = "mixture_model",
+  single_ended = False, # coverage collection differs depending on whether BAM is paired end
+  ref_genome_build=None, #must be hg19 or hg38
+  ref_fasta_overwrite=None, # a dictionary of {"ref_fasta":{}, "ref_fasta_idx":{}, "ref_fasta_dict":{}} to overwrite standard fasta files
+  target_list = None,
+  common_snp_list = None, # for adding a custom SNP list
+  betahyp = 4, # hyperparameter for smoothing initial allelic segmentation. only applicable for whole exomes.
+  adp_min_seg_len = 0, # set to >0 to set cutoff of minimum length of input segment ADP will cluster
+  adp_min_seg_snps = 0, # set to >0 to set cutoff of minimum number of SNPs in input segment that ADP will cluster
+  amp_bias=1, # set this != 1 to adjust ALT/REF counts in allelic MCMC
+  localization_token=None,
+  num_cov_seg_samples=5,
+  run_cdp=False, # option to run coverage DP on WES data
+  phased_vcf=None, # if running for benchmarking, can skip phasing by passsing vcf
+  persistent_dry_run = False,
+  cleanup_disks=False,
+  is_ffpe = False, # use FAIRE as covariate
+  is_cfdna = False,  # use FAIRE (w/ cfDNA samples) as covariate
+  extra_covariate_beds = None,
+  workspace = None,
+  entity_type = 'pair', # terra entity type (sample, pair)
+  entity_name = None,
+  normal_hets_file=None,
 ):
     # alert for persistent dry run
     if persistent_dry_run:
@@ -607,12 +610,13 @@ def workflow(
 
     # burnin chunks
     hapaseg_burnin_task = hapaseg.Hapaseg_burnin(
-        inputs={
-            "allele_counts": hapaseg_load_snps_task["allele_counts"],
-            "start": chunks["start"],
-            "end": chunks["end"],
-            "betahyp": -1 if wgs else 0,
-        }
+     inputs = {
+       "allele_counts" : hapaseg_load_snps_task["allele_counts"],
+       "start" : chunks["start"],
+       "end" : chunks["end"],
+       "betahyp" : -1 if wgs else 0,
+       "amp_bias": amp_bias
+      }
     )
 
     # concat burned in chunks, infer reference bias
@@ -676,19 +680,17 @@ A.to_pickle('./concat_arms.pickle')
     ## run DP
 
     hapaseg_allelic_DP_task = hapaseg.Hapaseg_allelic_DP(
-        inputs={
-            "seg_dataframe": arm_concat["all_arms_obj"],
-            # "seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
-            "cytoband_file": localization_task["cytoband_file"],
-            "wgs": wgs,
-            "ref_fasta": localization_task["ref_fasta"],
-            "ref_fasta_idx": localization_task[
-                "ref_fasta_idx"
-            ],  # not used; just supplied for symlink
-            "ref_fasta_dict": localization_task[
-                "ref_fasta_dict"
-            ],  # not used; just supplied for symlink
-        }
+     inputs = {
+       "seg_dataframe" : arm_concat["all_arms_obj"],
+       #"seg_dataframe" : hapaseg_arm_concat_task["arm_cat_results_pickle"],
+       "cytoband_file" : localization_task["cytoband_file"],
+       "wgs" : wgs,
+       "min_seg_len" : adp_min_seg_len,
+       "min_seg_snps" : adp_min_seg_snps,
+       "ref_fasta" : localization_task["ref_fasta"],
+       "ref_fasta_idx" : localization_task["ref_fasta_idx"],  # not used; just supplied for symlink
+       "ref_fasta_dict" : localization_task["ref_fasta_dict"] # not used; just supplied for symlink
+     }
     )
 
     #

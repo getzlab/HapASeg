@@ -125,6 +125,7 @@ def parse_args():
     amcmc.add_argument("--ref_bias", default=1.0)
     amcmc.add_argument("--n_iter", default=20000)
     amcmc.add_argument("--betahyp", default=-1, type=float)
+    amcmc.add_argument("--amp_bias", default=1, type=float)
 
     ## concat
     concat = subparsers.add_parser(
@@ -150,6 +151,25 @@ def parse_args():
     )  # TODO: only useful for chrpos->gpos; will be removed when this is passed from load
     dp.add_argument("--cytoband_file", required=True)
     dp.add_argument("--wgs", action="store_true", default=False)
+    dp.add_argument("--min_seg_len", default=0)
+    dp.add_argument("--min_seg_snps", default=0)
+  
+    ## coverage MCMC
+    coverage_mcmc = subparsers.add_parser("coverage_mcmc",
+                                          help="Run TCR segmentation on all allelic imbalance clusters")
+    coverage_mcmc.add_argument("--coverage_csv",
+                               help="csv file containing '['chr', 'start', 'end', 'covcorr', 'covraw'] data")
+    coverage_mcmc.add_argument("--allelic_clusters_object",
+                               help="npy file containing allelic dp segs-to-clusters results")
+    coverage_mcmc.add_argument("--SNPs_pickle", help="pickled dataframe containing SNPs")
+    coverage_mcmc.add_argument("--segmentations_pickle", help="pickled sorteddict containing allelic imbalance segment boundaries", required=True)
+    coverage_mcmc.add_argument("--covariate_dir",
+                               help="path to covariate directory with covariates all in pickled files")
+    coverage_mcmc.add_argument("--num_draws", type=int,
+                               help="number of draws to take from coverage segmentation MCMC", default=50)
+    coverage_mcmc.add_argument("--allelic_sample", type=int,
+                               help="index of sample clustering from allelic DP to use as seed for segmentation",
+                               default=None)
 
     ## coverage MCMC
     coverage_mcmc = subparsers.add_parser(
@@ -576,6 +596,7 @@ def main():
                 ref_bias=float(args.ref_bias),
                 n_iter=int(args.n_iter),
                 betahyp=float(args.betahyp),
+                amp_bias=float(args.amp_bias)
             )
 
         # loading from allelic MCMC results object produced by `hapaseg amcmc`
@@ -802,7 +823,7 @@ def main():
 
     elif args.command == "dp":
         # load allelic segmentation samples
-        A = A_DP(args.seg_dataframe, ref_fasta=args.ref_fasta, wgs=args.wgs)
+        A = A_DP(args.seg_dataframe, ref_fasta=args.ref_fasta, wgs = args.wgs, min_seg_len = args.min_seg_len, min_seg_snps = args.min_seg_snps)
 
         # run DP
         snps_to_clusters, snps_to_phases, likelihoods = A.run()
